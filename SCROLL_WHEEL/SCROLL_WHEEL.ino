@@ -3,7 +3,10 @@
 #include <HID.h>
 #include <Wire.h>
 #include <CapacitiveSensor.h>
-#include <Keyboard.h>
+// #include <Keyboard.h>
+#include <HID-Project.h>
+#include <HID-Settings.h>
+
 
 // I2C address and register for the AS5600 magnetic encoder
 #define AS5600_I2C_ADDR   0x36
@@ -18,8 +21,16 @@ constexpr long TOUCH_THRESHOLD = 500;
 
 // Sampling parameters for AS5600
 constexpr unsigned long SAMPLE_INTERVAL_US   = 1000000UL / 600;  // ~1666 µs → 600 Hz
-constexpr uint8_t          SAMPLES_PER_BLOCK = 10;              // 10 samples → 60 Hz
-constexpr int              RAW_TICK_DIVIDER   = 1;               // 1 count = 1 tick
+constexpr uint8_t          SAMPLES_PER_BLOCK = 10;               // 10 samples → 60 Hz
+constexpr int              VOL_TICK_DIVIDER  = 32;               // 
+constexpr int              BRI_TICK_DIVIDER  = 128;              //
+static float volAccumulator = 0.0f;
+static float briAccumulator = 0.0f;
+static bool volume_mode = false;
+static bool brightness_mode = false;
+
+
+
 
 // -----------------------------------------------------------------------------
 // Struct to encapsulate a capacitive sensor and its state
@@ -214,7 +225,7 @@ private:
 };
 
 // Global instance of our custom mouse
-CustomMouse Mouse;
+CustomMouse ScrollWheel;
 
 // -----------------------------------------------------------------------------
 // AS5600 helper functions
@@ -317,6 +328,8 @@ void updateTouchSensors() {
             digitalWrite(s.ledPin, touched ? LOW : HIGH);
         }
     }
+    volume_mode = (!sensors[0].isTouched && sensors[1].isTouched);
+    brightness_mode = (sensors[0].isTouched && !sensors[1].isTouched);
 }
 
 // -----------------------------------------------------------------------------
@@ -345,71 +358,104 @@ void setup() {
     lastAccumPos   = readRawAngle();
     centerPosition();
 
-    Keyboard.begin();
+    // Keyboard.begin();
+    Consumer.begin();    // for media keys
 }
 
 // -----------------------------------------------------------------------------
 // Main loop: sample encoder, handle touch-triggered keyboard/mouse events
 // -----------------------------------------------------------------------------
 void loop() {
-    unsigned long now = micros();
+  unsigned long now = micros();
 
-    // Sample at defined interval and only if magnet is present
-    if ((now - lastSampleTime) < SAMPLE_INTERVAL_US || !magnetPresent()) {
-        return;
+  // Sample at defined interval and only if magnet is present
+  if ((now - lastSampleTime) < SAMPLE_INTERVAL_US || !magnetPresent()) {
+      return;
+  }
+  lastSampleTime += SAMPLE_INTERVAL_US;
+
+  // Accumulate position samples
+  int16_t pos = readAccumulatedAngle();
+  sumAngle += pos;
+  ++sampleCount;
+
+  if (sampleCount >= SAMPLES_PER_BLOCK) {
+    // Compute mean and difference from previous block
+    float mean = float(sumAngle) / SAMPLES_PER_BLOCK;
+    float delta = mean - prevMean;
+    prevMean = mean;
+
+    updateTouchSensors();
+    // Sólo cuando el sensor 0 (índice 0) esté presionado, vamos a volumen:
+    if (volume_mode) {
+      // Añadimos al acumulador la diferencia de media
+      volAccumulator += delta;
+
+      // Mientras tengamos al menos un tick de volumen entero...
+      while (volAccumulator >= VOL_TICK_DIVIDER) {
+          Consumer.write(MEDIA_VOLUME_DOWN);
+          volAccumulator -= VOL_TICK_DIVIDER;
+          delay(1);
+      }
+      while (volAccumulator <= -VOL_TICK_DIVIDER) {
+          Consumer.write(MEDIA_VOLUME_UP);
+          volAccumulator += VOL_TICK_DIVIDER;
+          delay(1);
+      }
     }
-    lastSampleTime += SAMPLE_INTERVAL_US;
+    if (brightness_mode) {
+      // Añadimos al acumulador la diferencia de media
+      briAccumulator += delta;
 
-    // Accumulate position samples
-    int16_t pos = readAccumulatedAngle();
-    sumAngle += pos;
-    ++sampleCount;
-
-    if (sampleCount >= SAMPLES_PER_BLOCK) {
-        // Compute mean and difference from previous block
-        float mean = float(sumAngle) / SAMPLES_PER_BLOCK;
-        float delta = mean - prevMean;
-        prevMean = mean;
-
-        // Convert to scroll ticks and constrain
-        int16_t ticks = int(delta / RAW_TICK_DIVIDER);
-        ticks = constrain(ticks, -32767, 32767);
-
-        updateTouchSensors();
-
-        // Touch 1: Ctrl+C
-        if (sensors[0].risingEdge) {
-            Keyboard.press(KEY_LEFT_CTRL);
-            Keyboard.press('c');
-            delay(15);
-            Keyboard.releaseAll();
-        }
-        // Touch 2 (when Touch 1 not held): Ctrl+V
-        else if (sensors[1].risingEdge && !sensors[0].isTouched) {
-            Keyboard.press(KEY_LEFT_CTRL);
-            Keyboard.press('v');
-            delay(15);
-            Keyboard.releaseAll();
-        }
-
-        // Send a single HID report if there is scroll activity
-        if (ticks != 0) {
-            if (sensors[0].isTouched && sensors[1].isTouched) {
-                // Two-finger scroll: horizontal wheel
-                Mouse.sendReport(0, 0, 0, 0, ticks);
-            } else {
-                // Single-finger scroll: vertical wheel
-                Mouse.sendReport(0, 0, 0, ticks, 0);
-            }
-        }
-
-        // Re-center if accumulated position drifts beyond two full rotations
-        if (abs(pos) > 4095 * 2) {
-            centerPosition();
-        }
-
-        // Reset accumulators
-        sumAngle    = 0;
-        sampleCount = 0;
+      // Mientras tengamos al menos un tick de brillo entero...
+      while (briAccumulator >= BRI_TICK_DIVIDER) {
+          Consumer.write(CONSUMER_BRIGHTNESS_DOWN);
+          briAccumulator -= BRI_TICK_DIVIDER;
+          delay(1);
+      }
+      while (briAccumulator <= -BRI_TICK_DIVIDER) {
+          Consumer.write(CONSUMER_BRIGHTNESS_UP);
+          briAccumulator += BRI_TICK_DIVIDER;
+          delay(1);
+      }
     }
+    // Convert to scroll ticks and constrain
+    delta = constrain(delta, -32767, 32767);
+
+
+      // Touch 1: Ctrl+C
+      // if (sensors[0].risingEdge) {
+      //     Keyboard.press(KEY_LEFT_CTRL);
+      //     Keyboard.press('c');
+      //     delay(15);
+      //     Keyboard.releaseAll();
+      // }
+      // // Touch 2 (when Touch 1 not held): Ctrl+V
+      // else if (sensors[1].risingEdge && !sensors[0].isTouched) {
+      //     Keyboard.press(KEY_LEFT_CTRL);
+      //     Keyboard.press('v');
+      //     delay(15);
+      //     Keyboard.releaseAll();
+      // }
+
+    // Send a single HID report if there is scroll activity
+    if (delta != 0) {
+        if (sensors[0].isTouched && sensors[1].isTouched) {
+            // Two-finger scroll: horizontal wheel
+            ScrollWheel.sendReport(0, 0, 0, 0, delta);
+        } else if (!sensors[0].isTouched && !sensors[1].isTouched) {
+            // No finger scroll: vertical wheel
+            ScrollWheel.sendReport(0, 0, 0, -delta, 0);
+        }
+    }
+
+    // Re-center if accumulated position drifts beyond two full rotations
+    if (abs(pos) > 4095 * 2) {
+        centerPosition();
+    }
+
+    // Reset accumulators
+    sumAngle    = 0;
+    sampleCount = 0;
+  }
 }
