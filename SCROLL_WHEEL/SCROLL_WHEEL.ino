@@ -325,7 +325,7 @@ void updateTouchSensors() {
         s.risingEdge = (!s.isTouched && touched);
         if (touched != s.isTouched) {
             s.isTouched = touched;
-            digitalWrite(s.ledPin, touched ? LOW : HIGH);
+            // digitalWrite(s.ledPin, touched ? LOW : HIGH);
         }
     }
     volume_mode = (!sensors[0].isTouched && sensors[1].isTouched);
@@ -367,7 +367,7 @@ void setup() {
 // -----------------------------------------------------------------------------
 void loop() {
   unsigned long now = micros();
-
+  digitalWrite(LED_BUILTIN_TX, HIGH);
   // Sample at defined interval and only if magnet is present
   if ((now - lastSampleTime) < SAMPLE_INTERVAL_US || !magnetPresent()) {
       return;
@@ -394,11 +394,13 @@ void loop() {
       // Mientras tengamos al menos un tick de volumen entero...
       while (volAccumulator >= VOL_TICK_DIVIDER) {
           Consumer.write(MEDIA_VOLUME_DOWN);
+          digitalWrite(LED_BUILTIN_TX, HIGH);
           volAccumulator -= VOL_TICK_DIVIDER;
           delay(1);
       }
       while (volAccumulator <= -VOL_TICK_DIVIDER) {
           Consumer.write(MEDIA_VOLUME_UP);
+          digitalWrite(LED_BUILTIN_TX, HIGH);
           volAccumulator += VOL_TICK_DIVIDER;
           delay(1);
       }
@@ -443,9 +445,11 @@ void loop() {
         if (sensors[0].isTouched && sensors[1].isTouched) {
             // Two-finger scroll: horizontal wheel
             ScrollWheel.sendReport(0, 0, 0, 0, delta);
+            digitalWrite(LED_BUILTIN_TX, HIGH);
         } else if (!sensors[0].isTouched && !sensors[1].isTouched) {
             // No finger scroll: vertical wheel
             ScrollWheel.sendReport(0, 0, 0, -delta, 0);
+            digitalWrite(LED_BUILTIN_TX, HIGH);
         }
     }
 
