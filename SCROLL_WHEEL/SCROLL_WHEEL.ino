@@ -3,9 +3,9 @@
 #include <HID.h>
 #include <Wire.h>
 #include <CapacitiveSensor.h>
-// #include <Keyboard.h>
 #include <HID-Project.h>
 #include <HID-Settings.h>
+// #include <Keyboard.h>
 
 
 // I2C address and register for the AS5600 magnetic encoder
@@ -24,33 +24,42 @@ constexpr unsigned long SAMPLE_INTERVAL_US   = 1000000UL / 600;  // ~1666 µs �
 constexpr uint8_t          SAMPLES_PER_BLOCK = 10;               // 10 samples → 60 Hz
 constexpr int              VOL_TICK_DIVIDER  = 32;               // 
 constexpr int              BRI_TICK_DIVIDER  = 128;              //
+constexpr int              CTR_TICK_DIVIDER  = 256;              //
 static float volAccumulator = 0.0f;
 static float briAccumulator = 0.0f;
+static float ctrAccumulator = 0.0f;
 static bool volume_mode = false;
 static bool brightness_mode = false;
+static bool pan_mode = false;
+static bool ctrl_mode = false;
 
+typedef enum {
+  MEDIA,
+  NAVIGATION,
+  EDITOR
+} BUTTON_MODE;
 
-
+BUTTON_MODE control_mode;
 
 // -----------------------------------------------------------------------------
 // Struct to encapsulate a capacitive sensor and its state
 // -----------------------------------------------------------------------------
 struct CapSenseSensor {
-    uint8_t        sendPin;
-    uint8_t        receivePin;
-    uint8_t        ledPin;
+    uint8_t         sendPin;
+    uint8_t         receivePin;
     CapacitiveSensor cs;        // Touch library instance
 
     // State tracking
-    bool    isTouched    = false;
-    bool    risingEdge   = false;
-    long    rawValue     = 0;
-    long    baseline     = 0;
+    bool            isTouched    = false;
+    long            rawValue     = 0;
+    long            baseline     = 0;
+    bool            risingEdge   = false;
+    bool            fallingEdge  = false;
+    unsigned long   lastRisingEdge = 0;
 
-    CapSenseSensor(uint8_t s, uint8_t r, uint8_t led)
+    CapSenseSensor(uint8_t s, uint8_t r)
       : sendPin(s)
       , receivePin(r)
-      , ledPin(led)
       , cs(s, r)
     {}
 };
@@ -59,8 +68,8 @@ struct CapSenseSensor {
 // List of capacitive sensors in use
 // -----------------------------------------------------------------------------
 CapSenseSensor sensors[] = {
-    { 8,  7,  LED_TOUCH_1 },
-    {16, 14,  LED_TOUCH_2 }
+    { 8,  7 },
+    {16, 14 }
 };
 constexpr uint8_t SENSOR_COUNT = sizeof(sensors) / sizeof(sensors[0]);
 
@@ -323,43 +332,87 @@ void updateTouchSensors() {
         bool touched = (adjusted > TOUCH_THRESHOLD);
 
         s.risingEdge = (!s.isTouched && touched);
+        s.fallingEdge= (s.isTouched && !touched);
+        if (s.risingEdge) s.lastRisingEdge = millis();
         if (touched != s.isTouched) {
             s.isTouched = touched;
             // digitalWrite(s.ledPin, touched ? LOW : HIGH);
         }
     }
-    volume_mode = (!sensors[0].isTouched && sensors[1].isTouched);
-    brightness_mode = (sensors[0].isTouched && !sensors[1].isTouched);
+    unsigned long now = millis();
+    if (!sensors[0].isTouched && sensors[1].isTouched && control_mode == NAVIGATION && sensors[1].risingEdge) {
+      Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, LOW);
+    } else if (control_mode == NAVIGATION && sensors[1].fallingEdge) {
+      Keyboard.release(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
+    }
+
+    if (!sensors[0].isTouched && control_mode == EDITOR && sensors[1].fallingEdge && now - sensors[1].lastRisingEdge > 300) {
+      Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
+      Keyboard.press('c'); digitalWrite(LED_BUILTIN_TX, LOW);
+      delay(15);
+      Keyboard.releaseAll(); digitalWrite(LED_BUILTIN_TX, HIGH); digitalWrite(LED_BUILTIN_RX, HIGH);
+    }
+    if (!sensors[1].isTouched && control_mode == EDITOR && sensors[0].fallingEdge && now - sensors[0].lastRisingEdge > 300) {
+      Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
+      Keyboard.press('v'); digitalWrite(LED_BUILTIN_TX, LOW);
+      delay(15);
+      Keyboard.releaseAll(); digitalWrite(LED_BUILTIN_TX, HIGH); digitalWrite(LED_BUILTIN_RX, HIGH);
+    }    
+    if ((!sensors[0].isTouched && sensors[1].isTouched && control_mode == EDITOR && now - sensors[1].lastRisingEdge > 400) || 
+        (sensors[0].isTouched && !sensors[1].isTouched && control_mode == EDITOR && now - sensors[0].lastRisingEdge > 400)) {
+      digitalWrite(LED_BUILTIN_RX, LOW);
+    }
+
+    if (!sensors[0].isTouched && control_mode == EDITOR && sensors[1].fallingEdge && now - sensors[1].lastRisingEdge < 400) {
+      Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
+      Keyboard.press(KEY_LEFT_SHIFT); digitalWrite(LED_BUILTIN_TX, HIGH);
+      Keyboard.press('z'); digitalWrite(LED_BUILTIN_TX, LOW);
+      delay(15);
+      Keyboard.releaseAll(); digitalWrite(LED_BUILTIN_TX, HIGH); digitalWrite(LED_BUILTIN_RX, HIGH);
+    }
+    if (!sensors[1].isTouched && control_mode == EDITOR && sensors[0].fallingEdge && now - sensors[0].lastRisingEdge < 400) {
+      Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
+      Keyboard.press('z'); digitalWrite(LED_BUILTIN_TX, LOW);
+      delay(15);
+      Keyboard.releaseAll(); digitalWrite(LED_BUILTIN_TX, HIGH); digitalWrite(LED_BUILTIN_RX, HIGH);
+    }  
+
+    volume_mode = (!sensors[0].isTouched && sensors[1].isTouched && control_mode == MEDIA);
+    brightness_mode = (sensors[0].isTouched && !sensors[1].isTouched && control_mode == MEDIA);
+
+    pan_mode = (sensors[0].isTouched && !sensors[1].isTouched && control_mode == NAVIGATION);
 }
 
 // -----------------------------------------------------------------------------
 // Setup: initialize I2C, sensors, encoder, keyboard
 // -----------------------------------------------------------------------------
 void setup() {
-    Wire.begin();
-    delay(100);
+  control_mode = EDITOR;
 
-    pinMode(LED_TOUCH_1, OUTPUT);
-    pinMode(LED_TOUCH_2, OUTPUT);
+  Wire.begin();
+  delay(100);
 
-    // Calibrate capacitive sensors
-    for (auto& s : sensors) {
-        s.cs.set_CS_AutocaL_Millis(0);
-        long sum = 0;
-        for (int i = 0; i < 50; ++i) {
-            sum += s.cs.capacitiveSensor(30);
-            delay(10);
-        }
-        s.baseline = sum / 50;
-    }
+  pinMode(LED_TOUCH_1, OUTPUT);
+  pinMode(LED_TOUCH_2, OUTPUT);
 
-    // Initialize magnetic encoder tracking
-    lastRawAngle   = readRawAngle();
-    lastAccumPos   = readRawAngle();
-    centerPosition();
+  // Calibrate capacitive sensors
+  for (auto& s : sensors) {
+      s.cs.set_CS_AutocaL_Millis(0);
+      long sum = 0;
+      for (int i = 0; i < 50; ++i) {
+          sum += s.cs.capacitiveSensor(30);
+          delay(10);
+      }
+      s.baseline = sum / 50;
+  }
 
-    // Keyboard.begin();
-    Consumer.begin();    // for media keys
+  // Initialize magnetic encoder tracking
+  lastRawAngle   = readRawAngle();
+  lastAccumPos   = readRawAngle();
+  centerPosition();
+
+  Keyboard.begin();
+  Consumer.begin();    // for media keys
 }
 
 // -----------------------------------------------------------------------------
@@ -384,6 +437,7 @@ void loop() {
     float mean = float(sumAngle) / SAMPLES_PER_BLOCK;
     float delta = mean - prevMean;
     prevMean = mean;
+    delta = constrain(delta, -32767, 32767);
 
     updateTouchSensors();
     // Sólo cuando el sensor 0 (índice 0) esté presionado, vamos a volumen:
@@ -393,14 +447,12 @@ void loop() {
 
       // Mientras tengamos al menos un tick de volumen entero...
       while (volAccumulator >= VOL_TICK_DIVIDER) {
-          Consumer.write(MEDIA_VOLUME_DOWN);
-          digitalWrite(LED_BUILTIN_TX, HIGH);
+          Consumer.write(MEDIA_VOLUME_DOWN); digitalWrite(LED_BUILTIN_TX, HIGH);
           volAccumulator -= VOL_TICK_DIVIDER;
           delay(1);
       }
       while (volAccumulator <= -VOL_TICK_DIVIDER) {
-          Consumer.write(MEDIA_VOLUME_UP);
-          digitalWrite(LED_BUILTIN_TX, HIGH);
+          Consumer.write(MEDIA_VOLUME_UP); digitalWrite(LED_BUILTIN_TX, HIGH);
           volAccumulator += VOL_TICK_DIVIDER;
           delay(1);
       }
@@ -421,8 +473,9 @@ void loop() {
           delay(1);
       }
     }
-    // Convert to scroll ticks and constrain
-    delta = constrain(delta, -32767, 32767);
+    if (pan_mode) {
+      ScrollWheel.sendReport(0, 0, 0, 0, delta); digitalWrite(LED_BUILTIN_TX, HIGH);
+    }
 
 
       // Touch 1: Ctrl+C
@@ -442,14 +495,10 @@ void loop() {
 
     // Send a single HID report if there is scroll activity
     if (delta != 0) {
-        if (sensors[0].isTouched && sensors[1].isTouched) {
-            // Two-finger scroll: horizontal wheel
-            ScrollWheel.sendReport(0, 0, 0, 0, delta);
-            digitalWrite(LED_BUILTIN_TX, HIGH);
-        } else if (!sensors[0].isTouched && !sensors[1].isTouched) {
-            // No finger scroll: vertical wheel
-            ScrollWheel.sendReport(0, 0, 0, -delta, 0);
-            digitalWrite(LED_BUILTIN_TX, HIGH);
+        if (!sensors[0].isTouched && !sensors[1].isTouched && control_mode != NAVIGATION || !sensors[0].isTouched && control_mode == NAVIGATION) {
+          // No finger scroll: vertical wheel
+          ScrollWheel.sendReport(0, 0, 0, -delta, 0);
+          digitalWrite(LED_BUILTIN_TX, HIGH);
         }
     }
 
