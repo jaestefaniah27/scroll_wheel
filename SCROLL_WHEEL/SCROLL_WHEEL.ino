@@ -31,7 +31,9 @@ static float ctrAccumulator = 0.0f;
 static bool volume_mode = false;
 static bool brightness_mode = false;
 static bool pan_mode = false;
-static bool ctrl_mode = false;
+static bool change_mode = false;
+static bool show_mode = false;
+static bool turbo_mode = false;
 
 typedef enum {
   MEDIA,
@@ -336,58 +338,120 @@ void updateTouchSensors() {
         if (s.risingEdge) s.lastRisingEdge = millis();
         if (touched != s.isTouched) {
             s.isTouched = touched;
-            // digitalWrite(s.ledPin, touched ? LOW : HIGH);
         }
     }
     unsigned long now = millis();
-    if (!sensors[0].isTouched && sensors[1].isTouched && control_mode == NAVIGATION && sensors[1].risingEdge) {
-      Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, LOW);
-    } else if (control_mode == NAVIGATION && sensors[1].fallingEdge) {
-      Keyboard.release(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
+    if (sensors[0].isTouched && sensors[1].isTouched ) {
+      show_mode = true;
+      if (now - sensors[0].lastRisingEdge > 300 && now - sensors[1].lastRisingEdge > 300) {
+        digitalWrite(LED_BUILTIN_RX, LOW);
+        change_mode = true;
+        show_mode = false;
+      }
     }
+    if (change_mode == true && (sensors[0].fallingEdge || sensors[1].fallingEdge)) { 
+      digitalWrite(LED_BUILTIN_RX, HIGH);
+      switch (control_mode){
+        case MEDIA:
+          control_mode = NAVIGATION;
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          break;
+        case NAVIGATION:
+          control_mode = EDITOR;
+          Keyboard.release(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          break;
+        case EDITOR:
+          control_mode = MEDIA;
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          break;
+      }
+      change_mode = false;
+      return;
+    }
+    if (show_mode == true && (sensors[0].fallingEdge || sensors[1].fallingEdge)) { 
+      digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+      switch (control_mode){
+        case NAVIGATION:
+          Keyboard.release(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          break;
+        case EDITOR:
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          break;
+        case MEDIA:
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          delay(150); digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW); delay(150); digitalWrite(LED_BUILTIN_RX, HIGH);digitalWrite(LED_BUILTIN_TX, HIGH);
+          break;
+      }
+      show_mode = false;
+      return;
+    }
+    /* ------- NAVIGATION CONTROLLS ------- */
+    // RIGHT BUTTON TOUCHED: CTRL PRESS
+    if (!sensors[0].isTouched && sensors[1].isTouched && control_mode == NAVIGATION && sensors[1].risingEdge) {
+      turbo_mode = true; digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW);
+    // RIGHT BUTTON RELEASED: CTRL RELEASE
+    } else if (control_mode == NAVIGATION && sensors[1].fallingEdge) {
+      turbo_mode = false; digitalWrite(LED_BUILTIN_RX, HIGH); digitalWrite(LED_BUILTIN_TX, HIGH);
+    }
+    // LEFT BUTTON TOUCHED: PAN ACTIVATED
+    pan_mode = (sensors[0].isTouched && !sensors[1].isTouched && control_mode == NAVIGATION && !change_mode);
 
-    if (!sensors[0].isTouched && control_mode == EDITOR && sensors[1].fallingEdge && now - sensors[1].lastRisingEdge > 300) {
+    /* ------- EDITOR CONTROLLS ------- */
+    // LONG PRESS RIGHT BUTTON: CTRL + C
+    if (!sensors[0].isTouched && control_mode == EDITOR && sensors[1].fallingEdge && now - sensors[1].lastRisingEdge > 300 && !change_mode) {
       Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
       Keyboard.press('c'); digitalWrite(LED_BUILTIN_TX, LOW);
       delay(15);
       Keyboard.releaseAll(); digitalWrite(LED_BUILTIN_TX, HIGH); digitalWrite(LED_BUILTIN_RX, HIGH);
     }
-    if (!sensors[1].isTouched && control_mode == EDITOR && sensors[0].fallingEdge && now - sensors[0].lastRisingEdge > 300) {
+    // LONG PRESS LEFT BUTTON: CTRL + V
+    if (!sensors[1].isTouched && control_mode == EDITOR && sensors[0].fallingEdge && now - sensors[0].lastRisingEdge > 300 && !change_mode) {
       Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
       Keyboard.press('v'); digitalWrite(LED_BUILTIN_TX, LOW);
       delay(15);
       Keyboard.releaseAll(); digitalWrite(LED_BUILTIN_TX, HIGH); digitalWrite(LED_BUILTIN_RX, HIGH);
-    }    
-    if ((!sensors[0].isTouched && sensors[1].isTouched && control_mode == EDITOR && now - sensors[1].lastRisingEdge > 400) || 
-        (sensors[0].isTouched && !sensors[1].isTouched && control_mode == EDITOR && now - sensors[0].lastRisingEdge > 400)) {
+    }   
+    // LONG PRESS DETECTED: TURN ON LED 
+    if ((!sensors[0].isTouched && sensors[1].isTouched && control_mode == EDITOR && now - sensors[1].lastRisingEdge > 400 && !change_mode) || 
+        (sensors[0].isTouched && !sensors[1].isTouched && control_mode == EDITOR && now - sensors[0].lastRisingEdge > 400 && !change_mode)) {
       digitalWrite(LED_BUILTIN_RX, LOW);
     }
-
-    if (!sensors[0].isTouched && control_mode == EDITOR && sensors[1].fallingEdge && now - sensors[1].lastRisingEdge < 400) {
+    // SHORT PRESS RIGHT BUTTON: RE-DO
+    if (!sensors[0].isTouched && control_mode == EDITOR && sensors[1].fallingEdge && now - sensors[1].lastRisingEdge < 400 && !change_mode) {
       Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
       Keyboard.press(KEY_LEFT_SHIFT); digitalWrite(LED_BUILTIN_TX, HIGH);
       Keyboard.press('z'); digitalWrite(LED_BUILTIN_TX, LOW);
       delay(15);
       Keyboard.releaseAll(); digitalWrite(LED_BUILTIN_TX, HIGH); digitalWrite(LED_BUILTIN_RX, HIGH);
     }
-    if (!sensors[1].isTouched && control_mode == EDITOR && sensors[0].fallingEdge && now - sensors[0].lastRisingEdge < 400) {
+    // SHORT PRESS LEFT BUTTON: UNDO
+    if (!sensors[1].isTouched && control_mode == EDITOR && sensors[0].fallingEdge && now - sensors[0].lastRisingEdge < 400 && !change_mode) {
       Keyboard.press(KEY_LEFT_CTRL); digitalWrite(LED_BUILTIN_TX, HIGH);
       Keyboard.press('z'); digitalWrite(LED_BUILTIN_TX, LOW);
       delay(15);
       Keyboard.releaseAll(); digitalWrite(LED_BUILTIN_TX, HIGH); digitalWrite(LED_BUILTIN_RX, HIGH);
     }  
 
-    volume_mode = (!sensors[0].isTouched && sensors[1].isTouched && control_mode == MEDIA);
-    brightness_mode = (sensors[0].isTouched && !sensors[1].isTouched && control_mode == MEDIA);
+    /* ------- MEDIA CONTROLLS ------- */
+    // RIGHT BUTTON PRESSED: VOLUME CONTROLL
+    volume_mode = (!sensors[0].isTouched && sensors[1].isTouched && control_mode == MEDIA && !change_mode);
+    // LEFT BUTTON PRESSED: BRIGHTNESS CONTROLL
+    brightness_mode = (sensors[0].isTouched && !sensors[1].isTouched && control_mode == MEDIA && !change_mode);
 
-    pan_mode = (sensors[0].isTouched && !sensors[1].isTouched && control_mode == NAVIGATION);
 }
 
 // -----------------------------------------------------------------------------
 // Setup: initialize I2C, sensors, encoder, keyboard
 // -----------------------------------------------------------------------------
 void setup() {
-  control_mode = EDITOR;
+  control_mode = MEDIA;
 
   Wire.begin();
   delay(100);
@@ -437,7 +501,6 @@ void loop() {
     float mean = float(sumAngle) / SAMPLES_PER_BLOCK;
     float delta = mean - prevMean;
     prevMean = mean;
-    delta = constrain(delta, -32767, 32767);
 
     updateTouchSensors();
     // Sólo cuando el sensor 0 (índice 0) esté presionado, vamos a volumen:
@@ -463,35 +526,30 @@ void loop() {
 
       // Mientras tengamos al menos un tick de brillo entero...
       while (briAccumulator >= BRI_TICK_DIVIDER) {
-          Consumer.write(CONSUMER_BRIGHTNESS_DOWN);
+          Consumer.write(CONSUMER_BRIGHTNESS_DOWN); digitalWrite(LED_BUILTIN_TX, HIGH);
           briAccumulator -= BRI_TICK_DIVIDER;
           delay(1);
       }
       while (briAccumulator <= -BRI_TICK_DIVIDER) {
-          Consumer.write(CONSUMER_BRIGHTNESS_UP);
+          Consumer.write(CONSUMER_BRIGHTNESS_UP); digitalWrite(LED_BUILTIN_TX, HIGH);
           briAccumulator += BRI_TICK_DIVIDER;
           delay(1);
       }
+    }    
+    if (turbo_mode) {
+      float acc = 10;
+      if (abs(delta) > acc) {
+        if (delta > 0) delta *= delta;
+        else delta = - delta * delta;
+      } else {
+       delta *= acc;
+      }
     }
+    delta = constrain(delta, -32767, 32767);
     if (pan_mode) {
       ScrollWheel.sendReport(0, 0, 0, 0, delta); digitalWrite(LED_BUILTIN_TX, HIGH);
     }
 
-
-      // Touch 1: Ctrl+C
-      // if (sensors[0].risingEdge) {
-      //     Keyboard.press(KEY_LEFT_CTRL);
-      //     Keyboard.press('c');
-      //     delay(15);
-      //     Keyboard.releaseAll();
-      // }
-      // // Touch 2 (when Touch 1 not held): Ctrl+V
-      // else if (sensors[1].risingEdge && !sensors[0].isTouched) {
-      //     Keyboard.press(KEY_LEFT_CTRL);
-      //     Keyboard.press('v');
-      //     delay(15);
-      //     Keyboard.releaseAll();
-      // }
 
     // Send a single HID report if there is scroll activity
     if (delta != 0) {
