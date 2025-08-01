@@ -394,12 +394,13 @@ void updateTouchSensors() {
     }
     /* ------- NAVIGATION CONTROLLS ------- */
     // RIGHT BUTTON TOUCHED: CTRL PRESS
-    if (!sensors[0].isTouched && sensors[1].isTouched && control_mode == NAVIGATION && sensors[1].risingEdge) {
-      turbo_mode = true; digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW);
+    turbo_mode = (!sensors[0].isTouched && sensors[1].isTouched && control_mode == NAVIGATION);
+    if (turbo_mode && sensors[1].risingEdge) {
+      digitalWrite(LED_BUILTIN_RX, LOW); digitalWrite(LED_BUILTIN_TX, LOW);
     // RIGHT BUTTON RELEASED: CTRL RELEASE
     } else if (control_mode == NAVIGATION && sensors[1].fallingEdge) {
-      turbo_mode = false; digitalWrite(LED_BUILTIN_RX, HIGH); digitalWrite(LED_BUILTIN_TX, HIGH);
-    }
+      digitalWrite(LED_BUILTIN_RX, HIGH); digitalWrite(LED_BUILTIN_TX, HIGH);
+    } // TODO arreglar
     // LEFT BUTTON TOUCHED: PAN ACTIVATED
     pan_mode = (sensors[0].isTouched && !sensors[1].isTouched && control_mode == NAVIGATION && !change_mode);
 
