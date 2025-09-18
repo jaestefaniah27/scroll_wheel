@@ -223,7 +223,7 @@ bool magnetPresent() {
         return status & 0x20;  // MD bit, detects presence of magnet// -----------------------------------------------------------------------------
 // Variables for sample accumulation
 // -----------------------------------------------------------------------------
-static long    sumAngle   = 0;
+static int64_t sumAngle   = 0;
 static uint8_t sampleCount = 0;
 static float   prevMean    = 0.0f;
     }
@@ -255,11 +255,11 @@ uint16_t readRawAngle() {
 
 // Track incremental and absolute position
 static uint16_t lastRawAngle = 0;
-static int16_t  lastAccumPos = 0;
+static int64_t  accumPos = 0;
 // -----------------------------------------------------------------------------
 // Variables for sample accumulation
 // -----------------------------------------------------------------------------
-static long    sumAngle   = 0;
+static int64_t sumAngle   = 0;
 static uint8_t sampleCount = 0;
 static float   prevMean    = 0.0f;
 
@@ -272,19 +272,18 @@ int16_t readDeltaAngle() {
     return diff;
 }
 
-int16_t readAccumulatedAngle() {
-    int16_t acc = lastAccumPos - readDeltaAngle();
-    lastAccumPos = acc;
-    return acc;
+int64_t readAccumulatedAngle() {
+    accumPos += (int64_t)readDeltaAngle();
+    return accumPos;
 }
+
 
 // Re-center position tracking to the current raw angle
 void centerPosition() {
-    uint16_t raw = readRawAngle();
-    lastRawAngle   = raw;
-    lastAccumPos   = 0;
-    // prevMean       = (float)raw;
+    lastRawAngle = readRawAngle(); // referencia del delta
+    accumPos     = 0;              // acumulado relativo a 0
 }
+
 
 // Timing
 static unsigned long lastSampleTime = 0UL;
@@ -327,8 +326,8 @@ void setup() {
       digitalWrite(LED_PIN_L, LOW);
     // Initialize magnetic encoder tracking
     lastRawAngle   = readRawAngle();
-    lastAccumPos   = readRawAngle();
-    centerPosition();
+    // lastAccumPos   = readRawAngle();
+    // centerPosition();
 
     Keyboard.begin();
     Consumer.begin();    // for media keys
@@ -347,7 +346,7 @@ void loop() {
   lastSampleTime += SAMPLE_INTERVAL_US;
 
   // Accumulate position samples
-  int16_t pos = readAccumulatedAngle();
+  int64_t pos = readAccumulatedAngle();
   sumAngle += pos;
   ++sampleCount;
 
@@ -517,15 +516,6 @@ void loop() {
     
     default:
       break;
-    }
-
-
-    // Re-center if accumulated position drifts beyond four full rotations
-    if (abs(pos) > 4095 * 2) {
-      int32_t base = pos;      // lo que se va a “perder” al resetear
-      centerPosition(); // pos pasa a 0 internamente
-      prevMean -= base;        // corrige la referencia → sin salto
-      // (sumAngle = 0; sampleCount = 0;) // opcional, para empezar bloque limpio
     }
 
     // Reset accumulators
