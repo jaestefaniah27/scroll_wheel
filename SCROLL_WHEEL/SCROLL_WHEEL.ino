@@ -7,9 +7,6 @@
 #include <HID-Settings.h>
 // #include <Keyboard.h>
 
-// Consumer Page (0x0C) usages for Zoom
-#define CONSUMER_AC_ZOOM_IN   0x022E
-#define CONSUMER_AC_ZOOM_OUT  0x022F
 
 // I2C address and register for the AS5600 magnetic encoder
 #define AS5600_I2C_ADDR   0x36
@@ -288,16 +285,6 @@ void centerPosition() {
 // Timing
 static unsigned long lastSampleTime = 0UL;
 
-// Enviar N micropasos de zoom con pequeño espaciamiento
-inline void consumerZoomSteps(int steps) {
-  int dir = (steps >= 0) ? +1 : -1;
-  steps = abs(steps);
-  for (int i = 0; i < steps; ++i) {
-    Consumer.write(dir > 0 ? CONSUMER_AC_ZOOM_IN : CONSUMER_AC_ZOOM_OUT);
-    delay(3); // 2–6 ms da sensación más "fina"
-  }
-}
-
 
 // -----------------------------------------------------------------------------
 // Setup: initialize I2C, sensors, encoder, keyboard
@@ -358,66 +345,68 @@ void loop() {
 
     delta = constrain(delta, -32767, 32767);
 
-// Si se pulsa el boton derecho de manera corta, se togglea el modo PAN. 
-// Si se pulsa el botón derecho de manera continuada, se activa modo ZOOM mientras se suelte el botón.
-// Si se pulsa el botón izquierdo de manera corta, se togglea el modo VOLUME.
-// Si se pulsa el botón izquierdo de manera continuada, se activa modo SELECT hasta que se suelte el botón.
+    // Si se pulsa el boton derecho de manera corta, se togglea el modo PAN. 
+    // Si se pulsa el botón derecho de manera continuada, se activa modo ZOOM mientras se suelte el botón.
+    // Si se pulsa el botón izquierdo de manera corta, se togglea el modo VOLUME.
+    // Si se pulsa el botón izquierdo de manera continuada, se activa modo SELECT hasta que se suelte el botón.
 
-// Para distinguir entre pulsación corta y continuada, se checkea una vez, y después se espera DELAY_THRESHOLD_MS para ver si sigue pulsado o no.
-// Si se dejó de pulsar, se activa la acción de pulsación corta.
-// Si sigue pulsado, se activa la acción de pulsación larga.
-    static unsigned long lastButtonRPressTime = 0;
-    static bool buttonRWasPressed = false;
-    if (digitalRead(BUTTON_PIN_R) == LOW) {
-      if (!buttonRWasPressed) {
-        buttonRWasPressed = true;
-        lastButtonRPressTime = millis();
-} else {
-        if (millis() - lastButtonRPressTime > DELAY_THRESHOLD_MS) {
-          // Acción de pulsación larga
-          if (wheel_mode != ZOOM) {
-            wheel_mode = ZOOM;
-            digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-            delay(130);
-            Keyboard.press(KEY_LEFT_CTRL);
-            delay(10);
-            digitalWrite(VIBRATION_MOTOR_PIN, LOW);
+    // Para distinguir entre pulsación corta y continuada, se checkea una vez, y después se espera DELAY_THRESHOLD_MS para ver si sigue pulsado o no.
+    // Si se dejó de pulsar, se activa la acción de pulsación corta.
+    // Si sigue pulsado, se activa la acción de pulsación larga.
+      static unsigned long lastButtonRPressTime = 0;
+      static bool buttonRWasPressed = false;
+      if (digitalRead(BUTTON_PIN_R) == LOW) {
+        if (!buttonRWasPressed) {
+          buttonRWasPressed = true;
+          lastButtonRPressTime = millis();
+        } else {
+          if (millis() - lastButtonRPressTime > DELAY_THRESHOLD_MS) {
+            // Acción de pulsación larga
+            if (wheel_mode != ZOOM) {
+              wheel_mode = ZOOM;
+              digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
+              delay(130);
+              Keyboard.press(KEY_LEFT_CTRL);
+              delay(10);
+              digitalWrite(VIBRATION_MOTOR_PIN, LOW);
+            }
+          }
+        }
+      } else {
+        if (buttonRWasPressed) {
+          buttonRWasPressed = false;
+          if (millis() - lastButtonRPressTime <= DELAY_THRESHOLD_MS) {
+            // Acción de pulsación corta
+            if (wheel_mode != PAN) {
+              wheel_mode = PAN;
+              digitalWrite(LED_PIN_R, HIGH);
+              digitalWrite(LED_PIN_L, LOW);
+              digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
+              delay(140);
+              digitalWrite(VIBRATION_MOTOR_PIN, LOW);
+              delay(500);
+            } else {
+              wheel_mode = SCROLL;
+              digitalWrite(LED_PIN_R, LOW);
+              digitalWrite(LED_PIN_L, LOW);
+              digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
+              delay(140);
+              digitalWrite(VIBRATION_MOTOR_PIN, LOW);
+              delay(500);
+            }
+          } else if (wheel_mode == ZOOM) {
+              // se suelta el botón
+              wheel_mode = SCROLL;
+              Keyboard.release(KEY_LEFT_CTRL);
+              digitalWrite(LED_PIN_R, LOW);
+              digitalWrite(LED_PIN_L, LOW);
+              digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
+              delay(140);
+              digitalWrite(VIBRATION_MOTOR_PIN, LOW);
+              delay(500);
           }
         }
       }
-    } else {
-      if (buttonRWasPressed) {
-        buttonRWasPressed = false;
-        if (millis() - lastButtonRPressTime <= DELAY_THRESHOLD_MS) {
-          // Acción de pulsación corta
-          if (wheel_mode != PAN) {
-            wheel_mode = PAN;
-            digitalWrite(LED_PIN_R, HIGH);
-            digitalWrite(LED_PIN_L, LOW);
-            digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-            delay(140);
-            digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-          } else {
-            wheel_mode = SCROLL;
-            digitalWrite(LED_PIN_R, LOW);
-            digitalWrite(LED_PIN_L, LOW);
-            digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-            delay(140);
-            digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-          }
-        } else if (wheel_mode == ZOOM) {
-            // se suelta el botón
-            wheel_mode = SCROLL;
-            Keyboard.release(KEY_LEFT_CTRL);
-            digitalWrite(LED_PIN_R, LOW);
-            digitalWrite(LED_PIN_L, LOW);
-            digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-            delay(140);
-            digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-            delay(500);
-        }
-      }
-    }
                                                                                                                                                               
     static unsigned long lastButtonLPressTime = 0;
     static bool buttonLWasPressed = false;
@@ -513,7 +502,6 @@ void loop() {
         toggle_up_down = !toggle_up_down;
       }
       break;
-    
     default:
       break;
     }
