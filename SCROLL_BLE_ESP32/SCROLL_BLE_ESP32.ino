@@ -205,13 +205,13 @@ bool magnetPresent() {
     Wire.endTransmission();
     Wire.requestFrom(AS5600_I2C_ADDR, (uint8_t)1);
     if (Wire.available()) {
-        uint8_t status = Wire.read();
-        return status & 0x20;  // MD bit, detects presence of magnet// -----------------------------------------------------------------------------
-// Variables for sample accumulation
-// -----------------------------------------------------------------------------
-static int64_t sumAngle   = 0;
-static uint8_t sampleCount = 0;
-static float   prevMean    = 0.0f;
+      uint8_t status = Wire.read();
+      return status & 0x20;  // MD bit, detects presence of magnet// -----------------------------------------------------------------------------
+      // Variables for sample accumulation
+      // -----------------------------------------------------------------------------
+      static int64_t sumAngle   = 0;
+      static uint8_t sampleCount = 0;
+      static float   prevMean    = 0.0f;
     }
     return false;
 }
@@ -281,7 +281,7 @@ void setup() {
   Wire.begin();
   // Initialize magnetic encoder tracking
   lastRawAngle   = readRawAngle();
-
+  
 }
 
 void loop() {
