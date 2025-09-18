@@ -282,8 +282,8 @@ int16_t readAccumulatedAngle() {
 void centerPosition() {
     uint16_t raw = readRawAngle();
     lastRawAngle   = raw;
-    lastAccumPos   = raw;
-    prevMean       = (float)raw;
+    lastAccumPos   = 0;
+    // prevMean       = (float)raw;
 }
 
 // Timing
@@ -522,7 +522,10 @@ void loop() {
 
     // Re-center if accumulated position drifts beyond four full rotations
     if (abs(pos) > 4095 * 2) {
-        centerPosition();
+      int32_t base = pos;      // lo que se va a “perder” al resetear
+      centerPosition(); // pos pasa a 0 internamente
+      prevMean -= base;        // corrige la referencia → sin salto
+      // (sumAngle = 0; sampleCount = 0;) // opcional, para empezar bloque limpio
     }
 
     // Reset accumulators
