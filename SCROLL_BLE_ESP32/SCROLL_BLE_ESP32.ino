@@ -113,17 +113,17 @@ void setupHID() {
   NimBLEDevice::init(BLE_DEVICE_NAME);
   NimBLEServer* server = NimBLEDevice::createServer();
 
-  auto* hidDev = new NimBLEHIDDevice(server);
-  hid = hidDev;
-  hid->manufacturer()->setValue("jorgerente");
-  hid->pnp(0x02, VID, PID, VERSION);
-  hid->hidInfo(0x00, 0x01); // sin remote wake
+  hid = new NimBLEHIDDevice(server);
 
-  hid->reportMap((uint8_t*)REPORT_MAP, sizeof(REPORT_MAP));
+  // ✅ API correcta para 2.3.x:
+  hid->setManufacturer("jorgerente");          // antes intentabas manufacturer()->setValue(...)
+  hid->setPnp(0x02, VID, PID, VERSION);        // antes pnp(...)
+  hid->setHidInfo(0x00, 0x01);
+  hid->setReportMap((uint8_t*)REPORT_MAP, sizeof(REPORT_MAP));
 
-  // Report ID 1 mapeado a características:
-  inputReport   = hid->inputReport(1);
-  featureReport = hid->featureReport(1);
+  // ✅ Obtener características por Report ID
+  inputReport   = hid->getInputReport(1);
+  featureReport = hid->getFeatureReport(1);
 
   static FeatureCB featCB;
   featureReport->setCallbacks(&featCB);
@@ -131,9 +131,10 @@ void setupHID() {
 
   hid->startServices();
 
+  // ✅ Anunciar el servicio HID
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->setAppearance(HID_MOUSE);
-  adv->addServiceUUID(hid->hidService()->getUUID());
+  adv->addServiceUUID(hid->getHidService()->getUUID());
   adv->start();
 }
 
@@ -150,8 +151,11 @@ void loop() {
     t0 = millis();
 
     // rueda vertical 16-bit: envía ±n (prueba con valores pequeños para ver suavidad)
-    int16_t step = (up ? +4 : -4);   // prueba +1/-1, +4/-4, +16/-16...
-    sendReport(0, 0, 0, step, 0);
+    int16_t step = (up ? +1 : -1);   // prueba +1/-1, +4/-4, +16/-16...
+    for (int i = 0; i < 20; i++){
+      sendReport(0, 0, 0, step, 0);
+      delay(13);
+    }
     up = !up;
   }
 
