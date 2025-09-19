@@ -25,12 +25,101 @@
 
 // Dividers
 constexpr int              VOL_TICK_DIVIDER  = 32;               // 
+constexpr int              ZOOM_TICK_DIVIDER  = 5;               // 
+
 static float volAccumulator = 0.0f;
 
 
 // Sampling parameters for AS5600
 constexpr unsigned long SAMPLE_INTERVAL_US   = 1000000UL / 1200;  // ~833 µs → 1200 Hz
 constexpr uint8_t          SAMPLES_PER_BLOCK = 10;               // 10 samples → 120 Hz
+
+
+// ---------------------------------------------------
+// ------- BUTTONS FSM AND DEFINES -------------------
+// ---------------------------------------------------
+// ---------- Botonera robusta: antirrebote + corto/largo (al soltar) ----------
+constexpr uint16_t DEBOUNCE_MS    = 25;   // antirrebote
+constexpr uint16_t LONG_PRESS_MS  = 300;  // umbral de pulsación larga (al soltar)
+
+enum class ButtonEvent : uint8_t {
+  NONE = 0,
+  R_SHORT, R_LONG,
+  L_SHORT, L_LONG
+};
+
+struct ButtonFSM {
+  uint8_t pin;
+  bool activeLow;
+
+  bool stableLevel;
+  bool lastReadLevel;
+  unsigned long lastChangeMs;
+  bool pressed;
+  unsigned long pressStartMs;
+  bool longNotified;          // <--- NUEVO: ya avisó de larga en esta pulsación
+
+  void begin(uint8_t _pin, bool _activeLow=true) {
+    pin = _pin; activeLow = _activeLow;
+    pinMode(pin, activeLow ? INPUT_PULLUP : INPUT);
+    lastReadLevel = digitalRead(pin);
+    stableLevel   = lastReadLevel;
+    lastChangeMs  = millis();
+    pressed       = false;
+    pressStartMs  = 0;
+    longNotified  = false;     // <--- init
+  }
+
+  bool logicalPressed(bool level) const {
+    return activeLow ? (level == LOW) : (level == HIGH);
+  }
+
+  // Devuelve:
+  // 0=nada, 1=SHORT (al soltar), 2=LONG (al soltar), 3=LONG_HIT (se alcanzó el umbral mientras se mantiene)
+  uint8_t poll() {
+    bool raw = digitalRead(pin);
+    unsigned long now = millis();
+
+    if (raw != lastReadLevel) {
+      lastReadLevel = raw;
+      lastChangeMs  = now;
+    }
+
+    if ((now - lastChangeMs) >= DEBOUNCE_MS && stableLevel != lastReadLevel) {
+      stableLevel = lastReadLevel;
+
+      bool isPressed = logicalPressed(stableLevel);
+
+      if (isPressed && !pressed) {
+        pressed = true;
+        pressStartMs = now;
+        longNotified = false;         // <--- reinicia el aviso
+      } else if (!isPressed && pressed) {
+        pressed = false;
+        uint32_t held = now - pressStartMs;
+        // reinicia el aviso para la próxima pulsación
+        bool wasLong = (held >= LONG_PRESS_MS);
+        longNotified = false;
+        return wasLong ? 2 : 1;       // LONG o SHORT al soltar
+      }
+    }
+
+    // Si está pulsado y aún no hemos avisado, comprobar umbral
+    if (pressed && !longNotified) {
+      uint32_t held = now - pressStartMs;
+      if (held >= LONG_PRESS_MS) {
+        longNotified = true;
+        return 3;                     // LONG_HIT: vibrar ya
+      }
+    }
+
+    return 0;
+  }
+};
+
+// Instancias de los dos botones
+ButtonFSM btnR, btnL;
+
 
 // MODES
 typedef enum {
@@ -285,6 +374,178 @@ void centerPosition() {
 // Timing
 static unsigned long lastSampleTime = 0UL;
 
+inline void hapticPulse(uint16_t ms=140) {
+  digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
+  delay(ms);
+  digitalWrite(VIBRATION_MOTOR_PIN, LOW);
+}
+
+void setLedsForMode(WHEEL_MODE m) {
+  // Ajusta LEDs como en tu lógica actual
+  switch (m) {
+    case PAN:    digitalWrite(LED_PIN_R, HIGH); digitalWrite(LED_PIN_L, LOW);  break;
+    case ZOOM:   digitalWrite(LED_PIN_R, HIGH); digitalWrite(LED_PIN_L, HIGH); break;
+    case VOLUME: digitalWrite(LED_PIN_R, LOW);  digitalWrite(LED_PIN_L, HIGH); break;
+    case SELECT: digitalWrite(LED_PIN_R, LOW);  digitalWrite(LED_PIN_L, HIGH); break;
+    case SCROLL:
+    default:     digitalWrite(LED_PIN_R, LOW);  digitalWrite(LED_PIN_L, LOW);  break;
+  }
+}
+
+// Cambia el estado segun el evento de botón
+void changeMode(ButtonEvent ev) {
+  WHEEL_MODE prev = wheel_mode;
+
+  switch (ev) {
+    case ButtonEvent::R_SHORT: // PAN <-> SCROLL
+      wheel_mode = (wheel_mode != PAN) ? PAN : SCROLL;
+      break;
+
+    case ButtonEvent::R_LONG:  // ZOOM <-> SCROLL
+      wheel_mode = (wheel_mode != ZOOM) ? ZOOM : SCROLL;
+      if (wheel_mode == ZOOM) Keyboard.press(KEY_LEFT_CTRL);
+      break;
+
+    case ButtonEvent::L_SHORT: // SELECT <-> SCROLL
+      wheel_mode = (wheel_mode != SELECT) ? SELECT : SCROLL;
+      if (wheel_mode == SELECT) Mouse.press(MOUSE_LEFT);
+      break;
+
+    case ButtonEvent::L_LONG:  // VOLUME <-> SCROLL
+      wheel_mode = (wheel_mode != VOLUME) ? VOLUME : SCROLL;
+      break;
+
+    default:
+      return; // nada
+  }
+
+  if (wheel_mode != prev) {
+    setLedsForMode(wheel_mode);
+    hapticPulse(140);
+    // Si cambiaste antes el comportamiento del ratón en SELECT/ZOOM “mientras se mantiene”,
+    // ya NO hace falta presionar mientras: el cambio ocurre al soltar (evento largo).
+    // Si necesitas soltar botones de mouse al salir de SELECT, hazlo aquí:
+    if (prev == SELECT && wheel_mode != SELECT) {
+      Mouse.release(MOUSE_LEFT);
+    }
+    if (prev == ZOOM && wheel_mode != ZOOM) {
+      Keyboard.release(KEY_LEFT_CTRL);
+    }
+  }
+}
+
+// Procesa el delta de la rueda según el modo actual
+static inline void handleWheelDelta(int delta) {
+  switch (wheel_mode) {
+    case SCROLL:
+      if (delta != 0) {
+        ScrollWheel.sendReport(0, 0, 0, delta, 0);
+      }
+      break;
+
+    case VOLUME:
+      if (delta != 0) {
+        volAccumulator += delta;
+        while (volAccumulator >= VOL_TICK_DIVIDER) {
+          Consumer.write(MEDIA_VOLUME_DOWN);
+          volAccumulator -= VOL_TICK_DIVIDER;
+          delay(1);
+        }
+        while (volAccumulator <= -VOL_TICK_DIVIDER) {
+          Consumer.write(MEDIA_VOLUME_UP);
+          volAccumulator += VOL_TICK_DIVIDER;
+          delay(1);
+        }
+      }
+      break;
+
+    case PAN:
+      if (delta != 0) {
+        ScrollWheel.sendReport(0, 0, 0, 0, delta);
+      }
+      break;
+
+    case ZOOM:
+      if (delta != 0) {
+        float zoom = delta / (float)ZOOM_TICK_DIVIDER;
+        ScrollWheel.sendReport(0, 0, 0, -zoom, 0);
+      }
+      break;
+
+    case SELECT: {
+      static bool toggle_up_down = false; // persiste entre llamadas
+      if (delta != 0) {
+        ScrollWheel.sendReport(0, 0, toggle_up_down ? 5 : -5, delta, 0);
+        toggle_up_down = !toggle_up_down;
+      }
+    } break;
+
+    default:
+      break;
+  }
+}
+
+constexpr uint8_t VIB_PIN = VIBRATION_MOTOR_PIN;
+constexpr uint16_t LONG_HIT_PULSE_MS = 80;
+
+struct Haptic {
+  bool active = false;
+  unsigned long offAt = 0;
+  void start(uint16_t ms){ digitalWrite(VIB_PIN, HIGH); active=true; offAt=millis()+ms; }
+  void update(){ if (active && (long)(millis()-offAt) >= 0) { digitalWrite(VIB_PIN, LOW); active=false; } }
+} haptic;
+
+inline void startHaptic(uint16_t ms){ haptic.start(ms); }
+inline void updateHaptics(){ haptic.update(); }
+
+static inline void pollButtonsAndFeedback() {
+  uint8_t r = btnR.poll();
+  if      (r == 3) startHaptic(LONG_HIT_PULSE_MS);    // feedback temprano
+  else if (r == 1) changeMode(ButtonEvent::R_SHORT);
+  else if (r == 2) changeMode(ButtonEvent::R_LONG);
+
+  uint8_t l = btnL.poll();
+  if      (l == 3) startHaptic(LONG_HIT_PULSE_MS);
+  else if (l == 1) changeMode(ButtonEvent::L_SHORT);
+  else if (l == 2) changeMode(ButtonEvent::L_LONG);
+}
+
+
+
+// Devuelve true si hay un delta listo; lo entrega en delta_out (constrain -32767..32767)
+static inline bool sampleBlockAndGetDelta(int16_t &delta_out) {
+  unsigned long now = micros();
+
+  // Muestrea solo al ritmo fijado y si hay imán
+  if ((now - lastSampleTime) < SAMPLE_INTERVAL_US || !magnetPresent()) {
+    return false;
+  }
+  lastSampleTime += SAMPLE_INTERVAL_US;
+
+  // Acumular posición
+  int64_t pos = readAccumulatedAngle();
+  sumAngle += pos;
+  ++sampleCount;
+
+  if (sampleCount < SAMPLES_PER_BLOCK) {
+    return false; // aún no hay bloque completo
+  }
+
+  // Bloque completo: calcular media y delta respecto al bloque previo
+  float mean  = float(sumAngle) / SAMPLES_PER_BLOCK;
+  float delta = mean - prevMean;
+  prevMean    = mean;
+
+  // Reiniciar acumuladores para el siguiente bloque
+  sumAngle = 0;
+  sampleCount = 0;
+
+  // Limitar y devolver
+  delta = constrain(delta, -32767, 32767);
+  delta_out = (int16_t)delta;
+  return true;
+}
+
 
 // -----------------------------------------------------------------------------
 // Setup: initialize I2C, sensors, encoder, keyboard
@@ -294,8 +555,11 @@ void setup() {
 
     Wire.begin();
     
-    pinMode(BUTTON_PIN_R, INPUT_PULLUP);
-    pinMode(BUTTON_PIN_L, INPUT_PULLUP);
+    // pinMode(BUTTON_PIN_R, INPUT_PULLUP);
+    // pinMode(BUTTON_PIN_L, INPUT_PULLUP);
+    btnR.begin(BUTTON_PIN_R, /*activeLow=*/true);
+    btnL.begin(BUTTON_PIN_L, /*activeLow=*/true);
+
     pinMode(LED_PIN_R, OUTPUT);
     pinMode(LED_PIN_L, OUTPUT);
     pinMode(VIBRATION_MOTOR_PIN, OUTPUT);
@@ -320,194 +584,19 @@ void setup() {
     Consumer.begin();    // for media keys
 }
 
+
+
 // -----------------------------------------------------------------------------
 // Main loop: sample encoder, handle touch-triggered keyboard/mouse events
 // -----------------------------------------------------------------------------
 void loop() {
-  unsigned long now = micros();
-  // digitalWrite(LED_BUILTIN_TX, HIGH);
-  // Sample at defined interval and only if magnet is present
-  if ((now - lastSampleTime) < SAMPLE_INTERVAL_US || !magnetPresent()) {
-      return;
-  }
-  lastSampleTime += SAMPLE_INTERVAL_US;
-
-  // Accumulate position samples
-  int64_t pos = readAccumulatedAngle();
-  sumAngle += pos;
-  ++sampleCount;
-
-  if (sampleCount >= SAMPLES_PER_BLOCK) {
-    // Compute mean and difference from previous block
-    float mean = float(sumAngle) / SAMPLES_PER_BLOCK;
-    float delta = mean - prevMean;
-    prevMean = mean;
-
-    delta = constrain(delta, -32767, 32767);
-
-    // Si se pulsa el boton derecho de manera corta, se togglea el modo PAN. 
-    // Si se pulsa el botón derecho de manera continuada, se activa modo ZOOM mientras se suelte el botón.
-    // Si se pulsa el botón izquierdo de manera corta, se togglea el modo VOLUME.
-    // Si se pulsa el botón izquierdo de manera continuada, se activa modo SELECT hasta que se suelte el botón.
-
-    // Para distinguir entre pulsación corta y continuada, se checkea una vez, y después se espera DELAY_THRESHOLD_MS para ver si sigue pulsado o no.
-    // Si se dejó de pulsar, se activa la acción de pulsación corta.
-    // Si sigue pulsado, se activa la acción de pulsación larga.
-      static unsigned long lastButtonRPressTime = 0;
-      static bool buttonRWasPressed = false;
-      if (digitalRead(BUTTON_PIN_R) == LOW) {
-        if (!buttonRWasPressed) {
-          buttonRWasPressed = true;
-          lastButtonRPressTime = millis();
-        } else {
-          if (millis() - lastButtonRPressTime > DELAY_THRESHOLD_MS) {
-            // Acción de pulsación larga
-            if (wheel_mode != ZOOM) {
-              wheel_mode = ZOOM;
-              digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-              delay(130);
-              Keyboard.press(KEY_LEFT_CTRL);
-              delay(10);
-              digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-            }
-          }
-        }
-      } else {
-        if (buttonRWasPressed) {
-          buttonRWasPressed = false;
-          if (millis() - lastButtonRPressTime <= DELAY_THRESHOLD_MS) {
-            // Acción de pulsación corta
-            if (wheel_mode != PAN) {
-              wheel_mode = PAN;
-              digitalWrite(LED_PIN_R, HIGH);
-              digitalWrite(LED_PIN_L, LOW);
-              digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-              delay(140);
-              digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-              delay(500);
-            } else {
-              wheel_mode = SCROLL;
-              digitalWrite(LED_PIN_R, LOW);
-              digitalWrite(LED_PIN_L, LOW);
-              digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-              delay(140);
-              digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-              delay(500);
-            }
-          } else if (wheel_mode == ZOOM) {
-              // se suelta el botón
-              wheel_mode = SCROLL;
-              Keyboard.release(KEY_LEFT_CTRL);
-              digitalWrite(LED_PIN_R, LOW);
-              digitalWrite(LED_PIN_L, LOW);
-              digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-              delay(140);
-              digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-              delay(500);
-          }
-        }
-      }
-                                                                                                                                                              
-    static unsigned long lastButtonLPressTime = 0;
-    static bool buttonLWasPressed = false;
-    if (digitalRead(BUTTON_PIN_L) == LOW) {
-      if (!buttonLWasPressed) {
-        buttonLWasPressed = true;
-        lastButtonLPressTime = millis();
-      } else {
-        if (millis() - lastButtonLPressTime > DELAY_THRESHOLD_MS) {
-          // Acción de pulsación larga
-          if (wheel_mode != SELECT) {
-            wheel_mode = SELECT;
-            // pulsar botón izquierdo del ratón
-            Mouse.press(MOUSE_LEFT);
-            digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-            delay(140);
-            digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-          }
-        }
-      }
-    } else {
-      if (buttonLWasPressed) {
-        buttonLWasPressed = false;
-        if (millis() - lastButtonLPressTime <= DELAY_THRESHOLD_MS) {
-          // Acción de pulsación corta
-          if (wheel_mode != VOLUME) {
-            wheel_mode = VOLUME;
-            digitalWrite(LED_PIN_L, HIGH);
-            digitalWrite(LED_PIN_R, LOW);
-            digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-            delay(140);
-            digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-          } else {
-            wheel_mode = SCROLL;
-            digitalWrite(LED_PIN_L, LOW);
-            digitalWrite(LED_PIN_R, LOW);
-            digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-            delay(140);
-            digitalWrite(VIBRATION_MOTOR_PIN, LOW);
-          }
-        } else if (wheel_mode == SELECT) {
-          // soltar botón izquierdo del ratón
-          wheel_mode = SCROLL;
-          Mouse.release(MOUSE_LEFT);
-          digitalWrite(VIBRATION_MOTOR_PIN, HIGH);
-          delay(140);
-          digitalWrite(VIBRATION_MOTOR_PIN, LOW);   
-          delay(500);       
-        }
-      }
-    }
-
-    // Handle the delta according to the current mode
-    switch (wheel_mode)
-    {
-    case SCROLL:
-      // Handle scroll
-      if (delta != 0) {
-          ScrollWheel.sendReport(0, 0, 0, -delta, 0);
-      }
-      break;
-    case VOLUME:
-      // Handle volume
-      volAccumulator += delta;
-      while (volAccumulator >= VOL_TICK_DIVIDER) {
-          Consumer.write(MEDIA_VOLUME_DOWN);
-          volAccumulator -= VOL_TICK_DIVIDER;
-          delay(1);
-      }
-      while (volAccumulator <= -VOL_TICK_DIVIDER) {
-          Consumer.write(MEDIA_VOLUME_UP);
-          volAccumulator += VOL_TICK_DIVIDER;
-          delay(1);
-      }
-      break;
-    case PAN:
-      // Handle pan
-            if (delta != 0) {
-          ScrollWheel.sendReport(0, 0, 0, 0, delta);
-      }
-    break;
-    case ZOOM:
-      // Handle zoom
-      if (delta != 0) {
-          ScrollWheel.sendReport(0, 0, 0, -delta, 0);
-      }
-      break;
-    case SELECT:
-      // Handle select
-      static bool toggle_up_down = false;
-      if (delta != 0) {
-        ScrollWheel.sendReport(0, 0, toggle_up_down ? 5 : -5, -delta, 0);
-        toggle_up_down = !toggle_up_down;
-      }
-      break;
-    default:
-      break;
-    }
-
-    // Reset accumulators
-    sumAngle    = 0;
-    sampleCount = 0;
+  // 1) Entrada de usuario y feedback: SIEMPRE
+  pollButtonsAndFeedback();   // btnR/btnL.poll + LONG_HIT -> startHaptic(...)
+  updateHaptics();            // motor háptico sin bloquear
+  
+  // 2) Sensado y salida: SOLO cuando haya bloque completo
+  int16_t deltaTicks;
+  if (sampleBlockAndGetDelta(deltaTicks)) {
+    handleWheelDelta(deltaTicks);
   }
 }
