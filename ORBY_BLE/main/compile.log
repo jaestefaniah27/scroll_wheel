@@ -1,9 +1,9 @@
-Sketch uses 624142 bytes (47%) of program storage space. Maximum is 1310720 bytes.
-Global variables use 36564 bytes (11%) of dynamic memory, leaving 291116 bytes for local variables. Maximum is 327680 bytes.
+Sketch uses 624670 bytes (47%) of program storage space. Maximum is 1310720 bytes.
+Global variables use 36580 bytes (11%) of dynamic memory, leaving 291100 bytes for local variables. Maximum is 327680 bytes.
 
 [92mUsed library[0m   [92mVersion[0m [90mPath[0m                                                                      
-[93mNimBLE-Arduino[0m 2.3.0   [90m/home/ubuntu/Arduino/libraries/NimBLE-Arduino[0m                             
 [93mWire[0m           3.2.0   [90m/home/ubuntu/.arduino15/packages/esp32/hardware/esp32/3.2.0/libraries/Wire[0m
+[93mNimBLE-Arduino[0m 2.3.0   [90m/home/ubuntu/Arduino/libraries/NimBLE-Arduino[0m                             
 
 [92mUsed platform[0m [92mVersion[0m [90mPath[0m                                                       
 [93mesp32:esp32[0m   3.2.0   [90m/home/ubuntu/.arduino15/packages/esp32/hardware/esp32/3.2.0[0m

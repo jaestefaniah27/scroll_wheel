@@ -8,6 +8,10 @@ static NimBLEHIDDevice* hid;
 static NimBLECharacteristic* inputReport;     // Report ID 1 (Mouse Input)
 static NimBLECharacteristic* featureReport;   // Report ID 1 (Feature: Resolution Multiplier)
 static NimBLECharacteristic* inputReportCC;   // Report ID 2 (Consumer Control Input)
+static NimBLECharacteristic* inputReportKB;    // Report ID 3 (Keyboard Input)
+static NimBLECharacteristic* outputReportKB;   // Report ID 3 (Keyboard LEDs Output)
+static uint8_t kbReport[8] = {0};              // [mods,res, k0..k5]
+static uint8_t kbLEDs = 0;                     // bits: Num(0), Caps(1), Scroll(2), Compose(3), Kana(4)
 
 static uint8_t resolutionMultiplier = 1;      // 0 o 1 (por tu descriptor, 2 bits útiles)
 
@@ -81,7 +85,7 @@ static const uint8_t REPORT_MAP[] = {
 
       0xC0,  // END_COLLECTION (Physical)
     0xC0,    // END_COLLECTION (Logical)
-  0xC0,       // END_COLLECTION (Application)
+  0xC0,      // END_COLLECTION (Application)
 
     // ===== Consumer Control (Report ID 2) =====
     0x05, 0x0C,        // USAGE_PAGE (Consumer)
@@ -95,8 +99,51 @@ static const uint8_t REPORT_MAP[] = {
     0x75, 0x10,            //   REPORT_SIZE (16)
     0x95, 0x01,            //   REPORT_COUNT (1)
     0x81, 0x00,            //   INPUT (Data,Array,Abs)
-  0xC0
+  0xC0    ,               // END_COLLECTION   
+  // ===== Keyboard (Report ID 3) =====
+  0x05, 0x01,        // USAGE_PAGE (Generic Desktop)
+  0x09, 0x06,        // USAGE (Keyboard)
+  0xA1, 0x01,        // COLLECTION (Application)
+    0x85, 0x03,      //   REPORT_ID (3)
 
+    // Modifiers (8 bits)
+    0x05, 0x07,            //   USAGE_PAGE (Keyboard/Keypad)
+    0x19, 0xE0,            //   USAGE_MINIMUM (Keyboard LeftControl)
+    0x29, 0xE7,            //   USAGE_MAXIMUM (Keyboard Right GUI)
+    0x15, 0x00,            //   LOGICAL_MINIMUM (0)
+    0x25, 0x01,            //   LOGICAL_MAXIMUM (1)
+    0x75, 0x01,            //   REPORT_SIZE (1)
+    0x95, 0x08,            //   REPORT_COUNT (8)
+    0x81, 0x02,            //   INPUT (Data,Var,Abs)
+
+    // Reservado (1 byte)
+    0x95, 0x01,            //   REPORT_COUNT (1)
+    0x75, 0x08,            //   REPORT_SIZE (8)
+    0x81, 0x03,            //   INPUT (Const,Var,Abs)
+
+    // 6 keycodes (Array, 6 bytes)
+    0x95, 0x06,            //   REPORT_COUNT (6)
+    0x75, 0x08,            //   REPORT_SIZE (8)
+    0x15, 0x00,            //   LOGICAL_MINIMUM (0)
+    0x25, 0x65,            //   LOGICAL_MAXIMUM (101)
+    0x05, 0x07,            //   USAGE_PAGE (Keyboard/Keypad)
+    0x19, 0x00,            //   USAGE_MINIMUM (0)
+    0x29, 0x65,            //   USAGE_MAXIMUM (101)
+    0x81, 0x00,            //   INPUT (Data,Array,Abs)
+
+    // LEDs (Num, Caps, Scroll, Compose, Kana)
+    0x95, 0x05,            //   REPORT_COUNT (5)
+    0x75, 0x01,            //   REPORT_SIZE (1)
+    0x05, 0x08,            //   USAGE_PAGE (LEDs)
+    0x19, 0x01,            //   USAGE_MINIMUM (Num Lock)
+    0x29, 0x05,            //   USAGE_MAXIMUM (Kana)
+    0x91, 0x02,            //   OUTPUT (Data,Var,Abs)
+
+    // Padding de LEDs (3 bits)
+    0x95, 0x01,            //   REPORT_COUNT (1)
+    0x75, 0x03,            //   REPORT_SIZE (3)
+    0x91, 0x03,            //   OUTPUT (Const,Var,Abs)
+  0xC0,               // END_COLLECTION
 };
 
 // ---------- Callbacks para Feature (Resolution Multiplier) ----------
@@ -145,6 +192,61 @@ void bleConsumerClick(uint16_t usage) {
   delay(1);
   bleConsumerRelease();
 }
+// ---------- Envío de reportes TECLADO (ID 3) : 8 bytes ----------
+// Envia el buffer actual de teclado (8 bytes)
+static inline void kbSendNow() {
+  if (!inputReportKB) return;
+  inputReportKB->setValue(kbReport, sizeof(kbReport));
+  inputReportKB->notify();
+}
+
+// Añade un keycode en el array (si hay hueco)
+static bool kbAddKey(uint8_t key) {
+  if (key == KEY_NONE) return true;
+  for (int i=2; i<8; ++i) {
+    if (kbReport[i] == key) return true;  // ya está
+  }
+  for (int i=2; i<8; ++i) {
+    if (kbReport[i] == 0) { kbReport[i] = key; return true; }
+  }
+  return false; // sin hueco (6KRO)
+}
+
+// Elimina un keycode del array
+static void kbDelKey(uint8_t key) {
+  if (key == KEY_NONE) return;
+  for (int i=2; i<8; ++i) {
+    if (kbReport[i] == key) { kbReport[i] = 0; break; }
+  }
+}
+
+// ===== API pública =====
+void bleKeyboardPress(uint8_t modifiers, uint8_t keycode) {
+  kbReport[0] |= modifiers;         // set mods
+  kbAddKey(keycode);                // añade key si hay hueco
+  kbSendNow();
+}
+
+void bleKeyboardRelease(uint8_t keycode) {
+  kbDelKey(keycode);
+  kbSendNow();
+}
+
+void bleKeyboardReleaseAll(void) {
+  memset(kbReport, 0, sizeof(kbReport));
+  kbSendNow();
+}
+
+void bleKeyboardWrite(uint8_t modifiers, uint8_t keycode) {
+  bleKeyboardPress(modifiers, keycode);
+  // pequeño gap para compatibilidad con algunos hosts
+  delay(5);
+  bleKeyboardRelease(keycode);
+  // si los modifiers se usan sólo para esta tecla, libéralos también
+  kbReport[0] &= ~modifiers;
+  kbSendNow();
+}
+
 
 // Antes de setupHID():
 class ConnCB : public NimBLEServerCallbacks {
@@ -188,6 +290,10 @@ void setupHIDble() {
   hid->setPnp(0x02, VID, PID, VERSION);
   hid->setHidInfo(0x00, 0x01);              // sin remote wake
   hid->setReportMap((uint8_t*)REPORT_MAP, sizeof(REPORT_MAP));
+
+  inputReportKB  = hid->getInputReport(3);   // (o getInputReport(3) según tu NimBLE)
+  outputReportKB = hid->getOutputReport(3);  // LEDs
+
 
   // —— Características (Input/Feature) ——
   inputReport    = hid->getInputReport(1);  // Mouse

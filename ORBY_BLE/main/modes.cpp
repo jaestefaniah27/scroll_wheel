@@ -1,6 +1,7 @@
 #include "modes.h"
 #include "config.h"
 #include "haptics.h"
+#include "hid_ble.h"
 // (BLE) HID-Project no usado aquí   // Keyboard, Mouse
 
 namespace {
@@ -31,7 +32,7 @@ void changeMode(ButtonEvent ev) {
 
     case ButtonEvent::R_LONG:  // ZOOM <-> SCROLL  (Ctrl sticky mientras dure el modo)
       wheel_mode = (wheel_mode != WheelMode::ZOOM) ? WheelMode::ZOOM : WheelMode::SCROLL;
-      if (wheel_mode == WheelMode::ZOOM) // Keyboard.press (omitido en BLE)(KEY_LEFT_CTRL);
+      if (wheel_mode == WheelMode::ZOOM) bleKeyboardPress(KEY_MOD_LCTRL, KEY_NONE); // Keyboard.press (omitido en BLE)(KEY_LEFT_CTRL);
       break;
 
     case ButtonEvent::L_SHORT: // SELECT <-> SCROLL
@@ -52,9 +53,11 @@ void changeMode(ButtonEvent ev) {
 
     if (prev == WheelMode::SELECT && wheel_mode != WheelMode::SELECT) {
       // Mouse.release(MOUSE_LEFT);
+      bleKeyboardReleaseAll();
     }
     if (prev == WheelMode::ZOOM && wheel_mode != WheelMode::ZOOM) {
       // Keyboard.release(KEY_LEFT_CTRL);
+      bleKeyboardReleaseAll();
     }
   }
 }
