@@ -1,5 +1,3 @@
-// main.ino — Orquestador mínimo
-
 #include "config.h"
 #include "events.h"
 #include "buttons.h"
