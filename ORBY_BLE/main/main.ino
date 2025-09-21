@@ -11,7 +11,7 @@
 #include "encoder_as5600.h"
 #include "modes.h"
 #include "wheel_output.h"
-#include "ble_adapter.h"  // para bleSendReport()
+#include "hid_ble.h"  // para bleSendReport()
 
 // ---------- Demo: alternar scroll arriba/abajo ----------
 void setup() {
@@ -37,11 +37,6 @@ void setup() {
     updateHaptics();
     delay(100);
   }
-  bleConsumerClick(CC_VOL_UP);
-  delay(500);
-  bleConsumerClick(CC_VOL_DOWN);
-  delay(500);
-  bleConsumerClick(CC_MUTE);
 }
 
 void loop() {
@@ -58,6 +53,5 @@ void loop() {
   if (sampleBlockAndGetDelta(deltaTicks)) {
     handleWheelDelta(deltaTicks);
   }
-
   
 }

@@ -1,7 +1,7 @@
 #include "wheel_output.h"
 #include "events.h"
 #include "config.h"
-#include "hid_scrollmouse.h"
+#include "hid_usb.h"
 #include "modes.h"
 #include <HID-Project.h>   // Consumer keys
 

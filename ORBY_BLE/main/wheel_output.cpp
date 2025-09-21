@@ -1,7 +1,7 @@
 #include "wheel_output.h"
 #include "events.h"
 #include "config.h"
-#include "ble_adapter.h"
+#include "hid_ble.h"
 #include "modes.h"
 // (BLE) HID-Project no usado aquí   // Consumer keys
 

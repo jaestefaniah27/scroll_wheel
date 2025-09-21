@@ -14,7 +14,7 @@ Bluetooth y usar exactamente la misma estructura modular.
 - `encoder_as5600.{h,cpp}` — Muestreo en bloque (AS5600 @ I2C).
 - `modes.{h,cpp}` — Cambio de modo + LEDs (sin teclado BLE).
 - `wheel_output.{h,cpp}` — Aplica deltas según modo y llama a `bleSendReport(...)`.
-- `ble_adapter.h` — **Puente**: declara `bleSendReport(...)` que debes implementar
+- `hid_ble.h` — **Puente**: declara `bleSendReport(...)` que debes implementar
   en tu `main.ino` BLE para redirigir al `sendReport(...)` que ya tienes.
 
 > Nota: se han **omitido** las llamadas a `Keyboard` y `Consumer` del USB para no
@@ -33,7 +33,7 @@ Bluetooth y usar exactamente la misma estructura modular.
 #include "encoder_as5600.h"
 #include "modes.h"
 #include "wheel_output.h"
-#include "ble_adapter.h"  // declara bleSendReport(...)
+#include "hid_ble.h"  // declara bleSendReport(...)
 ```
 
 2) **Implementa el puente** hacia tu `sendReport(...)` BLE existente **sin cambiarlo**:

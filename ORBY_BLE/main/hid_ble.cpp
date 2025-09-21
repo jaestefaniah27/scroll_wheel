@@ -1,4 +1,4 @@
-#include "ble_adapter.h"
+#include "hid_ble.h"
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
 #include <HIDTypes.h>
