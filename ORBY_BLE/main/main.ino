@@ -37,6 +37,11 @@ void setup() {
     updateHaptics();
     delay(100);
   }
+  bleConsumerClick(CC_VOL_UP);
+  delay(500);
+  bleConsumerClick(CC_VOL_DOWN);
+  delay(500);
+  bleConsumerClick(CC_MUTE);
 }
 
 void loop() {

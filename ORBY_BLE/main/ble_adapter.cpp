@@ -83,19 +83,20 @@ static const uint8_t REPORT_MAP[] = {
     0xC0,    // END_COLLECTION (Logical)
   0xC0,       // END_COLLECTION (Application)
 
-  // ===== Consumer Control (Report ID 2) =====
-  0x05, 0x0C,        // USAGE_PAGE (Consumer)
-  0x09, 0x01,        // USAGE (Consumer Control)
-  0xA1, 0x01,        // COLLECTION (Application)
-    0x85, 0x02,      //   REPORT_ID (2)
-    // Un único campo de 16 bits para enviar el usage (Var, Abs)
-    0x15, 0x00,              //   LOGICAL_MINIMUM (0)
-    0x26, 0xFF, 0x03,        //   LOGICAL_MAXIMUM (0x03FF) (cubre 0x00E2/0x00E9/0x00EA)
-    0x75, 0x10,              //   REPORT_SIZE (16)
-    0x95, 0x01,              //   REPORT_COUNT (1)
-    0x09, 0x00,              //   USAGE (Undefined placeholder)
-    0x81, 0x02,              //   INPUT (Data,Var,Abs)
-  0xC0                      // END_COLLECTION
+    // ===== Consumer Control (Report ID 2) =====
+    0x05, 0x0C,        // USAGE_PAGE (Consumer)
+    0x09, 0x01,        // USAGE (Consumer Control)
+    0xA1, 0x01,        // COLLECTION (Application)
+    0x85, 0x02,            //   REPORT_ID (2)
+    0x15, 0x00,            //   LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0x03,      //   LOGICAL_MAXIMUM (0x03FF)
+    0x19, 0x00,            //   USAGE_MINIMUM (0x0000)
+    0x2A, 0xFF, 0x03,      //   USAGE_MAXIMUM (0x03FF)
+    0x75, 0x10,            //   REPORT_SIZE (16)
+    0x95, 0x01,            //   REPORT_COUNT (1)
+    0x81, 0x00,            //   INPUT (Data,Array,Abs)
+  0xC0
+
 };
 
 // ---------- Callbacks para Feature (Resolution Multiplier) ----------
@@ -141,6 +142,7 @@ void bleConsumerRelease() {
 
 void bleConsumerClick(uint16_t usage) {
   bleConsumerPress(usage);
+  delay(1);
   bleConsumerRelease();
 }
 
