@@ -5,18 +5,25 @@
 
 // ---------- Config BLE ----------
 static NimBLEHIDDevice* hid;
-static NimBLECharacteristic* inputReport;    // Report ID 1 (Input)
-static NimBLECharacteristic* featureReport;  // Report ID 1 (Feature)
-static uint8_t resolutionMultiplier = 1;     // 0 o 1 (por tu descriptor, 2 bits útiles)
+static NimBLECharacteristic* inputReport;     // Report ID 1 (Mouse Input)
+static NimBLECharacteristic* featureReport;   // Report ID 1 (Feature: Resolution Multiplier)
+static NimBLECharacteristic* inputReportCC;   // Report ID 2 (Consumer Control Input)
+
+static uint8_t resolutionMultiplier = 1;      // 0 o 1 (por tu descriptor, 2 bits útiles)
 
 #define BLE_DEVICE_NAME "Orby Wireless"
 #define VID 0xCafe
 #define PID 0x4001
 #define VERSION 0x0100
 
+// ---------- Usages Consumer Control ----------
+#define CC_MUTE     0x00E2
+#define CC_VOL_UP   0x00E9
+#define CC_VOL_DOWN 0x00EA
 
-// ---------- Report Map (tu layout con Report ID 1 para BLE) ----------
+// ---------- Report Map (Mouse ID=1 + Consumer Control ID=2) ----------
 static const uint8_t REPORT_MAP[] = {
+  // ===== Mouse (Report ID 1) =====
   0x05, 0x01,        // USAGE_PAGE (Generic Desktop)
   0x09, 0x02,        // USAGE (Mouse)
   0xA1, 0x01,        // COLLECTION (Application)
@@ -39,7 +46,7 @@ static const uint8_t REPORT_MAP[] = {
         0x15, 0x81,  0x25, 0x7F, 0x75, 0x08,
         0x95, 0x02,  0x81, 0x06,
 
-        // --- Vertical wheel con Feature Resolution Multiplier ---
+        // --- Vertical wheel con Feature Resolution Multiplier (16-bit rel) ---
         0xA1, 0x02,        // COLLECTION (Logical)
           0x09, 0x48,      //   USAGE (Resolution Multiplier)
           0x15, 0x00,      //   LOGICAL_MINIMUM (0)
@@ -74,7 +81,21 @@ static const uint8_t REPORT_MAP[] = {
 
       0xC0,  // END_COLLECTION (Physical)
     0xC0,    // END_COLLECTION (Logical)
-  0xC0       // END_COLLECTION (Application)
+  0xC0,       // END_COLLECTION (Application)
+
+  // ===== Consumer Control (Report ID 2) =====
+  0x05, 0x0C,        // USAGE_PAGE (Consumer)
+  0x09, 0x01,        // USAGE (Consumer Control)
+  0xA1, 0x01,        // COLLECTION (Application)
+    0x85, 0x02,      //   REPORT_ID (2)
+    // Un único campo de 16 bits para enviar el usage (Var, Abs)
+    0x15, 0x00,              //   LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0x03,        //   LOGICAL_MAXIMUM (0x03FF) (cubre 0x00E2/0x00E9/0x00EA)
+    0x75, 0x10,              //   REPORT_SIZE (16)
+    0x95, 0x01,              //   REPORT_COUNT (1)
+    0x09, 0x00,              //   USAGE (Undefined placeholder)
+    0x81, 0x02,              //   INPUT (Data,Var,Abs)
+  0xC0                      // END_COLLECTION
 };
 
 // ---------- Callbacks para Feature (Resolution Multiplier) ----------
@@ -88,27 +109,44 @@ class FeatureCB : public NimBLECharacteristicCallbacks {
   }
 };
 
-// ---------- Envío de reportes (7 bytes exactamente como en tu USB) ----------
+// ---------- Envío de reportes de RATÓN (ID 1) : 7 bytes ----------
 void bleSendReport(uint8_t buttons, int8_t x, int8_t y, int16_t wheelV, int16_t wheelH) {
   if (!inputReport) return;
   uint8_t buf[7];
   buf[0] = buttons & 0x1F;
   buf[1] = (uint8_t)x;
   buf[2] = (uint8_t)y;
-  buf[3] = wheelV & 0xFF;
-  buf[4] = (wheelV >> 8) & 0xFF;
-  buf[5] = wheelH & 0xFF;
-  buf[6] = (wheelH >> 8) & 0xFF;
-  inputReport->setValue(buf, sizeof(buf));
+  buf[3] = (uint8_t)(wheelV & 0xFF);
+  buf[4] = (uint8_t)((wheelV >> 8) & 0xFF);
+  buf[5] = (uint8_t)(wheelH & 0xFF);
+  buf[6] = (uint8_t)((wheelH >> 8) & 0xFF);
+  inputReport->setValue(buf, sizeof(buf));   // (sin Report ID; NimBLE lo sabe por la característica)
   inputReport->notify();
+}
+
+// ---------- Envío de reportes CONSUMER (ID 2) : 2 bytes ----------
+void bleConsumerPress(uint16_t usage) {
+  if (!inputReportCC) return;
+  uint8_t rep[2] = { (uint8_t)(usage & 0xFF), (uint8_t)(usage >> 8) }; // LE
+  inputReportCC->setValue(rep, sizeof(rep));
+  inputReportCC->notify();
+}
+
+void bleConsumerRelease() {
+  if (!inputReportCC) return;
+  uint8_t rep0[2] = { 0x00, 0x00 };
+  inputReportCC->setValue(rep0, sizeof(rep0));
+  inputReportCC->notify();
+}
+
+void bleConsumerClick(uint16_t usage) {
+  bleConsumerPress(usage);
+  bleConsumerRelease();
 }
 
 // Antes de setupHID():
 class ConnCB : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* s, NimBLEConnInfo& info) override {
-    // interval: unidades de 1.25 ms  (6=7.5 ms; 9=11.25 ms)
-    // latency:  0 (sin saltos)
-    // timeout:  unidades de 10 ms (200 = 2 s)
     s->updateConnParams(info.getConnHandle(), /*min*/6, /*max*/9, /*lat*/0, /*timeout*/200);
   }
   void onMTUChange(uint16_t, NimBLEConnInfo&) override { /* opcional */ }
@@ -117,44 +155,43 @@ static ConnCB connCB;
 
 class ServerCB : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* s, NimBLEConnInfo& info) override {
-    // pide conn interval corto (7.5–11.25 ms), sin latencia
     s->updateConnParams(info.getConnHandle(), 6, 9, 0, 200);
   }
   void onDisconnect(NimBLEServer* s, NimBLEConnInfo& info, int reason) override {
-    // al desconectar, reanuncia para que el host pueda reconectar
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
     adv->start();
   }
 };
 static ServerCB g_serverCB;
 
-
 // ---------- Inicialización HID BLE ----------
 void setupHIDble() {
   // —— Identidad y radio ——
   NimBLEDevice::init(BLE_DEVICE_NAME);
-  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC);   // MAC estable (no random)
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9);              // opcional: más TX
-  NimBLEDevice::setMTU(23);                            // suficiente para 7 bytes (por claridad)
+  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC);
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  NimBLEDevice::setMTU(23);
 
-  // —— Seguridad: bonding persistente (reconexión tras reinicio) ——
+  // —— Seguridad ——
   NimBLEDevice::setSecurityAuth(/*bond=*/true, /*mitm=*/false, /*sc=*/true);
-  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT); // emparejamiento sin PIN
+  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
-  // —— Servidor y callbacks (conn params / re-advertise on disconnect) ——
+  // —— Servidor y callbacks ——
   NimBLEServer* server = NimBLEDevice::createServer();
-  server->setCallbacks(&connCB);  // asegúrate de tener onConnect->updateConnParams + onDisconnect->adv->start()
+  server->setCallbacks(&connCB);
 
   // —— HID Device y Report Map ——
   hid = new NimBLEHIDDevice(server);
-  hid->setManufacturer("jorgerente");       // 2.3.x
-  hid->setPnp(0x02, VID, PID, VERSION);     // 2.3.x
+  hid->setManufacturer("jorgerente");
+  hid->setPnp(0x02, VID, PID, VERSION);
   hid->setHidInfo(0x00, 0x01);              // sin remote wake
   hid->setReportMap((uint8_t*)REPORT_MAP, sizeof(REPORT_MAP));
 
-  // —— Características (Report ID 1) + Feature 0x48 —— 
-  inputReport   = hid->getInputReport(1);
-  featureReport = hid->getFeatureReport(1);
+  // —— Características (Input/Feature) ——
+  inputReport    = hid->getInputReport(1);  // Mouse
+  featureReport  = hid->getFeatureReport(1);
+  inputReportCC  = hid->getInputReport(2);  // Consumer Control
+
   static FeatureCB featCB;
   featureReport->setCallbacks(&featCB);
   featureReport->setValue(&resolutionMultiplier, 1);
@@ -162,21 +199,15 @@ void setupHIDble() {
   // —— Iniciar servicios HID ——
   hid->startServices();
 
-  // —— Advertising conectable como HID ——
+  // —— Advertising como HID ——
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->setAppearance(HID_MOUSE);
   adv->addServiceUUID(hid->getHidService()->getUUID());
   NimBLEAdvertisementData scanData;
-  scanData.setName(BLE_DEVICE_NAME);   // o lo que quieras anunciar en scan response
+  scanData.setName(BLE_DEVICE_NAME);
   adv->setScanResponseData(scanData);
-
-  // Advertising "rápido" para reconectar ágil tras encender:
-  // interval units = 0.625 ms → 32=20 ms, 48=30 ms
-  adv->setMinInterval(32);
-  adv->setMaxInterval(48);
-
-  // Opcional: permitir conexión directa desde hosts ya emparejados
-  adv->setPreferredParams(6, 9); // hint: conn interval 7.5–11.25 ms
-
+  adv->setMinInterval(32);  // ~20 ms
+  adv->setMaxInterval(48);  // ~30 ms
+  adv->setPreferredParams(6, 9);
   adv->start();
 }
