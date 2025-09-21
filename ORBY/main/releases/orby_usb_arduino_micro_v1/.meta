@@ -1,0 +1,4 @@
+NAME=orby_usb_arduino_micro_v1
+DATE=2025-09-21 20:22:01
+FQBN=esp32:esp32:esp32
+FAMILY=esp32

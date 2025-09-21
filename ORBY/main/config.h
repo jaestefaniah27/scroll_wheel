@@ -16,10 +16,10 @@ namespace Pins {
   #endif
   #ifdef HID_BACKEND_BLE
     // ---- Pines para el modo BLE ----
-    constexpr uint8_t BTN_R = 19;
-    constexpr uint8_t LED_R = 16;
-    constexpr uint8_t BTN_L = 18;
-    constexpr uint8_t LED_L = 17;
+    constexpr uint8_t BTN_R = 33;
+    constexpr uint8_t LED_R = 17;
+    constexpr uint8_t BTN_L = 32;
+    constexpr uint8_t LED_L = 16;
     constexpr uint8_t VIB   = 5;
     // I2C (si aplica)
     // constexpr uint8_t I2C_SDA = 21;
