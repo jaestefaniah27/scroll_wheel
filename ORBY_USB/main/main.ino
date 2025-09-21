@@ -1,11 +1,9 @@
-// main.ino — Orquestador mínimo
-
 #include "config.h"
 #include "events.h"
 #include "buttons.h"
 #include "haptics.h"
 #include "encoder_as5600.h"
-#include "hid_scrollmouse.h"
+#include "hid_usb.h"
 #include "modes.h"
 #include "wheel_output.h"
 
