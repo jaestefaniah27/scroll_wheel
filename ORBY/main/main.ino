@@ -24,11 +24,12 @@ void setup() {
     digitalWrite(Pins::LED_R, HIGH);
     digitalWrite(Pins::LED_L, HIGH);
     startHaptic(100);
-    delay(110);
+    delay(105);
+    updateHaptics();
     digitalWrite(Pins::LED_R, LOW);
     digitalWrite(Pins::LED_L, LOW);
-    updateHaptics();
     delay(100);
+
   }
 }
 
