@@ -9,3 +9,5 @@ void updateHaptics();
 
 // Inicializa pines del háptico
 void initHaptics();
+
+

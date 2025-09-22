@@ -10,6 +10,7 @@ namespace Pins {
     constexpr uint8_t BTN_L = 9;
     constexpr uint8_t LED_L = 8;
     constexpr uint8_t VIB   = 5;
+    constexpr uint8_t RST_CON = 4; // INT
     // I2C (si aplica)
     constexpr uint8_t I2C_SDA = 2;
     constexpr uint8_t I2C_SCL = 3;
@@ -21,6 +22,7 @@ namespace Pins {
     constexpr uint8_t BTN_L = 32;
     constexpr uint8_t LED_L = 16;
     constexpr uint8_t VIB   = 5;
+    constexpr uint8_t RST_CON = 0; // INT
     // I2C (si aplica)
     // constexpr uint8_t I2C_SDA = 21;
     // constexpr uint8_t I2C_SCL = 22;
@@ -54,4 +56,5 @@ inline void initConfigPins() {
   digitalWrite(Pins::LED_R, LOW);
   digitalWrite(Pins::LED_L, LOW);
   digitalWrite(Pins::VIB,   LOW);
+  
 }

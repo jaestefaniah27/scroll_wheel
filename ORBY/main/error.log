@@ -1,0 +1,43 @@
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp: In function 'void hidResetConection()':
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:366:17: error: 'deleteBondedDevices' is not a member of 'NimBLEDevice'
+  366 |   NimBLEDevice::deleteBondedDevices();
+      |                 ^~~~~~~~~~~~~~~~~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:369:18: error: 'Pins' has not been declared
+  369 |     digitalWrite(Pins::LED_R, HIGH);
+      |                  ^~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:370:18: error: 'Pins' has not been declared
+  370 |     digitalWrite(Pins::LED_L, HIGH);
+      |                  ^~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:371:5: error: 'startHaptic' was not declared in this scope
+  371 |     startHaptic(70);
+      |     ^~~~~~~~~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:373:5: error: 'updateHaptics' was not declared in this scope
+  373 |     updateHaptics();
+      |     ^~~~~~~~~~~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:374:18: error: 'Pins' has not been declared
+  374 |     digitalWrite(Pins::LED_R, LOW);
+      |                  ^~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:375:18: error: 'Pins' has not been declared
+  375 |     digitalWrite(Pins::LED_L, LOW);
+      |                  ^~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp: In function 'void hidResetConfig()':
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:385:18: error: 'Pins' has not been declared
+  385 |     digitalWrite(Pins::LED_R, HIGH);
+      |                  ^~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:386:18: error: 'Pins' has not been declared
+  386 |     digitalWrite(Pins::LED_L, HIGH);
+      |                  ^~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:387:5: error: 'startHaptic' was not declared in this scope
+  387 |     startHaptic(70);
+      |     ^~~~~~~~~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:389:5: error: 'updateHaptics' was not declared in this scope
+  389 |     updateHaptics();
+      |     ^~~~~~~~~~~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:390:18: error: 'Pins' has not been declared
+  390 |     digitalWrite(Pins::LED_R, LOW);
+      |                  ^~~~
+/home/ubuntu/compilacion_esp32/main/hid_backend_ble.cpp:391:18: error: 'Pins' has not been declared
+  391 |     digitalWrite(Pins::LED_L, LOW);
+      |                  ^~~~
+
+Error during build: exit status 1

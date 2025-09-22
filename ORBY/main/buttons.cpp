@@ -73,13 +73,14 @@ struct ButtonFSM {
 };
 
 // Instancias internas
-ButtonFSM btnR, btnL;
+ButtonFSM btnR, btnL, btnReset;
 
 } // namespace
 
 void initButtons() {
   btnR.begin(Pins::BTN_R, true);
   btnL.begin(Pins::BTN_L, true);
+  btnReset.begin(Pins::RST_CON, true);
 }
 
 void pollButtonsAndFeedback() {
@@ -95,6 +96,13 @@ void pollButtonsAndFeedback() {
     case PollResult::LONG_HIT: startHaptic(Ui::LONG_HIT_MS); break;
     case PollResult::SHORT:    changeMode(ButtonEvent::L_SHORT); break;
     case PollResult::LONG:     changeMode(ButtonEvent::L_LONG);  break;
+    default: break;
+  }
+  // Reset
+  switch (btnReset.poll()) {
+    case PollResult::LONG_HIT: startHaptic(Ui::LONG_HIT_MS); break;
+    case PollResult::SHORT:    changeMode(ButtonEvent::RST_SHORT); break;
+    case PollResult::LONG:     changeMode(ButtonEvent::RST_LONG);  break;
     default: break;
   }
 }
