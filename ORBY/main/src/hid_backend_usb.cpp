@@ -7,6 +7,8 @@
 #include <HID.h>
 #include <HID-Project.h>
 #include <HID-Settings.h>
+#include "config.h"
+#include "haptics.h"
 
 #ifndef USB_EP_SIZE
 #define USB_EP_SIZE 64

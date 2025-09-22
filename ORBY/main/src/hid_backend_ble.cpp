@@ -4,6 +4,8 @@
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
 #include <HIDTypes.h>
+#include "config.h"
+#include "haptics.h"
 
 // ---------- Config BLE ----------
 static NimBLEHIDDevice *hid;
@@ -12,9 +14,9 @@ static NimBLECharacteristic *featureReport;  // Report ID 1 (Feature: Resolution
 static NimBLECharacteristic *inputReportCC;  // Report ID 2 (Consumer Control Input)
 static NimBLECharacteristic *inputReportKB;  // Report ID 3 (Keyboard Input)
 static NimBLECharacteristic *outputReportKB; // Report ID 3 (Keyboard LEDs Output)
-static uint8_t kbReport[8] = {0};            // [mods,res, k0..k5]
-static uint8_t kbLEDs = 0;                   // bits: Num(0), Caps(1), Scroll(2), Compose(3), Kana(4)
 
+static uint8_t kbReport[8] = {0};        // [mods,res, k0..k5]
+static uint8_t kbLEDs = 0;               // bits: Num(0), Caps(1), Scroll(2), Compose(3), Kana(4)
 static uint8_t resolutionMultiplier = 1; // 0 o 1 (por tu descriptor, 2 bits útiles)
 
 #define BLE_DEVICE_NAME "Orby Wireless"
@@ -27,7 +29,7 @@ static uint8_t resolutionMultiplier = 1; // 0 o 1 (por tu descriptor, 2 bits út
 #define CC_VOL_UP 0x00E9
 #define CC_VOL_DOWN 0x00EA
 
-// ---------- Report Map (Mouse ID=1 + Consumer Control ID=2) ----------
+// ---------- Report Map (Mouse ID=1 + Consumer Control ID=2 + Keyboard ID=3) ----------
 static const uint8_t REPORT_MAP[] = {
     // ===== Mouse (Report ID 1) =====
     0x05, 0x01, // USAGE_PAGE (Generic Desktop)
@@ -102,6 +104,7 @@ static const uint8_t REPORT_MAP[] = {
     0x95, 0x01,       //   REPORT_COUNT (1)
     0x81, 0x00,       //   INPUT (Data,Array,Abs)
     0xC0,             // END_COLLECTION
+
     // ===== Keyboard (Report ID 3) =====
     0x05, 0x01, // USAGE_PAGE (Generic Desktop)
     0x09, 0x06, // USAGE (Keyboard)
@@ -176,7 +179,7 @@ void hidMouseSend(uint8_t buttons, int8_t x, int8_t y, int16_t wheelV, int16_t w
   buf[4] = (uint8_t)((wheelV >> 8) & 0xFF);
   buf[5] = (uint8_t)(wheelH & 0xFF);
   buf[6] = (uint8_t)((wheelH >> 8) & 0xFF);
-  inputReport->setValue(buf, sizeof(buf)); // (sin Report ID; NimBLE lo sabe por la característica)
+  inputReport->setValue(buf, sizeof(buf)); // (sin Report ID; NimBLE lo asocia por característica)
   inputReport->notify();
 }
 
@@ -205,8 +208,8 @@ void hidConsumerClick(uint16_t usage)
   delay(1);
   hidConsumerRelease();
 }
+
 // ---------- Envío de reportes TECLADO (ID 3) : 8 bytes ----------
-// Envia el buffer actual de teclado (8 bytes)
 static inline void kbSendNow()
 {
   if (!inputReportKB)
@@ -215,7 +218,6 @@ static inline void kbSendNow()
   inputReportKB->notify();
 }
 
-// Añade un keycode en el array (si hay hueco)
 static bool kbAddKey(uint8_t key)
 {
   if (key == HID_KEY_NONE)
@@ -236,7 +238,6 @@ static bool kbAddKey(uint8_t key)
   return false; // sin hueco (6KRO)
 }
 
-// Elimina un keycode del array
 static void kbDelKey(uint8_t key)
 {
   if (key == HID_KEY_NONE)
@@ -251,7 +252,7 @@ static void kbDelKey(uint8_t key)
   }
 }
 
-// ===== API pública =====
+// ===== API pública teclado =====
 void hidKeyboardPress(uint8_t modifiers, uint8_t keycode)
 {
   kbReport[0] |= modifiers; // set mods
@@ -274,25 +275,17 @@ void hidKeyboardReleaseAll(void)
 void hidKeyboardWrite(uint8_t modifiers, uint8_t keycode)
 {
   hidKeyboardPress(modifiers, keycode);
-  // pequeño gap para compatibilidad con algunos hosts
-  delay(5);
+  delay(5); // compatibilidad con algunos hosts
   hidKeyboardRelease(keycode);
-  // si los modifiers se usan sólo para esta tecla, libéralos también
-  kbReport[0] &= ~modifiers;
+  kbReport[0] &= ~modifiers; // liberar modifiers si eran solo para esta tecla
   kbSendNow();
 }
 
-// Antes de setupHID():
-class ConnCB : public NimBLEServerCallbacks
-{
-  void onConnect(NimBLEServer *s, NimBLEConnInfo &info) override
-  {
-    s->updateConnParams(info.getConnHandle(), /*min*/ 6, /*max*/ 9, /*lat*/ 0, /*timeout*/ 200);
-  }
-  void onMTUChange(uint16_t, NimBLEConnInfo &) override { /* opcional */ }
-};
-static ConnCB connCB;
+// ---------- Globals de servidor/advertising unificados ----------
+static NimBLEServer *g_server = nullptr;
+static NimBLEAdvertising *g_adv = nullptr;
 
+// ---------- Callbacks de servidor (con auto-reanuncio) ----------
 class ServerCB : public NimBLEServerCallbacks
 {
   void onConnect(NimBLEServer *s, NimBLEConnInfo &info) override
@@ -301,8 +294,8 @@ class ServerCB : public NimBLEServerCallbacks
   }
   void onDisconnect(NimBLEServer *s, NimBLEConnInfo &info, int reason) override
   {
-    NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
-    adv->start();
+    if (g_adv)
+      g_adv->start(); // volver a anunciar automáticamente
   }
 };
 static ServerCB g_serverCB;
@@ -321,23 +314,21 @@ void hidSetup()
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
   // —— Servidor y callbacks ——
-  NimBLEServer *server = NimBLEDevice::createServer();
-  server->setCallbacks(&connCB);
+  g_server = NimBLEDevice::createServer();
+  g_server->setCallbacks(&g_serverCB);
 
   // —— HID Device y Report Map ——
-  hid = new NimBLEHIDDevice(server);
+  hid = new NimBLEHIDDevice(g_server);
   hid->setManufacturer("jorgerente");
   hid->setPnp(0x02, VID, PID, VERSION);
   hid->setHidInfo(0x00, 0x01); // sin remote wake
   hid->setReportMap((uint8_t *)REPORT_MAP, sizeof(REPORT_MAP));
 
-  inputReportKB = hid->getInputReport(3);   // (o getInputReport(3) según tu NimBLE)
-  outputReportKB = hid->getOutputReport(3); // LEDs
-
-  // —— Características (Input/Feature) ——
-  inputReport = hid->getInputReport(1); // Mouse
-  featureReport = hid->getFeatureReport(1);
-  inputReportCC = hid->getInputReport(2); // Consumer Control
+  inputReportKB = hid->getInputReport(3);   // Keyboard In
+  outputReportKB = hid->getOutputReport(3); // Keyboard LEDs Out
+  inputReport = hid->getInputReport(1);     // Mouse In
+  featureReport = hid->getFeatureReport(1); // Feature (Resolution Multiplier)
+  inputReportCC = hid->getInputReport(2);   // Consumer Control In
 
   static FeatureCB featCB;
   featureReport->setCallbacks(&featCB);
@@ -347,23 +338,52 @@ void hidSetup()
   hid->startServices();
 
   // —— Advertising como HID ——
-  NimBLEAdvertising *adv = NimBLEDevice::getAdvertising();
-  adv->setAppearance(HID_MOUSE);
-  adv->addServiceUUID(hid->getHidService()->getUUID());
+  g_adv = NimBLEDevice::getAdvertising();
+  g_adv->setAppearance(HID_MOUSE);
+  g_adv->addServiceUUID(hid->getHidService()->getUUID());
   NimBLEAdvertisementData scanData;
   scanData.setName(BLE_DEVICE_NAME);
-  adv->setScanResponseData(scanData);
-  adv->setMinInterval(32); // ~20 ms
-  adv->setMaxInterval(48); // ~30 ms
-  adv->setPreferredParams(6, 9);
-  adv->start();
+  g_adv->setScanResponseData(scanData);
+  g_adv->setMinInterval(32); // ~20 ms
+  g_adv->setMaxInterval(48); // ~30 ms
+  g_adv->setPreferredParams(6, 9);
+  g_adv->start();
 }
 
-void hidResetConection(void)
+// ---------- Reset de conexión/estado y re-anuncio ----------
+static void hidResetInternal(bool deleteBonds)
 {
-  // Elimina la conexión actual (si hay) y los datos emparejados
-  NimBLEDevice::getServer()->disconnect(0); // reason 0 = REMOTE_USER_TERMINATED_CONNECTION
-  // NimBLEDevice::deleteBondedDevices();
+  if (!g_server)
+    return;
+
+  // 1) Desconectar TODOS los clientes, si hay
+  if (g_server->getConnectedCount() > 0)
+  {
+    // getPeerDevices() devuelve un contenedor de uint16_t (connHandle)
+    for (auto connHandle : g_server->getPeerDevices())
+    {
+      g_server->disconnect(connHandle);
+    }
+  }
+
+  // 2) Parar advertising un momento (opcional)
+  if (g_adv)
+    g_adv->stop();
+
+  // 3) Limpiar estado HID local
+  hidKeyboardReleaseAll();
+  kbLEDs = 0;
+  resolutionMultiplier = 1;
+  if (featureReport)
+    featureReport->setValue(&resolutionMultiplier, 1);
+
+  // 4) (Opcional) eliminar bonds para “desemparejar”
+  if (deleteBonds)
+  {
+    NimBLEDevice::deleteAllBonds(); // o NimBLEDevice::deleteBondedDevices();
+  }
+
+  // 5) Feedback háptico/LEDs
   for (int i = 0; i < 4; ++i)
   {
     digitalWrite(Pins::LED_R, HIGH);
@@ -375,11 +395,22 @@ void hidResetConection(void)
     digitalWrite(Pins::LED_L, LOW);
     delay(100);
   }
+
+  // 6) Reanudar advertising
+  if (g_adv)
+    g_adv->start();
 }
 
+// Mantiene tu firma original (botón llama a esta)
+void hidResetConection(void)
+{ // <- ojo: ortografía original
+  hidResetInternal(/*deleteBonds=*/true);
+}
+
+
+// ---------- Reset de configuración (sin cambios funcionales) ----------
 void hidResetConfig(void)
 {
-  // Resetea la configuración (actualmente no hace nada)
   for (int i = 0; i < 3; ++i)
   {
     digitalWrite(Pins::LED_R, HIGH);

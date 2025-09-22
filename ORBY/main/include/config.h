@@ -34,7 +34,7 @@ namespace Pins {
 namespace Enc {
   constexpr uint8_t  AS5600_ADDR   = 0x36;
   constexpr uint8_t  REG_STATUS    = 0x0B;
-  constexpr unsigned long SAMPLE_US = 1000000UL / 1200; // ~833us (1200 Hz)
+  constexpr unsigned long SAMPLE_US = 1000000UL / 600; // ~833us (1200 Hz)
   constexpr uint8_t  SAMPLES_PER_BLOCK = 10;            // 120 Hz de bloque
 }
 
@@ -56,5 +56,4 @@ inline void initConfigPins() {
   digitalWrite(Pins::LED_R, LOW);
   digitalWrite(Pins::LED_L, LOW);
   digitalWrite(Pins::VIB,   LOW);
-  
 }

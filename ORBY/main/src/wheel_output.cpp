@@ -30,7 +30,7 @@ void handleWheelDelta(int16_t delta) {
 
   switch (getWheelMode()) {
     case WheelMode::SCROLL:
-      hidMouseSend(0, 0, 0, -delta, 0);
+      hidMouseSend(0, 0, 0, delta, 0);
       break;
 
     case WheelMode::PAN:
@@ -41,7 +41,7 @@ void handleWheelDelta(int16_t delta) {
       // vertical con divisor (float permitido en descriptor 16-bit)
       const int16_t zoom = (int16_t)( (float)delta / (float)Ui::ZOOM_TICK_DIV );
       if (zoom != 0) {
-        hidMouseSend(0, 0, 0, -zoom, 0);
+        hidMouseSend(0, 0, 0, zoom, 0);
       }
     } break;
 
@@ -64,7 +64,7 @@ void handleWheelDelta(int16_t delta) {
       // Alterna pequeñas subidas/bajadas en Y y aplica scroll vertical
       const int8_t y = selectToggle ? 5 : -5;
       selectToggle = !selectToggle;
-      hidMouseSend(MOUSE_LEFT, 0, y, -delta, 0);
+      hidMouseSend(MOUSE_LEFT, 0, y, delta, 0);
     } break;
   }
 }
