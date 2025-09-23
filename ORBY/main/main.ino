@@ -8,6 +8,21 @@
 #include "modes.h"
 #include "wheel_output.h"
 
+
+void test(){
+  for (int i = 0; i < 2; ++i)
+  {
+    digitalWrite(Pins::LED_R, HIGH);
+    digitalWrite(Pins::LED_L, HIGH);
+    startHaptic(100);
+    delay(100);
+    updateHaptics();
+    digitalWrite(Pins::LED_R, LOW);
+    digitalWrite(Pins::LED_L, LOW);
+    delay(100);
+  }
+}
+
 void setup() {
   initConfigPins();
 
@@ -20,16 +35,7 @@ void setup() {
   setLedsForMode(getWheelMode());
 
   // Breve test visual/háptico de arranque (opcional)
-  for (int i = 0; i < 2; ++i) {
-    digitalWrite(Pins::LED_R, HIGH);
-    digitalWrite(Pins::LED_L, HIGH);
-    startHaptic(100);
-    delay(110);
-    digitalWrite(Pins::LED_R, LOW);
-    digitalWrite(Pins::LED_L, LOW);
-    updateHaptics();
-    delay(100);
-  }
+  test();
 }
 
 void loop() {
