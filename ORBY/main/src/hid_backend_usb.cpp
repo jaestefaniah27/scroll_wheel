@@ -149,11 +149,15 @@ public:
     // GET_REPORT (Feature)
     if (reqType == REQUEST_DEVICETOHOST_CLASS_INTERFACE && req == HID_GET_REPORT)
     {
-      const uint8_t rid = setup.wValueL;   // Report ID
-      const uint8_t rtype = setup.wValueH; // 3 = Feature
+      const uint8_t rid = setup.wValueL;
+      const uint8_t rtype = setup.wValueH; // 3=Feature
       if (rtype == 0x03 && rid == SW_RID_CFG)
       {
-        return USB_SendControl(0, &g_cfg, sizeof(g_cfg)) >= 0;
+        // AHORA: enviamos 1 + sizeof(g_cfg)
+        uint8_t buf[1 + sizeof(g_cfg)];
+        buf[0] = SW_RID_CFG;
+        memcpy(&buf[1], &g_cfg, sizeof(g_cfg));
+        return USB_SendControl(0, buf, sizeof(buf)) >= 0;
       }
       return false;
     }
@@ -168,14 +172,21 @@ public:
 
       if (rid == SW_RID_CFG)
       {
-        if (setup.wLength < sizeof(sw_feature_config_t))
-          return false;
-        sw_feature_config_t tmp;
-        int n = USB_RecvControl(&tmp, sizeof(tmp));
-        if (n != (int)sizeof(tmp))
+        // Esperamos 1 (RID) + sizeof(sw_feature_config_t)
+        if (setup.wLength < 1 + sizeof(sw_feature_config_t))
           return false;
 
-        // Sanitiza y aplica
+        uint8_t raw[1 + sizeof(sw_feature_config_t)];
+        int n = USB_RecvControl(raw, sizeof(raw));
+        if (n != (int)sizeof(raw))
+          return false;
+
+        if (raw[0] != SW_RID_CFG)
+          return false; // sanity
+        sw_feature_config_t tmp;
+        memcpy(&tmp, &raw[1], sizeof(tmp));
+
+        // sanitiza / clamp
         if (tmp.version != 1)
           return false;
         if (tmp.active_mode >= SW_MAX_MODES)
@@ -187,14 +198,22 @@ public:
 
       if (rid == SW_RID_CMD)
       {
-        if (setup.wLength < sizeof(sw_feature_cmd_t))
-          return false;
-        sw_feature_cmd_t cmd;
-        int n = USB_RecvControl(&cmd, sizeof(cmd));
-        if (n != (int)sizeof(cmd))
+        // Esperamos 1 (RID) + 3 bytes (op,arg0,arg1)
+        if (setup.wLength < 1 + 3)
           return false;
 
-        switch (cmd.op)
+        uint8_t raw[1 + 3];
+        int n = USB_RecvControl(raw, sizeof(raw));
+        if (n != (int)sizeof(raw))
+          return false;
+
+        if (raw[0] != SW_RID_CMD)
+          return false; // sanity
+        const uint8_t op = raw[1];
+        const uint8_t arg0 = raw[2];
+        const uint8_t arg1 = raw[3];
+
+        switch (op)
         {
         case 0:
           sw_storage_save_config(&g_cfg);
@@ -203,13 +222,14 @@ public:
           sw_storage_load_defaults(&g_cfg); // RESET_DEFAULTS
           sw_runtime_apply_config(&g_cfg);
           break;
-        case 2: /* REQUEST_STATE: luego GET_FEATURE */
+        case 2: /* REQUEST_STATE (luego el host hará GET_FEATURE) */
           break;
         default:
           break;
         }
         return true;
       }
+
       return false;
     }
 

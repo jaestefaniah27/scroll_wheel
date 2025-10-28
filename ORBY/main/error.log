@@ -6,31 +6,3 @@ In file included from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleRepor
 /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/../KeyboardLayouts/ImprovedKeylayouts.h:54:21: note: #pragma message: Using default ASCII layout for keyboard modules
      #pragma message "Using default ASCII layout for keyboard modules"
                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-In file included from /home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/../HID-APIs/KeyboardAPI.h:29:0,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/../HID-APIs/DefaultKeyboardAPI.h:27,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/ImprovedKeyboard.h:30,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/ImprovedKeyboard.cpp:24:
-/home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/../HID-APIs/../KeyboardLayouts/ImprovedKeylayouts.h:54:21: note: #pragma message: Using default ASCII layout for keyboard modules
-     #pragma message "Using default ASCII layout for keyboard modules"
-                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-In file included from /home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/../HID-APIs/KeyboardAPI.h:29:0,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/../HID-APIs/NKROKeyboardAPI.h:27,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/NKROKeyboard.h:30,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/NKROKeyboard.cpp:24:
-/home/ubuntu/Arduino/libraries/HID-Project/src/MultiReport/../HID-APIs/../KeyboardLayouts/ImprovedKeylayouts.h:54:21: note: #pragma message: Using default ASCII layout for keyboard modules
-     #pragma message "Using default ASCII layout for keyboard modules"
-                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-In file included from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/KeyboardAPI.h:29:0,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/DefaultKeyboardAPI.h:27,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/BootKeyboard.h:30,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/BootKeyboard.cpp:24:
-/home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/../KeyboardLayouts/ImprovedKeylayouts.h:54:21: note: #pragma message: Using default ASCII layout for keyboard modules
-     #pragma message "Using default ASCII layout for keyboard modules"
-                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-In file included from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/KeyboardAPI.h:29:0,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/NKROKeyboardAPI.h:27,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/SingleNKROKeyboard.h:30,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/SingleNKROKeyboard.cpp:24:
-/home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/../KeyboardLayouts/ImprovedKeylayouts.h:54:21: note: #pragma message: Using default ASCII layout for keyboard modules
-     #pragma message "Using default ASCII layout for keyboard modules"
-                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
