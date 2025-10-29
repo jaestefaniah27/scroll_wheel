@@ -87,3 +87,6 @@ void hidKeyboardWrite(uint8_t modifiers, uint8_t keycode);
 
 void hidResetConection(void);
 void hidResetConfig(void);
+
+void orbyProcessSerial(void);
+void orbyLoadFromEEPROM(void);

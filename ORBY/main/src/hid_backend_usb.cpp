@@ -165,6 +165,243 @@ private:
 
 static CustomMouse gMouse;
 
+// ====== ORBY CONFIG: definición real de los símbolos (evita "undefined reference") ======
+#include <EEPROM.h>
+
+typedef struct __attribute__((packed))
+{
+  uint8_t version; // =1
+  uint8_t btn1_action;
+  uint8_t btn2_action;
+  uint8_t active_mode;     // 0..3
+  uint16_t sensitivity[4]; // LSB primero
+  uint8_t flags;
+  uint8_t reserved[3];
+} OrbyConfig;
+
+#ifndef ORBY_EEPROM_ADDR
+#define ORBY_EEPROM_ADDR 0
+#endif
+
+// ---- DEFINICIÓN (no 'extern') ----
+OrbyConfig gOrbyCfg;
+
+// (opcional pero útil en ESP32: inicializa emulación EEPROM la primera vez)
+static inline void orbyEepromMaybeBegin()
+{
+#if defined(ARDUINO_ARCH_ESP32)
+  static bool inited = false;
+  if (!inited)
+  {
+    EEPROM.begin(64);
+    inited = true;
+  }
+#endif
+}
+
+// ---- IMPLEMENTACIONES reales ----
+void orbyLoadDefaults()
+{
+  gOrbyCfg.version = 1;
+  gOrbyCfg.btn1_action = 0;
+  gOrbyCfg.btn2_action = 1;
+  gOrbyCfg.active_mode = 0;
+  gOrbyCfg.sensitivity[0] = 120;
+  gOrbyCfg.sensitivity[1] = 60;
+  gOrbyCfg.sensitivity[2] = 30;
+  gOrbyCfg.sensitivity[3] = 10;
+  gOrbyCfg.flags = 0;
+  gOrbyCfg.reserved[0] = gOrbyCfg.reserved[1] = gOrbyCfg.reserved[2] = 0;
+}
+
+void orbyLoadFromEEPROM()
+{
+  orbyEepromMaybeBegin();
+  OrbyConfig tmp;
+  EEPROM.get(ORBY_EEPROM_ADDR, tmp);
+  if (tmp.version == 1)
+  {
+    gOrbyCfg = tmp;
+  }
+  else
+  {
+    orbyLoadDefaults();
+    EEPROM.put(ORBY_EEPROM_ADDR, gOrbyCfg);
+#if defined(ARDUINO_ARCH_ESP32)
+    EEPROM.commit();
+#endif
+  }
+}
+
+void orbySaveToEEPROM()
+{
+  orbyEepromMaybeBegin();
+  EEPROM.put(ORBY_EEPROM_ADDR, gOrbyCfg);
+#if defined(ARDUINO_ARCH_ESP32)
+  EEPROM.commit();
+#endif
+}
+
+// --- helpers ---
+static uint8_t sum8(const uint8_t *p, uint8_t n)
+{
+  uint16_t s = 0;
+  for (uint8_t i = 0; i < n; i++)
+    s += p[i];
+  return (uint8_t)s;
+}
+
+// Ensambla y envía respuesta
+static void orbySendResp(uint8_t cmd, const uint8_t *payload, uint8_t len)
+{
+  uint8_t hdr[6]; // "ORBY"+cmd+len+chk (chk se pone al final)
+  hdr[0] = 'O';
+  hdr[1] = 'R';
+  hdr[2] = 'B';
+  hdr[3] = 'Y';
+  hdr[4] = cmd | 0x80; // bit 7=OK
+  hdr[5] = len;
+  uint8_t chk = sum8(&hdr[4], 2);
+  if (len && payload)
+    chk += sum8(payload, len);
+  Serial.write(hdr, 6);
+  if (len && payload)
+    Serial.write(payload, len);
+  Serial.write(&chk, 1);
+}
+
+// Error
+static void orbySendErr(uint8_t cmd, uint8_t errcode)
+{
+  uint8_t hdr[6] = {'O', 'R', 'B', 'Y', 0xFF, 1};
+  uint8_t chk = (uint8_t)(hdr[4] + hdr[5] + errcode);
+  Serial.write(hdr, 6);
+  Serial.write(&errcode, 1);
+  Serial.write(&chk, 1);
+}
+
+// Serial state machine
+void orbyProcessSerial()
+{
+  static enum { S_SYNC0,
+                S_SYNC1,
+                S_SYNC2,
+                S_SYNC3,
+                S_CMD,
+                S_LEN,
+                S_PAY,
+                S_CHK } st = S_SYNC0;
+  static uint8_t cmd = 0, len = 0, pay[32], idx = 0;
+
+  while (Serial.available())
+  {
+    uint8_t b = (uint8_t)Serial.read();
+    switch (st)
+    {
+    case S_SYNC0:
+      st = (b == 'O') ? S_SYNC1 : S_SYNC0;
+      break;
+    case S_SYNC1:
+      st = (b == 'R') ? S_SYNC2 : S_SYNC0;
+      break;
+    case S_SYNC2:
+      st = (b == 'B') ? S_SYNC3 : S_SYNC0;
+      break;
+    case S_SYNC3:
+      st = (b == 'Y') ? S_CMD : S_SYNC0;
+      break;
+    case S_CMD:
+      cmd = b;
+      st = S_LEN;
+      break;
+    case S_LEN:
+      len = b;
+      idx = 0;
+      if (len > sizeof(pay))
+      {
+        st = S_SYNC0;
+        orbySendErr(cmd, 0x01);
+      }
+      else
+        st = (len ? S_PAY : S_CHK);
+      break;
+    case S_PAY:
+      pay[idx++] = b;
+      if (idx >= len)
+        st = S_CHK;
+      break;
+    case S_CHK:
+    {
+      uint8_t chk = (uint8_t)(cmd + len + sum8(pay, len));
+      if (chk != b)
+      {
+        orbySendErr(cmd, 0x02);
+        st = S_SYNC0;
+        break;
+      }
+      // Ejecuta comando
+      if (cmd == 0x10 && len == 0)
+      { // GET_CONFIG
+        uint8_t out[16];
+        out[0] = gOrbyCfg.version;
+        out[1] = gOrbyCfg.btn1_action;
+        out[2] = gOrbyCfg.btn2_action;
+        out[3] = gOrbyCfg.active_mode;
+        out[4] = gOrbyCfg.sensitivity[0] & 0xFF;
+        out[5] = gOrbyCfg.sensitivity[0] >> 8;
+        out[6] = gOrbyCfg.sensitivity[1] & 0xFF;
+        out[7] = gOrbyCfg.sensitivity[1] >> 8;
+        out[8] = gOrbyCfg.sensitivity[2] & 0xFF;
+        out[9] = gOrbyCfg.sensitivity[2] >> 8;
+        out[10] = gOrbyCfg.sensitivity[3] & 0xFF;
+        out[11] = gOrbyCfg.sensitivity[3] >> 8;
+        out[12] = gOrbyCfg.flags;
+        out[13] = 0;
+        out[14] = 0;
+        out[15] = 0;
+        orbySendResp(cmd, out, sizeof(out));
+      }
+      else if (cmd == 0x11 && len == 16)
+      { // SET_CONFIG
+        if (pay[0] == 1)
+        {
+          gOrbyCfg.version = pay[0];
+          gOrbyCfg.btn1_action = pay[1];
+          gOrbyCfg.btn2_action = pay[2];
+          gOrbyCfg.active_mode = pay[3];
+          gOrbyCfg.sensitivity[0] = (uint16_t)pay[4] | ((uint16_t)pay[5] << 8);
+          gOrbyCfg.sensitivity[1] = (uint16_t)pay[6] | ((uint16_t)pay[7] << 8);
+          gOrbyCfg.sensitivity[2] = (uint16_t)pay[8] | ((uint16_t)pay[9] << 8);
+          gOrbyCfg.sensitivity[3] = (uint16_t)pay[10] | ((uint16_t)pay[11] << 8);
+          gOrbyCfg.flags = pay[12];
+          orbySendResp(cmd, nullptr, 0);
+        }
+        else
+        {
+          orbySendErr(cmd, 0x03);
+        }
+      }
+      else if (cmd == 0x12 && len == 0)
+      { // SAVE
+        orbySaveToEEPROM();
+        orbySendResp(cmd, nullptr, 0);
+      }
+      else if (cmd == 0x13 && len == 0)
+      { // RESET (defaults en RAM)
+        orbyLoadDefaults();
+        orbySendResp(cmd, nullptr, 0);
+      }
+      else
+      {
+        orbySendErr(cmd, 0x04); // comando/len inválidos
+      }
+      st = S_SYNC0;
+    }
+    break;
+    }
+  }
+}
+
 // --------- Backend USB: setup / mouse / consumer / keyboard ---------
 
 void hidSetup()

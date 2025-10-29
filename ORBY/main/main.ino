@@ -8,8 +8,8 @@
 #include "modes.h"
 #include "wheel_output.h"
 
-
-void test(){
+void test()
+{
   for (int i = 0; i < 2; ++i)
   {
     digitalWrite(Pins::LED_R, HIGH);
@@ -23,7 +23,8 @@ void test(){
   }
 }
 
-void setup() {
+void setup()
+{
   initConfigPins();
 
   initHaptics();
@@ -36,16 +37,22 @@ void setup() {
 
   // Breve test visual/háptico de arranque (opcional)
   test();
+  orbyLoadFromEEPROM();
+  Serial.begin(115200);
 }
 
-void loop() {
+void loop()
+{
   // UI siempre viva
   pollButtonsAndFeedback();
   updateHaptics();
 
   // Encoder sólo cuando haya bloque listo
   int16_t deltaTicks;
-  if (sampleBlockAndGetDelta(deltaTicks)) {
+  if (sampleBlockAndGetDelta(deltaTicks))
+  {
     handleWheelDelta(deltaTicks);
   }
+
+  orbyProcessSerial(); // <- añade esta llamada
 }
