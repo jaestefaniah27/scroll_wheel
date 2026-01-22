@@ -25,6 +25,9 @@ void test()
 
 void setup()
 {
+  Serial.begin(115200);
+  delay(3000);
+  Serial.println("Listo");
   initConfigPins();
 
   initHaptics();

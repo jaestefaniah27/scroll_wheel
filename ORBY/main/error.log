@@ -1,8 +1,0 @@
-In file included from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/KeyboardAPI.h:29:0,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/DefaultKeyboardAPI.h:27,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/BootKeyboard.h:30,
-                 from /home/ubuntu/Arduino/libraries/HID-Project/src/HID-Project.h:50,
-                 from /home/ubuntu/compilacion_esp32/main/hid_backend_usb.cpp:8:
-/home/ubuntu/Arduino/libraries/HID-Project/src/SingleReport/../HID-APIs/../KeyboardLayouts/ImprovedKeylayouts.h:54:21: note: #pragma message: Using default ASCII layout for keyboard modules
-     #pragma message "Using default ASCII layout for keyboard modules"
-                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
