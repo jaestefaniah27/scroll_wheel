@@ -10,9 +10,273 @@
 #include "config.h"
 #include "haptics.h"
 
+// ====== BLOQUE NUEVO: Interfaz HID "Feature-only" (control EP0) ======
+#include <USBCore.h>
+#include <avr/pgmspace.h>
 #ifndef USB_EP_SIZE
 #define USB_EP_SIZE 64
 #endif
+
+// --- Constantes estándar USB/HID que usa el core AVR ---
+#ifndef USB_INTERFACE_DESCRIPTOR_TYPE
+#define USB_INTERFACE_DESCRIPTOR_TYPE 0x04
+#endif
+
+#ifndef HID_DESCRIPTOR_TYPE
+#define HID_DESCRIPTOR_TYPE 0x21
+#endif
+
+#ifndef HID_REPORT_DESCRIPTOR_TYPE
+#define HID_REPORT_DESCRIPTOR_TYPE 0x22
+#endif
+
+#ifndef GET_DESCRIPTOR
+#define GET_DESCRIPTOR 0x06
+#endif
+
+// // --- Estructuras de descriptor usadas por USB_SendControl ---
+// typedef struct
+// {
+//   uint8_t bLength;
+//   uint8_t bDescriptorType;
+//   uint8_t bInterfaceNumber;
+//   uint8_t bAlternateSetting;
+//   uint8_t bNumEndpoints;
+//   uint8_t bInterfaceClass;
+//   uint8_t bInterfaceSubClass;
+//   uint8_t bInterfaceProtocol;
+//   uint8_t iInterface;
+// } __attribute__((packed)) InterfaceDescriptor;
+
+// typedef struct
+// {
+//   uint8_t bLength;
+//   uint8_t bDescriptorType;       // = HID_DESCRIPTOR_TYPE
+//   uint16_t bcdHID;               // 0x0111
+//   uint8_t bCountryCode;          // 0
+//   uint8_t bNumDescriptors;       // 1
+//   uint8_t bReportDescriptorType; // = HID_REPORT_DESCRIPTOR_TYPE
+//   uint16_t wDescriptorLength;    // sizeof(report desc)
+// } __attribute__((packed)) HIDDescDescriptor;
+
+// Descriptor de report HID (sólo Features, vendor page 0xFF00):
+static const uint8_t _cfgFeatureReportDesc[] PROGMEM = {
+    0x06, 0x00, 0xFF, // USAGE_PAGE (Vendor 0xFF00)
+    0x09, 0x20,       // USAGE (Config Block)
+    0xA1, 0x01,       // COLLECTION (Application)
+    0x85, SW_RID_CFG, //   REPORT_ID (5)
+    0x75, 0x08,       //   REPORT_SIZE (8)
+    0x95, 0x20,       //   REPORT_COUNT (32)  = sizeof(sw_feature_config_t)
+    0xB1, 0x02,       //   FEATURE (Data,Var,Abs)
+    0x09, 0x21,       //   USAGE (Command)
+    0x85, SW_RID_CMD, //   REPORT_ID (6)
+    0x75, 0x08,
+    0x95, 0x04, //   REPORT_COUNT (4)
+    0xB1, 0x02, //   FEATURE (Data,Var,Abs)
+    0xC0        // END_COLLECTION
+};
+
+// Estructura del descriptor HID para una interfaz sin endpoints (solo control)
+typedef struct
+{
+  InterfaceDescriptor hid;
+  HIDDescDescriptor desc;
+} __attribute__((packed)) HIDFeatureOnly_IfDesc;
+
+class HIDFeatureOnly : public PluggableUSBModule
+{
+public:
+  HIDFeatureOnly() : PluggableUSBModule(0, 0, epType)
+  {
+    // 0 endpoints, solo control EP0
+    PluggableUSB().plug(this);
+    // Cargar defaults al iniciar
+    memset(&g_cfg, 0, sizeof(g_cfg));
+    g_cfg.version = 1;
+    sw_storage_load_defaults(&g_cfg);
+  }
+
+  // Descriptor de interfaz (SIN endpoint)
+  int getInterface(uint8_t *interfaceCount) override
+  {
+    *interfaceCount += 1;
+
+    InterfaceDescriptor ifDesc = {
+        /* bLength             */ sizeof(InterfaceDescriptor),
+        /* bDescriptorType     */ USB_INTERFACE_DESCRIPTOR_TYPE,
+        /* bInterfaceNumber    */ pluggedInterface,
+        /* bAlternateSetting   */ 0x00,
+        /* bNumEndpoints       */ 0x00, // SIN endpoints: solo control EP0
+        /* bInterfaceClass     */ 0x03, // HID
+        /* bInterfaceSubClass  */ 0x00,
+        /* bInterfaceProtocol  */ 0x00,
+        /* iInterface          */ 0x00};
+
+    HIDDescDescriptor hidDesc = {
+        /* bLength                 */ sizeof(HIDDescDescriptor),
+        /* bDescriptorType         */ HID_DESCRIPTOR_TYPE, // 0x21
+        /* bcdHID                  */ 0x0111,              // HID 1.11
+        /* bCountryCode            */ 0x00,
+        /* bNumDescriptors         */ 0x01,
+        /* bReportDescriptorType   */ HID_REPORT_DESCRIPTOR_TYPE, // 0x22
+        /* wDescriptorLength       */ (uint16_t)sizeof(_cfgFeatureReportDesc)};
+
+    int r = 0;
+    r += USB_SendControl(0, &ifDesc, sizeof(ifDesc));
+    r += USB_SendControl(0, &hidDesc, sizeof(hidDesc));
+    return r;
+  }
+
+  int getDescriptor(USBSetup &setup) override
+  {
+    if (setup.bRequest == GET_DESCRIPTOR &&
+        setup.wValueH == HID_REPORT_DESCRIPTOR_TYPE &&
+        setup.wIndex == pluggedInterface)
+    {
+      return USB_SendControl(TRANSFER_PGM, _cfgFeatureReportDesc, sizeof(_cfgFeatureReportDesc));
+    }
+    return 0;
+  }
+
+  bool setup(USBSetup &setup) override
+  {
+    if (setup.wIndex != pluggedInterface)
+      return false;
+
+    const uint8_t req = setup.bRequest;
+    const uint8_t reqType = setup.bmRequestType;
+
+    // GET_REPORT (Feature)
+    if (reqType == REQUEST_DEVICETOHOST_CLASS_INTERFACE && req == HID_GET_REPORT)
+    {
+      const uint8_t rid = setup.wValueL;
+      const uint8_t rtype = setup.wValueH; // 3=Feature
+      if (rtype == 0x03 && rid == SW_RID_CFG)
+      {
+        // AHORA: enviamos 1 + sizeof(g_cfg)
+        uint8_t buf[1 + sizeof(g_cfg)];
+        buf[0] = SW_RID_CFG;
+        memcpy(&buf[1], &g_cfg, sizeof(g_cfg));
+        return USB_SendControl(0, buf, sizeof(buf)) >= 0;
+      }
+      return false;
+    }
+
+    // SET_REPORT (Feature)
+    if (reqType == REQUEST_HOSTTODEVICE_CLASS_INTERFACE && req == HID_SET_REPORT)
+    {
+      const uint8_t rid = setup.wValueL;
+      const uint8_t rtype = setup.wValueH;
+      if (rtype != 0x03)
+        return false; // Solo Feature
+
+      if (rid == SW_RID_CFG)
+      {
+        // Esperamos 1 (RID) + sizeof(sw_feature_config_t)
+        if (setup.wLength < 1 + sizeof(sw_feature_config_t))
+          return false;
+
+        uint8_t raw[1 + sizeof(sw_feature_config_t)];
+        int n = USB_RecvControl(raw, sizeof(raw));
+        if (n != (int)sizeof(raw))
+          return false;
+
+        if (raw[0] != SW_RID_CFG)
+          return false; // sanity
+        sw_feature_config_t tmp;
+        memcpy(&tmp, &raw[1], sizeof(tmp));
+
+        // sanitiza / clamp
+        if (tmp.version != 1)
+          return false;
+        if (tmp.active_mode >= SW_MAX_MODES)
+          tmp.active_mode = 0;
+        g_cfg = tmp;
+        sw_runtime_apply_config(&g_cfg);
+        return true;
+      }
+
+      if (rid == SW_RID_CMD)
+      {
+        // Esperamos 1 (RID) + 3 bytes (op,arg0,arg1)
+        if (setup.wLength < 1 + 3)
+          return false;
+
+        uint8_t raw[1 + 3];
+        int n = USB_RecvControl(raw, sizeof(raw));
+        if (n != (int)sizeof(raw))
+          return false;
+
+        if (raw[0] != SW_RID_CMD)
+          return false; // sanity
+        const uint8_t op = raw[1];
+        const uint8_t arg0 = raw[2];
+        const uint8_t arg1 = raw[3];
+
+        switch (op)
+        {
+        case 0:
+          sw_storage_save_config(&g_cfg);
+          break; // SAVE
+        case 1:
+          sw_storage_load_defaults(&g_cfg); // RESET_DEFAULTS
+          sw_runtime_apply_config(&g_cfg);
+          break;
+        case 2: /* REQUEST_STATE (luego el host hará GET_FEATURE) */
+          break;
+        default:
+          break;
+        }
+        return true;
+      }
+
+      return false;
+    }
+
+    return false;
+  }
+
+  // Utilidades
+  void getConfig(sw_feature_config_t *out)
+  {
+    if (out)
+      *out = g_cfg;
+  }
+  void resetToDefaults()
+  {
+    sw_storage_load_defaults(&g_cfg);
+    sw_runtime_apply_config(&g_cfg);
+  }
+
+private:
+  uint8_t epType[0];
+  sw_feature_config_t g_cfg;
+};
+
+// Instancia única
+static HIDFeatureOnly *s_featureOnly = nullptr;
+
+// Exponer funciones C:
+extern "C" void hidUsbGetConfig(sw_feature_config_t *out_cfg)
+{
+  if (s_featureOnly && out_cfg)
+    s_featureOnly->getConfig(out_cfg);
+}
+extern "C" void hidUsbResetToDefaults(void)
+{
+  if (s_featureOnly)
+    s_featureOnly->resetToDefaults();
+}
+// Inicializar la interfaz (llámalo una vez, por ejemplo en setup())
+static void _ensureFeatureOnlyStarted()
+{
+  if (!s_featureOnly)
+    s_featureOnly = new HIDFeatureOnly();
+}
+extern "C" void hidUsbFeatureBegin(void)
+{
+  _ensureFeatureOnlyStarted();
+}
 
 // Report descriptor: Mouse con 5 botones, XY y dos ruedas de 16-bit (V/H)
 static const uint8_t MOUSE_REPORT_DESC[] PROGMEM = {

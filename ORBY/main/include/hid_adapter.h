@@ -71,6 +71,68 @@
 // ========= API común (idéntica para BLE/USB) =========
 void hidSetup(void);
 
+// ==== Configuración vía HID Feature (USB) ====
+#ifndef SW_FEATURE_CFG_H
+#define SW_FEATURE_CFG_H
+
+#define SW_MAX_MODES 4
+#define SW_MAX_BTNS 8
+
+// Report IDs para la interfaz "Feature-only"
+enum
+{
+    SW_RID_CFG = 0x05,
+    SW_RID_CMD = 0x06
+};
+
+#pragma pack(push, 1)
+typedef struct
+{
+    uint8_t version;                  // =1
+    uint8_t active_mode;              // 0..SW_MAX_MODES-1
+    uint16_t sens_global_cpi;         // unidades propias
+    uint16_t sens_mode[SW_MAX_MODES]; // sensibilidad por modo
+    uint8_t btn_map[SW_MAX_BTNS];     // LUT: físico->lógico
+    uint8_t flags;                    // bits: invertir eje, smoothing, etc.
+    uint8_t _pad[32 - (1 + 1 + 2 + 2 * SW_MAX_MODES + SW_MAX_BTNS + 1)];
+} sw_feature_config_t;
+
+typedef struct
+{
+    uint8_t report_id; // = SW_RID_CMD (0x06)
+    uint8_t op;        // 0=SAVE, 1=RESET_DEFAULTS, 2=REQUEST_STATE
+    uint8_t arg0;
+    uint8_t arg1;
+} sw_feature_cmd_t;
+#pragma pack(pop)
+
+// Hooks que implementas en tu lógica (no USB):
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+    void sw_runtime_apply_config(const sw_feature_config_t *cfg); // aplicar en caliente
+    void sw_storage_save_config(const sw_feature_config_t *cfg);  // persistir EEPROM/flash
+    void sw_storage_load_defaults(sw_feature_config_t *cfg);      // valores de fábrica
+#ifdef __cplusplus
+}
+#endif
+
+// Utilidades expuestas por el backend USB Feature:
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+    // Copia una vista de la config vigente (RAM) para tu app/lógica
+    void hidUsbGetConfig(sw_feature_config_t *out_cfg);
+    // Fuerza reset a defaults y aplica (útil si lo pides desde el propio firmware)
+    void hidUsbResetToDefaults(void);
+#ifdef __cplusplus
+}
+#endif
+
+#endif // SW_FEATURE_CFG_H
+
 // Ratón: envía 7 bytes (buttons, x, y, wheelV 16b, wheelH 16b)
 void hidMouseSend(uint8_t buttons, int8_t x, int8_t y, int16_t wheelV, int16_t wheelH);
 
@@ -87,3 +149,11 @@ void hidKeyboardWrite(uint8_t modifiers, uint8_t keycode);
 
 void hidResetConection(void);
 void hidResetConfig(void);
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+    void hidUsbFeatureBegin(void); // inicializa la interfaz HID "Feature-only"
+#ifdef __cplusplus
+}
+#endif
