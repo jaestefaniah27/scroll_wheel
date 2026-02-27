@@ -1,31 +1,36 @@
-import sys
+# test_hid_config_win.py (Windows-only, pywinusb)
 import struct
-import hid
+import pywinusb.hid as hid
 
-# ==== Ajusta estos si los sabes; si no, deja None y el script listará y te pedirá elegir ====
-VID = None  # p.ej. 0x2341
-PID = None  # p.ej. 0x8036
 
 RID_CFG = 0x05
 RID_CMD = 0x06
+CFG_PAYLOAD_LEN = 32
+FMT_CFG = "<BBH4H8B B"  # 21 bytes útiles; el resto padding
+PAD_LEN = CFG_PAYLOAD_LEN - struct.calcsize(FMT_CFG)
 
-# Estructura C (32 bytes) que definimos:
-# typedef struct {
-#   u8 version; u8 active_mode; u16 sens_global_cpi;
-#   u16 sens_mode[4]; u8 btn_map[8]; u8 flags; u8 pad[...]
-# } sw_feature_config_t;
-#
-# Empaquetamos/desempaquetamos sólo el "payload" de 32 bytes (sin el Report ID).
-# Little-endian:
-FMT_CFG = "<BBH4H8B B"   # = 1+1 +2 + (4*2) + 8 + 1 = 21 bytes útiles
-CFG_PAYLOAD_LEN = 32     # TAMAÑO EXACTO del bloque de config (sin Report ID)
-PAD_LEN = CFG_PAYLOAD_LEN - struct.calcsize(FMT_CFG)  # debería dar 11
+def encode_cfg(cfg: dict) -> bytes:
+    sens_mode = (cfg.get("sens_mode") or [0,0,0,0])[:4] + [0]*max(0,4-len(cfg.get("sens_mode") or []))
+    btn_map   = (cfg.get("btn_map")   or list(range(8)))[:8] + [0]*max(0,8-len(cfg.get("btn_map") or []))
+    tup = (
+        int(cfg.get("version", 1)) & 0xFF,
+        int(cfg.get("active_mode", 0)) & 0xFF,
+        int(cfg.get("sens_global_cpi", 800)) & 0xFFFF,
+        int(sens_mode[0]) & 0xFFFF, int(sens_mode[1]) & 0xFFFF,
+        int(sens_mode[2]) & 0xFFFF, int(sens_mode[3]) & 0xFFFF,
+        int(btn_map[0]) & 0xFF, int(btn_map[1]) & 0xFF, int(btn_map[2]) & 0xFF, int(btn_map[3]) & 0xFF,
+        int(btn_map[4]) & 0xFF, int(btn_map[5]) & 0xFF, 
+        int(btn_map[6]) & 0xFF, int(btn_map[7]) & 0xFF,
+        int(cfg.get("flags", 0)) & 0xFF,
+    )
+    packed = struct.pack(FMT_CFG, *tup)
+    return packed + bytes(PAD_LEN)
 
 def decode_cfg(payload: bytes):
     base = struct.unpack(FMT_CFG, payload[:struct.calcsize(FMT_CFG)])
     version, active_mode, sens_global = base[0], base[1], base[2]
-    sens_mode = list(base[3:7])          # 4 valores
-    btn_map   = list(base[7:15])         # 8 valores
+    sens_mode = list(base[3:7])
+    btn_map   = list(base[7:15])
     flags     = base[15]
     return {
         "version": version,
@@ -36,112 +41,91 @@ def decode_cfg(payload: bytes):
         "flags": flags,
     }
 
-def encode_cfg(cfg: dict) -> bytes:
-    # Normaliza tamaños
-    sens_mode = (cfg.get("sens_mode") or [0,0,0,0])[:4]
-    sens_mode += [0]*(4-len(sens_mode))
-    btn_map   = (cfg.get("btn_map") or list(range(8)))[:8]
-    btn_map  += [0]*(8-len(btn_map))
-    tup = (
-        int(cfg.get("version", 1)) & 0xFF,
-        int(cfg.get("active_mode", 0)) & 0xFF,
-        int(cfg.get("sens_global_cpi", 800)) & 0xFFFF,
-        int(sens_mode[0]) & 0xFFFF,
-        int(sens_mode[1]) & 0xFFFF,
-        int(sens_mode[2]) & 0xFFFF,
-        int(sens_mode[3]) & 0xFFFF,
-        int(btn_map[0]) & 0xFF, int(btn_map[1]) & 0xFF,
-        int(btn_map[2]) & 0xFF, int(btn_map[3]) & 0xFF,
-        int(btn_map[4]) & 0xFF, int(btn_map[5]) & 0xFF,
-        int(btn_map[6]) & 0xFF, int(btn_map[7]) & 0xFF,
-        int(cfg.get("flags", 0)) & 0xFF,
-    )
-    packed = struct.pack(FMT_CFG, *tup)
-    if len(packed) > CFG_PAYLOAD_LEN:
-        raise ValueError("Config supera los 32 bytes.")
-    return packed + bytes(PAD_LEN)
-
 def pick_device():
-    devs = list(hid.enumerate())
-    if VID is not None and PID is not None:
-        for d in devs:
-            if d["vendor_id"] == VID and d["product_id"] == PID:
-                return d
-        print("No se encontró el dispositivo con VID/PID especificados.")
-    # Lista y elige por índice
+    devs = hid.HidDeviceFilter().get_devices()
     print("Dispositivos HID encontrados:")
     for i, d in enumerate(devs):
-        print(f"[{i}] VID=0x{d['vendor_id']:04X} PID=0x{d['product_id']:04X} "
-              f"prod={d.get('product_string')} mfg={d.get('manufacturer_string')}")
+        try:
+            d.open()
+            prod = d.product_name
+            mfg  = d.vendor_name
+            inter = d.device_path.split("&MI_")[-1][:2] if "&MI_" in d.device_path else "--"
+            d.close()
+        except:
+            prod, mfg, inter = "", "", "--"
+        print(f"[{i}] VID=0x{d.vendor_id:04X} PID=0x{d.product_id:04X} MI={inter}  prod='{prod}' mfg='{mfg}'")
     idx = int(input("Elige índice del dispositivo (interfaz Feature de tu placa): ").strip())
     return devs[idx]
 
-def open_device(d):
-    h = hid.device()
-    h.open_path(d["path"])
-    # (Opcional) h.set_nonblocking(True)
-    return h
+def find_feature_reports(dev):
+    # Abre y busca los Feature reports
+    dev.open()
+    feats = dev.find_feature_reports()
+    # Mapea por Report ID
+    rep_by_id = {r.report_id: r for r in feats}
+    return rep_by_id
 
-def get_feature_cfg(h):
-    # En hidapi, GET_FEATURE incluye el Report ID y el tamaño total a leer
-    # Tamaño total = 1 (RID) + 32 (payload)
-    buf = h.get_feature_report(RID_CFG, 1 + CFG_PAYLOAD_LEN)
-    if not buf or buf[0] != RID_CFG:
-        raise RuntimeError("GET_FEATURE(RID=0x05) inválido.")
-    payload = bytes(buf[1:1+CFG_PAYLOAD_LEN])
+def get_cfg(rep_cfg):
+    # Para leer: .get() devuelve lista de enteros (incluye report_id en [0])
+    data = rep_cfg.get()
+    if not data or data[0] != RID_CFG or len(data) < 1 + CFG_PAYLOAD_LEN:
+        raise RuntimeError(f"GET_FEATURE inválido: len={len(data) if data else 0}, head={data[0] if data else None}")
+    payload = bytes(bytearray(data[1:1+CFG_PAYLOAD_LEN]))
     return decode_cfg(payload)
 
-def set_feature_cfg(h, cfg_dict):
+def set_cfg(rep_cfg, cfg_dict):
+    # Para escribir: set_raw_data(lista) y luego send()
     payload = encode_cfg(cfg_dict)
-    out = bytes([RID_CFG]) + payload
-    # En hidapi, send_feature_report requiere que el primer byte sea el Report ID
-    n = h.send_feature_report(out)
-    if n < 0:
-        raise RuntimeError("SET_FEATURE(RID=0x05) falló.")
-    return n
+    # El buffer debe medir report_length; y empezar por report_id
+    buf = [0] * rep_cfg.report_length
+    buf[0] = RID_CFG
+    # Copia payload
+    for i, b in enumerate(payload, start=1):
+        if i >= len(buf): break
+        buf[i] = b
+    rep_cfg.set_raw_data(buf)
+    rep_cfg.send()
 
-def send_cmd(h, op, arg0=0, arg1=0):
-    # Comando: 4 bytes de payload (op, arg0, arg1, (padding opcional si lo definiste))
-    # Nosotros definimos struct con report_id + 3 bytes útiles (op,arg0,arg1).
-    # Para simplicidad, enviamos 1 (RID) + 3 (payload) == 4.
-    out = bytes([RID_CMD, op & 0xFF, arg0 & 0xFF, arg1 & 0xFF])
-    n = h.send_feature_report(out)
-    if n < 0:
-        raise RuntimeError("SET_FEATURE(RID=0x06) falló.")
-    return n
+def send_cmd(rep_cmd, op, arg0=0, arg1=0):
+    buf = [0]*rep_cmd.report_length
+    buf[0] = RID_CMD
+    buf[1] = op & 0xFF
+    buf[2] = arg0 & 0xFF
+    buf[3] = arg1 & 0xFF
+    rep_cmd.set_raw_data(buf)
+    rep_cmd.send()
 
 def main():
-    d = pick_device()
-    print(f"Usando VID=0x{d['vendor_id']:04X} PID=0x{d['product_id']:04X} path={d['path']}")
-    h = open_device(d)
-    try:
-        # 1) Lee configuración actual
-        cfg = get_feature_cfg(h)
-        print("CFG actual:", cfg)
+    dev = pick_device()
+    rep = find_feature_reports(dev)
+    if RID_CFG not in rep:
+        print("No veo el Feature report RID 0x05 en esta interfaz. ¿Escogiste la MI_xx correcta?")
+        dev.close(); return
+    rep_cfg = rep[RID_CFG]
+    rep_cmd = rep.get(RID_CMD)
 
-        # 2) Cambia algo (ej: +100 CPI global)
-        new_cfg = dict(cfg)
-        new_cfg["sens_global_cpi"] = max(1, min(4000, cfg["sens_global_cpi"] + 100))
-        new_cfg["active_mode"] = 1 if cfg["active_mode"] != 1 else 0
+    # 1) Leer
+    cfg = get_cfg(rep_cfg)
+    print("CFG actual:", cfg)
 
-        set_feature_cfg(h, new_cfg)
-        cfg2 = get_feature_cfg(h)
-        print("CFG tras SET_FEATURE:", cfg2)
+    # 2) Cambiar y escribir
+    new_cfg = dict(cfg)
+    new_cfg["sens_global_cpi"] = min(4000, cfg["sens_global_cpi"] + 100)
+    new_cfg["active_mode"] = 1 if cfg["active_mode"] != 1 else 0
+    set_cfg(rep_cfg, new_cfg)
 
-        # 3) Guarda en EEPROM (op=0)
-        send_cmd(h, op=0)
+    # 3) Leer de nuevo
+    cfg2 = get_cfg(rep_cfg)
+    print("CFG tras SET_FEATURE:", cfg2)
+
+    # 4) Guardar en EEPROM
+    if rep_cmd:
+        send_cmd(rep_cmd, op=0)
         print("SAVE enviado (op=0). Desconecta y reconecta para verificar persistencia.")
+    else:
+        print("Aviso: no encontré RID_CMD (0x06), pero la lectura/escritura del RID_CFG funciona.")
 
-        # 4) (Opcional) Reset a defaults (op=1)
-        # send_cmd(h, op=1)
-        # print("RESET_DEFAULTS enviado (op=1).")
-
-    finally:
-        h.close()
-
+    dev.close()
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        sys.exit(0)
+    main()
