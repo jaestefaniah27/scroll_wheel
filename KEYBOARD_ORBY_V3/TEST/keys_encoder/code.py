@@ -21,7 +21,7 @@ for pin in pines_teclas:
 
 # 2. Configuración de Encoders
 # Encoder 1
-encoder1 = rotaryio.IncrementalEncoder(board.GP26, board.GP27)
+encoder1 = rotaryio.IncrementalEncoder(board.GP26, board.GP27, divisor=2)
 btn_e1 = digitalio.DigitalInOut(board.GP28)
 btn_e1.direction = digitalio.Direction.INPUT
 btn_e1.pull = digitalio.Pull.UP
@@ -29,7 +29,7 @@ pos_e1_ant = encoder1.position
 btn_e1_ant = True
 
 # Encoder 2
-encoder2 = rotaryio.IncrementalEncoder(board.GP23, board.GP24)
+encoder2 = rotaryio.IncrementalEncoder(board.GP23, board.GP24, divisor=2)
 btn_e2 = digitalio.DigitalInOut(board.GP25)
 btn_e2.direction = digitalio.Direction.INPUT
 btn_e2.pull = digitalio.Pull.UP
