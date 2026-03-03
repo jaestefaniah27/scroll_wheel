@@ -17,48 +17,36 @@ const uint8_t f_num[10][5] = {
     {0x36, 0x49, 0x49, 0x49, 0x36}, {0x06, 0x49, 0x49, 0x29, 0x1E}
 };
 
-// CORE 1: DEDICADO SOLO A REFRESCAR PANTALLAS
+// 1. DEFINIR LA FUNCIÓN ARRIBA PARA QUE MAIN LA CONOZCA
 void core1_entry() {
     HardwareOled oleds;
     oleds.init_all_screens();
     
-    // Pre-generamos los buffers para evitar cálculos en el bucle
-    uint8_t buffers[3][360];
-    for (int s = 0; s < 3; s++) {
-        memset(buffers[s], 0, 360);
-        int offset = 144 + 33; 
-        for(int i=0; i<5; i++) buffers[s][offset+i] = f_num[s+1][i];
-    }
+    uint8_t fb[360];
 
     while (true) {
         for (uint8_t s = 1; s <= 3; s++) {
-            // Si la tecla está pulsada, invertimos el buffer al vuelo 
-            // solo durante el envío para no perder tiempo
+            memset(fb, 0, 360);
+            int offset = 144 + 33; 
+            for(int i=0; i<5; i++) fb[offset+i] = f_num[s][i];
+
             if (s <= 12 && g_teclas[s-1]) {
-                uint8_t temp_inv[360];
-                for(int i=0; i<360; i++) temp_inv[i] = ~buffers[s-1][i];
-                oleds.paint_screen(s, temp_inv);
-            } else {
-                oleds.paint_screen(s, buffers[s-1]);
+                for(int i=0; i<360; i++) fb[i] = ~fb[i];
             }
+
+            // Pintar la pantalla
+            oleds.paint_screen(s, fb);
         }
-        // El tiempo muerto es ahora prácticamente cero.
+        // Dejamos un pequeño margen para que el bus respire
+        sleep_ms(2);
     }
 }
 
-// CORE 0: INTERRUPCIONES Y INPUTS
 int main() {
     stdio_init_all();
     sleep_ms(2000);
 
-    // Lanzamos los gráficos al Core 1
-    multicore_launch_core1(core1_entry);
-
-    // Inicializamos encoders en Core 0
-    HardwareEncoder enc1(pio0, Pins::ENC1_A, 1);
-    HardwareEncoder enc2(pio0, Pins::ENC2_A, -1);
-
-    // Pines de teclas
+    // Inicializamos hardware crítico antes de lanzar el core 1
     const uint8_t t_pins[] = {Pins::KEY_1, Pins::KEY_2, Pins::KEY_3, Pins::KEY_4, 
                               Pins::KEY_5, Pins::KEY_6, Pins::KEY_7, Pins::KEY_8, 
                               Pins::KEY_9, Pins::KEY_10, Pins::KEY_11, Pins::KEY_12};
@@ -66,19 +54,17 @@ int main() {
         gpio_init(p); gpio_set_dir(p, GPIO_IN); gpio_pull_up(p);
     }
 
+    // Ahora sí, lanzamos el core 1
+    multicore_launch_core1(core1_entry);
+
+    HardwareEncoder enc1(pio0, Pins::ENC1_A, 1);
+    HardwareEncoder enc2(pio0, Pins::ENC2_A, -1);
+
     while (true) {
-        // Leer teclas para que el Core 1 reaccione
         for (int i = 0; i < 12; i++) {
             g_teclas[i] = !gpio_get(t_pins[i]);
         }
-
-        // Leer encoders
-        int d1 = enc1.get_delta();
-        if(d1 != 0) printf("E1: %+d | Abs: %d\n", d1, enc1.get_absolute());
-        
-        int d2 = enc2.get_delta();
-        if(d2 != 0) printf("E2: %+d | Abs: %d\n", d2, enc2.get_absolute());
-
-        sleep_ms(1);
+        sleep_ms(5);
     }
+    return 0;
 }

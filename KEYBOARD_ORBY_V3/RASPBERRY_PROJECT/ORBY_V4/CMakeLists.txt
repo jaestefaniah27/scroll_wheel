@@ -42,7 +42,6 @@ pico_set_program_version(ORBY_V4 "0.1")
 
 # Generate PIO header
 pico_generate_pio_header(ORBY_V4 ${CMAKE_CURRENT_LIST_DIR}/encoder.pio)
-pico_generate_pio_header(ORBY_V4 ${CMAKE_CURRENT_LIST_DIR}/hc595.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(ORBY_V4 0)

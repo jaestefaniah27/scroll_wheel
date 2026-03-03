@@ -56,19 +56,28 @@ public:
     }
 
     void paint_screen(uint8_t screen_num, const uint8_t* fb) {
+        // 1. Calculamos la máscara para esta pantalla
         uint16_t mask = 0xFFFF;
         mask &= ~(1 << OledMap::CS_BITS[screen_num - 1]);
+        
+        // 2. Seleccionamos la pantalla (Bajamos su CS)
         apply_cs(mask);
 
-        // Comandos de ventana
+        // 3. Comandos de posicionamiento (Viewport 72x40)
         uint8_t setup[] = {0x21, 28, 28+71, 0x22, 0, 4};
         gpio_put(Pins::OLED_DC, 0);
         spi_write_blocking(spi0, setup, 6);
 
-        // Datos del Framebuffer
+        // 4. Datos del Framebuffer
         gpio_put(Pins::OLED_DC, 1);
         spi_write_blocking(spi0, fb, 360);
 
+        // --- EL CAMBIO CLAVE ---
+        // NO ponemos apply_cs(0xFFFF) inmediatamente.
+        // Añadimos un pequeño delay de "exposición" para que el 
+        // driver interno de la OLED estabilice el brillo.
+        sleep_us(500); 
+        
         apply_cs(0xFFFF); 
     }
 };
