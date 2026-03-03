@@ -1,68 +1,35 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include "hardware/pio.h"
-#include "encoder.pio.h" // El compilador inyectará aquí el C de arriba
 #include "pinout.h"
+#include "hardware_encoder.h" // Nuestra nueva abstracción
 
 int main() {
     stdio_init_all();
     sleep_ms(2000); 
-    printf("=== TEST PIO ENCODERS V2 (ESTABLE) ===\n");
+    printf("=== SISTEMA DUAL-CORE INICIADO ===\n");
 
-    PIO pio = pio0; 
-    pio_clear_instruction_memory(pio); // Limpieza de seguridad
-    pio_add_program(pio, &encoder_program);
+    // Instanciación del hardware. Listo para usar.
+    // Encoder 1 en sentido normal (1), Encoder 2 invertido (-1)
+    HardwareEncoder rueda_izq(pio0, Pins::ENC1_A, 1);
+    HardwareEncoder rueda_der(pio0, Pins::ENC2_A, -1);
 
-    uint sm1 = pio_claim_unused_sm(pio, true);
-    uint sm2 = pio_claim_unused_sm(pio, true);
-
-    // Inyectamos la lógica de ensamblador en los dos motores
-    encoder_program_init(pio, sm1, Pins::ENC1_A); 
-    encoder_program_init(pio, sm2, Pins::ENC2_A); 
-
-    int pos_e1 = 0;
-    int pos_e2 = 0;
-    int clics_e1_ant = 0; // Memoria física del encoder 1
-    int clics_e2_ant = 0; // Memoria física del encoder 2
-    
     while (true) {
-        // 1. La CPU coge los datos en crudo de la memoria FIFO (resolución eléctrica)
-        pos_e1 = encoder_get_count(pio, sm1, pos_e1);
-        pos_e2 = encoder_get_count(pio, sm2, pos_e2);
-
-        // 2. Dividimos entre 2 para sacar los "clics" reales físicos
-        int clics_e1_act = pos_e1 / 2;
-        int clics_e2_act = pos_e2 / 2;
-
-        // 3. Calculamos el DELTA seguro contra desbordamientos (Wrap-Around).
-        // Al forzar el casting a unsigned int, la resta calcula la distancia circular real
-        // en la memoria de 32 bits, evitando cualquier corrupción aunque el número dé la vuelta.
-        int delta_e1 = (int)((unsigned int)clics_e1_act - (unsigned int)clics_e1_ant);
-        int delta_e2 = (int)((unsigned int)clics_e2_act - (unsigned int)clics_e2_ant);
-
-        // --- LÓGICA DE EVENTOS ENCODER 1 ---
-        if (delta_e1 != 0) {
-            if (delta_e1 > 0) {
-                printf("E1: Horario (+%d pasos)\n", delta_e1);
-            } else {
-                printf("E1: Antihorario (%d pasos)\n", delta_e1);
-            }
-            // Actualizamos la memoria interna solo cuando procesamos el evento
-            clics_e1_ant = clics_e1_act; 
+        
+        // Solo tenemos que pedirle el delta al objeto
+        int delta_izq = rueda_izq.get_delta();
+        if (delta_izq != 0) {
+            printf("Rueda IZQ: Movimiento %+d | Absoluto: %d\n", delta_izq, rueda_izq.get_absolute());
+            // Aquí llamarías a: USB_Send_Volume(delta_izq);
         }
 
-        // --- LÓGICA DE EVENTOS ENCODER 2 ---
-        if (delta_e2 != 0) {
-            if (delta_e2 > 0) {
-                printf("E2: Horario (+%d pasos)\n", delta_e2);
-            } else {
-                printf("E2: Antihorario (%d pasos)\n", delta_e2);
-            }
-            // Actualizamos la memoria interna
-            clics_e2_ant = clics_e2_act; 
+        int delta_der = rueda_der.get_delta();
+        if (delta_der != 0) {
+            printf("Rueda DER: Movimiento %+d | Absoluto: %d\n", delta_der, rueda_der.get_absolute());
+            // Aquí llamarías a: USB_Send_Zoom(delta_der);
         }
 
-        sleep_ms(1); // Relax para la CPU
+        sleep_ms(1); // Relax para la CPU principal
     }
+    
     return 0;
 }

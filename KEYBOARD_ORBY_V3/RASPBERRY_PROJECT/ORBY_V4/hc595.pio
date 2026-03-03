@@ -1,0 +1,43 @@
+.program hc595
+.side_set 1 
+
+.wrap_target
+    pull block          side 0  ; Espera máscara de 16 bits de la CPU. Reloj a LOW.
+    set pins, 0         side 0  ; Baja el LATCH para preparar el registro.
+    set x, 15           side 0  ; Bucle de 16 iteraciones.
+bitloop:
+    out pins, 1         side 0  ; Saca 1 bit al pin de DATA.
+    jmp x-- bitloop     side 1  ; Sube el Reloj (side 1) y salta. Al saltar, el reloj vuelve a 0.
+    set pins, 1         side 0  ; Termina el bucle. Sube el LATCH para aplicar cambios.
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+
+static inline void hc595_program_init(PIO pio, uint sm, uint pin_data, uint pin_clk, uint pin_latch) {
+    pio_gpio_init(pio, pin_data);
+    pio_gpio_init(pio, pin_clk);
+    pio_gpio_init(pio, pin_latch);
+
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_data, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_clk, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_latch, 1, true);
+
+    pio_sm_config c = hc595_program_get_default_config(0);
+    sm_config_set_out_pins(&c, pin_data, 1);
+    sm_config_set_sideset_pins(&c, pin_clk);
+    sm_config_set_set_pins(&c, pin_latch, 1);
+    
+    // Configuración vital: Autopull desactivado, shift a la derecha (o izquierda según el ruteo del 74HC595)
+    // Para el 74HC595 estándar mapeado de Q0 a Q7, el shift es a la derecha (true)
+    sm_config_set_out_shift(&c, true, false, 32);
+
+    // Reloj a unos 20 MHz (Suficiente para el 74HC595 sin distorsión en la PCB)
+    float div = (float)clock_get_hz(clk_sys) / 20000000;
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, 0, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

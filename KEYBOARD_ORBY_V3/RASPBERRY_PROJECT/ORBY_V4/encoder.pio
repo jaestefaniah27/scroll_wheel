@@ -1,49 +1,51 @@
 .program encoder
-; Exigimos que se cargue en la dirección 0 para que la tabla de saltos cuadre
 .origin 0
 
-; --- TABLA DE ESTADOS EXACTA (4 bits: Viejo A, Viejo B, Nuevo A, Nuevo B) ---
+; --- TABLA DE ESTADOS ---
 ; Estado 00
-    jmp update      ; 00 -> 00
-    jmp decrement   ; 00 -> 01
-    jmp increment   ; 00 -> 10
-    jmp update      ; 00 -> 11
+    jmp update      
+    jmp decrement   
+    jmp increment   
+    jmp update      
 ; Estado 01
-    jmp increment   ; 01 -> 00
-    jmp update      ; 01 -> 01
-    jmp update      ; 01 -> 10
-    jmp decrement   ; 01 -> 11
+    jmp increment   
+    jmp update      
+    jmp update      
+    jmp decrement   
 ; Estado 10
-    jmp decrement   ; 10 -> 00
-    jmp update      ; 10 -> 01
-    jmp update      ; 10 -> 10
-    jmp increment   ; 10 -> 11
+    jmp decrement   
+    jmp update      
+    jmp update      
+    jmp increment   
 ; Estado 11
-    jmp update      ; 11 -> 00
-    jmp increment   ; 11 -> 01
-    jmp decrement   ; 11 -> 10
-    jmp update      ; 11 -> 11
+    jmp update      
+    jmp increment   
+    jmp decrement   
+    jmp update      
 
-; --- MATEMÁTICAS Y VOLCADO A FIFO ---
-decrement:
-    jmp y--, push_y     ; Resta 1 y salta a enviar
+; --- MAGIA ARITMÉTICA (APROVECHANDO EL SILICIO) ---
 increment:
-    mov y, ~y           
-    jmp y--, increment_cont
+    mov y, ~y               ; Invertimos Y
+    jmp y--, increment_cont ; Salta y resta 1 (si era 0, no salta pero resta igual)
 increment_cont:
-    mov y, ~y           ; Equivale a Y = Y + 1 en ensamblador PIO
+    mov y, ~y               ; Volvemos a invertir
+    jmp push_y              
+
+decrement:
+    jmp y--, push_y         ; EL SECRETO: y-- resta SIEMPRE, salte o no salte.
+                            ; Si Y es 0, cae a la siguiente línea, pero Y ya vale -1.
+
 push_y:
     mov isr, y          
-    push noblock        ; Empuja el número absoluto a la CPU silenciosamente
-    jmp update
+    push noblock            
 
 .wrap_target
 update:
-    mov isr, null       ; Limpia el registro temporal
-    in x, 2             ; Mete el estado viejo (2 bits)
-    in pins, 2          ; Mete el estado nuevo físico (2 bits)
-    mov x, isr          ; Guarda este nuevo estado en X para la próxima vuelta
-    mov pc, isr         ; ¡SALTO MÁGICO a la tabla de arriba!
+    mov isr, null       
+    in x, 2             
+    in pins, 2          
+    mov x, isr          
+    mov pc, isr         
 .wrap
 
 ; --- RUTINAS EN C PARA EL SDK ---
@@ -53,8 +55,6 @@ update:
 
 static inline void encoder_program_init(PIO pio, uint sm, uint pin) {
     pio_sm_set_consecutive_pindirs(pio, sm, pin, 2, false);
-    
-    // OBLIGATORIO: Conectar físicamente el cobre del pad al coprocesador PIO
     pio_gpio_init(pio, pin);
     pio_gpio_init(pio, pin + 1);
     gpio_pull_up(pin);
@@ -62,24 +62,18 @@ static inline void encoder_program_init(PIO pio, uint sm, uint pin) {
 
     pio_sm_config c = encoder_program_get_default_config(0);
     sm_config_set_in_pins(&c, pin);
-    
-    // false = Shift a la izquierda (construye el número de 4 bits correctamente)
     sm_config_set_in_shift(&c, false, false, 32);
-    
-    // Unimos las memorias para tener 8 huecos de almacenamiento pasivo
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-    // Reloj a 1 MHz: Filtra el ruido mecánico del encoder (debouncing por hardware)
     float div = (float)clock_get_hz(clk_sys) / 1000000;
     sm_config_set_clkdiv(&c, div);
 
     pio_sm_init(pio, sm, 0, &c);
-    pio_sm_exec(pio, sm, pio_encode_set(pio_x, 0)); // Inicializa memoria estado
-    pio_sm_exec(pio, sm, pio_encode_set(pio_y, 0)); // Inicializa contador absoluto a 0
+    pio_sm_exec(pio, sm, pio_encode_set(pio_x, 0)); 
+    pio_sm_exec(pio, sm, pio_encode_set(pio_y, 0)); 
     pio_sm_set_enabled(pio, sm, true);
 }
 
-// Función súper ligera: vacía la cesta (FIFO) y se queda solo con el dato más reciente
 static inline int encoder_get_count(PIO pio, uint sm, int current_count) {
     int count = current_count;
     while (!pio_sm_is_rx_fifo_empty(pio, sm)) {

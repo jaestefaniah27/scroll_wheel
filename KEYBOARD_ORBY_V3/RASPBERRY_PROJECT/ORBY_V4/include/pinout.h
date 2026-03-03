@@ -18,16 +18,16 @@ namespace Pins {
     constexpr uint8_t KEY_12 = 12;
 
     // --- ENCODERS MECÁNICOS (EC11) ---
-    // Encoder 1
-    constexpr uint8_t ENC1_A  = 26;
-    constexpr uint8_t ENC1_B  = 27;
-    constexpr uint8_t ENC1_SW = 28;
     
+    // Encoder 1
+    constexpr uint8_t ENC1_A  = 23;
+    constexpr uint8_t ENC1_B  = 24;
+    constexpr uint8_t ENC1_SW = 25;
     // Encoder 2
-    constexpr uint8_t ENC2_A  = 23;
-    constexpr uint8_t ENC2_B  = 24;
-    constexpr uint8_t ENC2_SW = 25;
-
+    constexpr uint8_t ENC2_A  = 26;
+    constexpr uint8_t ENC2_B  = 27;
+    constexpr uint8_t ENC2_SW = 28;
+    
     // --- I2C (SENSOR MAGNÉTICO AS5600) ---
     constexpr uint8_t I2C_SDA = 14; 
     constexpr uint8_t I2C_SCL = 15;
