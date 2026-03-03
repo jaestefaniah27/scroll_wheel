@@ -1,0 +1,90 @@
+.program encoder
+; Exigimos que se cargue en la dirección 0 para que la tabla de saltos cuadre
+.origin 0
+
+; --- TABLA DE ESTADOS EXACTA (4 bits: Viejo A, Viejo B, Nuevo A, Nuevo B) ---
+; Estado 00
+    jmp update      ; 00 -> 00
+    jmp decrement   ; 00 -> 01
+    jmp increment   ; 00 -> 10
+    jmp update      ; 00 -> 11
+; Estado 01
+    jmp increment   ; 01 -> 00
+    jmp update      ; 01 -> 01
+    jmp update      ; 01 -> 10
+    jmp decrement   ; 01 -> 11
+; Estado 10
+    jmp decrement   ; 10 -> 00
+    jmp update      ; 10 -> 01
+    jmp update      ; 10 -> 10
+    jmp increment   ; 10 -> 11
+; Estado 11
+    jmp update      ; 11 -> 00
+    jmp increment   ; 11 -> 01
+    jmp decrement   ; 11 -> 10
+    jmp update      ; 11 -> 11
+
+; --- MATEMÁTICAS Y VOLCADO A FIFO ---
+decrement:
+    jmp y--, push_y     ; Resta 1 y salta a enviar
+increment:
+    mov y, ~y           
+    jmp y--, increment_cont
+increment_cont:
+    mov y, ~y           ; Equivale a Y = Y + 1 en ensamblador PIO
+push_y:
+    mov isr, y          
+    push noblock        ; Empuja el número absoluto a la CPU silenciosamente
+    jmp update
+
+.wrap_target
+update:
+    mov isr, null       ; Limpia el registro temporal
+    in x, 2             ; Mete el estado viejo (2 bits)
+    in pins, 2          ; Mete el estado nuevo físico (2 bits)
+    mov x, isr          ; Guarda este nuevo estado en X para la próxima vuelta
+    mov pc, isr         ; ¡SALTO MÁGICO a la tabla de arriba!
+.wrap
+
+; --- RUTINAS EN C PARA EL SDK ---
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+
+static inline void encoder_program_init(PIO pio, uint sm, uint pin) {
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 2, false);
+    
+    // OBLIGATORIO: Conectar físicamente el cobre del pad al coprocesador PIO
+    pio_gpio_init(pio, pin);
+    pio_gpio_init(pio, pin + 1);
+    gpio_pull_up(pin);
+    gpio_pull_up(pin + 1);
+
+    pio_sm_config c = encoder_program_get_default_config(0);
+    sm_config_set_in_pins(&c, pin);
+    
+    // false = Shift a la izquierda (construye el número de 4 bits correctamente)
+    sm_config_set_in_shift(&c, false, false, 32);
+    
+    // Unimos las memorias para tener 8 huecos de almacenamiento pasivo
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+
+    // Reloj a 1 MHz: Filtra el ruido mecánico del encoder (debouncing por hardware)
+    float div = (float)clock_get_hz(clk_sys) / 1000000;
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, 0, &c);
+    pio_sm_exec(pio, sm, pio_encode_set(pio_x, 0)); // Inicializa memoria estado
+    pio_sm_exec(pio, sm, pio_encode_set(pio_y, 0)); // Inicializa contador absoluto a 0
+    pio_sm_set_enabled(pio, sm, true);
+}
+
+// Función súper ligera: vacía la cesta (FIFO) y se queda solo con el dato más reciente
+static inline int encoder_get_count(PIO pio, uint sm, int current_count) {
+    int count = current_count;
+    while (!pio_sm_is_rx_fifo_empty(pio, sm)) {
+        count = (int)pio_sm_get(pio, sm);
+    }
+    return count;
+}
+%}

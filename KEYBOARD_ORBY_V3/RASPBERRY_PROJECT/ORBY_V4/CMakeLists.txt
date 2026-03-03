@@ -41,11 +41,11 @@ pico_set_program_name(ORBY_V4 "ORBY_V4")
 pico_set_program_version(ORBY_V4 "0.1")
 
 # Generate PIO header
-pico_generate_pio_header(ORBY_V4 ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
+pico_generate_pio_header(ORBY_V4 ${CMAKE_CURRENT_LIST_DIR}/encoder.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(ORBY_V4 0)
-pico_enable_stdio_usb(ORBY_V4 0)
+pico_enable_stdio_usb(ORBY_V4 1)
 
 # Add the standard library to the build
 target_link_libraries(ORBY_V4
@@ -54,6 +54,7 @@ target_link_libraries(ORBY_V4
 # Add the standard include files to the build
 target_include_directories(ORBY_V4 PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        include
 )
 
 # Add any user requested libraries
@@ -63,6 +64,7 @@ target_link_libraries(ORBY_V4
         hardware_dma
         hardware_pio
         hardware_timer
+        pico_multicore
         )
 
 pico_add_extra_outputs(ORBY_V4)
