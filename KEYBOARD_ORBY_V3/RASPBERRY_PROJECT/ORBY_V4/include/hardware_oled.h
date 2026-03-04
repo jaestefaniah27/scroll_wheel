@@ -100,4 +100,10 @@ public:
 
         apply_cs(0); // Volver a cerrar el canal
     }
+
+    void invert_screen(uint8_t screen_num, bool invert) {
+        apply_cs(screen_num);
+        send_command(invert ? 0xA7 : 0xA6);
+        apply_cs(0);
+    }
 };
