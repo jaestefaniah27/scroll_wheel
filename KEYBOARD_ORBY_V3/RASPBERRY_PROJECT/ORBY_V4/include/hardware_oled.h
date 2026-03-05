@@ -88,8 +88,8 @@ public:
     void paint_screen(uint8_t screen_num, const uint8_t* framebuffer, size_t size = 360) {
         apply_cs(screen_num); // El PIO enruta el hardware instantáneamente
 
-        // Posicionar el cursor de la pantalla en (0,0)
-        send_command(0x21); send_command(0); send_command(71);
+        // Posicionar el cursor de la pantalla (Offset 28 y 99 para centrar en RAM 128x64)
+        send_command(0x21); send_command(28); send_command(99);
         send_command(0x22); send_command(0); send_command(4);
         
         // Modo datos
