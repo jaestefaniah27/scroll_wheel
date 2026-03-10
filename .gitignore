@@ -2,3 +2,6 @@
 ORBY_BLE/main/.build_hash
 ORBY_BLE/main/binarios/*
 ORBY_BLE/main/compile.log
+node_modules/
+build/
+.vscode/

@@ -1,2 +1,7 @@
-build
-!.vscode/*
+build/
+.vscode/
+node_modules/
+dist/
+out/
+*.log
+.DS_Store
