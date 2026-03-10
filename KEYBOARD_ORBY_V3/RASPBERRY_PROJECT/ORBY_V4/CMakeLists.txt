@@ -35,7 +35,10 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(ORBY_V4 main.cpp )
+add_executable(ORBY_V4 
+        main.cpp 
+        src/usb_descriptors.c
+)
 
 pico_set_program_name(ORBY_V4 "ORBY_V4")
 pico_set_program_version(ORBY_V4 "0.1")
@@ -45,7 +48,7 @@ pico_generate_pio_header(ORBY_V4 ${CMAKE_CURRENT_LIST_DIR}/encoder.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(ORBY_V4 0)
-pico_enable_stdio_usb(ORBY_V4 1)
+pico_enable_stdio_usb(ORBY_V4 0)
 
 # Add the standard library to the build
 target_link_libraries(ORBY_V4
@@ -65,6 +68,8 @@ target_link_libraries(ORBY_V4
         hardware_pio
         hardware_timer
         pico_multicore
+        tinyusb_device
+        tinyusb_board
         )
 
 pico_add_extra_outputs(ORBY_V4)

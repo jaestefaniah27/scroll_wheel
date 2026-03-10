@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
+#include "bsp/board.h"
+#include "tusb.h"
+#include "class/hid/hid_device.h"
+#include "class/cdc/cdc_device.h"
 #include "pinout.h"
 #include "hardware_encoder.h" // Nuestra nueva abstracción
 #include "hardware_oled.h"
@@ -36,10 +40,36 @@ void core1_entry() {
 }
 
 // ==========================================
-// CORE 0: MANEJA ENCODERS, TECLAS Y LIBRERÍA USB (FUTURO)
+// CALLBACKS CDC (SERIAL)
+// ==========================================
+void tud_cdc_rx_cb(uint8_t itf) {
+    (void)itf;
+    char buf[64];
+    uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
+    
+    if (count > 0) {
+        // Hacemos eco de vuelta al host para comprobar que la comunicación es bidireccional
+        tud_cdc_n_write(itf, "RECIBIDO: ", 10);
+        tud_cdc_n_write(itf, buf, count);
+        tud_cdc_n_write_flush(itf);
+
+        // Si recibimos "TEST", hacemos parpadear la primera pantalla
+        if (count >= 4 && strncmp(buf, "TEST", 4) == 0) {
+            uint32_t msg = (0 << 1) | 1; // Invertir pantalla 1 (Indice 0)
+            multicore_fifo_push_blocking(msg);
+        }
+    }
+}
+
+// ==========================================
+// CORE 0: MANEJA ENCODERS, TECLAS Y LIBRERÍA USB 
 // ==========================================
 int main() {
-    stdio_init_all();
+    board_init();
+    tusb_init();
+
+    // Reemplazamos stdio_init_all() ya que TinyUSB y CDC gestionarán el puerto serial si queremos
+    // stdio_init_all();
     sleep_ms(2000); 
     printf("=== SISTEMA DUAL-CORE INICIADO ===\n");
 
@@ -65,32 +95,69 @@ int main() {
         gpio_pull_up(key_pins[i]);
     }
 
+    int pending_vol_clicks = 0;
+    bool vol_release_pending = false;
+
     while (true) {
+        tud_task(); // Manejo en tiempo real del stack USB (TinyUSB)
         
-        // Solo tenemos que pedirle el delta al objeto
-        int delta_izq = rueda_izq.get_delta();
-        if (delta_izq != 0) {
-            printf("Rueda IZQ: Movimiento %+d | Absoluto: %d\n", delta_izq, rueda_izq.get_absolute());
-            // Aquí llamarías a: USB_Send_Volume(delta_izq);
+        // --- 1. ENCODER IZQUIERDO (VOLUMEN) ---
+        pending_vol_clicks += rueda_izq.get_delta();
+        
+        if (tud_hid_ready()) {
+            if (vol_release_pending) {
+                // El reporte anterior fue un 'Press', ahora mandamos el 'Release'
+                uint16_t volume_code = 0;
+                tud_hid_report(3, &volume_code, 2);
+                vol_release_pending = false;
+            } else if (pending_vol_clicks != 0) {
+                // Hay clics pendientes y el endpoint está libre
+                uint16_t volume_code = (pending_vol_clicks > 0) ? HID_USAGE_CONSUMER_VOLUME_INCREMENT : HID_USAGE_CONSUMER_VOLUME_DECREMENT;
+                tud_hid_report(3, &volume_code, 2); 
+                vol_release_pending = true;
+                
+                // Descontamos el clic procesado
+                if (pending_vol_clicks > 0) pending_vol_clicks--;
+                else pending_vol_clicks++;
+            }
         }
 
+        // --- 2. ENCODER DERECHO (P. EJ. ZOOM, scroll) ---
         int delta_der = rueda_der.get_delta();
-        if (delta_der != 0) {
-            printf("Rueda DER: Movimiento %+d | Absoluto: %d\n", delta_der, rueda_der.get_absolute());
-            // Aquí llamarías a: USB_Send_Zoom(delta_der);
+        if (delta_der != 0 && tud_hid_ready()) {
+            // Placeholder: de momento solo imprimimos, más adelante podríamos mapearlo a scroll de ratón
+            // printf("Rueda DER: Movimiento %+d | Absoluto: %d\n", delta_der, rueda_der.get_absolute());
         }
 
-        // Leer teclas
+        // --- 3. TECLAS A MACROS ---
         for (int i = 0; i < 10; i++) {
             bool is_pressed = !gpio_get(key_pins[i]); // LOW = Pulsado
             if (is_pressed != last_key_state[i]) {
+                
+                // Esperamos cortésmente si el canal HID está ocupado mandando otro reporte consecutivo
+                while (!tud_hid_ready()) {
+                    tud_task(); 
+                    sleep_us(100);
+                }
+
                 last_key_state[i] = is_pressed;
                 
-                // Embalamos el evento (indice de pantalla + estado)
+                // Embalamos el evento para cambiar el color de la OLED (Core 1)
                 uint32_t msg = (i << 1) | (is_pressed ? 1 : 0);
-                
-                // Lo enviamos a la cola FIFO del core 1 (no bloquea si hay espacio)
                 multicore_fifo_push_blocking(msg);
+
+                // Lógica de Atajos (Core 0 -> USB)
+                if (is_pressed) {
+                    // Ejemplo: Si es la primera tecla (i == 0), enviamos L-CTRL + C
+                    if (i == 0) {
+                        uint8_t keycode[6] = {HID_KEY_C, 0, 0, 0, 0, 0};
+                        // Report ID 1 corresponde al teclado. Enviamos Keyboard Modifier (L-CTRL) + Letra C
+                        tud_hid_keyboard_report(1, KEYBOARD_MODIFIER_LEFTCTRL, keycode);
+                    }
+                } else {
+                    // Cuando soltamos cualquier tecla, liberamos el teclado (mandamos todo a 0)
+                    tud_hid_keyboard_report(1, 0, NULL);
+                }
             }
         }
 
