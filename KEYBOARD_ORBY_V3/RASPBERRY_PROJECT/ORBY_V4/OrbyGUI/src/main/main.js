@@ -2,6 +2,7 @@ const { app, BrowserWindow } = require('electron');
 const { SerialManager } = require('./serialManager');
 const { ActiveWindowTracker } = require('./activeWindowTracker');
 const { setupIpcHandlers } = require('./ipcHandlers');
+const { MacroExecutor } = require('./macroExecutor');
 
 const VITE_URL = 'http://localhost:5173';
 let mainWindow;
@@ -47,14 +48,20 @@ app.whenReady().then(() => {
 
   serialManager = new SerialManager();
   const windowTracker = new ActiveWindowTracker();
+  const macroExecutor = new MacroExecutor();
 
   // Setup IPC handlers (profile save/load, device commands)
-  setupIpcHandlers(serialManager);
+  setupIpcHandlers(serialManager, macroExecutor);
 
   // Push real-time device status changes to renderer
   serialManager.on('statusChange', (connected, port) => {
     console.log(`[Electron] Device ${connected ? 'connected' : 'disconnected'}`);
     mainWindow?.webContents.send('device-status', { connected, port });
+  });
+
+  // Push real-time serial telemetry to renderer
+  serialManager.on('data', (data) => {
+    mainWindow?.webContents.send('device-telemetry', data);
   });
 
   // Push active app changes to renderer for auto-profile switching

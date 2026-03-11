@@ -36,11 +36,10 @@ const ProfileSidebar = ({ profiles, activeId, switchProfile, addProfile, deleteP
           <div key={p.id}>
             <div
               onClick={() => switchProfile(p.id)}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer transition-all group border ${
-                p.id === activeId
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer transition-all group border ${p.id === activeId
                   ? 'bg-orby-accent/10 border-orby-accent/20'
                   : 'border-transparent hover:bg-white/5'
-              }`}
+                }`}
             >
               <div className={`w-2 h-2 rounded-full shrink-0 transition-colors ${p.id === activeId ? 'bg-orby-accent shadow-[0_0_6px_#58a6ff]' : 'bg-gray-700'}`} />
               <div className="flex-1 min-w-0">

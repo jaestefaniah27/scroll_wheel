@@ -6,7 +6,7 @@ function getProfilesPath() {
   return path.join(app.getPath('userData'), 'orby-profiles.json');
 }
 
-function setupIpcHandlers(serialManager) {
+function setupIpcHandlers(serialManager, macroExecutor) {
   ipcMain.handle('profiles:load', async () => {
     try {
       const file = getProfilesPath();
@@ -33,6 +33,14 @@ function setupIpcHandlers(serialManager) {
   ipcMain.handle('device:status', async () => ({
     connected: serialManager?.isConnected ?? false
   }));
+
+  ipcMain.handle('macro:execute', async (_e, action) => {
+    if (macroExecutor) {
+      await macroExecutor.executeAction(action);
+      return { success: true };
+    }
+    return { success: false, error: 'MacroExecutor not initialized' };
+  });
 }
 
 module.exports = { setupIpcHandlers };

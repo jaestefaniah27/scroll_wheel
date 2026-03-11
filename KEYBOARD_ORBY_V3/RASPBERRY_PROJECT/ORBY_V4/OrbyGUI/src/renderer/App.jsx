@@ -5,7 +5,7 @@ import MacroGrid from './components/MacroGrid';
 import KeyConfigModal from './components/KeyConfigModal';
 
 let ipc = null;
-try { ipc = window.require('electron').ipcRenderer; } catch (_) {}
+try { ipc = window.require('electron').ipcRenderer; } catch (_) { }
 
 const App = () => {
   const hook = useProfiles();
@@ -23,6 +23,48 @@ const App = () => {
     const t = setInterval(check, 2000);
     return () => clearInterval(t);
   }, []);
+
+  // Handle hardware telemetry for Macro Execution
+  useEffect(() => {
+    if (!ipc) return;
+    
+    const handleTelemetry = (_e, data) => {
+      if (!data) return;
+      if (data.startsWith('KEY_EV:')) {
+        const parts = data.split(':');
+        const keyId = parseInt(parts[1], 10);
+        const state = parseInt(parts[2], 10);
+        
+        // Ejecutamos la macro en Node.js solo cuando se PRESIONA la tecla (state == 1)
+        if (state === 1) {
+          const keyConfig = hook.activeProfile?.keys?.find(k => k.id === keyId);
+          console.log(`[React] Received press for Key ${keyId}. Config found:`, keyConfig);
+          // Si tiene un valor O si su tipo no es 'none' ni vacío
+          if (keyConfig?.action && (keyConfig.action.value || (keyConfig.action.type && keyConfig.action.type !== 'none'))) {
+            // Fix temporal por si el type viene vacío pero tiene value (ej antiguas macros)
+            const safeAction = {
+               type: keyConfig.action.type || 'shortcut',
+               value: keyConfig.action.value
+            };
+            
+            console.log(`[React] Executing macro via IPC:`, safeAction);
+            ipc.invoke('macro:execute', safeAction).then(res => {
+              console.log('[React] Macro execution result:', res);
+            }).catch(err => {
+              console.error('[App] Macro execution error:', err);
+            });
+          } else {
+            console.log(`[React] Key ${keyId} has no action assigned.`);
+          }
+        }
+      }
+    };
+
+    ipc.on('device-telemetry', handleTelemetry);
+    return () => {
+      ipc.removeListener('device-telemetry', handleTelemetry);
+    };
+  }, [hook.activeProfile]);
 
   const handleSaveToDevice = async () => {
     if (!ipc || !isConnected) return;
@@ -60,11 +102,10 @@ const App = () => {
             <button
               onClick={handleSaveToDevice}
               disabled={!isConnected}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold border transition-all ${
-                isConnected
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold border transition-all ${isConnected
                   ? 'bg-orby-accent/20 border-orby-accent/40 text-orby-accent hover:bg-orby-accent/30'
                   : 'bg-white/5 border-white/10 text-gray-600 cursor-not-allowed'
-              }`}
+                }`}
             >
               {isConnected ? '⬆ Save to Device' : '○ Device Offline'}
             </button>

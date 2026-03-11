@@ -2,20 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { ALL_ICONS, ICON_CATEGORIES } from '../iconLibrary.js';
 
 const ACTION_TYPES = [
-  { v: 'none',           l: 'None',    d: 'No action' },
-  { v: 'shortcut',       l: 'Shortcut',d: 'Keyboard combo' },
-  { v: 'text',           l: 'Text',    d: 'Type text' },
-  { v: 'media',          l: 'Media',   d: 'Media control' },
+  { v: 'none', l: 'None', d: 'No action' },
+  { v: 'shortcut', l: 'Shortcut', d: 'Keyboard combo' },
+  { v: 'text', l: 'Text', d: 'Type text' },
+  { v: 'media', l: 'Media', d: 'Media control' },
   { v: 'profile_switch', l: 'Profile', d: 'Switch profile' },
 ];
 
 const MEDIA_OPTS = [
   { v: 'play_pause', l: '⏯', t: 'Play/Pause' },
-  { v: 'next',       l: '⏭', t: 'Next Track' },
-  { v: 'prev',       l: '⏮', t: 'Prev Track' },
-  { v: 'vol_up',     l: '🔊', t: 'Volume Up' },
-  { v: 'vol_down',   l: '🔉', t: 'Volume Down' },
-  { v: 'mute',       l: '🔇', t: 'Mute' },
+  { v: 'next', l: '⏭', t: 'Next Track' },
+  { v: 'prev', l: '⏮', t: 'Prev Track' },
+  { v: 'vol_up', l: '🔊', t: 'Volume Up' },
+  { v: 'vol_down', l: '🔉', t: 'Volume Down' },
+  { v: 'mute', l: '🔇', t: 'Mute' },
 ];
 
 // Keyboard shortcut recorder
@@ -31,7 +31,7 @@ const ShortcutRecorder = ({ value, onChange }) => {
       if (e.shiftKey) parts.push('Shift');
       if (e.metaKey) parts.push('Win');
       const k = e.key;
-      if (!['Control','Alt','Shift','Meta'].includes(k)) {
+      if (!['Control', 'Alt', 'Shift', 'Meta'].includes(k)) {
         parts.push(k.length === 1 ? k.toUpperCase() : k);
         onChange(parts.join('+'));
         setRec(false);
@@ -45,8 +45,8 @@ const ShortcutRecorder = ({ value, onChange }) => {
     <div className="flex gap-2">
       <div className="flex-1 bg-black/40 border border-gray-800 rounded-xl px-3 py-2 text-sm font-mono text-white min-h-[38px] flex items-center">
         {rec ? <span className="text-orby-accent animate-pulse text-xs">Press keys...</span>
-             : value ? <span>{value}</span>
-             : <span className="text-gray-600 text-xs">Not configured</span>}
+          : value ? <span>{value}</span>
+            : <span className="text-gray-600 text-xs">Not configured</span>}
       </div>
       <button onClick={() => setRec(r => !r)}
         className={`px-3 rounded-xl text-xs font-bold border transition-all ${rec ? 'bg-red-500/20 border-red-500/40 text-red-400' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>

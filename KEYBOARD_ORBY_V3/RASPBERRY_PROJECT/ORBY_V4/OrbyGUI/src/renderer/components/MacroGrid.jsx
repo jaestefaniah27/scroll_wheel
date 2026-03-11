@@ -51,7 +51,7 @@ const BigWheel = ({ encoder, onUpdate }) => {
           className="w-28 h-28 rounded-full bg-gradient-to-b from-gray-500 to-gray-900 border-[4px] border-gray-500 shadow-[0_12px_36px_rgba(0,0,0,0.9),inset_0_3px_12px_rgba(255,255,255,0.1)] relative flex items-center justify-center cursor-pointer transition-transform hover:scale-105">
           <div className="w-20 h-20 rounded-full bg-black/60 border border-gray-700 absolute" />
           <div className="w-2.5 h-2.5 rounded-full bg-gray-500 z-10 hover:bg-orby-accent transition-colors shadow-lg" />
-          {[0,60,120,180,240,300].map(d => (
+          {[0, 60, 120, 180, 240, 300].map(d => (
             <div key={d} className="absolute w-0.5 h-3 bg-gray-700 rounded-full"
               style={{ transform: `rotate(${d}deg) translateY(-42px)`, transformOrigin: 'center' }} />
           ))}
@@ -75,28 +75,31 @@ const BigWheel = ({ encoder, onUpdate }) => {
   );
 };
 
-const MacroCell = ({ keyConfig, onClick, layoutInfo }) => {
+const MacroCell = ({ keyConfig, onClick, layoutInfo, isPressed }) => {
   const [hovered, setHovered] = useState(false);
   const icon = ALL_ICONS.find(i => i.id === keyConfig?.iconId);
 
   if (!layoutInfo.hasOled) {
     return (
       <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-        className={`w-24 h-14 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all border ${hovered ? 'bg-white/10 border-white/25' : 'bg-white/5 border-white/10'}`}>
-        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">K{keyConfig.id}</span>
-        <span className="text-[9px] text-gray-600 mt-0.5">{keyConfig.label || 'profile'}</span>
+        className={`w-24 h-14 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all border ${isPressed ? 'bg-white border-white scale-95' : hovered ? 'bg-white/10 border-white/25' : 'bg-white/5 border-white/10'}`}>
+        <span className={`text-xs font-bold uppercase tracking-widest ${isPressed ? 'text-black' : 'text-gray-400'}`}>K{keyConfig.id}</span>
+        <span className={`text-[9px] mt-0.5 ${isPressed ? 'text-gray-800' : 'text-gray-600'}`}>{keyConfig.label || 'profile'}</span>
       </div>
     );
   }
 
   return (
     <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      className={`w-24 h-24 rounded-2xl flex flex-col items-center justify-center cursor-pointer relative overflow-hidden border-2 transition-all duration-200 ${hovered ? 'border-orby-accent bg-orby-accent/10 shadow-[0_0_18px_rgba(88,166,255,0.2)]' : 'border-gray-700/50 bg-black/60'}`}>
+      className={`w-24 h-24 rounded-2xl flex flex-col items-center justify-center cursor-pointer relative overflow-hidden border-2 transition-all duration-75 ${
+        isPressed ? 'border-white bg-white/20 scale-95 shadow-[0_0_30px_rgba(255,255,255,0.4)]' :
+        hovered ? 'border-orby-accent bg-orby-accent/10 shadow-[0_0_18px_rgba(88,166,255,0.2)]' : 'border-gray-700/50 bg-black/60'
+      }`}>
       {/* OLED Screen sim */}
-      <div className={`w-[72px] h-[40px] bg-black rounded border flex items-center justify-center overflow-hidden transition-colors ${hovered ? 'border-orby-accent/40' : 'border-gray-800'}`}>
+      <div className={`w-[72px] h-[40px] bg-black rounded border flex items-center justify-center overflow-hidden transition-colors ${hovered || isPressed ? 'border-orby-accent/40' : 'border-gray-800'}`}>
         {icon
           ? <img src={icon.svgPath} alt={icon.label} className="w-full h-full object-contain" style={{ filter: 'brightness(0) invert(1)' }} />
-          : <span className={`text-sm font-mono ${hovered ? 'text-orby-accent' : 'text-gray-800'}`}>K{keyConfig.id}</span>
+          : <span className={`text-sm font-mono ${hovered || isPressed ? 'text-orby-accent' : 'text-gray-800'}`}>K{keyConfig.id}</span>
         }
       </div>
       <div className="mt-1.5 text-[9px] font-bold text-gray-600 uppercase tracking-wide truncate max-w-[88px] text-center px-1">
@@ -115,6 +118,28 @@ const MacroCell = ({ keyConfig, onClick, layoutInfo }) => {
 const MacroGrid = ({ keys, encoders, onKeyClick, onEncoderUpdate }) => {
   const enc = (id) => encoders.find(e => e.id === id) || { id, label: `Enc ${id}`, cwAction: { type: 'none' }, ccwAction: { type: 'none' }, pressAction: { type: 'none' } };
 
+  const [pressedKeys, setPressedKeys] = useState({});
+
+  React.useEffect(() => {
+    let ipc;
+    try { ipc = window.require('electron').ipcRenderer; } catch (_) { return; }
+
+    const handleTelemetry = (_e, data) => {
+      if (!data || !data.startsWith('KEY_EV:')) return;
+      const parts = data.split(':');
+      const keyId = parseInt(parts[1], 10);
+      const state = parseInt(parts[2], 10);
+      
+      setPressedKeys(prev => ({
+        ...prev,
+        [keyId]: state === 1
+      }));
+    };
+
+    ipc.on('device-telemetry', handleTelemetry);
+    return () => ipc.removeListener('device-telemetry', handleTelemetry);
+  }, []);
+
   return (
     <div className="flex items-center gap-6">
       {/* Key grid 3×4 */}
@@ -123,7 +148,13 @@ const MacroGrid = ({ keys, encoders, onKeyClick, onEncoderUpdate }) => {
           {KEY_LAYOUT.map(layout => {
             const keyConfig = keys.find(k => k.id === layout.id) || { id: layout.id, iconId: null, label: '', action: { type: 'none', value: '' } };
             return (
-              <MacroCell key={layout.id} keyConfig={keyConfig} layoutInfo={layout} onClick={() => onKeyClick(layout.id)} />
+              <MacroCell 
+                key={layout.id} 
+                keyConfig={keyConfig} 
+                layoutInfo={layout} 
+                onClick={() => onKeyClick(layout.id)} 
+                isPressed={pressedKeys[layout.id]}
+              />
             );
           })}
         </div>
@@ -141,7 +172,7 @@ const MacroGrid = ({ keys, encoders, onKeyClick, onEncoderUpdate }) => {
         <BigWheel encoder={enc(3)} onUpdate={(ch) => onEncoderUpdate(3, ch)} />
         {/* Screw mount dots */}
         <div className="flex gap-5 mt-1">
-          {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full border border-gray-700 bg-gray-900" />)}
+          {[0, 1, 2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full border border-gray-700 bg-gray-900" />)}
         </div>
       </div>
     </div>
