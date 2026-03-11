@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 40" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- terminal prompt >_ -->
+  <rect x="10" y="6" width="52" height="28" rx="3"/>
+  <polyline points="20,20 28,14"/>
+  <polyline points="20,20 28,26"/>
+  <line x1="32" y1="26" x2="44" y2="26"/>
+</svg>

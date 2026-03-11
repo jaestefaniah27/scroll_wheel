@@ -1,6 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-orby-dark: #0d1117;
+  --color-orby-panel: #161b22;
+  --color-orby-accent: #58a6ff;
+}
 
 html, body, #root {
   height: 100%;

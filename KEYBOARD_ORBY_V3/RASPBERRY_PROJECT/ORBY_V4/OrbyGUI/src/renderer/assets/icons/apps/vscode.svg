@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 40" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- VS Code < shape -->
+  <polyline points="22,10 10,20 22,30"/>
+  <polyline points="38,6 26,20 38,34"/>
+  <!-- right block -->
+  <rect x="44" y="10" width="16" height="20" rx="2"/>
+</svg>

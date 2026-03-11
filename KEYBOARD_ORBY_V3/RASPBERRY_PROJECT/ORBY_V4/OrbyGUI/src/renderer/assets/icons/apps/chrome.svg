@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 40" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Chrome circle shape -->
+  <circle cx="36" cy="20" r="14"/>
+  <circle cx="36" cy="20" r="6"/>
+  <!-- Chrome rays -->
+  <line x1="36" y1="6" x2="36" y2="14"/>
+  <line x1="48" y1="27" x2="41" y2="23"/>
+  <line x1="24" y1="27" x2="31" y2="23"/>
+</svg>
