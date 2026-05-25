@@ -58,9 +58,9 @@ namespace OledMap {
         2,  // OLED 4  -> U3 Q2
         3,  // OLED 5  -> U3 Q3
         4,  // OLED 6  -> U3 Q4
-        0,  // OLED 7  -> U3 Q0
-        1,  // OLED 8  -> U3 Q1
-        14, // OLED 9  -> U4 Q6
-        13  // OLED 10 -> U4 Q5
+        1,  // OLED 7  -> U3 Q1 (corregido: era Q0)
+        0,  // OLED 8  -> U3 Q0 (corregido: era Q1)
+        15, // OLED 9  -> U4 Q7 (confirmado por diagnostico)
+        14  // OLED 10 -> U4 Q6 (corregido: era Q5)
     };
 } // namespace OledMap

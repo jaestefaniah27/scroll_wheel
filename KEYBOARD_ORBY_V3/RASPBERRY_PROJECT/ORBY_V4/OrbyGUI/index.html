@@ -1,12 +1,187 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Orby Keyboard Hub</title>
-  </head>
-  <body class="bg-orby-dark text-white font-sans antialiased overflow-hidden">
-    <div id="root"></div>
-    <script type="module" src="/src/renderer/main.jsx"></script>
-  </body>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OrbyGUI - Orby V4 Control Panel</title>
+  <link rel="stylesheet" href="./src/styles/index.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Phosphor Icons para UI fluida -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+  <!-- Custom Titlebar for frameless window -->
+  <div class="titlebar">
+    <div class="titlebar-drag-region"></div>
+    <div class="titlebar-left">
+      <div class="app-logo"></div>
+      <span class="app-title">OrbyGUI</span>
+    </div>
+    <div class="titlebar-center">
+      <div id="connection-status-badge" class="status-badge disconnected">
+        <span class="status-dot"></span>
+        <span class="status-text">Desconectado</span>
+      </div>
+    </div>
+    <div class="titlebar-controls">
+      <button class="window-btn minimize" id="btn-minimize"><i class="ph ph-minus"></i></button>
+      <button class="window-btn maximize" id="btn-maximize"><i class="ph ph-square"></i></button>
+      <button class="window-btn close" id="btn-close"><i class="ph ph-x"></i></button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar">
+      <button class="nav-item active" data-target="view-dashboard" title="Dashboard">
+        <i class="ph ph-squares-four"></i>
+      </button>
+      <button class="nav-item" data-target="view-profiles" title="Perfiles">
+        <i class="ph ph-user-circle-gear"></i>
+      </button>
+      <button class="nav-item" data-target="view-settings" title="Ajustes">
+        <i class="ph ph-sliders-horizontal"></i>
+      </button>
+      <div class="sidebar-spacer"></div>
+      <button class="nav-item" data-target="view-console" title="Consola Serie">
+        <i class="ph ph-terminal-window"></i>
+      </button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="content-area">
+      
+      <!-- Dashboard View (Real-time telemetry) -->
+      <section id="view-dashboard" class="view active">
+        <header class="view-header">
+          <h1>Dashboard</h1>
+          <p>Monitorización en tiempo real del Orby V4</p>
+        </header>
+        <div class="dashboard-grid">
+          <div class="hardware-preview-card glass-panel">
+            <h2>Dispositivo</h2>
+            <div id="keyboard-visualizer">
+              <!-- Renderizado dinámico por JS -->
+            </div>
+          </div>
+          <div class="status-panel glass-panel">
+            <h2>Estado Actual</h2>
+            <div class="status-items">
+              <div class="status-item">
+                <span class="label">Perfil Activo</span>
+                <span class="value highlight" id="lbl-active-profile">--</span>
+              </div>
+              <div class="status-item">
+                <span class="label">Modo</span>
+                <span class="value" id="lbl-active-mode">NORMAL</span>
+              </div>
+              <div class="status-item">
+                <span class="label">Capa SUPER</span>
+                <span class="value" id="lbl-super-state">Inactiva</span>
+              </div>
+            </div>
+          </div>
+          <div class="telemetry-panel glass-panel">
+            <h2>Último Evento</h2>
+            <div class="event-feed" id="live-event-feed">
+              <div class="empty-state">Esperando actividad...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Profiles View -->
+      <section id="view-profiles" class="view">
+        <header class="view-header">
+          <h1>Perfiles</h1>
+          <p>Gestión de macros de fábrica (V1)</p>
+        </header>
+        <div class="profiles-toolbar">
+          <div class="layer-toggle">
+            <span class="label">Capa mostrada:</span>
+            <button class="toggle-btn active" id="btn-layer-normal">NORMAL</button>
+            <button class="toggle-btn" id="btn-layer-super">SUPER</button>
+          </div>
+        </div>
+        <div class="profiles-grid" id="profiles-container">
+          <!-- Renderizado por JS -->
+        </div>
+      </section>
+
+      <!-- Settings View -->
+      <section id="view-settings" class="view">
+        <header class="view-header">
+          <h1>Ajustes de Hardware</h1>
+          <p>Configuración persistente en memoria Flash</p>
+        </header>
+        <div class="settings-grid">
+          <div class="settings-card glass-panel">
+            <div class="card-header">
+              <i class="ph ph-sun"></i>
+              <h2>Brillo de Pantallas</h2>
+            </div>
+            <div class="setting-body">
+              <div class="slider-container">
+                <input type="range" id="brightness-slider" min="0" max="255" value="207" class="premium-slider">
+                <span class="slider-val" id="brightness-val">81%</span>
+              </div>
+              <p class="setting-desc">Ajusta el nivel de contraste de las 10 pantallas OLED. Los cambios se guardan inmediatamente en la memoria no volátil.</p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel">
+            <div class="card-header">
+              <i class="ph ph-moon-stars"></i>
+              <h2>Reposo Automático</h2>
+            </div>
+            <div class="setting-body">
+              <div class="timeout-selector" id="timeout-selector">
+                <button class="opt-btn" data-val="1">1 MIN</button>
+                <button class="opt-btn active" data-val="5">5 MIN</button>
+                <button class="opt-btn" data-val="10">10 MIN</button>
+                <button class="opt-btn" data-val="0">OFF</button>
+              </div>
+              <p class="setting-desc">Tiempo de inactividad antes de apagar las pantallas para proteger los diodos (Screensaver).</p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel device-info">
+            <div class="card-header">
+              <i class="ph ph-info"></i>
+              <h2>Información del Dispositivo</h2>
+            </div>
+            <div class="setting-body">
+              <ul class="info-list" id="device-info-list">
+                <li><span class="lbl">Modelo:</span> <span class="val">Desconocido</span></li>
+                <li><span class="lbl">Firmware:</span> <span class="val">--</span></li>
+                <li><span class="lbl">Puerto:</span> <span class="val">--</span></li>
+              </ul>
+              <button class="secondary-btn mt-4" id="btn-reconnect"><i class="ph ph-arrows-clockwise"></i> Forzar Reconexión</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Console View -->
+      <section id="view-console" class="view">
+        <header class="view-header">
+          <h1>Consola Serie</h1>
+          <p>Telemetría bruta bidireccional (CDC)</p>
+        </header>
+        <div class="console-wrapper glass-panel">
+          <div class="console-output" id="console-output">
+            <div class="console-line system">OrbyGUI Terminal v1.0. Esperando conexión...</div>
+          </div>
+          <div class="console-input-area">
+            <span class="prompt">></span>
+            <input type="text" id="console-input" placeholder="Escribe un comando manual (ej. SET_BRIGHTNESS:200)" spellcheck="false" autocomplete="off">
+            <button id="btn-clear-console" title="Limpiar"><i class="ph ph-trash"></i></button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
 </html>
