@@ -38,6 +38,7 @@ pico_sdk_init()
 add_executable(ORBY_V4 
         main.cpp 
         src/usb_descriptors.c
+        src/oled_bitmaps.cpp
 )
 
 pico_set_program_name(ORBY_V4 "ORBY_V4")

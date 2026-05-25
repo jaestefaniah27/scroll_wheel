@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 40" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Spotify speaker waves -->
-  <circle cx="36" cy="20" r="14"/>
-  <circle cx="36" cy="20" r="5" fill="white"/>
-  <path d="M20 14 Q36 6 52 14" stroke-width="2.5"/>
-  <path d="M22 26 Q36 34 50 26" stroke-width="2.5"/>
-</svg>

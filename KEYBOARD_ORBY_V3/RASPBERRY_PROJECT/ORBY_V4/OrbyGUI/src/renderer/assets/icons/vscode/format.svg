@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 40" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Format: lines with auto-indent arrow -->
-  <line x1="16" y1="12" x2="56" y2="12"/>
-  <line x1="22" y1="20" x2="56" y2="20"/>
-  <line x1="16" y1="28" x2="36" y2="28"/>
-  <polyline points="10,32 16,28 10,24"/>
-</svg>

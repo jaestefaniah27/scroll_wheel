@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 40" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Comment lines: // prefix -->
-  <text x="10" y="24" font-family="monospace" font-size="20" fill="white" stroke="none">//</text>
-  <line x1="32" y1="12" x2="58" y2="12"/>
-  <line x1="32" y1="20" x2="58" y2="20"/>
-  <line x1="32" y1="28" x2="50" y2="28"/>
-</svg>

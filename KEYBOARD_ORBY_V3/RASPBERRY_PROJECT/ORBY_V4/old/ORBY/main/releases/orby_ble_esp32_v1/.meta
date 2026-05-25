@@ -1,0 +1,4 @@
+NAME=orby_ble_esp32
+DATE=2025-09-21 20:20:12
+FQBN=esp32:esp32:esp32
+FAMILY=esp32

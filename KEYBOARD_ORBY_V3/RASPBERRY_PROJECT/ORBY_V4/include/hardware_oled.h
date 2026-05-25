@@ -75,10 +75,21 @@ public:
             gpio_put(Pins::SHIFT_CLK, 0);
         }
         gpio_put(Pins::SHIFT_LATCH, 1);
+        sleep_us(5); // Esperar propagación CS a través de U3+U4
 
         // Mandar la secuencia de arranque 
         for (uint8_t cmd : init_seq) {
             send_command(cmd);
+        }
+
+        // Limpiar la GDDRAM de TODAS las pantallas (broadcast)
+        // Evita que se muestre basura aleatoria si paint_screen falla
+        send_command(0x21); send_command(28); send_command(99);
+        send_command(0x22); send_command(0); send_command(4);
+        gpio_put(Pins::OLED_DC, 1);
+        uint8_t zeros[72] = {0};
+        for (int page = 0; page < 5; page++) {
+            spi_write_blocking(spi0, zeros, 72);
         }
 
         // Aislar todas (Máscara 0xFFFF)
@@ -86,7 +97,8 @@ public:
     }
 
     void paint_screen(uint8_t screen_num, const uint8_t* framebuffer, size_t size = 360) {
-        apply_cs(screen_num); // El PIO enruta el hardware instantáneamente
+        apply_cs(screen_num);
+        sleep_us(5); // Esperar propagación CS (crítico para U4: pantallas 9-10)
 
         // Posicionar el cursor de la pantalla (Offset 28 y 99 para centrar en RAM 128x64)
         send_command(0x21); send_command(28); send_command(99);
@@ -103,7 +115,43 @@ public:
 
     void invert_screen(uint8_t screen_num, bool invert) {
         apply_cs(screen_num);
+        sleep_us(5); // Esperar propagación CS
         send_command(invert ? 0xA7 : 0xA6);
         apply_cs(0);
+    }
+
+    void set_brightness(uint8_t value) {
+        // Broadcast a todas las pantallas (todos los CS a LOW)
+        gpio_put(Pins::SHIFT_LATCH, 0);
+        for (int i = 0; i < 16; i++) {
+            gpio_put(Pins::SHIFT_DATA, 0);
+            gpio_put(Pins::SHIFT_CLK, 1);
+            __asm volatile ("nop\n");
+            gpio_put(Pins::SHIFT_CLK, 0);
+        }
+        gpio_put(Pins::SHIFT_LATCH, 1);
+        sleep_us(5);
+
+        send_command(0x81); // Set Contrast Control
+        send_command(value);
+
+        apply_cs(0); // Aislar todas
+    }
+
+    void set_all_displays_on(bool on) {
+        // Broadcast a todas las pantallas (todos los CS a LOW)
+        gpio_put(Pins::SHIFT_LATCH, 0);
+        for (int i = 0; i < 16; i++) {
+            gpio_put(Pins::SHIFT_DATA, 0);
+            gpio_put(Pins::SHIFT_CLK, 1);
+            __asm volatile ("nop\n");
+            gpio_put(Pins::SHIFT_CLK, 0);
+        }
+        gpio_put(Pins::SHIFT_LATCH, 1);
+        sleep_us(5);
+
+        send_command(on ? 0xAF : 0xAE); // Display ON / OFF
+
+        apply_cs(0); // Aislar todas
     }
 };
