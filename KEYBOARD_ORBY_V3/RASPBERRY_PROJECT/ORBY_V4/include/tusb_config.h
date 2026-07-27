@@ -1,12 +1,13 @@
 #pragma once
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-//--------------------------------------------------------------------+
-// Board Specific Configuration
-//--------------------------------------------------------------------+
+    //--------------------------------------------------------------------+
+    // Board Specific Configuration
+    //--------------------------------------------------------------------+
 
 #ifndef BOARD_TUD_RHPORT
 #define BOARD_TUD_RHPORT 0
@@ -19,9 +20,9 @@ extern "C" {
 #define CFG_TUSB_RHPORT0_MODE OPT_MODE_DEVICE
 #define CFG_TUSB_OS OPT_OS_PICO
 
-//--------------------------------------------------------------------+
-// DEVICE CONFIGURATION
-//--------------------------------------------------------------------+
+    //--------------------------------------------------------------------+
+    // DEVICE CONFIGURATION
+    //--------------------------------------------------------------------+
 
 #ifndef CFG_TUD_ENDPOINT0_SIZE
 #define CFG_TUD_ENDPOINT0_SIZE 64

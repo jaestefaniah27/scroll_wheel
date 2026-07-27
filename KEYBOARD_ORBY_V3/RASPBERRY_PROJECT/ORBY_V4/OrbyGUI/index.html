@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OrbyGUI - Orby V4 Control Panel</title>
-  <link rel="stylesheet" href="./src/styles/index.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <!-- Phosphor Icons para UI fluida -->
-  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <!-- Sin recursos remotos: la app tiene que arrancar igual sin conexión.
+       Tipografía del sistema e iconos SVG en línea (src/icons.js). -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;" />
+  <title>OrbyGUI - Panel de control Orby V4</title>
 </head>
 <body>
-  <!-- Custom Titlebar for frameless window -->
   <div class="titlebar">
     <div class="titlebar-drag-region"></div>
     <div class="titlebar-left">
@@ -22,36 +21,33 @@
         <span class="status-dot"></span>
         <span class="status-text">Desconectado</span>
       </div>
+      <button class="save-flash-btn" id="btn-save-flash" title="Escribe la configuración actual en la memoria no volátil">
+        <span data-icon="save" data-icon-size="15"></span>
+        <span class="save-label">Guardado</span>
+      </button>
     </div>
     <div class="titlebar-controls">
-      <button class="window-btn minimize" id="btn-minimize"><i class="ph ph-minus"></i></button>
-      <button class="window-btn maximize" id="btn-maximize"><i class="ph ph-square"></i></button>
-      <button class="window-btn close" id="btn-close"><i class="ph ph-x"></i></button>
+      <button class="window-btn" id="btn-minimize" data-icon="minus"></button>
+      <button class="window-btn" id="btn-maximize" data-icon="square"></button>
+      <button class="window-btn close" id="btn-close" data-icon="close"></button>
     </div>
   </div>
 
   <div class="app-container">
-    <!-- Sidebar Navigation -->
     <nav class="sidebar">
-      <button class="nav-item active" data-target="view-dashboard" title="Dashboard">
-        <i class="ph ph-squares-four"></i>
-      </button>
-      <button class="nav-item" data-target="view-profiles" title="Perfiles">
-        <i class="ph ph-user-circle-gear"></i>
-      </button>
-      <button class="nav-item" data-target="view-settings" title="Ajustes">
-        <i class="ph ph-sliders-horizontal"></i>
-      </button>
+      <button class="nav-item active" data-target="view-dashboard" title="Dashboard" data-icon="dashboard" data-icon-size="22"></button>
+      <button class="nav-item" data-target="view-profiles" title="Perfiles y macros" data-icon="profiles" data-icon-size="22"></button>
+      <button class="nav-item" data-target="view-wheel" title="Rueda de scroll" data-icon="wheel" data-icon-size="22"></button>
+      <button class="nav-item" data-target="view-oled" title="Iconos OLED" data-icon="oled" data-icon-size="22"></button>
+      <button class="nav-item" data-target="view-auto" title="Cambio automático de perfil" data-icon="bolt" data-icon-size="22"></button>
+      <button class="nav-item" data-target="view-settings" title="Ajustes" data-icon="settings" data-icon-size="22"></button>
       <div class="sidebar-spacer"></div>
-      <button class="nav-item" data-target="view-console" title="Consola Serie">
-        <i class="ph ph-terminal-window"></i>
-      </button>
+      <button class="nav-item" data-target="view-console" title="Consola serie" data-icon="console" data-icon-size="22"></button>
     </nav>
 
-    <!-- Main Content Area -->
     <main class="content-area">
-      
-      <!-- Dashboard View (Real-time telemetry) -->
+
+      <!-- Dashboard -->
       <section id="view-dashboard" class="view active">
         <header class="view-header">
           <h1>Dashboard</h1>
@@ -60,15 +56,13 @@
         <div class="dashboard-grid">
           <div class="hardware-preview-card glass-panel">
             <h2>Dispositivo</h2>
-            <div id="keyboard-visualizer">
-              <!-- Renderizado dinámico por JS -->
-            </div>
+            <div id="keyboard-visualizer"></div>
           </div>
           <div class="status-panel glass-panel">
-            <h2>Estado Actual</h2>
+            <h2>Estado actual</h2>
             <div class="status-items">
               <div class="status-item">
-                <span class="label">Perfil Activo</span>
+                <span class="label">Perfil activo</span>
                 <span class="value highlight" id="lbl-active-profile">--</span>
               </div>
               <div class="status-item">
@@ -79,60 +73,64 @@
                 <span class="label">Capa SUPER</span>
                 <span class="value" id="lbl-super-state">Inactiva</span>
               </div>
+              <div class="status-item">
+                <span class="label">Scroll</span>
+                <span class="value" id="lbl-scroll-mode">--</span>
+              </div>
             </div>
           </div>
           <div class="telemetry-panel glass-panel">
-            <h2>Último Evento</h2>
+            <h2>Último evento</h2>
             <div class="event-feed" id="live-event-feed">
-              <div class="empty-state">Esperando actividad...</div>
+              <div class="empty-state">Esperando actividad…</div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Profiles View -->
+      <!-- Perfiles (renderizado por src/views/profiles.js) -->
       <section id="view-profiles" class="view">
         <header class="view-header">
-          <h1>Perfiles</h1>
-          <p>Gestión de macros de fábrica (V1)</p>
+          <h1>Perfiles y macros</h1>
+          <p>Editor en vivo: los cambios viajan al teclado al instante</p>
         </header>
-        <div class="profiles-toolbar">
-          <div class="layer-toggle">
-            <span class="label">Capa mostrada:</span>
-            <button class="toggle-btn active" id="btn-layer-normal">NORMAL</button>
-            <button class="toggle-btn" id="btn-layer-super">SUPER</button>
-          </div>
-        </div>
-        <div class="profiles-grid" id="profiles-container">
-          <!-- Renderizado por JS -->
-        </div>
+        <div id="profiles-body"></div>
       </section>
 
-      <!-- Settings View -->
+      <!-- Rueda (renderizado por src/views/wheel.js) -->
+      <section id="view-wheel" class="view"></section>
+
+      <!-- Iconos OLED (renderizado por src/views/oled.js) -->
+      <section id="view-oled" class="view"></section>
+
+      <!-- Cambio automático (renderizado por src/views/auto.js) -->
+      <section id="view-auto" class="view"></section>
+
+      <!-- Ajustes -->
       <section id="view-settings" class="view">
         <header class="view-header">
-          <h1>Ajustes de Hardware</h1>
-          <p>Configuración persistente en memoria Flash</p>
+          <h1>Ajustes de hardware</h1>
+          <p>Configuración del dispositivo y persistencia en memoria Flash</p>
         </header>
         <div class="settings-grid">
           <div class="settings-card glass-panel">
             <div class="card-header">
-              <i class="ph ph-sun"></i>
-              <h2>Brillo de Pantallas</h2>
+              <span data-icon="sun" data-icon-size="22"></span>
+              <h2>Brillo de pantallas</h2>
             </div>
             <div class="setting-body">
               <div class="slider-container">
                 <input type="range" id="brightness-slider" min="0" max="255" value="207" class="premium-slider">
                 <span class="slider-val" id="brightness-val">81%</span>
               </div>
-              <p class="setting-desc">Ajusta el nivel de contraste de las 10 pantallas OLED. Los cambios se guardan inmediatamente en la memoria no volátil.</p>
+              <p class="setting-desc">Nivel de contraste de las 10 pantallas OLED. Se aplica al momento; usa <strong>Guardar en Flash</strong> para conservarlo.</p>
             </div>
           </div>
 
           <div class="settings-card glass-panel">
             <div class="card-header">
-              <i class="ph ph-moon-stars"></i>
-              <h2>Reposo Automático</h2>
+              <span data-icon="moon" data-icon-size="22"></span>
+              <h2>Reposo automático</h2>
             </div>
             <div class="setting-body">
               <div class="timeout-selector" id="timeout-selector">
@@ -141,47 +139,76 @@
                 <button class="opt-btn" data-val="10">10 MIN</button>
                 <button class="opt-btn" data-val="0">OFF</button>
               </div>
-              <p class="setting-desc">Tiempo de inactividad antes de apagar las pantallas para proteger los diodos (Screensaver).</p>
+              <p class="setting-desc">Inactividad antes de apagar las pantallas para proteger los diodos.</p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel">
+            <div class="card-header">
+              <span data-icon="save" data-icon-size="22"></span>
+              <h2>Copia de seguridad</h2>
+            </div>
+            <div class="setting-body">
+              <p class="setting-desc">
+                Guarda perfiles, atajos, mandos giratorios e <strong>iconos OLED</strong> en un
+                archivo del PC. Es el único respaldo que sobrevive a un cambio de formato en la
+                memoria del teclado, así que conviene hacerlo antes de flashear.
+              </p>
+              <div class="row-inline">
+                <button class="primary-btn" id="btn-backup-save">
+                  <span data-icon="download" data-icon-size="16"></span> Guardar copia
+                </button>
+                <button class="secondary-btn" id="btn-backup-load">
+                  <span data-icon="upload" data-icon-size="16"></span> Restaurar
+                </button>
+              </div>
+              <p class="setting-desc" id="backup-status"></p>
             </div>
           </div>
 
           <div class="settings-card glass-panel device-info">
             <div class="card-header">
-              <i class="ph ph-info"></i>
-              <h2>Información del Dispositivo</h2>
+              <span data-icon="info" data-icon-size="22"></span>
+              <h2>Información del dispositivo</h2>
             </div>
             <div class="setting-body">
               <ul class="info-list" id="device-info-list">
-                <li><span class="lbl">Modelo:</span> <span class="val">Desconocido</span></li>
-                <li><span class="lbl">Firmware:</span> <span class="val">--</span></li>
-                <li><span class="lbl">Puerto:</span> <span class="val">--</span></li>
+                <li><span class="lbl">Estado</span><span class="val">Desconectado</span></li>
               </ul>
-              <button class="secondary-btn mt-4" id="btn-reconnect"><i class="ph ph-arrows-clockwise"></i> Forzar Reconexión</button>
+              <div class="row-inline mt-4">
+                <button class="secondary-btn" id="btn-reconnect"><span data-icon="plug" data-icon-size="16"></span> Reconectar</button>
+                <button class="secondary-btn" id="btn-resync"><span data-icon="refresh" data-icon-size="16"></span> Releer config</button>
+              </div>
+              <button class="secondary-btn danger full mt-4" id="btn-factory-reset">
+                <span data-icon="reset" data-icon-size="16"></span> Restaurar valores de fábrica
+              </button>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Console View -->
+      <!-- Consola -->
       <section id="view-console" class="view">
         <header class="view-header">
-          <h1>Consola Serie</h1>
-          <p>Telemetría bruta bidireccional (CDC)</p>
+          <h1>Consola serie</h1>
+          <p>Telemetría bidireccional por USB CDC</p>
         </header>
         <div class="console-wrapper glass-panel">
-          <div class="console-output" id="console-output">
-            <div class="console-line system">OrbyGUI Terminal v1.0. Esperando conexión...</div>
+          <div class="console-toolbar">
+            <input type="text" id="console-filter" class="text-input compact" placeholder="Filtrar (ej. WHEEL)" spellcheck="false">
+            <button class="tool-btn" id="btn-pause-console" title="Pausar" data-icon="minus" data-icon-size="16"></button>
+            <button class="tool-btn danger" id="btn-clear-console" title="Limpiar" data-icon="trash" data-icon-size="16"></button>
           </div>
+          <div class="console-output" id="console-output"></div>
           <div class="console-input-area">
-            <span class="prompt">></span>
-            <input type="text" id="console-input" placeholder="Escribe un comando manual (ej. SET_BRIGHTNESS:200)" spellcheck="false" autocomplete="off">
-            <button id="btn-clear-console" title="Limpiar"><i class="ph ph-trash"></i></button>
+            <span class="prompt">&gt;</span>
+            <input type="text" id="console-input" placeholder="Comando manual (↑ historial) — ej. SET_SCROLL:60" spellcheck="false" autocomplete="off">
           </div>
         </div>
       </section>
     </main>
   </div>
 
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

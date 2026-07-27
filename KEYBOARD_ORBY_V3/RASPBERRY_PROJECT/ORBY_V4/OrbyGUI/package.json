@@ -1,20 +1,55 @@
 {
   "name": "orbygui",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Orby V4 Macro Keyboard Companion App",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"electron . --dev\"",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --win --publish never",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "serialport": "^12.0.0"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "electron": "^30.0.0",
-    "vite": "^5.4.0",
-    "wait-on": "^7.2.0"
+    "concurrently": "^9.2.1",
+    "electron": "^40.0.0",
+    "electron-builder": "^24.13.3",
+    "vite": "^7.3.1"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "build": {
+    "appId": "com.orby.gui",
+    "productName": "OrbyGUI",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/orby-icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "OrbyGUI"
+    }
   }
 }

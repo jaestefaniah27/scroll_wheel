@@ -73,6 +73,7 @@ class OrbySerial extends EventEmitter {
           this.port.set({ dtr: true, rts: true }, () => {});
 
           this._buffer = '';
+          this._portPath = portPath;
 
           // Set up line-based data parsing
           this.port.on('data', (data) => {
@@ -137,7 +138,10 @@ class OrbySerial extends EventEmitter {
 
     // Fallback: If we missed the ACK but receive Orby telemetry, assume connected
     if (!this.isConnected && (line.startsWith('KEY_EV:') || line.startsWith('ENC:'))) {
-      this.deviceInfo = { device: 'ORBY_V4', raw: 'ORBY_V4:FW=1.0 (Auto-Detected)', keys: 12, oleds: 10 };
+      this.deviceInfo = {
+        device: 'ORBY_V4', raw: 'ORBY_V4 (detectado por telemetría)',
+        keys: 12, oleds: 10, port: this._portPath || null,
+      };
       this.isConnected = true;
       this.stopAutoScan();
       this.emit('connected', this.deviceInfo);
@@ -168,6 +172,7 @@ class OrbySerial extends EventEmitter {
       }
     }
     info.device = parts[0] || 'ORBY_V4';
+    info.port = this._portPath || null;
     this.deviceInfo = info;
   }
 
@@ -232,9 +237,13 @@ class OrbySerial extends EventEmitter {
     try {
       const ports = await this.listPorts();
       
+      // 4006 es el PID del firmware 2.0 (scroll de alta resolución); 4005 se
+      // mantiene para no dejar tirados a los teclados sin actualizar.
+      const KNOWN_PIDS = ['4005', '4006'];
+
       const candidates = ports.filter(p => {
         if (p.vendorId && p.vendorId.toLowerCase() === 'cafe') return true;
-        if (p.productId && p.productId.toLowerCase() === '4005') return true;
+        if (p.productId && KNOWN_PIDS.includes(p.productId.toLowerCase())) return true;
         if (p.manufacturer && p.manufacturer.toLowerCase().includes('orby')) return true;
         // Se ha eliminado el fallback genérico (starts with COM) para evitar cuelgues nativos
         return false;
