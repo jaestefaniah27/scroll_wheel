@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><title>bake</title></head><body>
+<pre id="out"></pre>
+<script src="engine.js"></script>
+<script>
+window.onerror = function (m) { document.getElementById('out').textContent = 'ERROR ' + m; };
+(function () {
+  var P = Anim.defaults();
+  var G = Anim.geom(P), SIM = Anim.simulate(P, G), N = Anim.totalFrames(P);
+  var off = Anim.makeCanvas(G.W, G.H), octx = off.getContext('2d', { willReadFrequently: true });
+
+  // Huella de la verdad: recorre los framebuffers tal cual salen del editor,
+  // fotograma a fotograma y pantalla a pantalla. El firmware tiene que llegar
+  // exactamente al mismo número tras descomprimir.
+  var h = 0x811c9dc5;
+  for (var f = 0; f < N; f++) {
+    Anim.drawFrame(octx, P, G, SIM, f);
+    var scr = Anim.packScreens(octx.getImageData(0, 0, G.W, G.H), P, G);
+    for (var s = 0; s < 10; s++) {
+      for (var b = 0; b < 360; b++) {
+        h ^= scr[s][b];
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+    }
+  }
+
+  var baked = Anim.bake(P);
+  var txt = Anim.toHeader(baked);
+  document.getElementById('out').textContent =
+    '<<<HASH ' + h + ' FRAMES ' + N + ' BYTES ' + baked.bytes.length + ' HASH>>>\n' +
+    '<<<BEGIN\n' + txt + '\nEND>>>';
+})();
+</script>
+</body></html>

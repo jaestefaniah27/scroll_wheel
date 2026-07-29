@@ -738,6 +738,22 @@ body {
 .variant-card { border-color: rgba(139,92,246,0.35); }
 .variant-card .row-inline > .field { flex: 1; min-width: 180px; margin-bottom: 12px; }
 
+/* Lista de aplicaciones que disparan la variación. */
+.match-list { margin-bottom: 10px; }
+.match-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 6px 5px 12px; border-radius: 16px;
+  font-size: 12px; font-weight: 600; color: var(--text-main);
+  background: rgba(139,92,246,0.14); border: 1px solid rgba(139,92,246,0.35);
+}
+.match-x {
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%;
+  background: rgba(255,255,255,0.08); color: var(--text-muted); cursor: pointer;
+}
+.match-x:hover { background: var(--danger); color: #fff; }
+.match-input { flex: 1; min-width: 140px; }
+
 /* Aviso del inspector: si el hueco está redefinido, qué hace el perfil base. */
 .override-note {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;

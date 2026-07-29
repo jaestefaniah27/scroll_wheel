@@ -83,11 +83,15 @@ Sirve para lo que no merece un perfil entero: si en tu editor «seleccionar todo
 es **Ctrl+E** en vez de Ctrl+A, no dupliques el perfil — crea una **variación**.
 
 1. Pulsa **Nueva variación**: se crea ya apuntando a la aplicación que tengas
-   delante (puedes cambiarle el nombre y el texto que la dispara).
-2. Cambia solo las teclas o mandos que difieran. Salen marcados en ámbar, y el
+   delante.
+2. Añade **todas las aplicaciones** que quieras que la disparen — el mismo
+   retoque suele valer para varias. Escríbelas y pulsa *Añadir* (o Enter), usa
+   *La app de delante*, y quítalas con la ✕ de cada etiqueta. Basta con que
+   encaje una.
+3. Cambia solo las teclas o mandos que difieran. Salen marcados en ámbar, y el
    inspector te recuerda qué hace el perfil base, con **Volver al valor base**.
-3. Al ponerte delante de esa app, el teclado aplica los cambios encima del
-   perfil; al salir, vuelve solo.
+4. Al ponerte delante de cualquiera de esas apps, el teclado aplica los cambios
+   encima del perfil; al salir, vuelve solo.
 
 Guarda **únicamente las diferencias**: si luego retocas el perfil base, la
 variación hereda el cambio en todo lo que no haya redefinido. Puede cambiar
@@ -100,14 +104,22 @@ la rueda ni los iconos).
 > el detector de aplicaciones activado (interruptor de *Cambio automático*).
 
 **Crear, duplicar y eliminar perfiles.** A la derecha de las pestañas hay tres
-botones y un contador de huecos (`4 / 8`). *Nuevo* añade un perfil vacío,
+botones y un contador de huecos (`4 / 16`). *Nuevo* añade un perfil vacío,
 *Duplicar* copia el actual **con sus iconos**, y *Eliminar* lo borra (siempre
-tiene que quedar uno). El teclado admite hasta **8 perfiles**; al borrar, los
+tiene que quedar uno). El teclado admite hasta **16 perfiles**; al borrar, los
 siguientes se desplazan y el menú físico del teclado se ajusta solo.
 
 > En el menú del teclado (mantener los dos encoders, o la tecla 12) los perfiles
 > se recorren con el encoder izquierdo, uno por pantalla, y las teclas 1-5 son
-> atajos directos a los cinco primeros.
+> atajos directos a los cinco primeros de la ventana. Con más de diez perfiles
+> la lista se muestra por ventanas que siguen al cursor, y al abrir el menú este
+> arranca sobre el perfil que esté puesto.
+
+> **El tope son 16 por la RAM del teclado.** Cada perfil reserva 7,4 KB para sus
+> 20 iconos (10 pantallas × 2 capas), así que el banco ocupa 116 KB de los 264 KB
+> del RP2040. Para pasar de ahí habría que dejar de tener los bitmaps en RAM y
+> leerlos directamente de la Flash mapeada. Si lo que necesitas son retoques por
+> aplicación, casi siempre salen más a cuenta las **variaciones**.
 
 **Mandos giratorios.** Debajo de las teclas hay un bloque con los dos encoders y
 la rueda de scroll, en el mismo orden que en el teclado. Cada uno tiene sus
@@ -296,7 +308,7 @@ USB CDC, 115200 baudios, líneas terminadas en `\n`.
 
 | Comando | Efecto |
 |---|---|
-| `ACK` | Handshake. Responde `ORBY_V4:FW=3.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=<n>:MAXPROFILES=8:MODE=<modo>` |
+| `ACK` | Handshake. Responde `ORBY_V4:FW=3.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=<n>:MAXPROFILES=16:MODE=<modo>` |
 | `GET_STATE` | Vuelca perfil, nº de perfiles, brillo, timeout, modo, SUPER y scroll. Termina en `STATE:END` |
 | `SET_PROFILE:<idx>` | Cambia el perfil activo |
 | `ADD_PROFILE` | Crea un perfil vacío. Responde `PROFILE:ADDED:<idx>` y `PROFILES:OK:<n>:<activo>` |

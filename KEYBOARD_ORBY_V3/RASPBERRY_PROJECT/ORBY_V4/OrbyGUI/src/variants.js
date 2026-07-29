@@ -19,8 +19,12 @@
 import * as device from './device.js';
 import { state as store, labelSlot, keymapSlot, rotarySlot } from './store.js';
 
-// { id, profile, name, match, field, keys:{slot:{modifier,keycode}},
+// { id, profile, name, matches:[texto], field, keys:{slot:{modifier,keycode}},
 //   rotary:{slot:{type,modifier,keycode}}, labels:{slot:texto} }
+//
+// `matches` es una lista porque un mismo retoque suele valer para varias apps:
+// los cambios que usas en el Bloc de notas también los quieres en el visor de
+// texto o en cualquier otra aplicación de Windows que se comporte igual.
 export const variants = [];
 
 let applied = null;    // variación escrita ahora mismo en el teclado
@@ -44,10 +48,23 @@ function persist() {
   return window.orby.setConfig({ profileVariants: variants });
 }
 
+// Las primeras variaciones guardaban una sola app en `match`; ahora es una
+// lista. Se convierten al cargarlas para no perder lo que ya hubiera.
+function normalize(v) {
+  if (!Array.isArray(v.matches)) {
+    v.matches = v.match ? [v.match] : [];
+  }
+  delete v.match;
+  v.keys = v.keys || {};
+  v.rotary = v.rotary || {};
+  v.labels = v.labels || {};
+  return v;
+}
+
 export async function init() {
   try {
     const cfg = await window.orby.getConfig();
-    variants.push(...(cfg.profileVariants || []));
+    variants.push(...(cfg.profileVariants || []).map(normalize));
   } catch {
     // Sin configuración local: se empieza sin variaciones.
   }
@@ -91,12 +108,12 @@ export function countOverrides(variant) {
 
 // --- Alta, baja y edición ------------------------------------------------
 
-export function create(profileIdx, { name, match, field = 'any' } = {}) {
+export function create(profileIdx, { name, matches = [], field = 'any' } = {}) {
   const variant = {
     id: `v${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
     profile: profileIdx,
     name: name || 'Variación',
-    match: match || '',
+    matches: matches.filter(Boolean),
     field,
     keys: {}, rotary: {}, labels: {},
   };
@@ -104,6 +121,26 @@ export function create(profileIdx, { name, match, field = 'any' } = {}) {
   persist();
   emit();
   return variant;
+}
+
+// Apps que disparan la variación. Se comparan en minúsculas y sin duplicados.
+export function addMatch(id, text) {
+  const v = get(id);
+  const needle = (text || '').trim().toLowerCase();
+  if (!v || !needle || v.matches.includes(needle)) return false;
+  v.matches.push(needle);
+  persist();
+  emit();
+  return true;
+}
+
+export function removeMatch(id, text) {
+  const v = get(id);
+  if (!v) return;
+  const i = v.matches.indexOf(text);
+  if (i >= 0) v.matches.splice(i, 1);
+  persist();
+  emit();
 }
 
 export function update(id, patch) {
@@ -167,12 +204,14 @@ function haystack(info, field) {
   return `${info.process || ''} ${info.title || ''}`.toLowerCase();
 }
 
+// Gana la primera variación del perfil con alguna de sus apps en la ventana.
 export function matchFor(profileIdx, info) {
   for (const v of variants) {
     if (v.profile !== profileIdx) continue;
-    const needle = (v.match || '').trim().toLowerCase();
-    if (!needle) continue;
-    if (haystack(info, v.field).includes(needle)) return v;
+    const hay = haystack(info, v.field);
+    for (const needle of v.matches || []) {
+      if (needle && hay.includes(needle)) return v;
+    }
   }
   return null;
 }

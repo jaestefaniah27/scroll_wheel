@@ -44,6 +44,11 @@ public:
         gpio_init(Pins::OLED_DC);  gpio_set_dir(Pins::OLED_DC, GPIO_OUT);
         gpio_init(Pins::OLED_RST); gpio_set_dir(Pins::OLED_RST, GPIO_OUT);
 
+        // RST en reposo es ALTO. gpio_init() deja la salida a cero, así que sin
+        // esta línea construir la clase deja las diez pantallas en reset hasta
+        // que alguien llame a init_all_screens().
+        gpio_put(Pins::OLED_RST, 1);
+
         // 2. Inicializar pines del Shift Register Multiplexor (74HC595)
         gpio_init(Pins::SHIFT_DATA);  gpio_set_dir(Pins::SHIFT_DATA, GPIO_OUT);
         gpio_init(Pins::SHIFT_CLK);   gpio_set_dir(Pins::SHIFT_CLK, GPIO_OUT);

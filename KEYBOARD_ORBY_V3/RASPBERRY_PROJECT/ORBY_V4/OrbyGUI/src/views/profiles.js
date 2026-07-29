@@ -121,6 +121,14 @@ export function init() {
   body.addEventListener('input', onInput);
   window.addEventListener('keydown', onCapture, true);
 
+  // Enter en el campo de aplicaciones añade, para poder encadenar varias.
+  body.addEventListener('keydown', (e) => {
+    if (e.target.id === 'variant-new-match' && e.key === 'Enter') {
+      e.preventDefault();
+      addMatchFromField();
+    }
+  });
+
   // Las miniaturas llegan por el puerto serie con retraso: cuando la caché se
   // completa hay que repintar la rejilla, no la vista entera.
   cache.onChange(() => { if (isActiveView()) renderKeyGrid(); });
@@ -172,6 +180,13 @@ function onClick(e) {
     createVariant();
   } else if (act === 'del-variant') {
     removeVariant();
+  } else if (act === 'add-match') {
+    addMatchFromField();
+  } else if (act === 'add-match-current') {
+    addCurrentApp();
+  } else if (act === 'del-match') {
+    variants.removeMatch(view.variantId, el.dataset.match);
+    render();
   } else if (act === 'clear-override') {
     clearOverrideOfSelection();
   } else if (act === 'layer') {
@@ -250,11 +265,9 @@ function onChange(e) {
     applyScroll({ detentsPerRev: Number(e.target.value) });
   } else if (act === 'variant-field') {
     variants.update(view.variantId, { field: e.target.value });
-  } else if (act === 'variant-name' || act === 'variant-match') {
+  } else if (act === 'variant-name') {
     // `change` salta al salir del campo: repintar aquí no corta la escritura.
-    variants.update(view.variantId, {
-      [act === 'variant-name' ? 'name' : 'match']: e.target.value.trim(),
-    });
+    variants.update(view.variantId, { name: e.target.value.trim() });
     render();
   }
 }
@@ -359,12 +372,45 @@ async function createVariant() {
 
   const variant = variants.create(view.editingProfile, {
     name: match ? match.replace(/\.exe$/, '') : 'Variación',
-    match,
+    matches: match ? [match] : [],
   });
   view.variantId = variant.id;
   view.selected = null;
   render();
   toast(match ? `Variación creada para "${match}"` : 'Variación creada: indícale a qué app se aplica');
+}
+
+// Apps que disparan la variación: se pueden añadir varias, porque el mismo
+// retoque suele valer para más de un programa.
+function addMatchFromField() {
+  const input = document.getElementById('variant-new-match');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+
+  if (!variants.addMatch(view.variantId, text)) {
+    toast('Esa aplicación ya está en la lista', 'info');
+    return;
+  }
+  input.value = '';
+  render();
+  // Volver el foco al campo para poder encadenar varias sin usar el ratón.
+  document.getElementById('variant-new-match')?.focus();
+}
+
+async function addCurrentApp() {
+  try {
+    const info = await window.orby.foreground.current();
+    const proc = (info?.process || '').toLowerCase();
+    if (!proc) { toast('Aún no se ha detectado ninguna ventana', 'error'); return; }
+    if (!variants.addMatch(view.variantId, proc)) {
+      toast('Esa aplicación ya está en la lista', 'info');
+      return;
+    }
+    render();
+  } catch {
+    toast('El detector de aplicaciones no está disponible', 'error');
+  }
 }
 
 async function removeVariant() {
@@ -760,7 +806,7 @@ function renderVariantBar() {
         ${list.map((v) => `
           <button class="chip ${view.variantId === v.id ? 'on' : ''} ${variants.isApplied(v.id) ? 'is-live' : ''}"
                   data-act="pick-variant" data-id="${v.id}"
-                  title="${escape(v.match ? `Se aplica con: ${v.match}` : 'Sin aplicación asignada')}">
+                  title="${escape(v.matches.length ? `Se aplica con: ${v.matches.join(', ')}` : 'Sin aplicaciones asignadas')}">
             ${escape(v.name)}
             <em class="chip-count">${variants.countOverrides(v)}</em>
           </button>`).join('')}
@@ -789,10 +835,6 @@ function renderVariantSettings() {
           <input type="text" class="text-input" value="${escape(variant.name)}" data-act="variant-name">
         </label>
         <label class="field">
-          <span class="field-label">Se aplica cuando la ventana contiene</span>
-          <input type="text" class="text-input" placeholder="p. ej. notepad" value="${escape(variant.match)}" data-act="variant-match">
-        </label>
-        <label class="field">
           <span class="field-label">Comparar contra</span>
           <select class="select-input" data-act="variant-field">
             <option value="any"     ${variant.field === 'any' ? 'selected' : ''}>Programa o título</option>
@@ -802,9 +844,30 @@ function renderVariantSettings() {
         </label>
       </div>
 
+      <div class="field">
+        <span class="field-label">Se aplica con estas aplicaciones</span>
+        ${variant.matches.length ? `
+          <div class="chip-row match-list">
+            ${variant.matches.map((m) => `
+              <span class="match-chip">
+                ${escape(m)}
+                <button class="match-x" data-act="del-match" data-match="${escape(m)}"
+                        title="Quitar">${icon('close', 12)}</button>
+              </span>`).join('')}
+          </div>` : `
+          <p class="setting-desc">Todavía ninguna: la variación no se aplicará sola.</p>`}
+
+        <div class="row-inline">
+          <input type="text" class="text-input compact match-input" id="variant-new-match"
+                 placeholder="p. ej. notepad" spellcheck="false">
+          <button class="secondary-btn" data-act="add-match">${icon('plus', 16)} Añadir</button>
+          <button class="secondary-btn" data-act="add-match-current">${icon('plug', 16)} La app de delante</button>
+        </div>
+      </div>
+
       <p class="setting-desc">
         Estás editando <strong>solo las diferencias</strong>: lo que cambies aquí se
-        guarda como excepción de este perfil para esa app, y todo lo demás lo sigue
+        guarda como excepción de este perfil para esas apps, y todo lo demás lo sigue
         mandando el perfil base. Las teclas y mandos redefinidos salen marcados abajo.
         ${count === 0 ? '<br>Todavía no hay ninguna diferencia: cambia una tecla para empezar.' : ''}
       </p>

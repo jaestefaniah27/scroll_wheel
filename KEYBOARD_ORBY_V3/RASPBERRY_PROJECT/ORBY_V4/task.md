@@ -95,7 +95,7 @@
 
 ## Firmware 3.0 — perfiles variables, capa SUPER en los mandos y rueda por perfil (hecho)
 
-- [x] Hasta 8 perfiles con alta y baja en caliente: `ADD_PROFILE`, `DUP_PROFILE`,
+- [x] Perfiles con alta y baja en caliente: `ADD_PROFILE`, `DUP_PROFILE`,
       `DEL_PROFILE`. Al borrar se desplazan también el tramo del banco de
       bitmaps y su máscara, que van indexados por perfil.
 - [x] Los mandos giratorios pasan de 8 a 16 huecos: 0-7 capa normal y 8-15 capa
@@ -152,9 +152,144 @@
       base» en el inspector.
 - [x] Las variaciones siguen a su perfil al borrar otro (reindexado) y se van
       con él si se borra el suyo.
+- [x] Cada variación admite **varias aplicaciones** (`matches`), porque el mismo
+      retoque suele valer para más de un programa. Migración automática de las
+      que guardaban una sola (`match`).
+
+## Firmware 3.1 — tope de 16 perfiles (hecho)
+
+- [x] `MAX_PROFILES` de 8 a 16. El banco de iconos pasa a 116 KB de RAM (BSS
+      total 136 KB de 264 KB) y la Flash reservada llega hasta 1672 KB.
+- [x] `custom_oled_dirty` de 8 a 16 bits: con un `uint8_t` los perfiles del 9 en
+      adelante nunca se habrían llegado a grabar.
+- [x] Los ajustes ya no caben en un sector: pasan a dos, y la región de bitmaps
+      se desplaza uno. Migración `0xDEB00300` → `0xDEB00310` que rescata los
+      iconos de su posición antigua y los marca para reescribir.
+- [x] Guarda de disposición (`static_assert`) para que ampliar el tope no se
+      coma el final de la Flash sin avisar.
+- [x] Menú físico por ventanas de diez pantallas que siguen al cursor, y que se
+      abre sobre el perfil que esté puesto en vez de sobre el primero.
+
+## Dueño único de las pantallas (hecho)
+
+Arreglo de un fallo latente que salió a la luz al meter la primera intro: se
+veía la chispa y a los dos segundos las diez pantallas se quedaban en negro para
+siempre.
+
+**Causa:**
+
+- Hay **dos instancias de `HardwareOled`**: `oleds` en Core 1 y `main_oled_ctrl`
+  en Core 0 (`main.cpp`), esta última solo para encender y apagar las pantallas
+  al entrar y salir del reposo.
+- El constructor llama a `gpio_init(Pins::OLED_RST)`, y `gpio_init()` del SDK
+  hace `gpio_put(gpio, 0)` antes de nada. Al construir la instancia de Core 0 se
+  deja **OLED_RST a nivel bajo**, es decir, las diez SSD1306 en reset
+  permanente. Nadie vuelve a subirlo: solo lo hace `init_all_screens()`, que
+  Core 0 no llama.
+- Hoy no se nota por los pelos: Core 0 llega a construir `main_oled_ctrl` unos
+  microsegundos después de lanzar Core 1, y los 21 ms de `init_all_screens()`
+  de Core 1 llegan después y vuelven a subir RST. Es una carrera que se gana por
+  casualidad.
+- La intro movía el arranque de Core 1 dos segundos antes, así que Core 0 pasaba
+  a construir su instancia **después** del `init_all_screens()` de Core 1: RST se
+  quedaba abajo y las pantallas se apagaban. De ahí el círculo que desaparece.
+- El constructor además llama a `spi_init()`, que resetea el periférico. Si pilla
+  a Core 1 dentro de un `spi_write_blocking()`, este se queda esperando datos en
+  una FIFO que ya no llegarán.
+
+**Arreglado así:**
+
+- [x] Fuera `main_oled_ctrl` de Core 0. El reposo se pide con `displays_on` y
+      `display_power_req`, y lo ejecuta Core 1 en su bucle, que es el único
+      dueño del bus SPI y de los pines del OLED.
+- [x] `gpio_put(Pins::OLED_RST, 1)` en el constructor de `HardwareOled`, para
+      que construir la clase no pueda volver a dejar las pantallas en reset.
+
+## Intro de arranque, segundo intento: horneada (hecho)
+
+El problema del primer intento no era solo el reset: diseñar la animación a
+ciegas y recompilar el firmware en cada prueba es un ciclo lentísimo. Ahora la
+animación se diseña en el PC y el firmware solo la reproduce.
+
+- [x] `tools/anim/index.html`: editor con vista previa, reproducción, barra de
+      tiempo y unos treinta parámetros (fases, tipografía, tamaños, ondas,
+      gravedad, rozamiento, temblor de la arena...). Doble clic, sin npm.
+- [x] La animación se **hornea a píxeles**: se trocea en los diez framebuffers
+      de 360 bytes del SSD1306 y eso es lo que se graba. No hay dos
+      implementaciones que se puedan desincronizar, y la vista previa se pinta
+      desde esos mismos framebuffers ya binarizados.
+- [x] Comprimido por longitud de carrera y con máscara de pantallas que cambian:
+      95 fotogramas ocupan 38 KB y solo cambian 3,7 pantallas de media, así que
+      se ahorra el 63 % del SPI. El peor fotograma son 2,9 ms sobre 33.
+- [x] `include/oled_intro.h` pasa a ser un reproductor de 60 líneas. Si no
+      existe `orby_intro_data.h` la intro no hace nada y el firmware compila
+      igual.
+- [x] Verificado de punta a punta: la huella FNV‑1a de los 95×10 framebuffers
+      del editor coincide con la que sale de descomprimir el flujo en C.
+- [x] Cualquier tecla o pulsador la corta (`intro_skip_req`).
+
+## Calidad del dispositivo (hecho)
+
+### Antirrebote de las teclas
+
+- [x] Las doce teclas se leían en crudo (`!gpio_get()` y a actuar). Los
+      pulsadores de los encoders sí tenían antirrebote, las teclas no. Un
+      pulsador mecánico rebota de 1 a 5 ms y el bucle gira cada 250 us: un solo
+      toque podía colar hasta veinte flancos y repetir el atajo, y un rebote al
+      soltar podía reenviar la macro entera.
+- [x] Antirrebote por bloqueo de 5 ms: se acepta el primer flanco al instante
+      (cero latencia añadida) y se ignora lo que llegue después. SUPER y la
+      tecla 12 leen del mismo estado filtrado.
+
+### Salida HID de verdad (`include/hid_out.h`)
+
+- [x] **Había un solo hueco de los seis**: `uint8_t keycodes[6] = {keycode,...}`.
+      Mantener A y pulsar B soltaba A, y soltar B mandaba un informe a cero que
+      soltaba las dos. Ahora las teclas físicas son estado, cada hueco recuerda
+      lo que envió y el informe se recompone de los huecos ocupados.
+- [x] **Se bloqueaba hasta 100 ms** (200 en las multimedia) esperando al
+      endpoint, dentro del mismo bucle que muestrea el AS5600 a 1 kHz: pulsar
+      algo mientras girabas abría un agujero en el muestreo del scroll. Ahora
+      nada espera: `pump()` suelta como mucho un informe por vuelta cuando el
+      canal está libre, y la rueda tiene preferencia.
+- [x] Los giros de encoder van a una cola aparte, porque son eventos puntuales
+      que no se pueden fundir con el estado. Dos pasos seguidos del mismo
+      encoder producen pulsa-suelta-pulsa-suelta, no una sola pulsación.
+- [x] Soltar una tecla ya no consulta el perfil: cambiar de capa con la tecla
+      hundida no puede dejarla pegada.
+- [x] El Ctrl del zoom pasa a ser un modificador pegajoso que dura mientras se
+      siga girando, en vez de pulsarse y soltarse en cada detent con la rueda
+      enviada en medio. La rueda no sale hasta que el Ctrl ha llegado al host.
+- [x] 30 comprobaciones en `tools/test/` que corren en el PC contra un TinyUSB
+      de mentira: rollover, modificadores compartidos, cambio de capa con tecla
+      hundida, pulsaciones puntuales, endpoint ocupado, suspensión y zoom.
+
+### Arranque y resistencia
+
+- [x] Los dos segundos de `sleep_ms(2000)` del arranque no llamaban ni una vez
+      a `tud_task()`: el teclado estaba en el bus sin contestar a la
+      enumeración. Ahora son 300 ms atendiendo al USB mientras tanto.
+- [x] `tud_umount_cb` y `tud_suspend_cb` sueltan todo. Si el PC se suspende o
+      se tira del cable con una tecla hundida, ya no se queda pegada. Al
+      despertar no se reenvía nada a propósito, que sería escribir sin permiso.
+- [x] Watchdog de 8 segundos, alimentado por Core 0 solo mientras Core 1 siga
+      dando latido (`core1_heartbeat`): un cuelgue de cualquiera de los dos
+      cores acaba en reinicio en vez de en un teclado muerto. Los bucles de
+      espera largos (mantener la tecla 12, grabar los perfiles) lo alimentan.
+- [x] Si el reinicio vino del watchdog se salta la intro, para dejar el teclado
+      operativo cuanto antes.
 
 ## Pendiente
 
 - [ ] Probar en hardware: flashear `build/ORBY_V4.uf2` y verificar el scroll
       suave, la capa SUPER de los mandos y el alta/baja de perfiles.
+- [ ] Probar en hardware el arreglo del dueño único, sobre todo que las
+      pantallas siguen despertando bien al salir del reposo.
+- [ ] Probar en hardware el antirrebote, el rollover (mantener dos teclas a la
+      vez) y que el zoom con Ctrl sigue funcionando en el navegador.
+- [ ] `BOOT_SETTLE_MS` está en 300 ms. Si algún arranque se ve raro, era el
+      único valor de los tres cambios que es un juicio y no un cálculo.
+- [ ] Afinar la animación a gusto en `tools/anim` y volver a exportar. Los
+      huecos (`Hueco horizontal` y `Hueco vertical`) son lo único que conviene
+      calibrar mirando el teclado de verdad.
 - [ ] Pruebas de verificación integradas.

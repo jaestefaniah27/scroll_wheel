@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>ORBY — editor de la intro</title>
+<style>
+  :root {
+    --bg: #16171b; --panel: #1e2026; --line: #2c2f37; --tx: #e6e8ee;
+    --dim: #9299a8; --acc: #58b0ff; --ok: #4ec9a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--tx);
+    font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+    display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100vh;
+  }
+  /* --- Escenario --- */
+  .stage { display: flex; flex-direction: column; min-width: 0; }
+  .view {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 20px; min-height: 0; overflow: auto;
+  }
+  canvas { image-rendering: pixelated; background: #0a0b0d; border-radius: 6px; }
+  .transport {
+    border-top: 1px solid var(--line); padding: 12px 16px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .transport input[type=range] { flex: 1; min-width: 180px; }
+  button {
+    background: var(--panel); color: var(--tx); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 13px; cursor: pointer; font: inherit;
+  }
+  button:hover { border-color: var(--acc); }
+  button.primary { background: var(--acc); border-color: var(--acc); color: #04121f; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.1); }
+  .time { font-variant-numeric: tabular-nums; color: var(--dim); min-width: 150px; }
+  .marks { display: flex; gap: 6px; font-size: 11px; color: var(--dim); flex-wrap: wrap; }
+  .marks b { color: var(--tx); font-weight: 600; }
+
+  /* --- Panel --- */
+  .panel { border-left: 1px solid var(--line); overflow-y: auto; background: var(--panel); }
+  .panel h1 { font-size: 14px; margin: 0; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .panel h1 small { display: block; color: var(--dim); font-weight: 400; font-size: 11px; margin-top: 3px; }
+  .grp {
+    padding: 7px 16px; margin-top: 6px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--acc); border-bottom: 1px solid var(--line);
+  }
+  .row { padding: 7px 16px; }
+  .row label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .row .val { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .row input[type=range] { width: 100%; }
+  .row input[type=text], .row select { width: 100%; background: #14161a; color: var(--tx);
+    border: 1px solid var(--line); border-radius: 5px; padding: 5px 7px; font: inherit; }
+  .row .help { color: var(--dim); font-size: 11px; margin-top: 3px; }
+  .row.bool label { justify-content: flex-start; align-items: center; gap: 8px; }
+  .actions { padding: 14px 16px; display: grid; gap: 8px; border-top: 1px solid var(--line); margin-top: 10px; }
+  .status { padding: 0 16px 18px; color: var(--dim); font-size: 11px; white-space: pre-wrap; }
+  .status b { color: var(--ok); }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="view"><canvas id="cv"></canvas></div>
+  <div class="transport">
+    <button id="play">▶ Reproducir</button>
+    <button id="loopBtn">Bucle: sí</button>
+    <input type="range" id="scrub" min="0" max="1" value="0">
+    <span class="time" id="time">0 / 0 · 0.00 s</span>
+    <label style="color:var(--dim)">Zoom <input type="range" id="zoom" min="1" max="6" step="1" value="3" style="width:90px"></label>
+    <div class="marks" id="marks"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h1>Intro de ORBY
+    <small>Lo que ves es exactamente lo que se graba: la vista previa se dibuja desde los mismos framebuffers de 360 bytes que recibirán las pantallas.</small>
+  </h1>
+  <div id="params"></div>
+  <div class="actions">
+    <button class="primary" id="export">Exportar orby_intro_data.h</button>
+    <button id="savePreset">Guardar ajustes (.json)</button>
+    <button id="loadPreset">Cargar ajustes</button>
+    <button id="reset">Volver a los valores por defecto</button>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<input type="file" id="file" accept=".json,.h" style="display:none">
+<script src="engine.js"></script>
+<script>
+'use strict';
+var P = Anim.defaults();
+try {
+  var saved = localStorage.getItem('orby-intro-params');
+  if (saved) { var o = JSON.parse(saved); for (var k in o) if (k in P) P[k] = o[k]; }
+} catch (e) {}
+
+var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+var off = Anim.makeCanvas(10, 10), offCtx;
+var scratch = Anim.makeCanvas(10, 10); // lienzo intermedio, reutilizado en cada fotograma
+var G, SIM, FRAMES, frame = 0, playing = false, looping = true, zoom = 3;
+var imgCache = null;
+
+// --- Recalcular todo cuando cambia un parámetro ----------------------------
+function rebuild() {
+  G = Anim.geom(P);
+  SIM = Anim.simulate(P, G);
+  FRAMES = Anim.totalFrames(P);
+  off.width = G.W; off.height = G.H;
+  offCtx = off.getContext('2d', { willReadFrequently: true });
+  scratch.width = G.W; scratch.height = G.H;
+  cv.width = G.W * zoom; cv.height = G.H * zoom;
+  imgCache = ctx.createImageData(G.W, G.H);
+  document.getElementById('scrub').max = FRAMES - 1;
+  if (frame >= FRAMES) frame = FRAMES - 1;
+  drawMarks();
+  render();
+  try { localStorage.setItem('orby-intro-params', JSON.stringify(P)); } catch (e) {}
+}
+
+// --- Pintar el fotograma actual --------------------------------------------
+// Importante: se dibuja desde los framebuffers ya troceados y binarizados, no
+// desde el canvas en gris. Si no, la vista previa mentiría.
+function render() {
+  Anim.drawFrame(offCtx, P, G, SIM, frame);
+  var screens = Anim.packScreens(offCtx.getImageData(0, 0, G.W, G.H), P, G);
+
+  var d = imgCache.data;
+  for (var i = 0; i < d.length; i += 4) { d[i] = 32; d[i+1] = 33; d[i+2] = 38; d[i+3] = 255; }
+  for (var s = 0; s < 10; s++) {
+    var ox = G.ox[s], oy = G.oy[s], fb = screens[s];
+    for (var y = 0; y < Anim.SCR_H; y++) {
+      for (var x = 0; x < Anim.SCR_W; x++) {
+        var on = (fb[(y >> 3) * Anim.SCR_W + x] >> (y & 7)) & 1;
+        var o = (((oy + y) * G.W) + (ox + x)) * 4;
+        d[o] = on ? 255 : 8; d[o+1] = on ? 255 : 9; d[o+2] = on ? 255 : 11;
+      }
+    }
+  }
+  scratch.getContext('2d').putImageData(imgCache, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(scratch, 0, 0, cv.width, cv.height);
+
+  document.getElementById('scrub').value = frame;
+  document.getElementById('time').textContent =
+    frame + ' / ' + (FRAMES - 1) + ' · ' + (frame / P.fps).toFixed(2) + ' s';
+}
+
+function drawMarks() {
+  var ph = Anim.phases(P);
+  document.getElementById('marks').innerHTML =
+    'Crece a los <b>' + (ph.holdEnd / 1000).toFixed(2) + ' s</b> · ' +
+    'estalla a los <b>' + (ph.boom / 1000).toFixed(2) + ' s</b> · ' +
+    'total <b>' + (ph.end / 1000).toFixed(2) + ' s</b>';
+}
+
+// --- Reproducción -----------------------------------------------------------
+var lastT = 0;
+function tick(ts) {
+  if (playing) {
+    if (ts - lastT >= 1000 / P.fps) {
+      lastT = ts;
+      frame++;
+      if (frame >= FRAMES) {
+        if (looping) frame = 0;
+        else { frame = FRAMES - 1; setPlaying(false); }
+      }
+      render();
+    }
+  }
+  requestAnimationFrame(tick);
+}
+function setPlaying(v) {
+  playing = v;
+  document.getElementById('play').textContent = v ? '❚❚ Pausa' : '▶ Reproducir';
+}
+
+// --- Panel de parámetros ----------------------------------------------------
+function buildPanel() {
+  var host = document.getElementById('params');
+  host.innerHTML = '';
+  Anim.SCHEMA.forEach(function (s) {
+    if (s.group) {
+      var g = document.createElement('div');
+      g.className = 'grp'; g.textContent = s.group;
+      host.appendChild(g);
+      return;
+    }
+    var row = document.createElement('div');
+    row.className = 'row' + (s.type === 'bool' ? ' bool' : '');
+    var id = 'p_' + s.key;
+
+    if (s.type === 'bool') {
+      row.innerHTML = '<label><input type="checkbox" id="' + id + '">' + s.label + '</label>';
+    } else if (s.type === 'text') {
+      row.innerHTML = '<label>' + s.label + '</label><input type="text" id="' + id + '">';
+    } else if (s.type === 'select') {
+      var opts = s.options.map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join('');
+      row.innerHTML = '<label>' + s.label + '</label><select id="' + id + '">' + opts + '</select>';
+    } else {
+      row.innerHTML = '<label>' + s.label + '<span class="val" id="v_' + s.key + '"></span></label>' +
+        '<input type="range" id="' + id + '" min="' + s.min + '" max="' + s.max + '" step="' + s.step + '">';
+    }
+    if (s.help) row.innerHTML += '<div class="help">' + s.help + '</div>';
+    host.appendChild(row);
+
+    var el = document.getElementById(id);
+    var apply = function () {
+      if (s.type === 'bool') P[s.key] = el.checked;
+      else if (s.type === 'text' || s.type === 'select') P[s.key] = el.value;
+      else {
+        P[s.key] = parseFloat(el.value);
+        document.getElementById('v_' + s.key).textContent = el.value + (s.unit ? ' ' + s.unit : '');
+      }
+      rebuild();
+    };
+    el.addEventListener('input', apply);
+    row._sync = function () {
+      if (s.type === 'bool') el.checked = !!P[s.key];
+      else el.value = P[s.key];
+      if (!s.type) document.getElementById('v_' + s.key).textContent = P[s.key] + (s.unit ? ' ' + s.unit : '');
+    };
+    row._sync();
+  });
+}
+function syncPanel() {
+  Array.prototype.forEach.call(document.querySelectorAll('.row'), function (r) { if (r._sync) r._sync(); });
+}
+
+// --- Acciones ---------------------------------------------------------------
+function download(name, text) {
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = name;
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+}
+
+document.getElementById('play').onclick = function () { setPlaying(!playing); };
+document.getElementById('loopBtn').onclick = function () {
+  looping = !looping;
+  this.textContent = 'Bucle: ' + (looping ? 'sí' : 'no');
+};
+document.getElementById('scrub').oninput = function () {
+  frame = parseInt(this.value, 10); setPlaying(false); render();
+};
+document.getElementById('zoom').oninput = function () { zoom = parseInt(this.value, 10); rebuild(); };
+document.getElementById('reset').onclick = function () {
+  P = Anim.defaults(); syncPanel(); rebuild();
+};
+document.getElementById('savePreset').onclick = function () {
+  download('orby-intro-ajustes.json', JSON.stringify(P, null, 2));
+};
+document.getElementById('loadPreset').onclick = function () { document.getElementById('file').click(); };
+document.getElementById('file').onchange = function (ev) {
+  var f = ev.target.files[0];
+  if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function () {
+    try {
+      var txt = String(rd.result);
+      // Vale tanto un .json como el propio .h, que lleva los ajustes en un comentario.
+      var m = txt.match(/PRESET\s+(\{.*\})/);
+      var o = JSON.parse(m ? m[1] : txt);
+      for (var k in o) if (k in P) P[k] = o[k];
+      syncPanel(); rebuild();
+      say('Ajustes cargados de ' + f.name);
+    } catch (e) { say('No he podido leer ese archivo: ' + e.message); }
+  };
+  rd.readAsText(f);
+  ev.target.value = '';
+};
+
+document.getElementById('export').onclick = function () {
+  var btn = this;
+  btn.disabled = true; btn.textContent = 'Horneando…';
+  setTimeout(function () {
+    var t0 = performance.now();
+    var baked = Anim.bake(P);
+    var h = Anim.toHeader(baked);
+    download('orby_intro_data.h', h);
+    var kb = (baked.bytes.length / 1024).toFixed(1);
+    say('Horneados ' + baked.frames + ' fotogramas en ' + ((performance.now() - t0) / 1000).toFixed(1) + ' s.\n' +
+        'Ocupa ' + kb + ' KB de Flash (hay ~1400 KB libres).\n\n' +
+        'Guárdalo en include/orby_intro_data.h, compila con flash.ps1 y listo.');
+    btn.disabled = false; btn.textContent = 'Exportar orby_intro_data.h';
+  }, 30);
+};
+
+function say(msg) { document.getElementById('status').innerHTML = msg.replace(/(\d[\d.,]*\s?(KB|s|fotogramas))/g, '<b>$1</b>'); }
+
+buildPanel();
+rebuild();
+requestAnimationFrame(tick);
+say('Toca los parámetros y dale a Reproducir. Cuando esté a tu gusto, exporta.');
+</script>
+</body>
+</html>

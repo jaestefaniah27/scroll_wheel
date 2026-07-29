@@ -6,6 +6,7 @@
 #include "pico/multicore.h"
 #include "hardware/flash.h"
 #include "hardware/sync.h"
+#include "hardware/watchdog.h"
 #include "bsp/board.h"
 #include "tusb.h"
 #include "class/cdc/cdc_device.h"
@@ -14,7 +15,9 @@
 #include "hardware_oled.h"
 #include "oled_text.h"
 #include "oled_bitmaps.h"
+#include "oled_intro.h"
 #include "hid_hires.h"
+#include "hid_out.h"
 #include "hardware_as5600.h"
 
 // Mapeos nativos de teclado para las 12 teclas
@@ -86,7 +89,13 @@ struct Profile {
 
 // Cuántos perfiles caben. Los cuatro primeros son los de fábrica; el resto se
 // crean desde la app con ADD_PROFILE o DUP_PROFILE.
-#define MAX_PROFILES      8
+//
+// El techo lo pone el banco de iconos en RAM: cada perfil son 20 pantallas de
+// 360 bytes redondeadas a página, 7424 bytes. Con 16 perfiles el banco ocupa
+// 116 KB de los 264 KB del RP2040, que deja sitio de sobra para pilas y colas.
+// Subir más obligaría a dejar de tener los bitmaps en RAM y leerlos de la Flash
+// mapeada, que es otra historia (ver `oled_slot_ptr`).
+#define MAX_PROFILES      16
 #define DEFAULT_PROFILES  4
 
 // Perfiles de fábrica. Se copian a `profiles` (RAM) al arrancar; la app de
@@ -271,7 +280,10 @@ volatile uint8_t profile_count = DEFAULT_PROFILES;
 
 static uint8_t  custom_oled_bank[OLED_BANK_BYTES];
 static uint32_t custom_oled_mask[MAX_PROFILES];  // un bit por hueco ocupado
-static uint8_t  custom_oled_dirty = 0; // un bit por perfil pendiente de escribir
+// Un bit por perfil pendiente de escribir. Tiene que cubrir MAX_PROFILES: con
+// un uint8_t los perfiles del 9 en adelante nunca se habrían grabado.
+static uint16_t custom_oled_dirty = 0;
+static_assert(MAX_PROFILES <= 16, "custom_oled_dirty solo tiene 16 bits");
 
 static inline uint8_t* oled_slot_ptr(uint8_t profile, uint8_t slot) {
     return &custom_oled_bank[profile * OLED_PROFILE_STRIDE + slot * OLED_FB_SIZE];
@@ -302,6 +314,25 @@ volatile bool super_active = false;         // Estado de la tecla modificadora S
 volatile bool system_refresh_req = false;   // Flag para actualizar pantallas
 volatile uint16_t active_inversions = 0;    // Bitmask para inversiones en tiempo real
 
+// --- Encendido de las pantallas (reposo) ---
+// Core 0 detecta la inactividad, pero quien manda al SSD1306 es Core 1: las
+// pantallas y el bus SPI tienen un único dueño. Construir un segundo
+// HardwareOled desde Core 0 dejaba OLED_RST a nivel bajo (gpio_init() pone la
+// salida a cero), es decir, las diez pantallas en reset permanente.
+volatile bool displays_on = true;
+volatile bool display_power_req = false;
+
+// La intro de arranque la reproduce Core 1; Core 0 solo avisa de que hay una
+// tecla pulsada para poder cortarla.
+volatile bool intro_running = false;
+volatile bool intro_skip_req = false;
+static bool intro_should_skip() { return intro_skip_req; }
+
+// Latido de Core 1. Core 0 solo alimenta el watchdog mientras esto siga
+// cambiando: si Core 1 se queda colgado con el bus SPI a medias, el teclado se
+// reinicia en vez de quedarse mudo hasta que alguien lo desenchufe.
+volatile uint32_t core1_heartbeat = 0;
+
 // ==========================================
 // CONFIGURACIÓN DE LA RUEDA DE SCROLL
 // ==========================================
@@ -319,12 +350,23 @@ static inline bool cur_scroll_invert() {
 }
 
 // Persistencia en Flash. Dos regiones a partir de 1.5 MB:
-//   - 1 sector (4 KB) para ajustes + los perfiles editables
-//   - 16 sectores (64 KB) para el banco de bitmaps OLED personalizados
+//   - 2 sectores (8 KB) para ajustes + los perfiles editables
+//   - 2 sectores (8 KB) por perfil para sus bitmaps OLED personalizados
+//
+// Con 16 perfiles los ajustes ya no caben en un solo sector, así que la región
+// de bitmaps arranca un sector más allá que en el firmware 3.0. Los bitmaps ya
+// guardados se recuperan al migrar (ver load_settings): se leen de su sitio
+// antiguo y quedan marcados para reescribirse en el nuevo.
 #define FLASH_TARGET_OFFSET  (1536 * 1024)
-#define FLASH_OLED_OFFSET    (FLASH_TARGET_OFFSET + FLASH_SECTOR_SIZE)
+#define FLASH_SETTINGS_SECTORS 2
+#define FLASH_SETTINGS_BYTES (FLASH_SETTINGS_SECTORS * FLASH_SECTOR_SIZE)
+#define FLASH_OLED_OFFSET    (FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES)
 #define FLASH_OLED_SLICE     (2 * FLASH_SECTOR_SIZE)  // 8 KB por perfil
 #define FLASH_OLED_AT(p)     (FLASH_OLED_OFFSET + (p) * FLASH_OLED_SLICE)
+
+// Disposición del firmware 3.0, solo para rescatar los iconos al actualizar.
+#define FLASH_OLED_OFFSET_V3 (FLASH_TARGET_OFFSET + FLASH_SECTOR_SIZE)
+#define FLASH_OLED_AT_V3(p)  (FLASH_OLED_OFFSET_V3 + (p) * FLASH_OLED_SLICE)
 
 // Versiones del bloque de ajustes. Cada cambio de estructura necesita un magic
 // nuevo, pero NO se descarta lo guardado: se migra campo a campo. Los bitmaps
@@ -333,8 +375,11 @@ static inline bool cur_scroll_invert() {
 #define SETTINGS_MAGIC_V1 0xDEB001CE  // original: solo ajustes básicos
 #define SETTINGS_MAGIC_V2 0xDEB00204  // + perfiles editables, scroll y bitmaps
 #define SETTINGS_MAGIC_V3 0xDEB00205  // + acciones de encoders y rueda
-#define SETTINGS_MAGIC    0xDEB00300  // + nº de perfiles variable, capa SUPER
-                                      //   en los mandos y scroll por perfil
+#define SETTINGS_MAGIC_V4 0xDEB00300  // + nº de perfiles variable (tope 8), capa
+                                      //   SUPER en los mandos y scroll por perfil
+#define SETTINGS_MAGIC    0xDEB00310  // + tope de 16 perfiles: los ajustes pasan
+                                      //   a dos sectores y la región de bitmaps
+                                      //   se desplaza uno
 
 // Diseños antiguos, conservados solo para poder leer lo ya grabado.
 struct ProfileV2 {
@@ -382,6 +427,19 @@ struct SettingsV3 {
     ProfileV3 profiles[4];
 };
 
+// Formato 3.0: mismo Profile que ahora, pero con tope de 8 perfiles.
+#define SETTINGS_V4_PROFILES 8
+struct SettingsV4 {
+    uint32_t magic;
+    uint8_t  active_profile_idx;
+    uint8_t  current_brightness;
+    uint8_t  reposo_timeout_min;
+    uint8_t  profile_count;
+    uint8_t  padding[4];
+    uint32_t custom_oled_mask[SETTINGS_V4_PROFILES];
+    Profile  profiles[SETTINGS_V4_PROFILES];
+};
+
 struct Settings {
     uint32_t magic;
     uint8_t  active_profile_idx;
@@ -400,12 +458,16 @@ static uint8_t settings_blob[SETTINGS_BLOB_SIZE];
 
 // Guardas de disposición: si los perfiles crecen y dejan de caber, hay que
 // ampliar el sector reservado en lugar de pisar el banco de bitmaps.
-static_assert(SETTINGS_BLOB_SIZE <= FLASH_SECTOR_SIZE,
-              "Los ajustes ya no caben en un sector de Flash");
+static_assert(SETTINGS_BLOB_SIZE <= FLASH_SETTINGS_BYTES,
+              "Los ajustes ya no caben en la región reservada de Flash");
 static_assert(OLED_SLOTS * OLED_FB_SIZE <= OLED_PROFILE_STRIDE,
               "El stride por perfil no cubre sus 20 bitmaps");
 static_assert(OLED_PROFILE_STRIDE % FLASH_PAGE_SIZE == 0,
               "flash_range_program exige múltiplos de página");
+// Al subir MAX_PROFILES crecen las dos regiones: que no se coman el final de la
+// Flash ni pisen el programa, que vive al principio.
+static_assert(FLASH_OLED_AT(MAX_PROFILES - 1) + FLASH_OLED_SLICE <= PICO_FLASH_SIZE_BYTES,
+              "El banco de bitmaps se sale de la Flash del módulo");
 
 // Los perfiles de fábrica solo declaran teclas y etiquetas; las acciones
 // giratorias se rellenan aquí para no repetirlas en los cuatro literales.
@@ -472,10 +534,10 @@ void save_settings() {
     memcpy(s->custom_oled_mask, custom_oled_mask, sizeof(custom_oled_mask));
     memcpy(s->profiles, profiles, sizeof(profiles));
 
-    // Ajustes y perfiles: un solo sector, ~60 ms con interrupciones cerradas.
+    // Ajustes y perfiles: dos sectores, ~120 ms con interrupciones cerradas.
     uint32_t ints = save_and_disable_interrupts();
     multicore_lockout_start_blocking();
-    flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SETTINGS_BYTES);
     flash_range_program(FLASH_TARGET_OFFSET, settings_blob, SETTINGS_BLOB_SIZE);
     multicore_lockout_end_blocking();
     restore_interrupts(ints);
@@ -486,6 +548,7 @@ void save_settings() {
         if (!(custom_oled_dirty & (1u << p))) continue;
 
         tud_task();
+        watchdog_update(); // grabar los dieciséis perfiles lleva un par de segundos
         ints = save_and_disable_interrupts();
         multicore_lockout_start_blocking();
         flash_range_erase(FLASH_OLED_AT(p), FLASH_OLED_SLICE);
@@ -506,6 +569,21 @@ static void load_oled_bank() {
                OLED_PROFILE_STRIDE);
     }
     custom_oled_dirty = 0;
+}
+
+// Igual, pero leyendo de donde los dejó el firmware 3.0 y dejándolos marcados
+// para que el próximo SAVE_STATE los reescriba en su sitio nuevo. Sin esto,
+// ampliar el número de perfiles habría borrado todos los iconos dibujados.
+static void load_oled_bank_v3(uint8_t profiles_count) {
+    memset(custom_oled_bank, 0, sizeof(custom_oled_bank));
+    custom_oled_dirty = 0;
+    for (uint8_t p = 0; p < profiles_count && p < MAX_PROFILES; p++) {
+        if (!custom_oled_mask[p]) continue;
+        memcpy(&custom_oled_bank[p * OLED_PROFILE_STRIDE],
+               (const uint8_t*)(XIP_BASE + FLASH_OLED_AT_V3(p)),
+               OLED_PROFILE_STRIDE);
+        custom_oled_dirty |= (1u << p);
+    }
 }
 
 static void sanitize_loaded() {
@@ -540,6 +618,26 @@ void load_settings() {
         return;
     }
 
+    if (magic == SETTINGS_MAGIC_V4) {
+        // Formato 3.0: hasta 8 perfiles y los bitmaps un sector más atrás. Los
+        // perfiles se copian tal cual (la estructura no ha cambiado) y los
+        // iconos se rescatan de su posición antigua.
+        const SettingsV4* s = (const SettingsV4*)(XIP_BASE + FLASH_TARGET_OFFSET);
+        active_profile_idx = s->active_profile_idx;
+        current_brightness = s->current_brightness;
+        reposo_timeout_min = s->reposo_timeout_min;
+        profile_count      = s->profile_count;
+
+        memset(profiles, 0, sizeof(profiles));
+        memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
+        memcpy(profiles, s->profiles, sizeof(s->profiles));
+        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(s->custom_oled_mask));
+
+        sanitize_loaded();
+        load_oled_bank_v3(SETTINGS_V4_PROFILES);
+        return;
+    }
+
     if (magic == SETTINGS_MAGIC_V3) {
         // Formato anterior a los perfiles variables: cuatro perfiles con los
         // mandos en una sola capa y un scroll global. Se conserva todo y se
@@ -567,7 +665,7 @@ void load_settings() {
             profiles[i].scroll_invert[1]  = s->scroll_invert;
         }
         sanitize_loaded();
-        load_oled_bank();
+        load_oled_bank_v3(4);
         return;
     }
 
@@ -596,7 +694,7 @@ void load_settings() {
             profiles[i].scroll_invert[1]  = s->scroll_invert;
         }
         sanitize_loaded();
-        load_oled_bank();
+        load_oled_bank_v3(4);
         return;
     }
 
@@ -672,11 +770,33 @@ static bool profile_remove(uint8_t idx) {
     return true;
 }
 
-// Cuántas opciones enseña el menú físico de perfiles: uno por perfil más BACK,
-// sin pasarse de las diez pantallas.
+// Menú físico de perfiles. Las opciones son un perfil por entrada más BACK al
+// final, pero solo hay diez pantallas: con más perfiles la lista se muestra por
+// ventanas de diez que siguen al cursor.
+#define PERF_MENU_SCREENS 10
+
 static inline uint8_t perf_menu_count() {
-    uint8_t n = (uint8_t)(profile_count + 1);
-    return n > 10 ? 10 : n;
+    return (uint8_t)(profile_count + 1);  // + BACK
+}
+
+// Primera opción visible en las pantallas.
+volatile uint8_t perf_menu_first = 0;
+
+// Recoloca la ventana para que la opción elegida quede siempre a la vista.
+static void perf_menu_follow() {
+    if (selected_menu_idx < perf_menu_first) {
+        perf_menu_first = selected_menu_idx;
+    } else if (selected_menu_idx >= perf_menu_first + PERF_MENU_SCREENS) {
+        perf_menu_first = (uint8_t)(selected_menu_idx - PERF_MENU_SCREENS + 1);
+    }
+}
+
+// Al abrir el menú el cursor arranca en el perfil que está puesto: con muchos
+// perfiles, empezar siempre en el primero obligaba a recorrer la lista entera.
+static void perf_menu_open() {
+    selected_menu_idx = (active_profile_idx < profile_count) ? active_profile_idx : 0;
+    perf_menu_first = 0;
+    perf_menu_follow();
 }
 
 // ==========================================
@@ -707,45 +827,8 @@ uint16_t get_consumer_key_from_index(uint8_t idx) {
     }
 }
 
-void send_keyboard_report(uint8_t modifier, uint8_t keycode) {
-    // Esperar a que el canal HID esté listo para transmitir
-    int retry = 0;
-    while (!tud_hid_ready() && retry < 100) {
-        tud_task();
-        sleep_ms(1);
-        retry++;
-    }
-
-    if (keycode == 0 && modifier == 0) {
-        tud_hid_keyboard_report(1, 0, NULL);
-    } else {
-        uint8_t keycodes[6] = { keycode, 0, 0, 0, 0, 0 };
-        tud_hid_keyboard_report(1, modifier, keycodes);
-    }
-}
-
-void send_consumer_key(uint16_t keycode) {
-    // Esperar a que el canal HID esté listo para enviar la pulsación
-    int retry = 0;
-    while (!tud_hid_ready() && retry < 100) {
-        tud_task();
-        sleep_ms(1);
-        retry++;
-    }
-    
-    tud_hid_report(3, &keycode, 2);
-    
-    // Esperar a que se complete la transmisión antes de enviar la liberación
-    retry = 0;
-    while (!tud_hid_ready() && retry < 100) {
-        tud_task();
-        sleep_ms(1);
-        retry++;
-    }
-    
-    uint16_t release = 0;
-    tud_hid_report(3, &release, 2);
-}
+// El envío de informes vive en hid_out.h: estado de teclas con rollover de seis
+// y cola para las pulsaciones puntuales, sin esperas bloqueantes.
 
 // ==========================================
 // RUEDA DE SCROLL -> HID
@@ -760,10 +843,21 @@ static int32_t scroll_detent_frac = 0; // resto al degradar a detents clásicos
 static int32_t pending_wheel  = 0;  // unidades verticales pendientes
 static int32_t pending_pan    = 0;  // detents horizontales pendientes
 
+// Ctrl pegajoso del zoom. Antes se pulsaba y se soltaba en cada detent, con la
+// rueda enviada en medio; a poco que se girase rápido, el host recibía la rueda
+// sin tener claro si el Ctrl estaba puesto. Ahora se mantiene mientras se siga
+// girando y se suelta sola un rato después del último paso.
+#define ZOOM_HOLD_MS 250
+static uint32_t zoom_hold_until = 0;
+static bool     zoom_pending    = false;
+
 // Vacía las colas de scroll sin bloquear: si el endpoint HID está ocupado, lo
 // pendiente se conserva para el siguiente ciclo en vez de perderse.
 void wheel_flush() {
     if ((pending_wheel == 0 && pending_pan == 0) || !tud_hid_ready()) return;
+
+    // Con zoom, la rueda no sale hasta que el Ctrl ha llegado al host de verdad.
+    if (zoom_pending && !(HidOut::sent_modifiers() & KEYBOARD_MODIFIER_LEFTCTRL)) return;
 
     int32_t v = pending_wheel;
     if (v >  32767) v =  32767;
@@ -777,6 +871,7 @@ void wheel_flush() {
     if (tud_hid_report(REPORT_ID_MOUSE, &rpt, sizeof(rpt))) {
         pending_wheel -= v;
         pending_pan   -= h;
+        if (pending_wheel == 0) zoom_pending = false;
     }
 }
 
@@ -801,11 +896,12 @@ static void emit_scroll(uint8_t type, int32_t detents) {
 
     if (type == ROT_ZOOM) {
         // Ctrl mantenido mientras dura el desplazamiento: es lo que interpretan
-        // navegadores y editores como acercar/alejar.
-        send_keyboard_report(KEYBOARD_MODIFIER_LEFTCTRL, 0);
+        // navegadores y editores como acercar/alejar. Lo suelta el bucle
+        // principal cuando pasa ZOOM_HOLD_MS sin más pasos.
+        zoom_hold_until = to_ms_since_boot(get_absolute_time()) + ZOOM_HOLD_MS;
+        zoom_pending = true;
+        HidOut::set_sticky_mod(KEYBOARD_MODIFIER_LEFTCTRL);
         pending_wheel += detents * (g_hires_multiplier ? HID_HIRES_MULTIPLIER : 1);
-        wheel_flush();
-        send_keyboard_report(0, 0);
         return;
     }
 
@@ -815,13 +911,9 @@ static void emit_scroll(uint8_t type, int32_t detents) {
 // Una sola repetición de una acción discreta (tecla o multimedia).
 static void emit_discrete(const RotaryAction& a) {
     if (a.type == ROT_CONSUMER) {
-        uint16_t code = get_consumer_key_from_index(a.keycode);
-        if (code) send_consumer_key(code);
+        HidOut::consumer_tap(get_consumer_key_from_index(a.keycode));
     } else if (a.type == ROT_KEY) {
-        if (a.modifier || a.keycode) {
-            send_keyboard_report(a.modifier, a.keycode);
-            send_keyboard_report(0, 0);
-        }
+        HidOut::tap(a.modifier, a.keycode);
     }
 }
 
@@ -942,14 +1034,16 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
         }
     }
     else if (current_mode == MODE_MENU_PERF) {
-        // Una pantalla por perfil y BACK en la siguiente: con perfiles creados
-        // desde la app la lista ya no tiene un tamaño fijo.
-        if (screen_num >= 1 && screen_num <= profile_count) {
+        // Cada pantalla enseña una opción de la ventana visible: los perfiles y,
+        // tras el último, BACK. Con más de diez perfiles la ventana se desplaza.
+        uint8_t option = (uint8_t)(perf_menu_first + screen_num - 1);
+
+        if (option < profile_count) {
             draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(profiles[screen_num - 1].name, fb);
+            OledText::render_string_to_framebuffer(profiles[option].name, fb);
             draw_premium_frame(fb);
             oleds.paint_screen(screen_num, fb);
-        } else if (screen_num == perf_menu_count()) {
+        } else if (option == profile_count) {
             draw_premium_frame(fb);
             OledText::render_string_to_framebuffer("BACK", fb);
             draw_premium_frame(fb);
@@ -1024,17 +1118,24 @@ void core1_entry() {
     HardwareOled oleds;
     oleds.init_all_screens();
 
-    // Aplicar brillo inicial
-    oleds.set_brightness(current_brightness);
-
-    // Pintar los mapas de bits iniciales en modo normal
-    for (int i = 1; i <= 10; i++) {
-        refresh_single_screen(oleds, i);
-    }
+    // Intro de arranque. Si no hay animación horneada se limita a pintar el
+    // contenido normal, que es lo que había aquí antes.
+    intro_running = true;
+    OledIntro::run(oleds, intro_should_skip, refresh_single_screen, current_brightness);
+    intro_running = false;
 
     uint16_t current_inversions = 0;
 
     while (true) {
+        core1_heartbeat++; // Core 0 no alimenta el watchdog si esto se para
+
+        // El encendido y apagado del reposo lo pide Core 0 pero lo ejecuta este
+        // core, que es el único dueño del bus SPI y de los pines del OLED.
+        if (display_power_req) {
+            display_power_req = false;
+            oleds.set_all_displays_on(displays_on);
+        }
+
         if (system_refresh_req) {
             system_refresh_req = false;
 
@@ -1054,10 +1155,10 @@ void core1_entry() {
 
             // Si estamos en un menú con cursor, aplicar inversiones
             if (current_mode == MODE_MENU_PERF) {
-                // El cursor puede caer más allá de la quinta pantalla cuando hay
-                // perfiles añadidos, así que se recorren las diez.
-                for (int i = 1; i <= 10; i++) {
-                    oleds.invert_screen(i, (selected_menu_idx == (i - 1)));
+                // El cursor se marca sobre la ventana visible, que con muchos
+                // perfiles no empieza necesariamente en el primero.
+                for (int i = 1; i <= PERF_MENU_SCREENS; i++) {
+                    oleds.invert_screen(i, (selected_menu_idx == perf_menu_first + i - 1));
                 }
             } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_REPO) {
                 for (int i = 1; i <= 5; i++) {
@@ -1501,17 +1602,60 @@ void process_command(const char* cmd) {
 // Función callback CDC eliminada; se realiza polling manual en main()
 
 // ==========================================
+// CICLO DE VIDA DEL USB
+// ==========================================
+// Si el PC se suspende o se tira del cable con una tecla hundida, el host se
+// queda con esa tecla pulsada para siempre. Soltar todo en estos avisos es lo
+// que evita el clásico «se me ha quedado el Ctrl pegado».
+extern "C" void tud_umount_cb(void) {
+    HidOut::release_all();
+}
+
+extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
+    (void)remote_wakeup_en;
+    HidOut::release_all();
+}
+
+extern "C" void tud_resume_cb(void) {
+    // A propósito no se reenvía nada: si al despertar el PC siguiera hundida
+    // una tecla, reenviarla escribiría un carácter que nadie ha pedido. Vuelve
+    // a contar en cuanto se suelte y se pulse otra vez.
+}
+
+// ==========================================
 // CORE 0: ENCODERS, TECLAS Y USB CDC / HID
 // ==========================================
 int main() {
     board_init();
     tusb_init();
-    sleep_ms(2000);
+    HidOut::init();
+
+    // Margen para que se asienten las alimentaciones antes de arrancar el resto.
+    // Antes eran dos segundos de sleep_ms() a secas, sin llamar ni una vez a
+    // tud_task(): el dispositivo estaba en el bus pero no contestaba a la
+    // enumeración, lo que la retrasaba y de vez en cuando la hacía fallar.
+    // Ahora se atiende al USB mientras se espera, y basta con mucho menos.
+    #define BOOT_SETTLE_MS 300
+    absolute_time_t settle = make_timeout_time_ms(BOOT_SETTLE_MS);
+    while (!time_reached(settle)) {
+        tud_task();
+        sleep_us(500);
+    }
 
     // Cargar configuración de Flash
     load_settings();
 
+    // Si venimos de un reinicio por watchdog, algo se colgó: nada de intro, a
+    // dejar el teclado operativo cuanto antes.
+    if (watchdog_caused_reboot()) intro_skip_req = true;
+
     multicore_launch_core1(core1_entry);
+
+    // Ocho segundos, que es el tope del RP2040. Lo alimenta el bucle de abajo
+    // solo si Core 1 sigue dando señales de vida: así un cuelgue de cualquiera
+    // de los dos cores acaba en un reinicio en vez de en un teclado muerto que
+    // hay que desenchufar.
+    watchdog_enable(8000, 1);
 
     HardwareEncoder rueda_izq(pio0, Pins::ENC1_A, 1);
     HardwareEncoder rueda_der(pio0, Pins::ENC2_A, -1);
@@ -1525,6 +1669,17 @@ int main() {
         Pins::KEY_9, Pins::KEY_10, Pins::KEY_11, Pins::KEY_12
     };
     bool last_key_state[12] = {false};
+
+    // Antirrebote de las doce teclas. Los pulsadores de los encoders ya tenían
+    // el suyo, pero las teclas se leían en crudo: un pulsador mecánico rebota
+    // entre 1 y 5 ms y el bucle gira cada 250 us, así que un solo toque podía
+    // colar hasta veinte flancos y repetir el atajo.
+    //
+    // Se acepta el primer flanco al instante (no añade ni un microsegundo de
+    // latencia) y se ignora lo que llegue durante los 5 ms siguientes.
+    #define KEY_DEBOUNCE_US 5000
+    bool     key_stable[12]  = {false};
+    uint32_t key_edge_us[12] = {0};
 
     const uint8_t key_to_oled[12] = {
         1, 2, 3, 4, 5, 6, 7, 8, 9,  // Teclas 1-9 → OLED 1-9
@@ -1560,11 +1715,31 @@ int main() {
     int32_t  wheel_tel_accum = 0;
     uint32_t last_wheel_tel  = last_activity_time;
 
-    // Instancia temporal para despertar pantallas
-    HardwareOled main_oled_ctrl;
+    // Aquí había una segunda instancia de HardwareOled para despertar las
+    // pantallas. Se ha quitado: su constructor reinicializaba los pines y el
+    // SPI que Core 1 está usando, y dejaba OLED_RST a nivel bajo. El reposo se
+    // pide ahora con display_power_req.
+
+    uint32_t last_hb = 0, last_hb_ms = to_ms_since_boot(get_absolute_time());
 
     while (true) {
         tud_task();
+
+        // Alimentar el watchdog, pero solo si Core 1 sigue vivo. Durante la
+        // intro no se le exige latido porque está dentro del reproductor.
+        {
+            uint32_t ms = to_ms_since_boot(get_absolute_time());
+            if (core1_heartbeat != last_hb) { last_hb = core1_heartbeat; last_hb_ms = ms; }
+            if (intro_running || (uint32_t)(ms - last_hb_ms) < 3000) watchdog_update();
+        }
+
+        // Quien tenga prisa corta la intro con cualquier tecla o pulsador.
+        if (intro_running && !intro_skip_req) {
+            for (int i = 0; i < 12; i++) {
+                if (!gpio_get(key_pins[i])) { intro_skip_req = true; break; }
+            }
+            if (!gpio_get(Pins::ENC1_SW) || !gpio_get(Pins::ENC2_SW)) intro_skip_req = true;
+        }
 
         // --- PROCESAR COMANDOS CDC (POLLING) ---
         if (tud_cdc_available()) {
@@ -1609,6 +1784,7 @@ int main() {
                 int next = ((int)selected_menu_idx + delta_izq) % opts;
                 if (next < 0) next += opts;
                 selected_menu_idx = (uint8_t)next;
+                if (current_mode == MODE_MENU_PERF) perf_menu_follow();
                 push_system_refresh();
             } else if (current_mode == MODE_MENU_BRIL) {
                 // Ajuste de brillo en caliente
@@ -1679,6 +1855,7 @@ int main() {
                             tud_cdc_n_write_flush(0);
                         }
                         selected_menu_idx = 0;
+                        if (current_mode == MODE_MENU_PERF) perf_menu_open();
                         push_system_refresh();
                     } else if (current_mode == MODE_MENU_PERF) {
                     if (selected_menu_idx < profile_count) {
@@ -1772,6 +1949,7 @@ int main() {
                 // Esperar liberación completa de botones para evitar dobles clics
                 while (!gpio_get(Pins::ENC1_SW) || !gpio_get(Pins::ENC2_SW)) {
                     tud_task();
+                    watchdog_update(); // el usuario puede tenerlo apretado un buen rato
                     sleep_ms(10);
                 }
             }
@@ -1791,7 +1969,16 @@ int main() {
             // por bloque saturaba el CDC e introducía jitter en el scroll.
             wheel_tel_accum += wheel_delta;
         }
+        // La rueda tiene preferencia sobre el endpoint: es lo que más se nota
+        // si se retrasa. Después va lo que haya pendiente de teclado.
         wheel_flush();
+        HidOut::pump();
+
+        // Soltar el Ctrl del zoom cuando se deja de girar.
+        if (zoom_hold_until != 0 && (int32_t)(now - zoom_hold_until) >= 0) {
+            zoom_hold_until = 0;
+            HidOut::set_sticky_mod(0);
+        }
 
         if (wheel_tel_accum != 0 && (uint32_t)(now - last_wheel_tel) >= 50) {
             last_wheel_tel = now;
@@ -1806,8 +1993,23 @@ int main() {
             tud_cdc_n_write_flush(0);
         }
 
+        // --- LECTURA ANTIRREBOTE DE LAS DOCE TECLAS ---
+        // Todo lo que viene detrás (SUPER, la tecla 12 y los atajos) lee de
+        // aquí, nunca del pin en crudo.
+        {
+            uint32_t now_us = time_us_32();
+            for (int i = 0; i < 12; i++) {
+                bool raw = !gpio_get(key_pins[i]);
+                if (raw != key_stable[i] &&
+                    (uint32_t)(now_us - key_edge_us[i]) >= KEY_DEBOUNCE_US) {
+                    key_stable[i]  = raw;
+                    key_edge_us[i] = now_us;
+                }
+            }
+        }
+
         // --- DETECTAR ACCESO RÁPIDO A PERFILES (HOLD 1 SEGUNDO EN TECLA 12) ---
-        bool key12_pressed = !gpio_get(Pins::KEY_12);
+        bool key12_pressed = key_stable[11];
         static uint32_t key12_hold_start = 0;
         if (key12_pressed && current_mode == MODE_NORMAL) {
             if (key12_hold_start == 0) {
@@ -1815,7 +2017,7 @@ int main() {
             } else if (now - key12_hold_start >= 1000) {
                 activity_detected = true;
                 current_mode = MODE_MENU_PERF;
-                selected_menu_idx = 0;
+                perf_menu_open();
                 push_system_refresh();
                 
                 // Notificar por CDC
@@ -1828,6 +2030,7 @@ int main() {
                 // Esperar a que se libere Key 12 para no disparar atajos accidentales
                 while (!gpio_get(Pins::KEY_12)) {
                     tud_task();
+                    watchdog_update(); // el usuario puede tenerla apretada un buen rato
                     sleep_ms(10);
                 }
             }
@@ -1837,7 +2040,7 @@ int main() {
 
         // --- TECLAS ---
         // Primero, actualizar el estado de la tecla SUPER (Tecla 10, index 9)
-        bool super_pressed = !gpio_get(key_pins[9]); // Tecla 10
+        bool super_pressed = key_stable[9]; // Tecla 10
         if (super_pressed != super_active) {
             super_active = super_pressed;
             if (current_mode == MODE_NORMAL) {
@@ -1858,7 +2061,7 @@ int main() {
             // Tecla 12 (index 11) en Modo Normal solo responde al hold largo (ya manejado arriba)
             if (i == 11 && current_mode == MODE_NORMAL) continue;
 
-            bool is_pressed = !gpio_get(key_pins[i]);
+            bool is_pressed = key_stable[i];
             if (is_pressed != last_key_state[i]) {
                 last_key_state[i] = is_pressed;
                 activity_detected = true;
@@ -1880,26 +2083,22 @@ int main() {
                     tud_cdc_n_write(0, tel, len);
                     tud_cdc_n_write_flush(0);
 
-                    // Envío de atajo nativo HID según el perfil activo y SUPER
+                    // Envío de atajo nativo HID según el perfil activo y SUPER.
+                    // Al soltar no se vuelve a mirar el perfil: HidOut recuerda
+                    // lo que envió cada tecla, así que cambiar de capa con una
+                    // tecla hundida ya no puede dejarla pegada.
                     if (is_pressed) {
                         uint8_t mapping_idx = i + (super_active ? 12 : 0);
                         uint8_t mod = profiles[active_profile_idx].key_mappings[mapping_idx].modifier;
                         uint8_t key = profiles[active_profile_idx].key_mappings[mapping_idx].keycode;
                         if (mod == 0xFE) {
-                            // Ejecutar acción multimedia nativa traducida de su índice de tabla
-                            uint16_t cons_key = get_consumer_key_from_index(key);
-                            if (cons_key != 0) {
-                                send_consumer_key(cons_key);
-                            }
+                            // Acción multimedia, traducida de su índice de tabla
+                            HidOut::consumer_tap(get_consumer_key_from_index(key));
                         } else if (mod != 0 || key != 0) {
-                            send_keyboard_report(mod, key);
+                            HidOut::key_down((uint8_t)i, mod, key);
                         }
                     } else {
-                        uint8_t mapping_idx = i + (super_active ? 12 : 0);
-                        uint8_t mod = profiles[active_profile_idx].key_mappings[mapping_idx].modifier;
-                        if (mod != 0xFE) {
-                            send_keyboard_report(0, 0);
-                        }
+                        HidOut::key_up((uint8_t)i);
                     }
                 } else if (is_pressed) {
                     // En cualquier menú, las teclas 1 a 5 actúan como atajos de selección
@@ -1919,6 +2118,7 @@ int main() {
                                 tud_cdc_n_write_flush(0);
                             }
                             selected_menu_idx = 0;
+                            if (current_mode == MODE_MENU_PERF) perf_menu_open();
                             push_system_refresh();
                         } else if (current_mode == MODE_MENU_PERF) {
                             if (selected_menu_idx < profile_count) {
@@ -1967,14 +2167,16 @@ int main() {
             last_activity_time = now;
             if (is_sleeping) {
                 is_sleeping = false;
-                main_oled_ctrl.set_all_displays_on(true);
+                displays_on = true;
+                display_power_req = true;
                 push_system_refresh();
             }
         } else if (!is_sleeping && reposo_timeout_min > 0) {
             uint32_t idle_duration = now - last_activity_time;
             if (idle_duration >= (uint32_t)(reposo_timeout_min * 60 * 1000)) {
                 is_sleeping = true;
-                main_oled_ctrl.set_all_displays_on(false);
+                displays_on = false;
+                display_power_req = true;
             }
         }
 
@@ -1984,4 +2186,4 @@ int main() {
         sleep_us(250);
     }
     return 0;
-}
+}
