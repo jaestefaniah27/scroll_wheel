@@ -7,9 +7,12 @@
 import * as device from './device.js';
 import { state, markDirty, syncFromDevice } from './store.js';
 import { toast } from './ui.js';
+import * as cache from './oled-cache.js';
 
 const FORMAT = 'orby-backup';
-const VERSION = 1;
+// v2: número de perfiles variable, mandos con capa SUPER (16 huecos) y rueda de
+// scroll por perfil y capa.
+const VERSION = 2;
 
 function bytesToHex(bytes) {
   let hex = '';
@@ -27,20 +30,20 @@ function hexToBytes(hex) {
 export async function exportAll(onProgress = () => {}) {
   if (!state.connected) throw new Error('Teclado no conectado');
 
+  const total = state.profiles.length || 1;
   const payload = {
     format: FORMAT,
     version: VERSION,
     savedAt: new Date().toISOString(),
     firmware: state.deviceInfo?.fw || null,
-    scroll: { ...state.scroll },
     brightness: state.brightness,
     timeout: state.timeout,
     activeProfile: state.activeProfileIdx,
     profiles: [],
   };
 
-  for (let p = 0; p < 4; p++) {
-    onProgress(`Leyendo perfil ${p + 1} de 4…`);
+  for (let p = 0; p < total; p++) {
+    onProgress(`Leyendo perfil ${p + 1} de ${total}…`);
     const prof = await device.getProfile(p);
     const icons = {};
 
@@ -56,6 +59,7 @@ export async function exportAll(onProgress = () => {}) {
       labels: prof.labels,
       keys: prof.keys,
       rotary: prof.rotary,
+      scroll: prof.scroll,
       icons,
     });
   }
@@ -68,9 +72,20 @@ export async function importAll(data, onProgress = () => {}) {
   if (data?.format !== FORMAT) throw new Error('El archivo no es una copia de Orby');
   if (!state.connected) throw new Error('Teclado no conectado');
 
-  for (let p = 0; p < Math.min(4, data.profiles.length); p++) {
+  const total = Math.min(state.maxProfiles, data.profiles.length);
+
+  // La copia puede traer más perfiles de los que hay ahora en el teclado: se
+  // crean antes de escribir nada, porque el firmware rechaza índices que no
+  // existen todavía.
+  while (state.profiles.length < total) {
+    onProgress(`Creando perfil ${state.profiles.length + 1}…`);
+    await device.addProfile();
+    await syncFromDevice();
+  }
+
+  for (let p = 0; p < total; p++) {
     const prof = data.profiles[p];
-    onProgress(`Escribiendo perfil ${p + 1} de 4…`);
+    onProgress(`Escribiendo perfil ${p + 1} de ${total}…`);
 
     if (prof.name) await device.setName(p, prof.name);
 
@@ -81,10 +96,15 @@ export async function importAll(data, onProgress = () => {}) {
       const k = prof.keys?.[s] || { modifier: 0, keycode: 0 };
       await device.setKeymap(p, s, k.modifier, k.keycode);
     }
-    // Los mandos giratorios no existían en las copias de la versión anterior.
-    for (let s = 0; s < 8; s++) {
+    // Las copias antiguas traen 8 mandos (solo capa normal) y ninguna rueda por
+    // perfil; se escribe lo que haya y el resto conserva lo del teclado.
+    for (let s = 0; s < 16; s++) {
       const r = prof.rotary?.[s];
       if (r) await device.setRotary(p, s, r.type, r.modifier, r.keycode);
+    }
+    for (let layer = 0; layer < 2; layer++) {
+      const sc = prof.scroll?.[layer] ?? data.scroll; // v1 guardaba una rueda global
+      if (sc?.detentsPerRev) await device.setProfileScroll(p, layer, sc.detentsPerRev, sc.invert);
     }
 
     const icons = prof.icons || {};
@@ -96,9 +116,10 @@ export async function importAll(data, onProgress = () => {}) {
     }
   }
 
-  if (data.scroll?.detentsPerRev) await device.setScroll(data.scroll.detentsPerRev);
   if (Number.isInteger(data.brightness)) await device.setBrightness(data.brightness);
 
+  // Los iconos del teclado ya no son los que hay en la caché de la app.
+  cache.invalidate();
   markDirty();
   await syncFromDevice();
 }

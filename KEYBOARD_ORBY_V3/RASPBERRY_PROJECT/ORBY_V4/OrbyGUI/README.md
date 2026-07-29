@@ -35,7 +35,8 @@ incrustados. Funciona sin conexión.
 
 Al arrancar busca cada 3 s un puerto serie cuyo `vendorId` sea `cafe` o cuyo
 `productId` sea `4005` / `4006`, y le manda `ACK`. Si el dispositivo contesta
-`ORBY_V4:...`, se conecta y descarga los 4 perfiles completos con `GET_PROFILE`.
+`ORBY_V4:...`, se conecta y descarga con `GET_PROFILE` tantos perfiles como diga
+el teclado (`STATE:PROFILES:<cuántos>:<máximo>`).
 
 > El PID del firmware 2.0 es **0x4006**. Se cambió a propósito: Windows cachea el
 > descriptor de informe HID por VID/PID, y sin cambiarlo seguiría usando el
@@ -46,26 +47,67 @@ Al arrancar busca cada 3 s un puerto serie cuyo `vendorId` sea `cafe` o cuyo
 ## 2. Las vistas
 
 ### Dashboard
-Réplica del hardware. Las teclas se iluminan al pulsarlas, los encoders giran,
-y la rueda muestra una barra de intensidad más el desplazamiento acumulado en
-clics. El panel de estado indica si Windows ha activado el **scroll de alta
+Réplica del hardware con la misma disposición que el teclado: las doce teclas a
+la izquierda y, a su derecha, los mandos — los dos encoders arriba y la rueda
+magnética, un disco grande, debajo. Las teclas se iluminan al pulsarlas, los
+encoders parpadean y el disco de la rueda gira los mismos grados que la rueda
+real. El panel de estado indica el perfil activo, si SUPER está pulsada, la
+sensibilidad que se está aplicando y si Windows ha activado el **scroll de alta
 resolución**.
 
 ### Perfiles y macros
-El editor de verdad. Ya no hay datos duplicados en la app: todo se lee del
-firmware.
+El editor de verdad, y el único sitio donde se configura un perfil entero:
+teclas, mandos giratorios y rueda de scroll. Ya no hay datos duplicados en la
+app: todo se lee del firmware.
 
 1. Elige el perfil arriba (el marcado *EN USO* es el activo en el teclado).
 2. Cambia entre capa **NORMAL** y **SUPER** (la capa SUPER se activa con la tecla 10).
-3. Pulsa cualquier tecla del panel para abrir el inspector.
+   El interruptor afecta a **todo**: teclas, mandos y rueda.
+3. Pulsa cualquier tecla de la réplica para abrir el inspector. Cada tecla
+   muestra su **icono real** —el mismo que está en la pantalla OLED— o su
+   etiqueta de texto, más el atajo que ejecuta.
 4. En el inspector puedes:
-   - Editar la **etiqueta OLED** (máx. 7 caracteres).
+   - Ver la pantalla tal cual y saltar al editor con **Editar icono**, que abre
+     el editor de iconos con ese perfil, esa tecla y esa capa ya seleccionados.
+   - Editar la **etiqueta OLED** (máx. 7 caracteres), que es lo que se muestra
+     cuando la tecla no tiene icono.
    - Marcar **modificadores** (Ctrl, Shift, Alt, Win…).
    - Elegir la **tecla** de la lista.
    - O pulsar **Capturar atajo** y teclear la combinación directamente en el PC.
    - O asignar una **acción multimedia** (play/pausa, siguiente, calculadora…).
 
 Cada cambio viaja al teclado al instante y se ve en las pantallas OLED.
+
+**Variaciones por aplicación.** Bajo las pestañas hay una barra *Según la app*.
+Sirve para lo que no merece un perfil entero: si en tu editor «seleccionar todo»
+es **Ctrl+E** en vez de Ctrl+A, no dupliques el perfil — crea una **variación**.
+
+1. Pulsa **Nueva variación**: se crea ya apuntando a la aplicación que tengas
+   delante (puedes cambiarle el nombre y el texto que la dispara).
+2. Cambia solo las teclas o mandos que difieran. Salen marcados en ámbar, y el
+   inspector te recuerda qué hace el perfil base, con **Volver al valor base**.
+3. Al ponerte delante de esa app, el teclado aplica los cambios encima del
+   perfil; al salir, vuelve solo.
+
+Guarda **únicamente las diferencias**: si luego retocas el perfil base, la
+variación hereda el cambio en todo lo que no haya redefinido. Puede cambiar
+atajos de teclas, acciones de los mandos y etiquetas OLED (no la calibración de
+la rueda ni los iconos).
+
+> Es un ajuste del PC: se escribe en la RAM del teclado al vuelo y **nunca** en
+> Flash. Al pulsar *Guardar en Flash* la app quita la variación, guarda el perfil
+> base y la vuelve a poner, para que no se cuele en el perfil guardado. Necesita
+> el detector de aplicaciones activado (interruptor de *Cambio automático*).
+
+**Crear, duplicar y eliminar perfiles.** A la derecha de las pestañas hay tres
+botones y un contador de huecos (`4 / 8`). *Nuevo* añade un perfil vacío,
+*Duplicar* copia el actual **con sus iconos**, y *Eliminar* lo borra (siempre
+tiene que quedar uno). El teclado admite hasta **8 perfiles**; al borrar, los
+siguientes se desplazan y el menú físico del teclado se ajusta solo.
+
+> En el menú del teclado (mantener los dos encoders, o la tecla 12) los perfiles
+> se recorren con el encoder izquierdo, uno por pantalla, y las teclas 1-5 son
+> atajos directos a los cinco primeros.
 
 **Mandos giratorios.** Debajo de las teclas hay un bloque con los dos encoders y
 la rueda de scroll, en el mismo orden que en el teclado. Cada uno tiene sus
@@ -94,12 +136,32 @@ pulsaciones no los ofrecen: un clic no tiene dirección.
 > Los encoders ejecutan estas acciones únicamente en modo normal. Dentro del
 > menú del teclado siguen sirviendo para navegar.
 
-### Rueda de scroll
-Ajusta cuántos clics equivale una vuelta completa. Preajustes: Preciso (12),
-Suave (30), Estándar (60), Rápido (120). También permite invertir la dirección.
+**Los mandos también tienen capa SUPER.** Cada perfil guarda dos juegos de
+acciones giratorias: uno para la capa normal y otro para cuando mantienes la
+tecla 10. Al crear o duplicar un perfil los dos empiezan iguales, así que si no
+tocas nada el comportamiento es el de siempre; en cuanto cambias uno, ese
+encoder hace dos cosas distintas dentro del mismo perfil.
 
-El panel derecho muestra si Windows negoció la alta resolución, un dial con el
-giro en vivo y una caja de prueba para notar la diferencia sin salir de la app.
+**Rueda de scroll.** Abajo del todo está la calibración de la rueda magnética,
+que también pertenece al perfil **y a la capa**: cuántos clics equivale una
+vuelta completa (preajustes Preciso 12, Suave 30, Estándar 60, Rápido 120), la
+inversión de dirección, las cifras derivadas y un dial con el giro en vivo para
+comprobarlo sin salir de la app. Un mismo perfil puede desplazar fino en normal
+y a saltos largos con SUPER.
+
+**Marcador en pantalla.** El dial sigue el **ángulo absoluto** del sensor, así
+que se queda donde esté la rueda de verdad en lugar de volver al cero al
+soltarla. Como el imán y el marcador de la tapa se montan en cualquier ángulo,
+la tarjeta trae su calibración:
+
+- **Círculo o raya** para el marcador.
+- **Invertir giro**, si el dibujo gira al revés que la rueda.
+- **Desfase** en grados, con barra y botones de ±1°.
+- **«El marcador está arriba: alinear aquí»**: pon el circulito de la tapa
+  mirando hacia arriba, pulsa, y el de la pantalla se coloca en el mismo sitio.
+
+Es un ajuste de montaje, así que se guarda en el PC junto al resto de la
+configuración local y vale para el dial y para la rueda del dashboard.
 
 ### Iconos OLED
 Editor de mapas de bits 72×40 de 1 bit, a pantalla completa.
@@ -161,22 +223,28 @@ direcciona su memoria.
 > Pantallas 1–9 → teclas 1–9. Pantalla 10 → tecla 11.
 
 ### Cambio automático
-El teclado cambia de perfil solo según la aplicación que tengas delante.
+El teclado cambia de perfil solo según la aplicación que tengas delante. Cada
+aplicación es una **tarjeta**: programa y perfil, nada más.
 
 1. Activa el interruptor de arriba a la derecha.
 2. Abre el programa que quieras (Photoshop, Altium…) y vuelve a OrbyGUI.
    El panel *Estado* muestra la ventana que se detectó.
-3. Pulsa **Añadir la app actual**: crea una regla con ese ejecutable apuntando
-   al perfil activo. También hay sugerencias rápidas y reglas en blanco.
-4. Ajusta a qué perfil apunta cada regla.
+3. Pulsa **Añadir la app actual**: crea una tarjeta con ese ejecutable. También
+   hay un carrusel de sugerencias rápidas y tarjetas en blanco.
+4. Elige en la tarjeta qué perfil se usa. Listo.
 
-Cada regla compara un texto (sin distinguir mayúsculas) contra el nombre del
-ejecutable, el título de la ventana o ambos. Se evalúan **de arriba abajo y gana
-la primera que encaja**, así que pon las más específicas primero. Los botones
-↑ ↓ reordenan.
+En el pie de cada tarjeta puedes afinar contra qué se compara el texto (sin
+distinguir mayúsculas): el nombre del ejecutable, el título de la ventana o
+ambos. Si dos tarjetas encajan a la vez gana la de más arriba, y las flechas
+↑ ↓ cambian esa prioridad.
 
-El desplegable *Cuando no encaje ninguna regla* permite volver a un perfil por
-defecto, o dejarlo en «no cambiar».
+La tarjeta **Perfil por defecto** decide a qué perfil se vuelve cuando no se
+detecta ninguna de las apps añadidas; también puede dejarse en «no cambiar».
+
+> **Dos cosas distintas.** Aquí eliges *qué perfil* se activa con cada app. Si lo
+> que quieres es que un perfil concreto tenga un par de teclas diferentes en una
+> app, eso son las **variaciones** de *Perfiles y macros*: guardan solo las
+> diferencias y evitan duplicar el perfil. El mismo detector alimenta las dos.
 
 Detalles de implementación:
 
@@ -190,12 +258,13 @@ Detalles de implementación:
 - Solo funciona en Windows; en otros sistemas la vista lo indica y no hace nada.
 
 ### Ajustes
-Brillo, reposo automático, información del dispositivo, reconexión forzada,
-relectura de la configuración y restauración de valores de fábrica.
+Reposo automático, información del dispositivo, reconexión forzada, relectura de
+la configuración y restauración de valores de fábrica.
 
-**Copia de seguridad.** Guarda en un archivo JSON del PC los cuatro perfiles
-completos: nombres, etiquetas, atajos, mandos giratorios y los iconos OLED en
-hexadecimal. Restaurar los vuelca de vuelta al teclado.
+**Copia de seguridad.** Guarda en un archivo JSON del PC todos los perfiles
+completos: nombres, etiquetas, atajos, mandos giratorios de las dos capas, la
+rueda de cada capa y los iconos OLED en hexadecimal. Restaurar los vuelca de
+vuelta al teclado, creando los perfiles que hagan falta.
 
 > Hazte una copia **antes de flashear**. El firmware migra la configuración
 > entre versiones, pero un archivo en el PC es el único respaldo que sobrevive
@@ -219,7 +288,7 @@ cuando tú lo pides.
 
 ---
 
-## 4. Protocolo serie (firmware 2.0)
+## 4. Protocolo serie (firmware 3.0)
 
 USB CDC, 115200 baudios, líneas terminadas en `\n`.
 
@@ -227,20 +296,25 @@ USB CDC, 115200 baudios, líneas terminadas en `\n`.
 
 | Comando | Efecto |
 |---|---|
-| `ACK` | Handshake. Responde `ORBY_V4:FW=2.0:KEYS=12:OLEDS=10:ENCODERS=2:MODE=<modo>` |
-| `GET_STATE` | Vuelca perfil, brillo, timeout, modo y scroll. Termina en `STATE:END` |
-| `SET_PROFILE:<0-3>` | Cambia el perfil activo |
+| `ACK` | Handshake. Responde `ORBY_V4:FW=3.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=<n>:MAXPROFILES=8:MODE=<modo>` |
+| `GET_STATE` | Vuelca perfil, nº de perfiles, brillo, timeout, modo, SUPER y scroll. Termina en `STATE:END` |
+| `SET_PROFILE:<idx>` | Cambia el perfil activo |
+| `ADD_PROFILE` | Crea un perfil vacío. Responde `PROFILE:ADDED:<idx>` y `PROFILES:OK:<n>:<activo>` |
+| `DUP_PROFILE:<idx>` | Duplica un perfil con sus iconos |
+| `DEL_PROFILE:<idx>` | Borra un perfil y desplaza los siguientes (nunca el último que quede) |
 | `SET_BRIGHTNESS:<0-255>` | Contraste de las OLED |
 | `SET_TIMEOUT:<0\|1\|5\|10>` | Minutos hasta el reposo (0 = desactivado) |
-| `SET_SCROLL:<6-240>` | Clics de rueda por vuelta completa |
-| `SET_SCROLL_INV:<0\|1>` | Invierte la dirección del scroll |
-| `GET_SCROLL` | Devuelve `SCROLL:OK:<clics>:<invertido>:<altares>` |
-| `GET_PROFILE:<0-3>` | Vuelca un perfil completo. Termina en `PROF:<n>:END` |
-| `GET_PROFILES` | Vuelca los cuatro |
+| `SET_PSCROLL:<perfil>:<capa 0-1>:<6-240>:<inv 0\|1>` | Rueda de un perfil y una capa |
+| `SET_SCROLL:<6-240>` | Igual, pero sobre el perfil y la capa activos |
+| `SET_SCROLL_INV:<0\|1>` | Invierte la dirección en el perfil y la capa activos |
+| `GET_SCROLL` | Devuelve `SCROLL:OK:<clics>:<invertido>:<altares>` de lo que se aplica ahora |
+| `GET_PROFILE:<idx>` | Vuelca un perfil completo. Termina en `PROF:<n>:END` |
+| `GET_PROFILES` | Vuelca todos, precedidos del recuento |
+| `GET_PROFILE_COUNT` | Devuelve `PROFILES:OK:<n>:<activo>` |
 | `SET_NAME:<perfil>:<texto>` | Renombra el perfil (7 caracteres) |
 | `SET_LABEL:<perfil>:<0-19>:<texto>` | Etiqueta OLED. Huecos 0-9 normal, 10-19 SUPER |
 | `SET_KEYMAP:<perfil>:<0-23>:<mod>:<key>` | Acción. Huecos 0-11 normal, 12-23 SUPER |
-| `SET_ROTARY:<perfil>:<0-7>:<tipo>:<mod>:<key>` | Acción de encoder o rueda (ver abajo) |
+| `SET_ROTARY:<perfil>:<0-15>:<tipo>:<mod>:<key>` | Acción de encoder o rueda (ver abajo) |
 | `OLED_CHUNK:<perfil>:<0-19>:<offset>:<hex>` | Trozo del bitmap de 360 bytes |
 | `GET_OLED:<perfil>:<0-19>` | Vuelca el bitmap guardado en líneas `OLEDDATA:…`, o `NONE` si el hueco usa etiqueta de texto |
 | `OLED_CLEAR:<perfil>:<hueco\|255>` | Borra un icono (255 = todos los del perfil) |
@@ -258,7 +332,8 @@ El valor especial **254** marca una acción multimedia, y entonces `<key>` es un
 14=buscar, 15=zoom +, 16=zoom −.
 
 **Huecos de `SET_ROTARY`**: 0-2 encoder izquierdo (horario, antihorario, clic),
-3-5 encoder derecho, 6-7 rueda de scroll (abajo, arriba).
+3-5 encoder derecho, 6-7 rueda de scroll (abajo, arriba). Los huecos **8-15
+repiten la misma lista para la capa SUPER**, igual que las teclas.
 
 **Tipos de `SET_ROTARY`**: 0=nada, 1=multimedia (`<key>` = índice de la tabla de
 consumo), 2=atajo de teclado, 3=desplazar vertical, 4=desplazar horizontal,
@@ -271,18 +346,20 @@ consumo), 2=atajo de teclado, 3=desplazar vertical, 4=desplazar horizontal,
 | `KEY_EV:<1-12>:<0\|1>` | Tecla soltada / pulsada |
 | `ENC:<1\|2>:<delta>` | Giro de encoder |
 | `ENC_SW:<1\|2>:<0\|1>` | Pulsador del encoder |
-| `WHEEL:<cuentas>` | Rueda magnética, agregado a 20 Hz. 4096 cuentas = una vuelta |
+| `WHEEL:<cuentas>:<ángulo>` | Rueda magnética, agregado a 20 Hz. 4096 cuentas = una vuelta. El segundo campo es el ángulo absoluto (0-4095) con el que la app dibuja la rueda en su posición real |
 | `MODE:<NORMAL\|MENU>` | Cambio de modo |
-| `ERR:<causa>` | Comando rechazado |
+| `PROFILES:OK:<n>:<activo>` | Recuento de perfiles tras crear, duplicar o borrar |
+| `ERR:<causa>` | Comando rechazado (`PROFILE_FULL`, `PROFILE_LAST`, `PROFILE_RANGE`…) |
 
 ---
 
 ## 5. Problemas frecuentes
 
 **El scroll sigue saltando de tres en tres líneas.**
-Mira el indicador de alta resolución en la vista *Rueda*. Si está en «No
-negociada», desconecta y reconecta el teclado. Si sigue igual, comprueba que el
-firmware flasheado es el 2.0 (`ACK` debe responder `FW=2.0`). Algunas
+Mira el indicador de alta resolución en la tarjeta *Rueda de scroll*, dentro de
+*Perfiles y macros*. Si está en «No negociada», desconecta y reconecta el
+teclado. Si sigue igual, comprueba que el firmware flasheado es el 3.0 (`ACK`
+debe responder `FW=3.0`). Algunas
 aplicaciones Win32 antiguas ignoran el desplazamiento fraccionario y seguirán
 saltando: es una limitación del sistema, no del teclado.
 
@@ -301,7 +378,15 @@ Falta pulsar *Guardar en Flash*.
 **La app avisa de «Firmware antiguo detectado».**
 Tienes flasheado el 1.0, que no conoce `GET_STATE` ni `GET_PROFILE`. El
 dashboard y la consola funcionan, pero el editor de perfiles, la calibración de
-la rueda y los iconos OLED necesitan el 2.0. Flashea `build/ORBY_V4.uf2`.
+la rueda y los iconos OLED necesitan el 2.0 como mínimo. Flashea
+`build/ORBY_V4.uf2`.
+
+**La app avisa de «Firmware 2.x».**
+Ese firmware tiene cuatro perfiles fijos, los mandos en una sola capa y una
+rueda global. Todo lo demás funciona, pero crear o borrar perfiles, configurar
+los encoders en la capa SUPER y calibrar la rueda por perfil necesitan el 3.0.
+Flashea `build/ORBY_V4.uf2`; la configuración que tengas guardada se migra sola
+(la capa SUPER de los mandos arranca copiando la normal).
 
 **El cambio automático no detecta nada.**
 Comprueba que el interruptor está activado y mira el panel *Estado*. Si sale un

@@ -14,6 +14,7 @@ import { describeAction } from '../hid-keys.js';
 import { icon } from '../icons.js';
 import { toast } from '../ui.js';
 import * as fb from '../oled-fb.js';
+import * as cache from '../oled-cache.js';
 
 const ZOOM_MIN = 3;
 const ZOOM_MAX = 28;
@@ -58,11 +59,6 @@ const view = {
   layerXf: null,   // { x, y, scale, threshold, blur, dither, invert, mode }
   dragging: null,  // { kind:'move'|'resize', ... }
 
-  // Vistas previas de las teclas leídas del firmware: clave "perfil:hueco"
-  previews: new Map(),
-  loadingPreviews: false,
-  previewsStale: false,
-
   textDraft: '',
   textFont: 'Segoe UI',
   textSize: 16,
@@ -77,16 +73,34 @@ export function init() {
   root.addEventListener('input', onInput);
   window.addEventListener('keydown', onKeyDown);
 
-  device.on('connected', () => { view.previews.clear(); loadPreviews(); });
+  device.on('connected', () => { cache.clearAll(); loadPreviews(); });
+  cache.onChange(() => { if (document.getElementById('oled-key-grid')) renderKeyGrid(); });
 
   let lastProfileCount = 0;
   subscribe(() => {
     if (state.profiles.length !== lastProfileCount) {
       lastProfileCount = state.profiles.length;
+      if (view.profile >= state.profiles.length) view.profile = 0;
       loadPreviews();
       render();
     }
   });
+}
+
+// Abre el editor sobre una tecla concreta. Lo usa el editor de perfiles para
+// que "Editar icono" caiga justo en el icono que se estaba configurando.
+export function openTarget({ profile, key, layer } = {}) {
+  if (Number.isInteger(profile) && profile < state.profiles.length) view.profile = profile;
+  if (layer === 'normal' || layer === 'super') view.layer = layer;
+  cancelLayer(false);
+
+  if (Number.isInteger(key) && screenOf(key)) view.key = key;
+
+  const cached = cache.get(view.profile, slot());
+  view.buffer = cached ? Uint8Array.from(cached) : fb.createFramebuffer();
+  view.undoStack = [];
+  render();
+  loadPreviews();
 }
 
 // --- Destino ----------------------------------------------------------------
@@ -104,40 +118,10 @@ function slot() {
   return slotOf(view.key);
 }
 
-function previewKey(profile, s) {
-  return `${profile}:${s}`;
-}
-
-// Descarga los bitmaps que el teclado tiene guardados para el perfil actual.
-// Solo se piden los huecos marcados en la máscara, que llega con GET_PROFILE.
-async function loadPreviews() {
-  if (!state.connected) return;
-
-  // Si se cambia de perfil mientras hay una descarga en curso, se reinicia al
-  // terminar: si no, el perfil nuevo se quedaría sin previsualizaciones.
-  if (view.loadingPreviews) { view.previewsStale = true; return; }
-
-  view.loadingPreviews = true;
-  view.previewsStale = false;
-  renderKeyGrid();
-
-  try {
-    const profileAtStart = view.profile;
-    const prof = state.profiles[profileAtStart];
-    if (!prof) return;
-
-    for (let s = 0; s < 20; s++) {
-      if (view.profile !== profileAtStart) { view.previewsStale = true; break; }
-      const cacheKey = previewKey(profileAtStart, s);
-      if (view.previews.has(cacheKey)) continue;
-      if (!(prof.oledMask & (1 << s))) { view.previews.set(cacheKey, null); continue; }
-      view.previews.set(cacheKey, await device.getOled(profileAtStart, s));
-    }
-  } finally {
-    view.loadingPreviews = false;
-    renderKeyGrid();
-    if (view.previewsStale) loadPreviews();
-  }
+// Los bitmaps guardados se comparten con el editor de perfiles a través de
+// oled-cache.js: leerlos por el CDC es lento y no tiene sentido hacerlo dos veces.
+function loadPreviews() {
+  cache.loadProfile(view.profile);
 }
 
 // --- Eventos ----------------------------------------------------------------
@@ -228,7 +212,7 @@ function pickKey(index) {
   view.key = index;
 
   // Cargamos lo que el teclado tenga en ese hueco para poder editarlo encima.
-  const cached = view.previews.get(previewKey(view.profile, slot()));
+  const cached = cache.get(view.profile, slot());
   view.buffer = cached ? Uint8Array.from(cached) : fb.createFramebuffer();
   view.undoStack = [];
   render();
@@ -541,7 +525,7 @@ async function upload() {
   btn.disabled = true;
   try {
     await device.uploadOled(view.profile, slot(), view.buffer);
-    view.previews.set(previewKey(view.profile, slot()), Uint8Array.from(view.buffer));
+    cache.set(view.profile, slot(), Uint8Array.from(view.buffer));
     const prof = state.profiles[view.profile];
     if (prof) prof.oledMask |= (1 << slot());
     markDirty();
@@ -557,7 +541,7 @@ async function upload() {
 async function resetSlot() {
   try {
     await device.clearOled(view.profile, slot());
-    view.previews.set(previewKey(view.profile, slot()), null);
+    cache.set(view.profile, slot(), null);
     const prof = state.profiles[view.profile];
     if (prof) prof.oledMask &= ~(1 << slot());
     fb.clear(view.buffer);
@@ -573,7 +557,7 @@ async function loadFromDevice() {
   if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
   const bytes = await device.getOled(view.profile, slot());
   if (!bytes) { toast('Esa tecla no tiene icono guardado', 'info'); return; }
-  view.previews.set(previewKey(view.profile, slot()), bytes);
+  cache.set(view.profile, slot(), bytes);
   pushUndo();
   view.buffer = Uint8Array.from(bytes);
   repaint();
@@ -664,7 +648,7 @@ function renderKeyGridInner() {
     const s = slotOf(i);
     const action = prof ? (prof.keys[keymapSlot(i, view.layer)] || { modifier: 0, keycode: 0 }) : null;
     const label = prof && s >= 0 ? (prof.labels[labelSlot(i, view.layer)] || '') : '';
-    const bmp = s >= 0 ? view.previews.get(previewKey(view.profile, s)) : null;
+    const bmp = s >= 0 ? cache.get(view.profile, s) : null;
 
     if (!screen) {
       html += `
@@ -679,7 +663,7 @@ function renderKeyGridInner() {
       <button class="okey ${view.key === i ? 'selected' : ''} ${bmp ? 'has-icon' : ''}" data-act="key" data-key="${i}">
         <span class="okey-num">T${i + 1}<em>P${screen}</em></span>
         <span class="okey-screen">
-          ${bmp ? `<canvas class="okey-canvas" data-bmp="${previewKey(view.profile, s)}"></canvas>`
+          ${bmp ? `<canvas class="okey-canvas" data-bmp="${cache.cacheKey(view.profile, s)}"></canvas>`
                 : `<span class="okey-text">${escape(label || '—')}</span>`}
         </span>
         <span class="okey-action">${escape(action ? describeAction(action.modifier, action.keycode) : '')}</span>
@@ -690,16 +674,13 @@ function renderKeyGridInner() {
 
 // Los canvas se pintan tras insertar el HTML: no se pueden serializar.
 function paintKeyThumbs() {
-  document.querySelectorAll('.okey-canvas').forEach((canvas) => {
-    const bmp = view.previews.get(canvas.dataset.bmp);
-    if (bmp) fb.renderToCanvas(bmp, canvas, { zoom: 1, grid: false });
-  });
+  cache.paintThumbs(document.getElementById('view-oled') || document);
 }
 
 function updateGridStatus() {
   const status = document.getElementById('oled-grid-status');
   if (!status) return;
-  status.textContent = view.loadingPreviews
+  status.textContent = cache.isLoading()
     ? 'Leyendo iconos del teclado…'
     : `Editando la tecla ${view.key + 1} · pantalla ${screenOf(view.key)} · capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'}`;
 }

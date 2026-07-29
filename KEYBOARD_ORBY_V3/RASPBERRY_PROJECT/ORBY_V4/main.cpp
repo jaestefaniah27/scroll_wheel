@@ -53,24 +53,45 @@ struct RotaryAction {
 #define CONS_BRIGHT_UP    10
 #define CONS_BRIGHT_DOWN  11
 
-// Huecos de acciones giratorias dentro de cada perfil.
+// Huecos de acciones giratorias dentro de cada perfil. La lista se repite dos
+// veces: 0-7 en capa normal y 8-15 con SUPER mantenida, igual que las teclas.
 enum RotarySlot : uint8_t {
     ROT_ENC1_CW = 0, ROT_ENC1_CCW, ROT_ENC1_CLICK,
     ROT_ENC2_CW,     ROT_ENC2_CCW, ROT_ENC2_CLICK,
     ROT_WHEEL_CW,    ROT_WHEEL_CCW,
-    ROT_SLOT_COUNT
+    ROT_LAYER_STRIDE
 };
+#define ROT_SLOT_COUNT (ROT_LAYER_STRIDE * 2)
+
+// Índice del hueco giratorio según la capa activa.
+static inline uint8_t rot_slot(uint8_t base, bool super) {
+    return (uint8_t)(base + (super ? ROT_LAYER_STRIDE : 0));
+}
+
+// La sensibilidad de la rueda también es un ajuste del perfil, y con dos
+// valores: uno por capa. Así un mismo perfil puede desplazar fino en normal y
+// a saltos largos con SUPER.
+#define SCROLL_DETENTS_MIN     6
+#define SCROLL_DETENTS_MAX   240
+#define SCROLL_DETENTS_DEFAULT 60
 
 struct Profile {
     char name[8];
     char oled_labels[20][8];    // 0-9 Normal, 10-19 SUPER
     KeyAction key_mappings[24]; // 0-11 Normal, 12-23 SUPER
     RotaryAction rotary[ROT_SLOT_COUNT];
+    uint8_t scroll_detents[2];  // [0] normal, [1] SUPER
+    uint8_t scroll_invert[2];
 };
+
+// Cuántos perfiles caben. Los cuatro primeros son los de fábrica; el resto se
+// crean desde la app con ADD_PROFILE o DUP_PROFILE.
+#define MAX_PROFILES      8
+#define DEFAULT_PROFILES  4
 
 // Perfiles de fábrica. Se copian a `profiles` (RAM) al arrancar; la app de
 // escritorio puede editar la copia en RAM y persistirla con SAVE_STATE.
-const Profile default_profiles[4] = {
+const Profile default_profiles[DEFAULT_PROFILES] = {
     // OFIM (Ofimática y Productividad General)
     {
         "OFIM",
@@ -229,8 +250,10 @@ const Profile default_profiles[4] = {
     }
 };
 
-// Copia viva y editable de los perfiles.
-Profile profiles[4];
+// Copia viva y editable de los perfiles. `profile_count` es cuántos existen de
+// verdad; el resto del array son huecos libres.
+Profile profiles[MAX_PROFILES];
+volatile uint8_t profile_count = DEFAULT_PROFILES;
 
 // ==========================================
 // BITMAPS OLED PERSONALIZADOS
@@ -244,10 +267,10 @@ Profile profiles[4];
 #define OLED_FB_SIZE         360
 #define OLED_SLOTS           20
 #define OLED_PROFILE_STRIDE  7424   // 20*360 = 7200, redondeado a página de 256
-#define OLED_BANK_BYTES      (4 * OLED_PROFILE_STRIDE)
+#define OLED_BANK_BYTES      (MAX_PROFILES * OLED_PROFILE_STRIDE)
 
 static uint8_t  custom_oled_bank[OLED_BANK_BYTES];
-static uint32_t custom_oled_mask[4];  // un bit por hueco ocupado
+static uint32_t custom_oled_mask[MAX_PROFILES];  // un bit por hueco ocupado
 static uint8_t  custom_oled_dirty = 0; // un bit por perfil pendiente de escribir
 
 static inline uint8_t* oled_slot_ptr(uint8_t profile, uint8_t slot) {
@@ -283,18 +306,21 @@ volatile uint16_t active_inversions = 0;    // Bitmask para inversiones en tiemp
 // CONFIGURACIÓN DE LA RUEDA DE SCROLL
 // ==========================================
 // Cuántos "detents" (clics de rueda de ratón clásica) equivalen a una vuelta
-// completa de la rueda magnética. 60 = valor por defecto. Ajustable en caliente
-// desde la app con SET_SCROLL:<n>.
-#define SCROLL_DETENTS_MIN     6
-#define SCROLL_DETENTS_MAX   240
-#define SCROLL_DETENTS_DEFAULT 60
+// completa de la rueda magnética. 60 = valor por defecto. Desde la versión 3.0
+// ya no es un ajuste global: vive en el perfil, con un valor por capa, así que
+// se consulta siempre a través de estos accesos.
+static inline uint8_t cur_scroll_detents() {
+    uint8_t v = profiles[active_profile_idx].scroll_detents[super_active ? 1 : 0];
+    return (v < SCROLL_DETENTS_MIN || v > SCROLL_DETENTS_MAX) ? SCROLL_DETENTS_DEFAULT : v;
+}
 
-volatile uint8_t scroll_detents_per_rev = SCROLL_DETENTS_DEFAULT;
-volatile uint8_t scroll_invert = 0;
+static inline bool cur_scroll_invert() {
+    return profiles[active_profile_idx].scroll_invert[super_active ? 1 : 0] != 0;
+}
 
 // Persistencia en Flash. Dos regiones a partir de 1.5 MB:
-//   - 1 sector (4 KB) para ajustes + los 4 perfiles editables
-//   - 8 sectores (32 KB) para el banco de bitmaps OLED personalizados
+//   - 1 sector (4 KB) para ajustes + los perfiles editables
+//   - 16 sectores (64 KB) para el banco de bitmaps OLED personalizados
 #define FLASH_TARGET_OFFSET  (1536 * 1024)
 #define FLASH_OLED_OFFSET    (FLASH_TARGET_OFFSET + FLASH_SECTOR_SIZE)
 #define FLASH_OLED_SLICE     (2 * FLASH_SECTOR_SIZE)  // 8 KB por perfil
@@ -306,13 +332,22 @@ volatile uint8_t scroll_invert = 0;
 // huecos ocupados está aquí, así que perderla equivale a perder los iconos.
 #define SETTINGS_MAGIC_V1 0xDEB001CE  // original: solo ajustes básicos
 #define SETTINGS_MAGIC_V2 0xDEB00204  // + perfiles editables, scroll y bitmaps
-#define SETTINGS_MAGIC    0xDEB00205  // + acciones de encoders y rueda
+#define SETTINGS_MAGIC_V3 0xDEB00205  // + acciones de encoders y rueda
+#define SETTINGS_MAGIC    0xDEB00300  // + nº de perfiles variable, capa SUPER
+                                      //   en los mandos y scroll por perfil
 
 // Diseños antiguos, conservados solo para poder leer lo ya grabado.
 struct ProfileV2 {
     char name[8];
     char oled_labels[20][8];
     KeyAction key_mappings[24];
+};
+
+struct ProfileV3 {
+    char name[8];
+    char oled_labels[20][8];
+    KeyAction key_mappings[24];
+    RotaryAction rotary[ROT_LAYER_STRIDE];  // solo capa normal
 };
 
 struct SettingsV1 {
@@ -335,16 +370,27 @@ struct SettingsV2 {
     ProfileV2 profiles[4];
 };
 
+struct SettingsV3 {
+    uint32_t  magic;
+    uint8_t   active_profile_idx;
+    uint8_t   current_brightness;
+    uint8_t   reposo_timeout_min;
+    uint8_t   scroll_detents_per_rev;
+    uint8_t   scroll_invert;
+    uint8_t   padding[3];
+    uint32_t  custom_oled_mask[4];
+    ProfileV3 profiles[4];
+};
+
 struct Settings {
     uint32_t magic;
     uint8_t  active_profile_idx;
     uint8_t  current_brightness;
     uint8_t  reposo_timeout_min;
-    uint8_t  scroll_detents_per_rev;
-    uint8_t  scroll_invert;
-    uint8_t  padding[3];
-    uint32_t custom_oled_mask[4];
-    Profile  profiles[4];
+    uint8_t  profile_count;
+    uint8_t  padding[4];
+    uint32_t custom_oled_mask[MAX_PROFILES];
+    Profile  profiles[MAX_PROFILES];
 };
 
 // El blob de ajustes se programa redondeado a página de 256 bytes.
@@ -372,19 +418,46 @@ static void apply_default_rotaries(Profile& p) {
     p.rotary[ROT_ENC2_CLICK] = { ROT_NONE, 0, 0 };
     p.rotary[ROT_WHEEL_CW]   = { ROT_SCROLL_V, 0, 0 };
     p.rotary[ROT_WHEEL_CCW]  = { ROT_SCROLL_V, 0, 0 };
+    // La capa SUPER arranca igual que la normal: quien no la toque no nota el
+    // cambio, y quien la edite obtiene dos juegos de mandos en un solo perfil.
+    for (uint8_t s = 0; s < ROT_LAYER_STRIDE; s++) {
+        p.rotary[ROT_LAYER_STRIDE + s] = p.rotary[s];
+    }
+}
+
+static void apply_default_scroll(Profile& p) {
+    p.scroll_detents[0] = SCROLL_DETENTS_DEFAULT;
+    p.scroll_detents[1] = SCROLL_DETENTS_DEFAULT;
+    p.scroll_invert[0]  = 0;
+    p.scroll_invert[1]  = 0;
+}
+
+// Perfil recién creado desde la app: sin atajos, con etiquetas numeradas para
+// que las pantallas no salgan en blanco.
+static void make_blank_profile(Profile& p, uint8_t number) {
+    memset(&p, 0, sizeof(p));
+    snprintf(p.name, sizeof(p.name), "PERF%u", (unsigned)number);
+    for (int s = 0; s < 20; s++) {
+        snprintf(p.oled_labels[s], sizeof(p.oled_labels[s]), "T%d", (s % 10) + 1);
+    }
+    apply_default_rotaries(p);
+    apply_default_scroll(p);
 }
 
 void load_defaults() {
-    memcpy(profiles, default_profiles, sizeof(profiles));
-    for (int i = 0; i < 4; i++) apply_default_rotaries(profiles[i]);
+    memset(profiles, 0, sizeof(profiles));
+    memcpy(profiles, default_profiles, sizeof(default_profiles));
+    profile_count = DEFAULT_PROFILES;
+    for (int i = 0; i < DEFAULT_PROFILES; i++) {
+        apply_default_rotaries(profiles[i]);
+        apply_default_scroll(profiles[i]);
+    }
     memset(custom_oled_bank, 0, sizeof(custom_oled_bank));
     memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
-    custom_oled_dirty = 0x0F; // hay que borrar en Flash lo que hubiera antes
+    custom_oled_dirty = 0xFF; // hay que borrar en Flash lo que hubiera antes
     active_profile_idx = 0;
     current_brightness = 207;
     reposo_timeout_min = 5;
-    scroll_detents_per_rev = SCROLL_DETENTS_DEFAULT;
-    scroll_invert = 0;
 }
 
 void save_settings() {
@@ -395,8 +468,7 @@ void save_settings() {
     s->active_profile_idx     = active_profile_idx;
     s->current_brightness     = current_brightness;
     s->reposo_timeout_min     = reposo_timeout_min;
-    s->scroll_detents_per_rev = scroll_detents_per_rev;
-    s->scroll_invert          = scroll_invert;
+    s->profile_count          = profile_count;
     memcpy(s->custom_oled_mask, custom_oled_mask, sizeof(custom_oled_mask));
     memcpy(s->profiles, profiles, sizeof(profiles));
 
@@ -410,7 +482,7 @@ void save_settings() {
 
     // Bitmaps: solo los perfiles tocados, y liberando el USB entre uno y otro
     // para que el host no pierda el dispositivo durante el borrado.
-    for (uint8_t p = 0; p < 4; p++) {
+    for (uint8_t p = 0; p < MAX_PROFILES; p++) {
         if (!(custom_oled_dirty & (1u << p))) continue;
 
         tud_task();
@@ -427,7 +499,7 @@ void save_settings() {
 // Trae a RAM los bitmaps de los perfiles marcados en la máscara.
 static void load_oled_bank() {
     memset(custom_oled_bank, 0, sizeof(custom_oled_bank));
-    for (uint8_t p = 0; p < 4; p++) {
+    for (uint8_t p = 0; p < MAX_PROFILES; p++) {
         if (!custom_oled_mask[p]) continue;
         memcpy(&custom_oled_bank[p * OLED_PROFILE_STRIDE],
                (const uint8_t*)(XIP_BASE + FLASH_OLED_AT(p)),
@@ -437,11 +509,19 @@ static void load_oled_bank() {
 }
 
 static void sanitize_loaded() {
-    if (active_profile_idx > 3) active_profile_idx = 0;
-    if (scroll_detents_per_rev < SCROLL_DETENTS_MIN || scroll_detents_per_rev > SCROLL_DETENTS_MAX) {
-        scroll_detents_per_rev = SCROLL_DETENTS_DEFAULT;
+    if (profile_count < 1) profile_count = 1;
+    if (profile_count > MAX_PROFILES) profile_count = MAX_PROFILES;
+    if (active_profile_idx >= profile_count) active_profile_idx = 0;
+
+    for (uint8_t i = 0; i < MAX_PROFILES; i++) {
+        for (uint8_t l = 0; l < 2; l++) {
+            uint8_t d = profiles[i].scroll_detents[l];
+            if (d < SCROLL_DETENTS_MIN || d > SCROLL_DETENTS_MAX) {
+                profiles[i].scroll_detents[l] = SCROLL_DETENTS_DEFAULT;
+            }
+            profiles[i].scroll_invert[l] = profiles[i].scroll_invert[l] ? 1 : 0;
+        }
     }
-    scroll_invert = scroll_invert ? 1 : 0;
 }
 
 void load_settings() {
@@ -452,10 +532,40 @@ void load_settings() {
         active_profile_idx     = s->active_profile_idx;
         current_brightness     = s->current_brightness;
         reposo_timeout_min     = s->reposo_timeout_min;
-        scroll_detents_per_rev = s->scroll_detents_per_rev;
-        scroll_invert          = s->scroll_invert;
+        profile_count          = s->profile_count;
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
+        sanitize_loaded();
+        load_oled_bank();
+        return;
+    }
+
+    if (magic == SETTINGS_MAGIC_V3) {
+        // Formato anterior a los perfiles variables: cuatro perfiles con los
+        // mandos en una sola capa y un scroll global. Se conserva todo y se
+        // duplica la capa normal en SUPER, que es el comportamiento previo.
+        const SettingsV3* s = (const SettingsV3*)(XIP_BASE + FLASH_TARGET_OFFSET);
+        active_profile_idx = s->active_profile_idx;
+        current_brightness = s->current_brightness;
+        reposo_timeout_min = s->reposo_timeout_min;
+        profile_count      = 4;
+        memset(profiles, 0, sizeof(profiles));
+        memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
+        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(s->custom_oled_mask));
+
+        for (int i = 0; i < 4; i++) {
+            memcpy(profiles[i].name,         s->profiles[i].name,         sizeof(profiles[i].name));
+            memcpy(profiles[i].oled_labels,  s->profiles[i].oled_labels,  sizeof(profiles[i].oled_labels));
+            memcpy(profiles[i].key_mappings, s->profiles[i].key_mappings, sizeof(profiles[i].key_mappings));
+            for (uint8_t r = 0; r < ROT_LAYER_STRIDE; r++) {
+                profiles[i].rotary[r] = s->profiles[i].rotary[r];
+                profiles[i].rotary[ROT_LAYER_STRIDE + r] = s->profiles[i].rotary[r];
+            }
+            profiles[i].scroll_detents[0] = s->scroll_detents_per_rev;
+            profiles[i].scroll_detents[1] = s->scroll_detents_per_rev;
+            profiles[i].scroll_invert[0]  = s->scroll_invert;
+            profiles[i].scroll_invert[1]  = s->scroll_invert;
+        }
         sanitize_loaded();
         load_oled_bank();
         return;
@@ -466,18 +576,24 @@ void load_settings() {
         // costó trabajo —perfiles, etiquetas, atajos y la máscara de iconos— y
         // solo se rellenan de fábrica los mandos, que antes no existían.
         const SettingsV2* s = (const SettingsV2*)(XIP_BASE + FLASH_TARGET_OFFSET);
-        active_profile_idx     = s->active_profile_idx;
-        current_brightness     = s->current_brightness;
-        reposo_timeout_min     = s->reposo_timeout_min;
-        scroll_detents_per_rev = s->scroll_detents_per_rev;
-        scroll_invert          = s->scroll_invert;
-        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
+        active_profile_idx = s->active_profile_idx;
+        current_brightness = s->current_brightness;
+        reposo_timeout_min = s->reposo_timeout_min;
+        profile_count      = 4;
+        memset(profiles, 0, sizeof(profiles));
+        memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
+        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(s->custom_oled_mask));
 
         for (int i = 0; i < 4; i++) {
             memcpy(profiles[i].name,         s->profiles[i].name,         sizeof(profiles[i].name));
             memcpy(profiles[i].oled_labels,  s->profiles[i].oled_labels,  sizeof(profiles[i].oled_labels));
             memcpy(profiles[i].key_mappings, s->profiles[i].key_mappings, sizeof(profiles[i].key_mappings));
             apply_default_rotaries(profiles[i]);
+            apply_default_scroll(profiles[i]);
+            profiles[i].scroll_detents[0] = s->scroll_detents_per_rev;
+            profiles[i].scroll_detents[1] = s->scroll_detents_per_rev;
+            profiles[i].scroll_invert[0]  = s->scroll_invert;
+            profiles[i].scroll_invert[1]  = s->scroll_invert;
         }
         sanitize_loaded();
         load_oled_bank();
@@ -497,6 +613,70 @@ void load_settings() {
     }
 
     load_defaults();
+}
+
+// ==========================================
+// GESTIÓN DE PERFILES (CREAR / DUPLICAR / BORRAR)
+// ==========================================
+// Los bitmaps viven en un banco paralelo indexado por perfil, así que cualquier
+// movimiento de la lista tiene que arrastrar también su tramo y su máscara: si
+// no, los iconos se quedarían pegados al hueco antiguo.
+
+static void oled_copy_slice(uint8_t dst, uint8_t src) {
+    memcpy(&custom_oled_bank[dst * OLED_PROFILE_STRIDE],
+           &custom_oled_bank[src * OLED_PROFILE_STRIDE],
+           OLED_PROFILE_STRIDE);
+    custom_oled_mask[dst] = custom_oled_mask[src];
+}
+
+static void oled_clear_slice(uint8_t idx) {
+    memset(&custom_oled_bank[idx * OLED_PROFILE_STRIDE], 0, OLED_PROFILE_STRIDE);
+    custom_oled_mask[idx] = 0;
+}
+
+// Devuelve el índice del perfil nuevo, o -1 si ya no caben más.
+static int profile_add(int copy_from) {
+    if (profile_count >= MAX_PROFILES) return -1;
+
+    uint8_t idx = profile_count;
+    if (copy_from >= 0 && copy_from < (int)profile_count) {
+        profiles[idx] = profiles[copy_from];
+        oled_copy_slice(idx, (uint8_t)copy_from);
+    } else {
+        make_blank_profile(profiles[idx], (uint8_t)(idx + 1));
+        oled_clear_slice(idx);
+    }
+
+    profile_count = idx + 1;
+    custom_oled_dirty |= (1u << idx);
+    return idx;
+}
+
+static bool profile_remove(uint8_t idx) {
+    if (profile_count <= 1 || idx >= profile_count) return false;
+
+    for (uint8_t i = idx; i + 1 < profile_count; i++) {
+        profiles[i] = profiles[i + 1];
+        oled_copy_slice(i, (uint8_t)(i + 1));
+        custom_oled_dirty |= (1u << i);
+    }
+
+    uint8_t last = (uint8_t)(profile_count - 1);
+    memset(&profiles[last], 0, sizeof(profiles[last]));
+    oled_clear_slice(last);
+    custom_oled_dirty |= (1u << last);
+    profile_count = last;
+
+    if (active_profile_idx >= profile_count) active_profile_idx = (uint8_t)(profile_count - 1);
+    else if (active_profile_idx > idx)       active_profile_idx--;
+    return true;
+}
+
+// Cuántas opciones enseña el menú físico de perfiles: uno por perfil más BACK,
+// sin pasarse de las diez pantallas.
+static inline uint8_t perf_menu_count() {
+    uint8_t n = (uint8_t)(profile_count + 1);
+    return n > 10 ? 10 : n;
 }
 
 // ==========================================
@@ -665,13 +845,15 @@ void apply_rotary(const RotaryAction& cw, const RotaryAction& ccw, int32_t steps
 }
 
 void wheel_accumulate(int32_t delta_counts) {
-    const RotaryAction& cw  = profiles[active_profile_idx].rotary[ROT_WHEEL_CW];
-    const RotaryAction& ccw = profiles[active_profile_idx].rotary[ROT_WHEEL_CCW];
+    const bool super = super_active;
+    const Profile& p = profiles[active_profile_idx];
+    const RotaryAction& cw  = p.rotary[rot_slot(ROT_WHEEL_CW,  super)];
+    const RotaryAction& ccw = p.rotary[rot_slot(ROT_WHEEL_CCW, super)];
 
-    if (scroll_invert) delta_counts = -delta_counts;
+    if (cur_scroll_invert()) delta_counts = -delta_counts;
 
     // unidades_hires = cuentas * detents_por_vuelta * 120 / 4096
-    scroll_frac += delta_counts * (int32_t)scroll_detents_per_rev * HID_HIRES_MULTIPLIER;
+    scroll_frac += delta_counts * (int32_t)cur_scroll_detents() * HID_HIRES_MULTIPLIER;
     int32_t units = scroll_frac / AS5600_COUNTS_PER_REV;
     scroll_frac  -= units * AS5600_COUNTS_PER_REV;
     if (units == 0) return;
@@ -760,12 +942,14 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
         }
     }
     else if (current_mode == MODE_MENU_PERF) {
-        if (screen_num >= 1 && screen_num <= 4) {
+        // Una pantalla por perfil y BACK en la siguiente: con perfiles creados
+        // desde la app la lista ya no tiene un tamaño fijo.
+        if (screen_num >= 1 && screen_num <= profile_count) {
             draw_premium_frame(fb);
             OledText::render_string_to_framebuffer(profiles[screen_num - 1].name, fb);
             draw_premium_frame(fb);
             oleds.paint_screen(screen_num, fb);
-        } else if (screen_num == 5) {
+        } else if (screen_num == perf_menu_count()) {
             draw_premium_frame(fb);
             OledText::render_string_to_framebuffer("BACK", fb);
             draw_premium_frame(fb);
@@ -869,7 +1053,13 @@ void core1_entry() {
             }
 
             // Si estamos en un menú con cursor, aplicar inversiones
-            if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_PERF || current_mode == MODE_MENU_REPO) {
+            if (current_mode == MODE_MENU_PERF) {
+                // El cursor puede caer más allá de la quinta pantalla cuando hay
+                // perfiles añadidos, así que se recorren las diez.
+                for (int i = 1; i <= 10; i++) {
+                    oleds.invert_screen(i, (selected_menu_idx == (i - 1)));
+                }
+            } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_REPO) {
                 for (int i = 1; i <= 5; i++) {
                     oleds.invert_screen(i, (selected_menu_idx == (i - 1)));
                 }
@@ -960,11 +1150,17 @@ static const char* next_field(const char* p, int* out) {
     return (*end == ':') ? end + 1 : end;
 }
 
+// Refleja la rueda tal y como está funcionando ahora mismo: perfil activo y
+// capa que se esté pulsando.
 static void send_scroll_state() {
     cdc_printf("SCROLL:OK:%d:%d:%d\n",
-               (int)scroll_detents_per_rev,
-               (int)scroll_invert,
+               (int)cur_scroll_detents(),
+               (int)(cur_scroll_invert() ? 1 : 0),
                (int)(g_hires_multiplier != 0 ? 1 : 0));
+}
+
+static void send_profile_count() {
+    cdc_printf("PROFILES:OK:%d:%d\n", (int)profile_count, (int)active_profile_idx);
 }
 
 static void dump_profile(uint8_t idx) {
@@ -981,6 +1177,10 @@ static void dump_profile(uint8_t idx) {
         cdc_printf("PROF:%d:ROT:%d:%d:%d:%d\n", idx, s,
                    p.rotary[s].type, p.rotary[s].modifier, p.rotary[s].keycode);
     }
+    for (int l = 0; l < 2; l++) {
+        cdc_printf("PROF:%d:SCR:%d:%d:%d\n", idx, l,
+                   p.scroll_detents[l], p.scroll_invert[l]);
+    }
     cdc_printf("PROF:%d:OLEDMASK:%lu\n", idx, (unsigned long)custom_oled_mask[idx]);
     cdc_printf("PROF:%d:END\n", idx);
 }
@@ -988,16 +1188,19 @@ static void dump_profile(uint8_t idx) {
 void process_command(const char* cmd) {
     // ---------- Descubrimiento y estado ----------
     if (strncmp(cmd, "ACK", 3) == 0) {
-        cdc_printf("ORBY_V4:FW=2.0:KEYS=12:OLEDS=10:ENCODERS=2:MODE=%s\n",
+        cdc_printf("ORBY_V4:FW=3.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MODE=%s\n",
+                   (int)profile_count, MAX_PROFILES,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
     }
 
     if (strcmp(cmd, "GET_STATE") == 0) {
         cdc_printf("STATE:PROFILE:%d\n", (int)active_profile_idx);
+        cdc_printf("STATE:PROFILES:%d:%d\n", (int)profile_count, MAX_PROFILES);
         cdc_printf("STATE:BRIGHTNESS:%d\n", (int)current_brightness);
         cdc_printf("STATE:TIMEOUT:%d\n", (int)reposo_timeout_min);
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
+        cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
         send_scroll_state();
         cdc_printf("STATE:END\n");
         return;
@@ -1006,7 +1209,7 @@ void process_command(const char* cmd) {
     // ---------- Ajustes básicos ----------
     if (strncmp(cmd, "SET_PROFILE:", 12) == 0) {
         int profile_idx = atoi(cmd + 12);
-        if (profile_idx >= 0 && profile_idx <= 3) {
+        if (profile_idx >= 0 && profile_idx < (int)profile_count) {
             active_profile_idx = profile_idx;
             push_system_refresh();
             cdc_printf("PROFILE:OK:%d\n", (int)active_profile_idx);
@@ -1040,8 +1243,11 @@ void process_command(const char* cmd) {
     }
 
     // ---------- Calibración de la rueda de scroll ----------
+    // La sensibilidad es un ajuste del perfil y de la capa, así que las formas
+    // cortas actúan sobre lo que está activo en ese momento.
     if (strncmp(cmd, "SET_SCROLL_INV:", 15) == 0) {
-        scroll_invert = (atoi(cmd + 15) != 0) ? 1 : 0;
+        profiles[active_profile_idx].scroll_invert[super_active ? 1 : 0] =
+            (atoi(cmd + 15) != 0) ? 1 : 0;
         send_scroll_state();
         return;
     }
@@ -1049,7 +1255,7 @@ void process_command(const char* cmd) {
     if (strncmp(cmd, "SET_SCROLL:", 11) == 0) {
         int val = atoi(cmd + 11);
         if (val >= SCROLL_DETENTS_MIN && val <= SCROLL_DETENTS_MAX) {
-            scroll_detents_per_rev = (uint8_t)val;
+            profiles[active_profile_idx].scroll_detents[super_active ? 1 : 0] = (uint8_t)val;
             send_scroll_state();
         } else {
             cdc_printf("ERR:SCROLL_RANGE:%d:%d\n", SCROLL_DETENTS_MIN, SCROLL_DETENTS_MAX);
@@ -1062,16 +1268,66 @@ void process_command(const char* cmd) {
         return;
     }
 
+    // SET_PSCROLL:<perfil>:<capa 0-1>:<detents>:<invertir 0-1>
+    if (strncmp(cmd, "SET_PSCROLL:", 12) == 0) {
+        int idx = 0, layer = 0, det = 0, inv = 0;
+        const char* p = next_field(cmd + 12, &idx);
+        p = next_field(p, &layer);
+        p = next_field(p, &det);
+        p = next_field(p, &inv);
+        if (!p || idx < 0 || idx >= (int)profile_count || layer < 0 || layer > 1 ||
+            det < SCROLL_DETENTS_MIN || det > SCROLL_DETENTS_MAX) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        profiles[idx].scroll_detents[layer] = (uint8_t)det;
+        profiles[idx].scroll_invert[layer]  = inv ? 1 : 0;
+        cdc_printf("PSCROLL:OK:%d:%d:%d:%d\n", idx, layer, det, inv ? 1 : 0);
+        return;
+    }
+
     // ---------- Lectura y edición de perfiles ----------
     if (strncmp(cmd, "GET_PROFILE:", 12) == 0) {
         int idx = atoi(cmd + 12);
-        if (idx >= 0 && idx <= 3) dump_profile((uint8_t)idx);
+        if (idx >= 0 && idx < (int)profile_count) dump_profile((uint8_t)idx);
         else cdc_printf("ERR:PROFILE_RANGE\n");
         return;
     }
 
     if (strcmp(cmd, "GET_PROFILES") == 0) {
-        for (int i = 0; i < 4; i++) dump_profile((uint8_t)i);
+        send_profile_count();
+        for (int i = 0; i < (int)profile_count; i++) dump_profile((uint8_t)i);
+        return;
+    }
+
+    if (strcmp(cmd, "GET_PROFILE_COUNT") == 0) {
+        send_profile_count();
+        return;
+    }
+
+    // ---------- Crear, duplicar y borrar perfiles ----------
+    if (strcmp(cmd, "ADD_PROFILE") == 0 || strncmp(cmd, "DUP_PROFILE:", 12) == 0) {
+        const bool duplicating = (cmd[0] == 'D');
+        int from = duplicating ? atoi(cmd + 12) : -1;
+        if (duplicating && (from < 0 || from >= (int)profile_count)) {
+            cdc_printf("ERR:PROFILE_RANGE\n");
+            return;
+        }
+
+        int idx = profile_add(from);
+        if (idx < 0) { cdc_printf("ERR:PROFILE_FULL:%d\n", MAX_PROFILES); return; }
+        cdc_printf("PROFILE:ADDED:%d\n", idx);
+        send_profile_count();
+        return;
+    }
+
+    if (strncmp(cmd, "DEL_PROFILE:", 12) == 0) {
+        int idx = atoi(cmd + 12);
+        if (idx < 0 || idx >= (int)profile_count) { cdc_printf("ERR:PROFILE_RANGE\n"); return; }
+        if (!profile_remove((uint8_t)idx)) { cdc_printf("ERR:PROFILE_LAST\n"); return; }
+        push_system_refresh();
+        cdc_printf("PROFILE:DELETED:%d\n", idx);
+        send_profile_count();
         return;
     }
 
@@ -1079,7 +1335,7 @@ void process_command(const char* cmd) {
     if (strncmp(cmd, "SET_NAME:", 9) == 0) {
         int idx = 0;
         const char* p = next_field(cmd + 9, &idx);
-        if (!p || idx < 0 || idx > 3) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        if (!p || idx < 0 || idx >= (int)profile_count) { cdc_printf("ERR:BAD_ARGS\n"); return; }
         memset(profiles[idx].name, 0, sizeof(profiles[idx].name));
         strncpy(profiles[idx].name, p, sizeof(profiles[idx].name) - 1);
         if ((int)active_profile_idx == idx) push_system_refresh();
@@ -1092,7 +1348,7 @@ void process_command(const char* cmd) {
         int idx = 0, slot = 0;
         const char* p = next_field(cmd + 10, &idx);
         p = next_field(p, &slot);
-        if (!p || idx < 0 || idx > 3 || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
         memset(profiles[idx].oled_labels[slot], 0, sizeof(profiles[idx].oled_labels[slot]));
         strncpy(profiles[idx].oled_labels[slot], p, sizeof(profiles[idx].oled_labels[slot]) - 1);
         if ((int)active_profile_idx == idx) push_system_refresh();
@@ -1108,7 +1364,7 @@ void process_command(const char* cmd) {
         p = next_field(p, &slot);
         p = next_field(p, &mod);
         p = next_field(p, &key);
-        if (!p || idx < 0 || idx > 3 || slot < 0 || slot > 23 ||
+        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 23 ||
             mod < 0 || mod > 255 || key < 0 || key > 255) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
@@ -1129,7 +1385,7 @@ void process_command(const char* cmd) {
         p = next_field(p, &type);
         p = next_field(p, &mod);
         p = next_field(p, &key);
-        if (!p || idx < 0 || idx > 3 || slot < 0 || slot >= ROT_SLOT_COUNT ||
+        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot >= ROT_SLOT_COUNT ||
             type < 0 || type > ROT_ZOOM || mod < 0 || mod > 255 || key < 0 || key > 255) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
@@ -1147,7 +1403,7 @@ void process_command(const char* cmd) {
         const char* p = next_field(cmd + 11, &idx);
         p = next_field(p, &slot);
         p = next_field(p, &offset);
-        if (!p || idx < 0 || idx > 3 || slot < 0 || slot > 19 ||
+        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 19 ||
             offset < 0 || offset >= OLED_FB_SIZE) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
@@ -1178,7 +1434,7 @@ void process_command(const char* cmd) {
         int idx = 0, slot = 0;
         const char* p = next_field(cmd + 9, &idx);
         p = next_field(p, &slot);
-        if (!p || idx < 0 || idx > 3 || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
         if (!oled_slot_used((uint8_t)idx, (uint8_t)slot)) {
             cdc_printf("OLEDDATA:%d:%d:NONE\n", idx, slot);
@@ -1207,7 +1463,7 @@ void process_command(const char* cmd) {
         int idx = 0, slot = 0;
         const char* p = next_field(cmd + 11, &idx);
         p = next_field(p, &slot);
-        if (idx < 0 || idx > 3) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        if (idx < 0 || idx >= (int)profile_count) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
         if (slot == 255) {
             custom_oled_mask[idx] = 0;
@@ -1343,12 +1599,16 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                // Acción configurada en el perfil activo
+                // Acción configurada en el perfil activo y la capa en curso
                 const Profile& p = profiles[active_profile_idx];
-                apply_rotary(p.rotary[ROT_ENC1_CW], p.rotary[ROT_ENC1_CCW], delta_izq);
+                apply_rotary(p.rotary[rot_slot(ROT_ENC1_CW,  super_active)],
+                             p.rotary[rot_slot(ROT_ENC1_CCW, super_active)], delta_izq);
             } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_PERF || current_mode == MODE_MENU_REPO) {
                 // Desplazamiento de menú
-                selected_menu_idx = (selected_menu_idx + delta_izq + 5) % 5;
+                int opts = (current_mode == MODE_MENU_PERF) ? perf_menu_count() : 5;
+                int next = ((int)selected_menu_idx + delta_izq) % opts;
+                if (next < 0) next += opts;
+                selected_menu_idx = (uint8_t)next;
                 push_system_refresh();
             } else if (current_mode == MODE_MENU_BRIL) {
                 // Ajuste de brillo en caliente
@@ -1372,9 +1632,10 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                // Acción configurada en el perfil activo
+                // Acción configurada en el perfil activo y la capa en curso
                 const Profile& p = profiles[active_profile_idx];
-                apply_rotary(p.rotary[ROT_ENC2_CW], p.rotary[ROT_ENC2_CCW], delta_der);
+                apply_rotary(p.rotary[rot_slot(ROT_ENC2_CW,  super_active)],
+                             p.rotary[rot_slot(ROT_ENC2_CCW, super_active)], delta_der);
             } else if (current_mode == MODE_MENU_BRIL) {
                 // También ajustar brillo con encoder derecho
                 int new_bril = current_brightness + delta_der * 8;
@@ -1402,7 +1663,8 @@ int main() {
 
                 if (stable_enc1_sw_state) {
                     if (current_mode == MODE_NORMAL) {
-                        emit_discrete(profiles[active_profile_idx].rotary[ROT_ENC1_CLICK]);
+                        emit_discrete(profiles[active_profile_idx]
+                                          .rotary[rot_slot(ROT_ENC1_CLICK, super_active)]);
                     } else if (current_mode == MODE_MENU_MAIN) {
                         // Confirmar opción
                         if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
@@ -1419,7 +1681,7 @@ int main() {
                         selected_menu_idx = 0;
                         push_system_refresh();
                     } else if (current_mode == MODE_MENU_PERF) {
-                    if (selected_menu_idx >= 0 && selected_menu_idx <= 3) {
+                    if (selected_menu_idx < profile_count) {
                         active_profile_idx = selected_menu_idx;
                         // save_settings() eliminado
                         current_mode = MODE_NORMAL;
@@ -1472,7 +1734,8 @@ int main() {
                 tud_cdc_n_write_flush(0);
 
                 if (stable_enc2_sw_state && current_mode == MODE_NORMAL) {
-                    emit_discrete(profiles[active_profile_idx].rotary[ROT_ENC2_CLICK]);
+                    emit_discrete(profiles[active_profile_idx]
+                                      .rotary[rot_slot(ROT_ENC2_CLICK, super_active)]);
                 }
             }
         } else {
@@ -1532,8 +1795,12 @@ int main() {
 
         if (wheel_tel_accum != 0 && (uint32_t)(now - last_wheel_tel) >= 50) {
             last_wheel_tel = now;
-            char tel[32];
-            int len = snprintf(tel, sizeof(tel), "WHEEL:%ld\n", (long)wheel_tel_accum);
+            // Además del incremento va el ángulo absoluto (0-4095): es lo que
+            // permite a la app dibujar la rueda en su posición real. El campo
+            // se añade al final para no romper a quien solo lea el incremento.
+            char tel[40];
+            int len = snprintf(tel, sizeof(tel), "WHEEL:%ld:%u\n",
+                               (long)wheel_tel_accum, (unsigned)wheel.rawAngle());
             wheel_tel_accum = 0;
             tud_cdc_n_write(0, tel, len);
             tud_cdc_n_write_flush(0);
@@ -1654,7 +1921,7 @@ int main() {
                             selected_menu_idx = 0;
                             push_system_refresh();
                         } else if (current_mode == MODE_MENU_PERF) {
-                            if (selected_menu_idx >= 0 && selected_menu_idx <= 3) {
+                            if (selected_menu_idx < profile_count) {
                                 active_profile_idx = selected_menu_idx;
                                 save_settings();
                                 current_mode = MODE_NORMAL;

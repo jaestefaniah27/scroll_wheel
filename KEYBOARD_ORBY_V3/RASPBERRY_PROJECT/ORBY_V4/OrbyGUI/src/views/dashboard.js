@@ -1,7 +1,12 @@
 // Vista Dashboard: réplica del hardware con telemetría en vivo.
+//
+// La disposición sigue al teclado real: las doce teclas a la izquierda y, a su
+// derecha, los mandos —los dos encoders arriba y la rueda magnética, que es un
+// disco grande, debajo de ellos.
 
 import * as device from '../device.js';
-import { state, notify, labelForKey, profile, KEY_TO_SCREEN } from '../store.js';
+import { state, notify, labelForKey, profile, liveScroll, KEY_TO_SCREEN } from '../store.js';
+import * as wheelDial from '../wheel-dial.js';
 
 let wheelDecay = null;
 let wheelTotal = 0;
@@ -11,12 +16,7 @@ export function init() {
 
   let html = `
     <div class="orby-board">
-      <div class="controls-area">
-        <div class="hw-encoder" id="hw-enc-1"><span class="hw-tag">VOL</span></div>
-        <div class="hw-scroll" id="hw-scroll"><div class="hw-scroll-fill" id="hw-scroll-fill"></div></div>
-        <div class="hw-encoder" id="hw-enc-2"><span class="hw-tag">BRI</span></div>
-      </div>
-      <div class="key-matrix">`;
+      <div class="board-keys">`;
 
   for (let i = 1; i <= 12; i++) {
     const hasScreen = KEY_TO_SCREEN[i - 1] !== 0;
@@ -27,11 +27,44 @@ export function init() {
       </div>`;
   }
 
-  html += `</div></div>`;
+  html += `
+      </div>
+      <div class="board-controls">
+        <div class="encoder-row">
+          <div class="hw-encoder" id="hw-enc-1"><span class="hw-tag">ENC 1</span></div>
+          <div class="hw-encoder" id="hw-enc-2"><span class="hw-tag">ENC 2</span></div>
+        </div>
+        <div class="hw-wheel" id="hw-scroll">
+          <div class="hw-wheel-face">
+            ${wheelDial.markerHtml('hw-wheel-needle')}
+            <div class="hw-wheel-hub"></div>
+          </div>
+          <span class="hw-tag">RUEDA</span>
+        </div>
+      </div>
+    </div>`;
+
   container.innerHTML = html;
 
   device.on('telemetry', handleTelemetry);
+  // El marcador sigue el ángulo absoluto que manda el teclado, así que se queda
+  // donde esté la rueda de verdad en vez de volver a cero al soltarla.
+  wheelDial.onUpdate(paintMarker);
   render();
+}
+
+function paintMarker(deg) {
+  const marker = document.getElementById('hw-wheel-needle');
+  if (marker) marker.style.transform = `rotate(${deg}deg)`;
+}
+
+// Rehace el marcador cuando cambian los ajustes de calibración (forma incluida).
+export function refreshMarker() {
+  const face = document.querySelector('.hw-wheel-face');
+  if (!face) return;
+  face.querySelector('.dial-marker')?.remove();
+  face.insertAdjacentHTML('afterbegin', wheelDial.markerHtml('hw-wheel-needle'));
+  paintMarker(wheelDial.angle());
 }
 
 function handleTelemetry(line) {
@@ -55,7 +88,7 @@ function handleTelemetry(line) {
     const [, id, delta] = line.split(':');
     pulse(`hw-enc-${id}`);
     const d = parseInt(delta, 10);
-    showEvent(id === '1' ? 'Volumen' : 'Brillo', `${d > 0 ? '+' : ''}${d}`);
+    showEvent(`Encoder ${id}`, `${d > 0 ? '+' : ''}${d}`);
   } else if (line.startsWith('ENC_SW:')) {
     const [, id, pressed] = line.split(':');
     if (pressed === '1') {
@@ -83,31 +116,26 @@ function describeKey(keyId) {
   return labelForKey(prof, keyId - 1, layer) || '';
 }
 
-// La rueda emite bloques agregados a 20 Hz; los convertimos en una barra de
-// intensidad que decae, que se lee mucho mejor que un simple parpadeo.
+// La rueda emite bloques agregados a 20 Hz. El giro del disco lo lleva
+// wheel-dial.js con el ángulo absoluto; aquí solo se cuentan los clics del
+// tirón actual y se enciende el brillo del borde.
 function handleWheel(delta) {
   if (!Number.isFinite(delta)) return;
   wheelTotal += delta;
 
   const el = document.getElementById('hw-scroll');
-  const fill = document.getElementById('hw-scroll-fill');
-  if (!el || !fill) return;
-
+  if (!el) return;
   el.classList.add('active');
-  const magnitude = Math.min(100, Math.abs(delta) / 2);
-  fill.style.height = `${magnitude}%`;
-  fill.style.background = delta > 0 ? 'var(--success)' : 'var(--info)';
 
-  const detentsPerRev = state.scroll.detentsPerRev || 60;
+  const detentsPerRev = liveScroll().detentsPerRev || 60;
   const detents = (wheelTotal * detentsPerRev) / 4096;
   showEvent('Scroll', `${detents >= 0 ? '+' : ''}${detents.toFixed(2)} clics`);
 
   clearTimeout(wheelDecay);
   wheelDecay = setTimeout(() => {
     el.classList.remove('active');
-    fill.style.height = '0%';
     wheelTotal = 0;
-  }, 300);
+  }, 600);
 }
 
 function pulse(id) {
@@ -138,10 +166,13 @@ export function render() {
   superEl.textContent = state.superActive ? 'Activa' : 'Inactiva';
   superEl.classList.toggle('is-on', state.superActive);
 
+  // La rueda es un ajuste del perfil y de la capa, así que el dashboard enseña
+  // la sensibilidad que está aplicando el teclado en este momento.
   const scrollEl = document.getElementById('lbl-scroll-mode');
   if (scrollEl) {
-    scrollEl.textContent = state.scroll.hires ? 'Suave (alta res.)' : 'Clásico (3 líneas)';
-    scrollEl.classList.toggle('is-on', state.scroll.hires);
+    const s = liveScroll();
+    scrollEl.textContent = `${s.detentsPerRev} clics/vuelta · ${s.hires ? 'suave' : 'clásico'}`;
+    scrollEl.classList.toggle('is-on', s.hires);
   }
 
   for (let i = 1; i <= 12; i++) {

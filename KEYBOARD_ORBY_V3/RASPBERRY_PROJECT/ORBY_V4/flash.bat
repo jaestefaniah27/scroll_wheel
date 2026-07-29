@@ -42,10 +42,14 @@ echo 2. Esperando a la Raspberry Pi Pico...
 echo =========================================
 echo Por favor, manten pulsado BOOTSEL y conecta la Pico al USB.
 
-:: Bucle de espera a que aparezca la unidad D:
+:: Bucle de espera. La letra de unidad la asigna Windows y no siempre es la
+:: misma, asi que se recorren todas buscando el INFO_UF2.TXT que la Pico deja
+:: en la raiz. Antes estaba fija en D: y el script se quedaba colgado si el
+:: sistema la montaba en otra letra.
 :wait_loop
-if exist D:\ (
-    if exist D:\INFO_UF2.TXT (
+for %%D in (D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
+    if exist %%D:\INFO_UF2.TXT (
+        set PICO_DRIVE=%%D:
         goto do_flash
     )
 )
@@ -55,10 +59,10 @@ goto wait_loop
 
 :do_flash
 echo.
-echo [ OK ] Pico detectada en D:\. Copiando firmware...
-copy build\ORBY_V4.uf2 D:\
+echo [ OK ] Pico detectada en %PICO_DRIVE%\. Copiando firmware...
+copy build\ORBY_V4.uf2 %PICO_DRIVE%\
 if %errorlevel% neq 0 (
-    echo [ERROR] Fallo al copiar el archivo a la unidad D:
+    echo [ERROR] Fallo al copiar el archivo a la unidad %PICO_DRIVE%
 ) else (
     echo [ OK ] ¡Flasheo completado! La Pico se reiniciara sola.
 )

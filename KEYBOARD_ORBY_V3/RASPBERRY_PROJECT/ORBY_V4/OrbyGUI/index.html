@@ -36,8 +36,7 @@
   <div class="app-container">
     <nav class="sidebar">
       <button class="nav-item active" data-target="view-dashboard" title="Dashboard" data-icon="dashboard" data-icon-size="22"></button>
-      <button class="nav-item" data-target="view-profiles" title="Perfiles y macros" data-icon="profiles" data-icon-size="22"></button>
-      <button class="nav-item" data-target="view-wheel" title="Rueda de scroll" data-icon="wheel" data-icon-size="22"></button>
+      <button class="nav-item" data-target="view-profiles" title="Perfiles, macros y rueda" data-icon="profiles" data-icon-size="22"></button>
       <button class="nav-item" data-target="view-oled" title="Iconos OLED" data-icon="oled" data-icon-size="22"></button>
       <button class="nav-item" data-target="view-auto" title="Cambio automático de perfil" data-icon="bolt" data-icon-size="22"></button>
       <button class="nav-item" data-target="view-settings" title="Ajustes" data-icon="settings" data-icon-size="22"></button>
@@ -92,13 +91,10 @@
       <section id="view-profiles" class="view">
         <header class="view-header">
           <h1>Perfiles y macros</h1>
-          <p>Editor en vivo: los cambios viajan al teclado al instante</p>
+          <p>Teclas, mandos giratorios y rueda de scroll de cada perfil, con su capa SUPER</p>
         </header>
         <div id="profiles-body"></div>
       </section>
-
-      <!-- Rueda (renderizado por src/views/wheel.js) -->
-      <section id="view-wheel" class="view"></section>
 
       <!-- Iconos OLED (renderizado por src/views/oled.js) -->
       <section id="view-oled" class="view"></section>
@@ -113,20 +109,6 @@
           <p>Configuración del dispositivo y persistencia en memoria Flash</p>
         </header>
         <div class="settings-grid">
-          <div class="settings-card glass-panel">
-            <div class="card-header">
-              <span data-icon="sun" data-icon-size="22"></span>
-              <h2>Brillo de pantallas</h2>
-            </div>
-            <div class="setting-body">
-              <div class="slider-container">
-                <input type="range" id="brightness-slider" min="0" max="255" value="207" class="premium-slider">
-                <span class="slider-val" id="brightness-val">81%</span>
-              </div>
-              <p class="setting-desc">Nivel de contraste de las 10 pantallas OLED. Se aplica al momento; usa <strong>Guardar en Flash</strong> para conservarlo.</p>
-            </div>
-          </div>
-
           <div class="settings-card glass-panel">
             <div class="card-header">
               <span data-icon="moon" data-icon-size="22"></span>

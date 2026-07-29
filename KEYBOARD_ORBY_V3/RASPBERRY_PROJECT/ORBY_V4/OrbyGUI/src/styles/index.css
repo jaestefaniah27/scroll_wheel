@@ -314,29 +314,38 @@ body {
   position: relative;
 }
 
+/* Réplica del hardware: las doce teclas a la izquierda y, a su derecha, los
+   mandos — los dos encoders arriba y la rueda magnética, un disco grande, justo
+   debajo de ellos. */
 .orby-board {
-  width: 360px;
-  height: 450px;
+  display: flex;
+  align-items: flex-start;
+  gap: 34px;
+  padding: 26px 30px;
   background: #111116;
   border-radius: 20px;
   border: 2px solid #22222a;
-  position: relative;
-  box-shadow: 
+  box-shadow:
     inset 0 4px 20px rgba(0,0,0,0.5),
     0 10px 30px rgba(0,0,0,0.4);
 }
 
-/* Encoders & Scroll area (Top) */
-.controls-area {
-  position: absolute;
-  top: 20px; left: 0; width: 100%;
-  display: flex;
-  justify-content: space-around;
-  padding: 0 40px;
+.board-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 70px);
+  grid-template-rows: repeat(4, 70px);
+  gap: 14px;
 }
 
+.board-controls {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 34px; padding-top: 10px;
+}
+
+.encoder-row { display: flex; gap: 46px; }
+
 .hw-encoder {
-  width: 50px; height: 50px;
+  width: 52px; height: 52px;
   border-radius: 50%;
   background: radial-gradient(circle at 30% 30%, #444, #111);
   border: 2px solid #333;
@@ -351,24 +360,42 @@ body {
 }
 .hw-encoder.active { transform: scale(0.95); border-color: var(--primary); }
 
-.hw-scroll {
-  width: 30px; height: 60px;
-  background: linear-gradient(to right, #222, #444, #222);
-  border-radius: 15px;
-  border: 2px solid #111;
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
-  transition: transform 0.1s;
+.hw-wheel { position: relative; }
+.hw-wheel-face {
+  width: 168px; height: 168px; border-radius: 50%; position: relative;
+  background: radial-gradient(circle at 35% 28%, #2f2f40, #0e0e15);
+  border: 3px solid #2a2a38;
+  box-shadow: inset 0 6px 22px rgba(0,0,0,0.75), 0 8px 18px rgba(0,0,0,0.45);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-
-/* Key Matrix (Bottom) */
-.key-matrix {
-  position: absolute;
-  bottom: 20px; left: 50%;
-  transform: translateX(-50%);
-  display: grid;
-  grid-template-columns: repeat(3, 70px);
-  grid-template-rows: repeat(4, 70px);
-  gap: 15px;
+/* Marcador de la rueda. Gira siguiendo el ángulo absoluto del sensor, así que
+   se queda donde esté la rueda de verdad; el desfase y el sentido se calibran
+   desde Perfiles para que coincida con el marcador pegado en la tapa. */
+.dial-marker {
+  position: absolute; inset: 0; border-radius: 50%;
+  transition: transform 0.1s linear; pointer-events: none;
+}
+.dial-marker::after {
+  content: ''; position: absolute; left: 50%; border-radius: 50%;
+  background: var(--primary); box-shadow: 0 0 10px rgba(139,92,246,0.8);
+}
+.dial-marker.as-dot::after {
+  top: 9px; width: 14px; height: 14px; margin-left: -7px;
+}
+.dial-marker.as-line::after {
+  top: 10px; width: 5px; height: 40px; margin-left: -2.5px; border-radius: 3px;
+  background: linear-gradient(to bottom, var(--primary), rgba(139,92,246,0.1));
+  box-shadow: none;
+}
+.hw-wheel-hub {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 44px; height: 44px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #1c1c26, #0b0b11);
+  border: 1px solid #2f2f3d;
+}
+.hw-wheel.active .hw-wheel-face {
+  border-color: var(--primary);
+  box-shadow: 0 0 20px rgba(139,92,246,0.45), inset 0 6px 22px rgba(0,0,0,0.75);
 }
 
 .hw-key {
@@ -644,11 +671,8 @@ body {
 /* ================= DASHBOARD: EXTRAS ================= */
 .hw-tag {
   position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%);
-  font-size: 8px; letter-spacing: 1px; color: var(--text-muted);
+  font-size: 8px; letter-spacing: 1px; color: var(--text-muted); white-space: nowrap;
 }
-.hw-scroll { position: relative; overflow: hidden; display: flex; align-items: flex-end; }
-.hw-scroll.active { border-color: var(--primary); box-shadow: 0 0 12px rgba(139,92,246,0.5); }
-.hw-scroll-fill { width: 100%; height: 0%; background: var(--success); transition: height 0.1s linear; opacity: 0.75; }
 .hw-key-role { font-size: 9px; letter-spacing: 1px; color: var(--text-muted); font-weight: 600; }
 
 .value.is-on { color: var(--success); }
@@ -657,7 +681,21 @@ body {
 .big-event-detail { font-family: monospace; font-size: 13px; color: var(--text-muted); }
 
 /* ================= EDITOR DE PERFILES ================= */
-.profile-tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+/* Barra superior: pestañas de perfil a la izquierda y su gestión (crear,
+   duplicar, eliminar) a la derecha, con el contador de huecos del firmware. */
+.profile-bar {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
+}
+.profile-bar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.profile-bar-actions .secondary-btn { padding: 8px 12px; }
+.profile-bar-actions .secondary-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.profile-count {
+  font-family: 'Consolas', monospace; font-size: 11px; color: var(--text-muted);
+  padding-left: 6px; border-left: 1px solid var(--border-light);
+}
+
+.profile-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
 .profile-tab {
   display: flex; align-items: center; gap: 10px; padding: 10px 16px;
   background: var(--bg-panel); border: 1px solid var(--border-light);
@@ -670,10 +708,69 @@ body {
 .profile-tab .tab-icon { color: var(--accent); display: flex; }
 .tab-live { font-size: 9px; letter-spacing: 0.5px; color: var(--success); background: rgba(16,185,129,0.12); padding: 2px 6px; border-radius: 8px; }
 
+/* Variaciones: el mismo perfil con un par de atajos distintos para una app.
+   La barra vive justo bajo las pestañas de perfil porque es una capa más de lo
+   mismo, no otra sección. */
+.variant-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: -6px 0 20px; padding: 10px 14px;
+  background: rgba(0,0,0,0.22); border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+.variant-bar-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--text-muted);
+}
+.variant-bar-label .icn { color: var(--primary); }
+.variant-bar .chip { display: flex; align-items: center; gap: 6px; }
+.variant-bar .chip.ghost { border-style: dashed; }
+.variant-bar .chip.is-live { border-color: rgba(16,185,129,0.5); }
+.variant-bar .chip.is-live::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--success); box-shadow: 0 0 8px var(--success);
+}
+.chip-count {
+  font-style: normal; font-size: 10px; font-family: 'Consolas', monospace;
+  padding: 1px 5px; border-radius: 8px; background: rgba(255,255,255,0.1);
+}
+
+.variant-card { border-color: rgba(139,92,246,0.35); }
+.variant-card .row-inline > .field { flex: 1; min-width: 180px; margin-bottom: 12px; }
+
+/* Aviso del inspector: si el hueco está redefinido, qué hace el perfil base. */
+.override-note {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 18px; padding: 10px 12px; border-radius: var(--radius-sm);
+  font-size: 12px; line-height: 1.5; color: var(--text-muted);
+  background: rgba(255,255,255,0.04); border: 1px dashed var(--border-light);
+}
+.override-note.is-override {
+  border-style: solid; border-color: rgba(245,158,11,0.45);
+  background: rgba(245,158,11,0.08); color: var(--text-main);
+}
+.override-note code { font-family: 'Consolas', monospace; color: var(--primary); }
+.override-note .secondary-btn { margin-left: auto; padding: 6px 10px; font-size: 12px; }
+
+/* Huecos que la variación cambia respecto al perfil base. */
+.okey.is-override, .rotary-part.is-override { border-color: rgba(245,158,11,0.55); }
+.okey-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--warning);
+  display: inline-block; margin-left: 2px;
+}
+
 .editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
+.editor-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .editor-board { padding: 24px; }
 .editor-board-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
 .editor-board-head .layer-toggle { margin-left: auto; }
+
+/* Vista previa de la pantalla dentro del inspector, junto al botón que salta al
+   editor de iconos con esta misma tecla ya seleccionada. */
+.inspector-screen { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.inspector-screen .okey-screen { flex-shrink: 0; }
+.inspector-sub { margin-top: -12px; margin-bottom: 18px; }
+.card-header .pill { margin-left: auto; }
 
 .editor-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
 .editor-key {
@@ -756,13 +853,15 @@ body {
   background: rgba(139,92,246,0.1); padding: 8px 12px; border-radius: var(--radius-sm);
 }
 
-/* ================= RUEDA DE SCROLL ================= */
-.wheel-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
-.wheel-main, .wheel-side { padding: 24px; }
+/* ================= RUEDA DE SCROLL (dentro de Perfiles) ================= */
+/* La calibración es un ajuste de cada perfil y de cada capa, así que vive en la
+   misma tarjeta que el resto de la configuración en vez de en una vista aparte. */
+.wheel-tune { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; align-items: start; }
+.wheel-tune-side { display: flex; flex-direction: column; }
 
 .wheel-readout { text-align: center; margin: 8px 0 20px; }
 .wheel-readout span {
-  font-size: 56px; font-weight: 700; font-family: 'Consolas', monospace; line-height: 1;
+  font-size: 48px; font-weight: 700; font-family: 'Consolas', monospace; line-height: 1;
   background: linear-gradient(to bottom, #fff, #a78bfa);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
@@ -776,9 +875,7 @@ body {
 .preset-btn.on { border-color: var(--primary); background: rgba(139,92,246,0.12); }
 .preset-btn.on strong, .preset-btn.on em { color: var(--text-main); }
 
-.wheel-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-
-.hires-state { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-radius: var(--radius-sm); margin-bottom: 14px; }
+.hires-state { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; font-size: 12px; }
 .hires-state.ok  { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: var(--success); }
 .hires-state.off { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--warning); }
 .hires-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
@@ -789,21 +886,24 @@ body {
   background: radial-gradient(circle at 35% 30%, #2b2b3a, #101018);
   border: 2px solid #2a2a38; box-shadow: inset 0 4px 16px rgba(0,0,0,0.7);
 }
-.wheel-dial-needle {
-  position: absolute; top: 6px; left: 50%; width: 4px; height: 44px;
-  margin-left: -2px; border-radius: 2px; transform-origin: 50% 100%;
-  background: linear-gradient(to bottom, var(--primary), transparent);
-  transition: transform 0.08s linear;
-}
+/* El dial pequeño usa el mismo marcador que el dashboard, a menor escala. */
+.wheel-dial-face .dial-marker.as-dot::after { top: 7px; width: 11px; height: 11px; margin-left: -5.5px; }
+.wheel-dial-face .dial-marker.as-line::after { top: 8px; width: 4px; height: 34px; margin-left: -2px; }
+
 .wheel-live-readout { text-align: center; font-family: monospace; font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
 
-.scroll-testbed {
-  height: 180px; overflow-y: auto; border-radius: var(--radius-sm);
-  background: rgba(0,0,0,0.35); border: 1px solid var(--border-light); padding: 10px;
+/* Calibración del marcador: forma, sentido y desfase respecto a la tapa. */
+.dial-calib {
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;
+  padding: 14px; border-radius: var(--radius-sm);
+  background: rgba(0,0,0,0.28); border: 1px solid var(--border-light);
 }
-.tb-row { display: flex; align-items: center; gap: 10px; padding: 5px 4px; }
-.tb-row span { font-family: monospace; font-size: 10px; color: var(--text-muted); }
-.tb-row i { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--primary), transparent); opacity: 0.5; }
+.dial-offset { display: flex; align-items: center; gap: 8px; }
+.dial-offset .premium-slider { flex: 1; }
+.dial-offset b {
+  min-width: 42px; text-align: right;
+  font-family: 'Consolas', monospace; font-size: 12px; color: var(--primary);
+}
 
 /* ================= EDITOR OLED ================= */
 /* Esta vista no hace scroll de página: ocupa el alto completo y son el lienzo y
@@ -852,7 +952,16 @@ body {
 .okey-canvas { image-rendering: pixelated; display: block; }
 .okey-text { font-family: monospace; font-size: 11px; font-weight: 600; color: #e9e2ff; }
 .okey-action { font-size: 9px; line-height: 1.25; text-align: center; color: var(--text-muted); min-height: 22px; }
-.grid-status { margin-top: 10px; font-size: 11px; text-align: center; color: var(--text-muted); }
+.okey-action.assigned { color: var(--secondary); }
+/* Las teclas 10 y 12 no tienen pantalla, pero en el editor de perfiles siguen
+   siendo seleccionables: solo se atenúan. */
+.okey.roleless { opacity: 0.72; }
+.okey.roleless .okey-screen { background: rgba(0,0,0,0.35); border-style: dashed; }
+.grid-status { margin-top: 10px; font-size: 11px; text-align: center; color: var(--text-muted); line-height: 1.5; }
+
+/* En el editor de perfiles la rejilla comparte panel con el resto de ajustes:
+   se limita el ancho para que no se estire hasta deformar la réplica. */
+.editor-board .okey-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 520px; }
 
 /* Panel de colocación de la capa flotante */
 .field-label b { color: var(--primary); font-weight: 700; font-family: 'Consolas', monospace; }
@@ -951,22 +1060,54 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 .switch.on { background: var(--primary); border-color: var(--primary); }
 .switch.on .switch-knob { transform: translateX(20px); background: #fff; }
 
-.rule-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
-.rule-row {
-  display: grid; grid-template-columns: 22px minmax(0,1fr) 150px 18px 130px auto auto auto;
-  align-items: center; gap: 8px; padding: 8px;
-  background: rgba(0,0,0,0.26); border: 1px solid rgba(255,255,255,0.05); border-radius: var(--radius-sm);
+/* Cada aplicación es una tarjeta: programa + perfil, que es lo único que hace
+   falta en el caso normal. El resto (contra qué compara y su prioridad) queda
+   en el pie de la tarjeta. */
+.auto-main-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.rule-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px; margin-top: 20px;
 }
-.rule-row.is-active { border-color: rgba(16,185,129,0.4); background: rgba(16,185,129,0.06); }
-.rule-order { font-family: monospace; font-size: 11px; color: var(--text-muted); text-align: center; }
-.rule-arrow { color: var(--text-muted); display: flex; justify-content: center; }
-.rule-row .text-input, .rule-row .select-input { padding: 6px 9px; font-size: 12px; }
-.rule-row .select-input.compact { width: 100%; min-width: 0; }
+.rule-card {
+  position: relative; padding: 14px; border-radius: var(--radius-md);
+  background: rgba(0,0,0,0.26); border: 1px solid rgba(255,255,255,0.06);
+  border-top: 3px solid var(--accent, var(--primary));
+  transition: border-color 0.2s, background 0.2s;
+}
+.rule-card:hover { background: rgba(255,255,255,0.03); }
+.rule-card.is-active { background: rgba(16,185,129,0.07); border-color: rgba(16,185,129,0.4); }
+.rule-card .field { margin-bottom: 12px; }
+.rule-card .text-input, .rule-card .select-input { padding: 7px 10px; font-size: 12px; }
+
+.rule-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.rule-app-icon { color: var(--accent, var(--primary)); display: flex; }
+.rule-app-name {
+  font-size: 14px; font-weight: 600; color: var(--text-main);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rule-priority { margin-left: auto; font-family: monospace; font-size: 10px; color: var(--text-muted); }
+
+.rule-card-foot { display: flex; align-items: center; gap: 8px; }
+.rule-card-foot .select-input.compact { flex: 1; min-width: 0; width: auto; }
+.rule-card-btns { display: flex; gap: 4px; }
+.rule-card-live {
+  display: block; margin-top: 10px; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.5px; text-transform: uppercase; color: var(--success);
+}
+
 .tool-btn.small { width: 28px; height: 28px; font-size: 13px; }
 .rule-empty {
-  margin-top: 16px; padding: 24px; text-align: center; font-size: 13px; color: var(--text-muted);
+  grid-column: 1 / -1; padding: 24px; text-align: center; font-size: 13px; color: var(--text-muted);
   border: 1px dashed var(--border-light); border-radius: var(--radius-sm);
 }
+
+.fallback-card .fallback-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.fallback-card .field { flex: 1; min-width: 220px; margin-bottom: 0; }
+.fallback-pill {
+  padding: 9px 16px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); color: var(--text-muted);
+}
+.fallback-pill.on { background: rgba(139,92,246,0.14); border-color: var(--border-active); color: var(--primary); }
 
 .auto-now {
   display: flex; flex-direction: column; gap: 4px; padding: 14px 16px;
@@ -988,8 +1129,7 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 
 /* ================= RESPONSIVE ================= */
 @media (max-width: 1180px) {
-  .editor-layout, .wheel-grid, .oled-grid, .auto-grid { grid-template-columns: minmax(0, 1fr); }
+  .editor-layout, .oled-grid, .auto-grid, .wheel-tune { grid-template-columns: minmax(0, 1fr); }
   .editor-inspector { position: static; }
-  .rule-row { grid-template-columns: 22px minmax(0,1fr) auto auto auto; }
-  .rule-row .select-input, .rule-row .rule-arrow { grid-column: 2 / -1; }
+  .orby-board { flex-direction: column; align-items: center; gap: 24px; }
 }

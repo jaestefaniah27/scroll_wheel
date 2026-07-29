@@ -12,6 +12,20 @@ const DEFAULTS = {
     rules: [],      // [{ id, match, profile, field }]
     fallback: null, // perfil al que volver cuando nada encaja (null = no tocar)
   },
+  // Variaciones de perfil por aplicación: solo las diferencias respecto al
+  // perfil base. Viven aquí porque el teclado no sabe qué app tienes delante.
+  // [{ id, profile, name, match, field, keys, rotary, labels }]
+  profileVariants: [],
+
+  // Calibración del dibujo de la rueda: depende de cómo estén montados el imán
+  // y el marcador de la tapa, así que es del PC y no del firmware.
+  // Medidos sobre el Orby montado: el giro va espejado y el marcador de la tapa
+  // queda 62° adelantado respecto al cero del sensor.
+  wheelDial: {
+    invert: true,
+    offsetDeg: 62,
+    marker: 'dot',  // 'dot' | 'line'
+  },
 };
 
 let cache = null;

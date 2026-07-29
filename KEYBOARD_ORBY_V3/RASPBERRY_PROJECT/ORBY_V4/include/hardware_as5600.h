@@ -103,6 +103,11 @@ public:
 
     bool magnetPresent() const { return magnetOk; }
 
+    // Ángulo absoluto dentro de la vuelta (0-4095). Es la posición real del
+    // imán, así que la app puede dibujar la rueda justo donde está en la mesa
+    // en lugar de acumular incrementos, que se descuadran al reconectar.
+    uint16_t rawAngle() const { return lastRawAngle; }
+
     // Debe llamarse en cada iteración del bucle principal. Devuelve true y
     // rellena delta_counts (cuentas del AS5600) cuando toca emitir un bloque.
     bool poll(int32_t& delta_counts) {

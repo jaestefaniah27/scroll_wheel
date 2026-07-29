@@ -31,30 +31,33 @@ try {
 
 # 2. Espera y Flasheo de la Raspberry Pi Pico
 $uf2_path = ".\build\ORBY_V4.uf2"
-$target_drive = "D:\"
 
 Write-Host "`n=========================================" -ForegroundColor Cyan
 Write-Host "2. Esperando a la Raspberry Pi Pico..." -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "Por favor, mantén pulsado BOOTSEL y conecta la Pico al USB (Unidad $target_drive)." -ForegroundColor Yellow
+Write-Host "Por favor, mantén pulsado BOOTSEL y conecta la Pico al USB." -ForegroundColor Yellow
 
-# Bucle de espera
-$found = $false
-while (-not $found) {
-    if (Test-Path $target_drive) {
-        # Verificar si es un volumen RP2
-        try {
-            $volume = Get-Volume -DriveLetter D -ErrorAction SilentlyContinue
-            if ($volume.FileSystemLabel -eq "RPI-RP2" -or (Test-Path (Join-Path $target_drive "INFO_UF2.TXT"))) {
-                $found = $true
-            }
-        } catch {
-            # Si Get-Volume no está disponible o falla, confiamos en Test-Path básico
-            $found = $true
-        }
+# La letra de unidad la asigna Windows y no siempre es la misma: buscamos el
+# volumen por su etiqueta (o por el INFO_UF2.TXT que la Pico deja en la raíz).
+# Antes estaba fija en D: y el script se quedaba esperando para siempre si el
+# sistema la montaba en cualquier otra letra.
+function Find-PicoDrive {
+    $volume = Get-Volume -ErrorAction SilentlyContinue |
+              Where-Object { $_.DriveLetter -and $_.FileSystemLabel -eq "RPI-RP2" } |
+              Select-Object -First 1
+    if ($volume) { return "$($volume.DriveLetter):\" }
+
+    foreach ($v in (Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter })) {
+        $root = "$($v.DriveLetter):\"
+        if (Test-Path (Join-Path $root "INFO_UF2.TXT")) { return $root }
     }
-    
-    if (-not $found) {
+    return $null
+}
+
+$target_drive = $null
+while (-not $target_drive) {
+    $target_drive = Find-PicoDrive
+    if (-not $target_drive) {
         Start-Sleep -Seconds 1
         Write-Host "." -NoNewline -ForegroundColor Gray
     }

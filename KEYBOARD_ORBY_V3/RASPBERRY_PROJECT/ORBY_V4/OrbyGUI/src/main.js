@@ -4,10 +4,12 @@ import * as device from './device.js';
 import { state, subscribe, notify, syncFromDevice } from './store.js';
 import { hydrateIcons } from './icons.js';
 import { toast } from './ui.js';
+import { setNavigator } from './nav.js';
+import * as wheelDial from './wheel-dial.js';
+import * as variants from './variants.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
-import * as wheel from './views/wheel.js';
 import * as oled from './views/oled.js';
 import * as auto from './views/auto.js';
 import * as settings from './views/settings.js';
@@ -16,7 +18,6 @@ import * as consoleView from './views/console.js';
 const VIEWS = {
   'view-dashboard': dashboard,
   'view-profiles': profiles,
-  'view-wheel': wheel,
   'view-oled': oled,
   'view-auto': auto,
   'view-settings': settings,
@@ -37,11 +38,15 @@ function initChrome() {
   document.getElementById('btn-save-flash').addEventListener('click', saveToFlash);
 }
 
-function switchView(target) {
+// `params` permite abrir una vista apuntando a algo concreto: es lo que usa el
+// botón "Editar icono" del editor de perfiles para caer en la tecla correcta.
+function switchView(target, params) {
   activeView = target;
   document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.target === target));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === target));
-  VIEWS[target]?.render?.();
+
+  if (params && target === 'view-oled') oled.openTarget(params);
+  else VIEWS[target]?.render?.();
 }
 
 async function saveToFlash() {
@@ -50,9 +55,14 @@ async function saveToFlash() {
 
   btn.disabled = true;
   try {
-    await device.saveToFlash();
-    state.dirty = false;
-    notify();
+    // Con una variación aplicada, la RAM del teclado tiene los atajos de esa
+    // app concreta. Se revierte antes de escribir para que a la Flash vaya el
+    // perfil base, y se vuelve a poner después.
+    await variants.withBase(async () => {
+      await device.saveToFlash();
+      state.dirty = false;
+      notify();
+    });
     toast('Configuración escrita en la memoria Flash');
   } catch {
     toast('El teclado no confirmó el guardado', 'error');
@@ -92,8 +102,12 @@ function wireDevice() {
     // acabaría en un tiempo de espera agotado poco explicativo.
     const fw = parseFloat(info?.fw ?? '0');
     if (fw < 2) {
-      toast('Firmware antiguo detectado: flashea la versión 2.0 para usar el editor y el scroll suave', 'error', 9000);
+      toast('Firmware antiguo detectado: flashea la versión 3.0 para usar el editor y el scroll suave', 'error', 9000);
       return;
+    }
+    if (fw < 3) {
+      toast('Firmware 2.x: no admite crear perfiles, mandos en capa SUPER ni rueda por perfil. '
+          + 'Flashea la versión 3.0 para esas funciones', 'error', 9000);
     }
 
     try {
@@ -124,10 +138,23 @@ document.addEventListener('DOMContentLoaded', () => {
   initChrome();
   device.init();
   wireDevice();
+  setNavigator(switchView);
+
+  // La calibración del dibujo de la rueda se lee del disco, así que llega
+  // después del primer pintado: hay que rehacer los marcadores al tenerla.
+  wheelDial.init().then(() => {
+    dashboard.refreshMarker();
+    if (activeView === 'view-profiles') profiles.render();
+  });
+
+  // Variaciones de perfil por aplicación: se leen del disco antes de que el
+  // detector de ventanas empiece a pedir evaluaciones.
+  variants.init().then(() => {
+    if (activeView === 'view-profiles') profiles.render();
+  });
 
   dashboard.init();
   profiles.init();
-  wheel.init();
   oled.init();
   settings.init();
   consoleView.init();
