@@ -33,13 +33,19 @@ extern "C" {
 //   1 -> alta resolución activa (multiplicador físico = HID_HIRES_MULTIPLIER)
 extern volatile uint8_t g_hires_multiplier;
 
-// Informe de ratón extendido: rueda de 16 bits + paneo horizontal.
+// Lo mismo para el eje horizontal (AC Pan). El host los negocia por separado,
+// así que puede activar uno y no el otro.
+extern volatile uint8_t g_hires_pan;
+
+// Informe de ratón extendido: las dos ruedas de 16 bits. El paneo era de 8 bits
+// y viajaba en detents enteros, así que el scroll horizontal iba a tirones
+// aunque el vertical fuese suave.
 typedef struct __attribute__((packed)) {
     uint8_t buttons;
     int8_t  x;
     int8_t  y;
-    int16_t wheel;   // unidades de alta resolución
-    int8_t  pan;     // AC Pan (scroll horizontal), en detents clásicos
+    int16_t wheel;   // vertical, en unidades de alta resolución
+    int16_t pan;     // horizontal (AC Pan), en las mismas unidades
 } orby_mouse_report_t;
 
 #ifdef __cplusplus

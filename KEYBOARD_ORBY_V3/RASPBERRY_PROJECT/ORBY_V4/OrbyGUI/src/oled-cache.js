@@ -9,26 +9,34 @@ import * as device from './device.js';
 import { state } from './store.js';
 import * as fb from './oled-fb.js';
 
-const cache = new Map();        // "perfil:hueco" -> Uint8Array | null
+const cache = new Map();        // "perfil:pagina:hueco" -> Uint8Array | null
 const listeners = new Set();
 
 let loadingProfile = null;      // perfil que se está descargando
 let queued = null;              // perfil pedido mientras había otro en curso
 
-export function cacheKey(profile, slot) {
-  return `${profile}:${slot}`;
+// La clave lleva la página: con páginas, el mismo (perfil, hueco) es un icono
+// distinto en cada una, así que sin esto se enseñarían los de la página anterior.
+// La página se toma del perfil, que es quien sabe cuál se está editando.
+function pageOfProfile(profile) {
+  const prof = state.profiles[profile];
+  return prof ? (prof.pageIdx || 0) : 0;
 }
 
-export function get(profile, slot) {
-  return cache.get(cacheKey(profile, slot)) ?? null;
+export function cacheKey(profile, slot, page = pageOfProfile(profile)) {
+  return `${profile}:${page}:${slot}`;
 }
 
-export function has(profile, slot) {
-  return cache.has(cacheKey(profile, slot));
+export function get(profile, slot, page) {
+  return cache.get(cacheKey(profile, slot, page)) ?? null;
 }
 
-export function set(profile, slot, bytes) {
-  cache.set(cacheKey(profile, slot), bytes);
+export function has(profile, slot, page) {
+  return cache.has(cacheKey(profile, slot, page));
+}
+
+export function set(profile, slot, bytes, page) {
+  cache.set(cacheKey(profile, slot, page), bytes);
   emit();
 }
 
@@ -73,13 +81,17 @@ export async function loadProfile(profileIdx) {
     const prof = state.profiles[profileIdx];
     if (!prof) return;
 
+    // Los iconos que se leen son los de la página que el teclado tiene puesta:
+    // GET_OLED, como el resto de comandos sin número de página, actúa sobre ella.
+    const page = prof.pageIdx || 0;
+
     for (let slot = 0; slot < 20; slot++) {
-      if (cache.has(cacheKey(profileIdx, slot))) continue;
+      if (cache.has(cacheKey(profileIdx, slot, page))) continue;
       if (!(prof.oledMask & (1 << slot))) {
-        cache.set(cacheKey(profileIdx, slot), null);
+        cache.set(cacheKey(profileIdx, slot, page), null);
         continue;
       }
-      cache.set(cacheKey(profileIdx, slot), await device.getOled(profileIdx, slot));
+      cache.set(cacheKey(profileIdx, slot, page), await device.getOled(profileIdx, slot));
       emit();
     }
   } finally {

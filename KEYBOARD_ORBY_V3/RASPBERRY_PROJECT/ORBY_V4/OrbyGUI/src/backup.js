@@ -5,14 +5,14 @@
 // Esto permite recuperarlos sin volver a dibujarlos.
 
 import * as device from './device.js';
-import { state, markDirty, syncFromDevice } from './store.js';
+import { state, markDirty, syncFromDevice, pageCountOf } from './store.js';
 import { toast } from './ui.js';
 import * as cache from './oled-cache.js';
 
 const FORMAT = 'orby-backup';
 // v2: número de perfiles variable, mandos con capa SUPER (16 huecos) y rueda de
 // scroll por perfil y capa.
-const VERSION = 2;
+const VERSION = 3;   // v3: perfiles con páginas
 
 function bytesToHex(bytes) {
   let hex = '';
@@ -56,10 +56,23 @@ export async function exportAll(onProgress = () => {}) {
 
     payload.profiles.push({
       name: prof.name,
+      // labels/keys/rotary/scroll son accesos a la página que se esté editando,
+      // así que se guardan aparte y además se guarda `pages` con TODAS: si no,
+      // una copia de seguridad de un perfil de cuatro páginas se llevaría solo
+      // una y el usuario no se enteraría hasta querer restaurarla.
       labels: prof.labels,
       keys: prof.keys,
       rotary: prof.rotary,
       scroll: prof.scroll,
+      pageCount: prof.pageCount || 1,
+      pages: (prof.pages || []).map((pg) => ({
+        labels: pg.labels, keys: pg.keys, rotary: pg.rotary, scroll: pg.scroll,
+        oledMask: pg.oledMask,
+      })),
+      // Los iconos son los de la página legible de este perfil (la activa si el
+      // perfil está puesto en el teclado, la primera si no): GET_OLED actúa sobre
+      // la página activa y no se puede pedir otra sin cambiarla.
+      iconsPage: prof.pageIdx || 0,
       icons,
     });
   }
@@ -88,6 +101,15 @@ export async function importAll(data, onProgress = () => {}) {
     onProgress(`Escribiendo perfil ${p + 1} de ${total}…`);
 
     if (prof.name) await device.setName(p, prof.name);
+
+    // Las páginas que traiga la copia y no existan en el teclado hay que crearlas
+    // antes de escribir: el firmware rechaza una página que no está.
+    const wanted = Math.min(prof.pageCount || 1, state.maxPages || 1);
+    while (pageCountOf(state.profiles[p]) < wanted) {
+      onProgress(`Perfil ${p + 1}: creando página ${pageCountOf(state.profiles[p]) + 1}…`);
+      await device.addPage(p, false);
+      await syncFromDevice();
+    }
 
     for (let s = 0; s < 20; s++) {
       await device.setLabel(p, s, prof.labels?.[s] ?? '');

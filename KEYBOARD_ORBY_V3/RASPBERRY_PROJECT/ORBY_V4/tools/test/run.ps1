@@ -9,12 +9,33 @@ if (-not (Get-Command g++ -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Write-Host "Compilando las pruebas..." -ForegroundColor Gray
-& g++ -O1 -Wall -Wextra -I"$here" -I"$here\..\..\include" -o "$here\test_hid_out.exe" "$here\test_hid_out.cpp"
-if ($LASTEXITCODE -ne 0) { Write-Host "No compila." -ForegroundColor Red; exit 1 }
+$failed = $false
 
-& "$here\test_hid_out.exe"
-if ($LASTEXITCODE -ne 0) {
+foreach ($t in @('test_hid_out', 'test_wheel')) {
+    Write-Host "Compilando $t..." -ForegroundColor Gray
+    & g++ -O1 -Wall -Wextra -Wno-unused-function -I"$here" -I"$here\..\..\include" `
+          -o "$here\$t.exe" "$here\$t.cpp"
+    if ($LASTEXITCODE -ne 0) { Write-Host "No compila." -ForegroundColor Red; exit 1 }
+    & "$here\$t.exe"
+    if ($LASTEXITCODE -ne 0) { $failed = $true }
+}
+
+# El descriptor HID: si esta mal formado, Windows no reconoce el teclado.
+Write-Host "`nValidando el descriptor HID..." -ForegroundColor Gray
+& python "$here\check_descriptor.py"
+if ($LASTEXITCODE -ne 0) { $failed = $true }
+
+# Firmware y app tienen que estar de acuerdo en las teclas de sistema.
+Write-Host "`nComprobando las teclas de sistema..." -ForegroundColor Gray
+& python "$here\check_keys.py"
+if ($LASTEXITCODE -ne 0) { $failed = $true }
+
+# Disposicion de la Flash: un tramo mal calculado se pisa iconos o ajustes.
+Write-Host "`nComprobando la disposicion de la Flash..." -ForegroundColor Gray
+& python "$here\check_flash_map.py"
+if ($LASTEXITCODE -ne 0) { $failed = $true }
+
+if ($failed) {
     Write-Host "`n[ FALLO ] Hay pruebas en rojo." -ForegroundColor Red
     exit 1
 }

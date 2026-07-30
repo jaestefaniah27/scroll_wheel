@@ -17,6 +17,11 @@ export const MODIFIERS = [
 // tabla get_consumer_key_from_index() del firmware.
 export const CONSUMER_MODIFIER = 0xFE;
 
+// Acciones de página, del firmware 4.0. Como las multimedia, viajan en el campo
+// del modificador, donde un atajo normal nunca llega.
+export const GOTO_PAGE_MODIFIER  = 0xFD;  // keycode = número de página, base 1
+export const PAGE_STATE_MODIFIER = 0xFC;  // la tecla enseña la página y abre el gestor
+
 // Índices de la tabla get_consumer_key_from_index() del firmware.
 export const CONSUMER_ACTIONS = [
   { index: 7,  label: 'Subir volumen' },
@@ -174,6 +179,8 @@ export function describeAction(modifier, keycode) {
     const action = CONSUMER_ACTIONS.find((a) => a.index === keycode);
     return action ? action.label : `Multimedia ${keycode}`;
   }
+  if (modifier === GOTO_PAGE_MODIFIER)  return `Ir a la página ${keycode}`;
+  if (modifier === PAGE_STATE_MODIFIER) return 'Estado de páginas';
   if (!modifier && !keycode) return 'Sin asignar';
 
   const parts = MODIFIERS.filter((m) => modifier & m.bit).map((m) => m.short);

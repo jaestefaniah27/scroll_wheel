@@ -119,9 +119,20 @@ export function getState() {
       if (line.startsWith('STATE:TIMEOUT:'))    { state.timeout   = parseInt(line.slice(14), 10); return true; }
       if (line.startsWith('STATE:MODE:'))       { state.mode      = line.slice(11); return true; }
       if (line.startsWith('STATE:SUPER:'))      { state.superActive = line.slice(12) === '1'; return true; }
+      if (line.startsWith('STATE:PAGE:')) {
+        // Lo añadió el firmware 4.0; con uno anterior no llega y se queda en una
+        // sola página, que es lo que había.
+        const [page, count, max] = line.slice(11).split(':').map(Number);
+        state.pageIdx   = page || 0;
+        state.pageCount = count || 1;
+        state.maxPages  = max || 1;
+        return true;
+      }
       if (line.startsWith('SCROLL:OK:')) {
-        const [det, inv, hires] = line.slice(10).split(':').map(Number);
-        state.scroll = { detentsPerRev: det, invert: !!inv, hires: !!hires };
+        // El cuarto campo (alta resolución del paneo horizontal) lo añadió el
+        // firmware después; con uno anterior llega undefined y queda en false.
+        const [det, inv, hires, hiresPan] = line.slice(10).split(':').map(Number);
+        state.scroll = { detentsPerRev: det, invert: !!inv, hires: !!hires, hiresPan: !!hiresPan };
         return true;
       }
       return false;
@@ -131,52 +142,124 @@ export function getState() {
   });
 }
 
-// Lee un perfil completo del firmware: nombre, 20 etiquetas, 24 acciones de
-// tecla, 16 de mando (8 por capa), la rueda de cada capa y la máscara de iconos.
-export function getProfile(idx) {
-  const prof = {
-    idx, name: '', labels: new Array(20).fill(''), keys: [], rotary: [],
+// Una página en blanco: 20 etiquetas, 24 acciones de tecla, 16 de mando (8 por
+// capa), la rueda de cada capa y la máscara de iconos.
+export function blankPage() {
+  const pg = {
+    labels: new Array(20).fill(''), keys: [], rotary: [],
     scroll: [{ detentsPerRev: 60, invert: false }, { detentsPerRev: 60, invert: false }],
     oledMask: 0,
   };
-  for (let i = 0; i < 24; i++) prof.keys.push({ modifier: 0, keycode: 0 });
-  for (let i = 0; i < 16; i++) prof.rotary.push({ type: 0, modifier: 0, keycode: 0 });
+  for (let i = 0; i < 24; i++) pg.keys.push({ modifier: 0, keycode: 0 });
+  for (let i = 0; i < 16; i++) pg.rotary.push({ type: 0, modifier: 0, keycode: 0 });
+  return pg;
+}
+
+// Las vistas llevan escritas 2000 líneas contra `prof.labels`, `prof.keys`...
+// En vez de reescribirlas todas, esos nombres pasan a ser accesos a la página
+// seleccionada: leer y escribir por ellos va siempre a `prof.pages[prof.pageIdx]`,
+// así que no puede haber dos copias que se desincronicen.
+//
+// No son enumerables a propósito: así JSON.stringify (la copia de seguridad) ve
+// la estructura de páginas de verdad y no una mezcla de las dos cosas.
+const PAGE_FIELDS = ['labels', 'keys', 'rotary', 'scroll', 'oledMask'];
+export function bindPageAliases(prof) {
+  for (const field of PAGE_FIELDS) {
+    Object.defineProperty(prof, field, {
+      get() { return (prof.pages[prof.pageIdx] || prof.pages[0])[field]; },
+      set(v) { (prof.pages[prof.pageIdx] || prof.pages[0])[field] = v; },
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return prof;
+}
+
+// Lee un perfil completo, con todas sus páginas.
+//
+// El firmware vuelca primero la página activa sin numerar (para las apps que no
+// saben de páginas) y después una tanda por página con `P<n>:` delante. Aquí se
+// leen las numeradas; la primera tanda sirve de reserva si el firmware es
+// anterior a las páginas y no manda ninguna.
+export function getProfile(idx) {
+  const prof = { idx, name: '', pageCount: 1, maxPages: 1, pageIdx: 0, pages: [] };
+  const legacy = blankPage();
+
+  const ensure = (n) => {
+    while (prof.pages.length <= n) prof.pages.push(blankPage());
+    return prof.pages[n];
+  };
+
+  const applyField = (pg, rest) => {
+    if (rest.startsWith('LBL:')) {
+      const body = rest.slice(4);
+      const sep = body.indexOf(':');
+      pg.labels[parseInt(body.slice(0, sep), 10)] = body.slice(sep + 1);
+      return true;
+    }
+    if (rest.startsWith('KEY:')) {
+      const [slot, modifier, keycode] = rest.slice(4).split(':').map(Number);
+      pg.keys[slot] = { modifier, keycode };
+      return true;
+    }
+    if (rest.startsWith('ROT:')) {
+      const [slot, type, modifier, keycode] = rest.slice(4).split(':').map(Number);
+      pg.rotary[slot] = { type, modifier, keycode };
+      return true;
+    }
+    if (rest.startsWith('SCR:')) {
+      const [layer, detents, invert] = rest.slice(4).split(':').map(Number);
+      pg.scroll[layer] = { detentsPerRev: detents, invert: !!invert };
+      return true;
+    }
+    if (rest.startsWith('OLEDMASK:')) { pg.oledMask = parseInt(rest.slice(9), 10); return true; }
+    return false;
+  };
 
   const prefix = `PROF:${idx}:`;
   return request(`GET_PROFILE:${idx}`, {
-    timeout: 8000,
+    timeout: 12000,
     collect: (line) => {
       if (!line.startsWith(prefix)) return false;
       const rest = line.slice(prefix.length);
 
       if (rest.startsWith('NAME:')) { prof.name = rest.slice(5); return true; }
-      if (rest.startsWith('LBL:')) {
-        const body = rest.slice(4);
-        const sep = body.indexOf(':');
-        prof.labels[parseInt(body.slice(0, sep), 10)] = body.slice(sep + 1);
+      if (rest.startsWith('PAGES:')) {
+        const [count, max] = rest.slice(6).split(':').map(Number);
+        prof.pageCount = count || 1;
+        prof.maxPages  = max || 1;
+        ensure(prof.pageCount - 1);
         return true;
       }
-      if (rest.startsWith('KEY:')) {
-        const [slot, modifier, keycode] = rest.slice(4).split(':').map(Number);
-        prof.keys[slot] = { modifier, keycode };
-        return true;
-      }
-      if (rest.startsWith('ROT:')) {
-        const [slot, type, modifier, keycode] = rest.slice(4).split(':').map(Number);
-        prof.rotary[slot] = { type, modifier, keycode };
-        return true;
-      }
-      if (rest.startsWith('SCR:')) {
-        const [layer, detents, invert] = rest.slice(4).split(':').map(Number);
-        prof.scroll[layer] = { detentsPerRev: detents, invert: !!invert };
-        return true;
-      }
-      if (rest.startsWith('OLEDMASK:')) { prof.oledMask = parseInt(rest.slice(9), 10); return true; }
-      return false;
+      // Tanda numerada: PROF:<n>:P<pg>:CAMPO:...
+      const m = rest.match(/^P(\d+):(.*)$/);
+      if (m) return applyField(ensure(parseInt(m[1], 10)), m[2]);
+      // Tanda sin numerar, para firmwares anteriores a las páginas.
+      return applyField(legacy, rest);
     },
     match: (line) => line === `${prefix}END`,
     result: prof,
+  }).then((p) => {
+    // Firmware antiguo: no mandó ninguna página numerada, así que lo que llegó
+    // sin numerar es la única que hay.
+    if (!p.pages.length) { p.pages.push(legacy); p.pageCount = 1; p.maxPages = 1; }
+    return bindPageAliases(p);
   });
+}
+
+// ---------- Páginas ----------
+export function setPage(pageIdx) {
+  return request(`SET_PAGE:${pageIdx}`, { match: (l) => l.startsWith('PAGE:OK:') || l.startsWith('ERR:') });
+}
+
+export function addPage(profileIdx, copyCurrent = true) {
+  return request(`ADD_PAGE:${profileIdx}:${copyCurrent ? 1 : 0}`,
+                 { match: (l) => l.startsWith('PAGE:ADDED:') || l.startsWith('ERR:') });
+}
+
+export function delPage(profileIdx, pageIdx) {
+  return request(`DEL_PAGE:${profileIdx}:${pageIdx}`,
+                 { match: (l) => l.startsWith('PAGE:DELETED:') || l.startsWith('ERR:') });
 }
 
 // Lee el bitmap guardado en el teclado. Devuelve null si el hueco usa la

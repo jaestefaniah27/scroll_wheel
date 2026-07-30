@@ -5,7 +5,8 @@
 // disco grande, debajo de ellos.
 
 import * as device from '../device.js';
-import { state, notify, labelForKey, profile, liveScroll, KEY_TO_SCREEN } from '../store.js';
+import { state, notify, labelForKey, profile, liveScroll, KEY_TO_SCREEN,
+         KEY_SUPER } from '../store.js';
 import * as wheelDial from '../wheel-dial.js';
 
 let wheelDecay = null;
@@ -23,7 +24,7 @@ export function init() {
     html += `
       <div class="hw-key ${hasScreen ? '' : 'no-screen'}" id="hw-key-${i}">
         ${hasScreen ? `<div class="oled-screen" id="hw-oled-${i}">--</div>`
-                    : `<span class="hw-key-role">${i === 10 ? 'SUPER' : 'MENU'}</span>`}
+                    : `<span class="hw-key-role">${i === KEY_SUPER ? 'SUPER' : 'MENU'}</span>`}
       </div>`;
   }
 
@@ -73,7 +74,7 @@ function handleTelemetry(line) {
     const keyId = parseInt(id, 10);
     const isPressed = pressed === '1';
 
-    if (keyId === 10) {
+    if (keyId === KEY_SUPER) {
       state.superActive = isPressed;
       notify();
       render();

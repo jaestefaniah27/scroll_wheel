@@ -61,7 +61,7 @@ teclas, mandos giratorios y rueda de scroll. Ya no hay datos duplicados en la
 app: todo se lee del firmware.
 
 1. Elige el perfil arriba (el marcado *EN USO* es el activo en el teclado).
-2. Cambia entre capa **NORMAL** y **SUPER** (la capa SUPER se activa con la tecla 10).
+2. Cambia entre capa **NORMAL** y **SUPER** (la capa SUPER se activa con la tecla 12).
    El interruptor afecta a **todo**: teclas, mandos y rueda.
 3. Pulsa cualquier tecla de la réplica para abrir el inspector. Cada tecla
    muestra su **icono real** —el mismo que está en la pantalla OLED— o su
@@ -109,7 +109,7 @@ botones y un contador de huecos (`4 / 16`). *Nuevo* añade un perfil vacío,
 tiene que quedar uno). El teclado admite hasta **16 perfiles**; al borrar, los
 siguientes se desplazan y el menú físico del teclado se ajusta solo.
 
-> En el menú del teclado (mantener los dos encoders, o la tecla 12) los perfiles
+> En el menú del teclado (mantener los dos encoders, o la tecla 10) los perfiles
 > se recorren con el encoder izquierdo, uno por pantalla, y las teclas 1-5 son
 > atajos directos a los cinco primeros de la ventana. Con más de diez perfiles
 > la lista se muestra por ventanas que siguen al cursor, y al abrir el menú este
@@ -150,7 +150,7 @@ pulsaciones no los ofrecen: un clic no tiene dirección.
 
 **Los mandos también tienen capa SUPER.** Cada perfil guarda dos juegos de
 acciones giratorias: uno para la capa normal y otro para cuando mantienes la
-tecla 10. Al crear o duplicar un perfil los dos empiezan iguales, así que si no
+tecla 12. Al crear o duplicar un perfil los dos empiezan iguales, así que si no
 tocas nada el comportamiento es el de siempre; en cuanto cambias uno, ese
 encoder hace dos cosas distintas dentro del mismo perfil.
 

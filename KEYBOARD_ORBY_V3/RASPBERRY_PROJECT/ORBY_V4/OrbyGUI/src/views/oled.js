@@ -9,7 +9,8 @@
 // tecla antes de tocarla.
 
 import * as device from '../device.js';
-import { state, markDirty, subscribe, labelSlot, keymapSlot, KEY_TO_SCREEN } from '../store.js';
+import { state, markDirty, subscribe, labelSlot, keymapSlot, KEY_TO_SCREEN, hasPages, pageCountOf,
+         KEY_SUPER } from '../store.js';
 import { describeAction } from '../hid-keys.js';
 import { icon } from '../icons.js';
 import { toast } from '../ui.js';
@@ -654,7 +655,7 @@ function renderKeyGridInner() {
       html += `
         <div class="okey no-screen">
           <span class="okey-num">T${i + 1}</span>
-          <span class="okey-role">${i === 9 ? 'SUPER' : 'MENÚ'}</span>
+          <span class="okey-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>
         </div>`;
       continue;
     }
@@ -680,9 +681,15 @@ function paintKeyThumbs() {
 function updateGridStatus() {
   const status = document.getElementById('oled-grid-status');
   if (!status) return;
-  status.textContent = cache.isLoading()
-    ? 'Leyendo iconos del teclado…'
-    : `Editando la tecla ${view.key + 1} · pantalla ${screenOf(view.key)} · capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'}`;
+  if (cache.isLoading()) { status.textContent = 'Leyendo iconos del teclado…'; return; }
+
+  // Con páginas hay que decir en cuál estamos: el mismo hueco es un icono
+  // distinto en cada página, y la que se edita es la que el teclado tiene puesta.
+  const prof = state.profiles[view.profile];
+  const pageTxt = (hasPages() && prof && pageCountOf(prof) > 1)
+    ? ` · página ${(prof.pageIdx || 0) + 1} de ${pageCountOf(prof)}` : '';
+  status.textContent = `Editando la tecla ${view.key + 1} · pantalla ${screenOf(view.key)}`
+    + ` · capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'}${pageTxt}`;
 }
 
 function renderKeyGrid() {

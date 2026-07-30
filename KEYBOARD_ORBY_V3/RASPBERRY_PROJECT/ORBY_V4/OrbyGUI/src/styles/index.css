@@ -1149,3 +1149,10 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
   .editor-inspector { position: static; }
   .orby-board { flex-direction: column; align-items: center; gap: 24px; }
 }
+
+/* --- Páginas de perfil --- */
+.page-toggle { margin-left: 4px; }
+.page-toggle .toggle-btn { min-width: 30px; padding: 6px 9px; font-variant-numeric: tabular-nums; }
+.page-toggle .page-add, .page-toggle .page-del { font-weight: 700; opacity: 0.7; }
+.page-toggle .page-add:hover, .page-toggle .page-del:hover { opacity: 1; }
+.consumer-chip.full { width: 100%; margin-top: 6px; text-align: center; }

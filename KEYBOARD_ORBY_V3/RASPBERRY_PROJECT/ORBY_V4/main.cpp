@@ -18,7 +18,37 @@
 #include "oled_intro.h"
 #include "hid_hires.h"
 #include "hid_out.h"
+#include "wheel_out.h"
 #include "hardware_as5600.h"
+
+// Las combinaciones con modificador (Ctrl+C y compañía) se envían como
+// pulsación breve en vez de mantenerse mientras la tecla esté hundida.
+//
+// El motivo: un macropad manda atajos, y mantener Ctrl+C dos segundos no copia
+// dos veces, solo deja el Ctrl puesto en el host. Con el Ctrl puesto, la rueda
+// deja de hacer scroll y pasa a hacer zoom; con Shift, pasa a scroll
+// horizontal. Se pierde el autorrepetido de combinaciones como Ctrl+Z: si lo
+// prefieres al revés, pon esto a 0.
+//
+// Las teclas sueltas (sin modificador) y los modificadores a pelo (Ctrl sin
+// tecla, para usarlos con el ratón) SÍ se mantienen.
+#define ORBY_COMBO_AS_TAP 1
+
+// Acciones especiales de tecla. Van en el campo `modifier` del mapeo, que para
+// un atajo normal nunca llega tan alto, así que no hace falta cambiar la
+// estructura ni migrar nada.
+#define KEYACT_CONSUMER   0xFE  // keycode = índice de la tabla multimedia
+#define KEYACT_GOTO_PAGE  0xFD  // keycode = número de página (1..MAX_PAGES)
+#define KEYACT_PAGE_STATE 0xFC  // enseña la página actual y abre el gestor
+
+// Las dos teclas de sistema: no llevan pantalla y no envían atajos. Son índices
+// base 0 dentro de key_pins, así que la tecla N está en N-1.
+//   - SUPER, mantenida, cambia de capa todo el perfil (teclas, mandos y rueda).
+//   - MENÚ, mantenida un segundo, abre el menú de perfiles en las pantallas.
+// Antes estaban al revés (SUPER en la 10 y el menú en la 12); cambiarlas de
+// sitio es cambiar estas dos líneas.
+#define KEY_IDX_SUPER 11   // Tecla 12
+#define KEY_IDX_MENU   9   // Tecla 10
 
 // Mapeos nativos de teclado para las 12 teclas
 struct KeyAction {
@@ -78,8 +108,20 @@ static inline uint8_t rot_slot(uint8_t base, bool super) {
 #define SCROLL_DETENTS_MAX   240
 #define SCROLL_DETENTS_DEFAULT 60
 
-struct Profile {
-    char name[8];
+// ==========================================
+// PÁGINAS
+// ==========================================
+// Una página es un juego completo de «lo que hace el teclado»: teclas,
+// etiquetas, mandos, rueda e iconos. Un perfil tiene de una a MAX_PAGES y se
+// alterna entre ellas con la pulsación corta del botón de menú, con una tecla de
+// salto directo o desde el gestor de páginas.
+//
+// Cada página cuesta 260 bytes de RAM, así que multiplicarlas es barato. Lo que
+// NO cabía eran los iconos (7424 bytes por página): por eso el banco de iconos
+// se ha mudado a la Flash y se pinta directamente de ahí. Ver FLASH_OLED_OFFSET.
+#define MAX_PAGES 4
+
+struct Page {
     char oled_labels[20][8];    // 0-9 Normal, 10-19 SUPER
     KeyAction key_mappings[24]; // 0-11 Normal, 12-23 SUPER
     RotaryAction rotary[ROT_SLOT_COUNT];
@@ -87,20 +129,34 @@ struct Profile {
     uint8_t scroll_invert[2];
 };
 
+struct Profile {
+    char    name[8];
+    uint8_t page_count;         // 1..MAX_PAGES
+    // Tramo del banco de iconos de la Flash que le pertenece. Es fijo mientras
+    // el perfil viva: así borrar un perfil solo reordena metadatos, en vez de
+    // obligar a arrastrar medio megabyte de iconos por la Flash.
+    uint8_t oled_bank;
+    uint8_t padding[2];
+    Page    pages[MAX_PAGES];
+};
+
 // Cuántos perfiles caben. Los cuatro primeros son los de fábrica; el resto se
 // crean desde la app con ADD_PROFILE o DUP_PROFILE.
-//
-// El techo lo pone el banco de iconos en RAM: cada perfil son 20 pantallas de
-// 360 bytes redondeadas a página, 7424 bytes. Con 16 perfiles el banco ocupa
-// 116 KB de los 264 KB del RP2040, que deja sitio de sobra para pilas y colas.
-// Subir más obligaría a dejar de tener los bitmaps en RAM y leerlos de la Flash
-// mapeada, que es otra historia (ver `oled_slot_ptr`).
 #define MAX_PROFILES      16
 #define DEFAULT_PROFILES  4
 
+// Los perfiles de fábrica se declaran sin páginas —solo nombre, etiquetas y
+// teclas— y se copian a la página 0 al arrancar. Así los literales de abajo, que
+// son 150 líneas de llaves anidadas, no hay que tocarlos al añadir páginas.
+struct DefaultProfile {
+    char name[8];
+    char oled_labels[20][8];
+    KeyAction key_mappings[24];
+};
+
 // Perfiles de fábrica. Se copian a `profiles` (RAM) al arrancar; la app de
 // escritorio puede editar la copia en RAM y persistirla con SAVE_STATE.
-const Profile default_profiles[DEFAULT_PROFILES] = {
+const DefaultProfile default_profiles[DEFAULT_PROFILES] = {
     // OFIM (Ofimática y Productividad General)
     {
         "OFIM",
@@ -121,9 +177,9 @@ const Profile default_profiles[DEFAULT_PROFILES] = {
             { KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_S }, // Tecla 7 -> Ctrl+S
             { KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_F }, // Tecla 8 -> Ctrl+F
             { KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_W }, // Tecla 9 -> Ctrl+W
-            { 0,                          0         }, // Tecla 10 -> NADA (SUPER)
+            { 0,                          0         }, // Tecla 10 -> NADA (menu)
             { KEYBOARD_MODIFIER_LEFTGUI | KEYBOARD_MODIFIER_LEFTSHIFT, HID_KEY_S }, // Tecla 11 -> Win+Shift+S (OLED 10)
-            { 0,                          0         }, // Tecla 12 -> NADA (Hold Menu)
+            { 0,                          0         }, // Tecla 12 -> NADA (SUPER)
             
             // SUPER Key Mappings (12-23)
             { KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_LEFTSHIFT, HID_KEY_E }, // Tecla 1 -> Excel (Ctrl+Alt+Shift+E)
@@ -135,9 +191,9 @@ const Profile default_profiles[DEFAULT_PROFILES] = {
             { 0xFE,                       3         }, // Tecla 7 -> Play/Pause (Consumer idx 3)
             { 0xFE,                       4         }, // Tecla 8 -> Stop (Consumer idx 4)
             { 0xFE,                       5         }, // Tecla 9 -> Next (Consumer idx 5)
-            { 0,                          0         }, // Tecla 10 -> NADA (SUPER)
+            { 0,                          0         }, // Tecla 10 -> NADA (menu)
             { 0xFE,                       6         }, // Tecla 11 -> Prev (Consumer idx 6)
-            { 0,                          0         }  // Tecla 12 -> NADA
+            { 0,                          0         }  // Tecla 12 -> NADA (SUPER)
         }
     },
     // PHTS (Adobe Photoshop)
@@ -160,9 +216,9 @@ const Profile default_profiles[DEFAULT_PROFILES] = {
             { 0,                          HID_KEY_C }, // Crop (C)
             { 0,                          HID_KEY_V }, // Move (V)
             { KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_LEFTSHIFT, HID_KEY_N }, // New Layer (Ctrl+Shift+N)
-            { 0,                          0         }, // Tecla 10 -> NADA (SUPER)
+            { 0,                          0         }, // Tecla 10 -> NADA (menu)
             { KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_J }, // Duplicate Layer (Ctrl+J)
-            { 0,                          0         }, // Tecla 12 -> NADA
+            { 0,                          0         }, // Tecla 12 -> NADA (SUPER)
             
             // SUPER Key Mappings (12-23)
             { 0,                          HID_KEY_Z }, // Zoom (Z)
@@ -174,9 +230,9 @@ const Profile default_profiles[DEFAULT_PROFILES] = {
             { 0,                          HID_KEY_I }, // Eyedropper (I)
             { 0,                          HID_KEY_M }, // Marquee Selection (M)
             { 0,                          HID_KEY_K }, // Slice (K)
-            { 0,                          0         }, // Tecla 10 -> NADA (SUPER)
+            { 0,                          0         }, // Tecla 10 -> NADA (menu)
             { 0,                          HID_KEY_A }, // Path Selection (A)
-            { 0,                          0         }  // Tecla 12 -> NADA
+            { 0,                          0         }  // Tecla 12 -> NADA (SUPER)
         }
     },
     // ALTM (Altium Designer)
@@ -199,9 +255,9 @@ const Profile default_profiles[DEFAULT_PROFILES] = {
             { 0,                          HID_KEY_M }, // Move (M)
             { 0,                          HID_KEY_T }, // Track (T)
             { 0,                          HID_KEY_F }, // View Fit (F)
-            { 0,                          0         }, // Tecla 10 -> NADA (SUPER)
+            { 0,                          0         }, // Tecla 10 -> NADA (menu)
             { 0,                          HID_KEY_3 }, // 3D View (3)
-            { 0,                          0         }, // Tecla 12 -> NADA
+            { 0,                          0         }, // Tecla 12 -> NADA (SUPER)
             
             // SUPER Key Mappings (12-23)
             { 0,                          HID_KEY_D }, // SCH Doc options (D)
@@ -213,9 +269,9 @@ const Profile default_profiles[DEFAULT_PROFILES] = {
             { KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_M }, // Measure (Ctrl+M)
             { KEYBOARD_MODIFIER_LEFTALT,  HID_KEY_R }, // Design Rules (Alt+R)
             { KEYBOARD_MODIFIER_LEFTALT,  HID_KEY_D }, // Run DRC (Alt+D)
-            { 0,                          0         }, // Tecla 10 -> NADA (SUPER)
+            { 0,                          0         }, // Tecla 10 -> NADA (menu)
             { KEYBOARD_MODIFIER_LEFTALT,  HID_KEY_O }, // Options (Alt+O)
-            { 0,                          0         }  // Tecla 12 -> NADA
+            { 0,                          0         }  // Tecla 12 -> NADA (SUPER)
         }
     },
     // PREM (Adobe Premiere Pro)
@@ -238,9 +294,9 @@ const Profile default_profiles[DEFAULT_PROFILES] = {
             { KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_L }, // Link (Ctrl+L)
             { KEYBOARD_MODIFIER_LEFTSHIFT, HID_KEY_DELETE }, // Ripple Delete (Shift+Delete)
             { KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_M }, // Export (Ctrl+M)
-            { 0,                          0         }, // Tecla 10 -> NADA (SUPER)
+            { 0,                          0         }, // Tecla 10 -> NADA (menu)
             { 0,                          HID_KEY_N }, // Nest (N)
-            { 0,                          0         }, // Tecla 12 -> NADA
+            { 0,                          0         }, // Tecla 12 -> NADA (SUPER)
             
             // SUPER Key Mappings (12-23)
             { 0,                          HID_KEY_Y }, // Slip Tool (Y)
@@ -252,9 +308,9 @@ const Profile default_profiles[DEFAULT_PROFILES] = {
             { KEYBOARD_MODIFIER_LEFTSHIFT, HID_KEY_T }, // Trim (Shift+T)
             { 0,                          HID_KEY_R }, // Rate Stretch (R)
             { KEYBOARD_MODIFIER_LEFTALT,  HID_KEY_R }, // Roll Tool (Alt+R)
-            { 0,                          0         }, // Tecla 10 -> NADA (SUPER)
+            { 0,                          0         }, // Tecla 10 -> NADA (menu)
             { KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_R }, // Speed (Ctrl+R)
-            { 0,                          0         }  // Tecla 12 -> NADA
+            { 0,                          0         }  // Tecla 12 -> NADA (SUPER)
         }
     }
 };
@@ -267,31 +323,30 @@ volatile uint8_t profile_count = DEFAULT_PROFILES;
 // ==========================================
 // BITMAPS OLED PERSONALIZADOS
 // ==========================================
-// 20 huecos por perfil: 10 pantallas × 2 capas (Normal / SUPER).
+// 20 huecos por página: 10 pantallas × 2 capas (Normal / SUPER). Con páginas,
+// la unidad es (perfil, página): 16 × 4 = 64 tramos de 8 KB, medio megabyte.
 //
-// Cada perfil ocupa su propia región alineada a páginas de Flash para poder
-// reescribir solo el que ha cambiado. Borrar los 32 KB de golpe mantendría las
-// interrupciones desactivadas cerca de un segundo y el host llegaría a perder
-// el dispositivo USB.
+// Eso NO cabe en RAM —serían 464 KB de los 264 KB del chip—, así que el banco
+// vive solo en la Flash y se pinta directamente de ahí: el RP2040 la mapea en el
+// espacio de direcciones (XIP), así que al SPI se le pasa un puntero a Flash y no
+// hace falta ni copiar ni descomprimir nada.
+//
+// En RAM queda únicamente un búfer de preparación con el tramo que se está
+// editando, para que un icono recién subido se vea antes de grabarlo.
 #define OLED_FB_SIZE         360
 #define OLED_SLOTS           20
-#define OLED_PROFILE_STRIDE  7424   // 20*360 = 7200, redondeado a página de 256
-#define OLED_BANK_BYTES      (MAX_PROFILES * OLED_PROFILE_STRIDE)
+#define OLED_PAGE_STRIDE     7424   // 20*360 = 7200, redondeado a página de 256
 
-static uint8_t  custom_oled_bank[OLED_BANK_BYTES];
-static uint32_t custom_oled_mask[MAX_PROFILES];  // un bit por hueco ocupado
-// Un bit por perfil pendiente de escribir. Tiene que cubrir MAX_PROFILES: con
-// un uint8_t los perfiles del 9 en adelante nunca se habrían grabado.
-static uint16_t custom_oled_dirty = 0;
-static_assert(MAX_PROFILES <= 16, "custom_oled_dirty solo tiene 16 bits");
+// Un bit por hueco ocupado, por perfil y página. Vive en los ajustes: perderla
+// equivale a perder los iconos.
+static uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
 
-static inline uint8_t* oled_slot_ptr(uint8_t profile, uint8_t slot) {
-    return &custom_oled_bank[profile * OLED_PROFILE_STRIDE + slot * OLED_FB_SIZE];
-}
-
-static inline bool oled_slot_used(uint8_t profile, uint8_t slot) {
-    return (custom_oled_mask[profile] & (1u << slot)) != 0;
-}
+// Búfer de preparación: el tramo (perfil, página) que se está editando ahora.
+// staging_dirty dice si tiene cambios sin grabar.
+static uint8_t oled_staging[OLED_PAGE_STRIDE] __attribute__((aligned(4)));
+static uint8_t staging_profile = 0xFF;   // 0xFF = vacío
+static uint8_t staging_page    = 0xFF;
+static bool    staging_dirty   = false;
 
 // ==========================================
 // ESTADO COMPARTIDO (SHARED STATE)
@@ -302,11 +357,19 @@ enum AppMode {
     MODE_MENU_PERF,
     MODE_MENU_BRIL,
     MODE_MENU_REPO,
-    MODE_MENU_INFO
+    MODE_MENU_INFO,
+    MODE_MENU_PAGES   // gestor de páginas: un número por pantalla
 };
+
+// Qué tecla (índice base 0) hay debajo de cada pantalla. Las pantallas 1 a 9 van
+// con las teclas 1 a 9, y la pantalla 10 con la tecla 11.
+static inline uint8_t key_index_for_screen(uint8_t screen_num) {
+    return (screen_num <= 9) ? (uint8_t)(screen_num - 1) : (uint8_t)10;
+}
 
 volatile AppMode current_mode = MODE_NORMAL;
 volatile uint8_t active_profile_idx = 0;   // 0=OFIM, 1=PHTS, 2=ALTM, 3=PREM
+volatile uint8_t active_page = 0;          // Página en uso del perfil activo
 volatile uint8_t current_brightness = 207;   // 0xCF = 207 por defecto
 volatile uint8_t reposo_timeout_min = 5;    // 5 minutos por defecto (0=OFF)
 volatile uint8_t selected_menu_idx = 0;     // Opción de menú activa (0 a 4)
@@ -340,31 +403,58 @@ volatile uint32_t core1_heartbeat = 0;
 // completa de la rueda magnética. 60 = valor por defecto. Desde la versión 3.0
 // ya no es un ajuste global: vive en el perfil, con un valor por capa, así que
 // se consulta siempre a través de estos accesos.
+// La página activa del perfil activo. Todo lo que el teclado hace «ahora mismo»
+// sale de aquí.
+static inline Page& cur_page() {
+    return profiles[active_profile_idx].pages[active_page];
+}
+
 static inline uint8_t cur_scroll_detents() {
-    uint8_t v = profiles[active_profile_idx].scroll_detents[super_active ? 1 : 0];
+    uint8_t v = cur_page().scroll_detents[super_active ? 1 : 0];
     return (v < SCROLL_DETENTS_MIN || v > SCROLL_DETENTS_MAX) ? SCROLL_DETENTS_DEFAULT : v;
 }
 
 static inline bool cur_scroll_invert() {
-    return profiles[active_profile_idx].scroll_invert[super_active ? 1 : 0] != 0;
+    return cur_page().scroll_invert[super_active ? 1 : 0] != 0;
 }
 
-// Persistencia en Flash. Dos regiones a partir de 1.5 MB:
-//   - 2 sectores (8 KB) para ajustes + los perfiles editables
-//   - 2 sectores (8 KB) por perfil para sus bitmaps OLED personalizados
+// ==========================================
+// DISPOSICIÓN DE LA FLASH
+// ==========================================
+//   0 –  115 KB   el programa
+//        ...libre...
+//   1024 – 1536 KB  banco de iconos: 64 tramos (16 perfiles × 4 páginas) de 8 KB
+//   1536 – 1560 KB  ajustes: perfiles con sus páginas y las máscaras de iconos
+//        ...libre...
 //
-// Con 16 perfiles los ajustes ya no caben en un solo sector, así que la región
-// de bitmaps arranca un sector más allá que en el firmware 3.0. Los bitmaps ya
-// guardados se recuperan al migrar (ver load_settings): se leen de su sitio
-// antiguo y quedan marcados para reescribirse en el nuevo.
-#define FLASH_TARGET_OFFSET  (1536 * 1024)
-#define FLASH_SETTINGS_SECTORS 2
-#define FLASH_SETTINGS_BYTES (FLASH_SETTINGS_SECTORS * FLASH_SECTOR_SIZE)
-#define FLASH_OLED_OFFSET    (FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES)
-#define FLASH_OLED_SLICE     (2 * FLASH_SECTOR_SIZE)  // 8 KB por perfil
-#define FLASH_OLED_AT(p)     (FLASH_OLED_OFFSET + (p) * FLASH_OLED_SLICE)
+// El banco acaba justo donde empiezan los ajustes. Está debajo y no encima
+// porque encima no cabía: 1536 + 512 se sale de los 2 MB del módulo.
+//
+// Con las páginas, la unidad del banco pasa de «un perfil» a «una página de un
+// perfil», y el tramo que le toca a cada perfil se guarda en `Profile.oled_bank`
+// en vez de ser su índice. Así borrar un perfil solo reordena metadatos: mover
+// medio megabyte de iconos por la Flash llevaría segundos y gastaría ciclos de
+// borrado a cambio de nada.
+#define FLASH_OLED_OFFSET    (1024 * 1024)
+#define FLASH_OLED_SLICE     (2 * FLASH_SECTOR_SIZE)  // 8 KB por (perfil, página)
+#define FLASH_OLED_AT(bank, pg) \
+    (FLASH_OLED_OFFSET + (((bank) * MAX_PAGES) + (pg)) * FLASH_OLED_SLICE)
 
-// Disposición del firmware 3.0, solo para rescatar los iconos al actualizar.
+#define FLASH_TARGET_OFFSET  (1536 * 1024)
+#define FLASH_SETTINGS_SECTORS 6
+#define FLASH_SETTINGS_BYTES (FLASH_SETTINGS_SECTORS * FLASH_SECTOR_SIZE)
+
+// El banco no puede solaparse con los ajustes ni salirse de la Flash.
+static_assert(FLASH_OLED_AT(MAX_PROFILES - 1, MAX_PAGES - 1) + FLASH_OLED_SLICE
+                  <= FLASH_TARGET_OFFSET,
+              "El banco de iconos se come la región de ajustes");
+static_assert(FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES <= PICO_FLASH_SIZE_BYTES,
+              "Los ajustes se salen de la Flash del módulo");
+
+// Disposiciones anteriores, solo para rescatar los iconos al actualizar. Hasta
+// la versión 3.1 el banco iba detrás de los ajustes, con un tramo por perfil.
+#define FLASH_OLED_OFFSET_V5 (FLASH_TARGET_OFFSET + 2 * FLASH_SECTOR_SIZE)
+#define FLASH_OLED_AT_V5(p)  (FLASH_OLED_OFFSET_V5 + (p) * FLASH_OLED_SLICE)
 #define FLASH_OLED_OFFSET_V3 (FLASH_TARGET_OFFSET + FLASH_SECTOR_SIZE)
 #define FLASH_OLED_AT_V3(p)  (FLASH_OLED_OFFSET_V3 + (p) * FLASH_OLED_SLICE)
 
@@ -377,9 +467,12 @@ static inline bool cur_scroll_invert() {
 #define SETTINGS_MAGIC_V3 0xDEB00205  // + acciones de encoders y rueda
 #define SETTINGS_MAGIC_V4 0xDEB00300  // + nº de perfiles variable (tope 8), capa
                                       //   SUPER en los mandos y scroll por perfil
-#define SETTINGS_MAGIC    0xDEB00310  // + tope de 16 perfiles: los ajustes pasan
+#define SETTINGS_MAGIC_V5 0xDEB00310  // + tope de 16 perfiles: los ajustes pasan
                                       //   a dos sectores y la región de bitmaps
                                       //   se desplaza uno
+#define SETTINGS_MAGIC    0xDEB00400  // + páginas por perfil: el banco de iconos
+                                      //   se muda a 1024 KB con un tramo por
+                                      //   (perfil, página) y sale de la RAM
 
 // Diseños antiguos, conservados solo para poder leer lo ya grabado.
 struct ProfileV2 {
@@ -427,17 +520,40 @@ struct SettingsV3 {
     ProfileV3 profiles[4];
 };
 
-// Formato 3.0: mismo Profile que ahora, pero con tope de 8 perfiles.
+// Perfil de las versiones 3.0 y 3.1: el de antes de las páginas. Se conserva
+// para poder leer lo que ya está grabado en la Flash.
+struct ProfileV5 {
+    char name[8];
+    char oled_labels[20][8];
+    KeyAction key_mappings[24];
+    RotaryAction rotary[ROT_SLOT_COUNT];
+    uint8_t scroll_detents[2];
+    uint8_t scroll_invert[2];
+};
+
+// Formato 3.0: mismo perfil, pero con tope de 8.
 #define SETTINGS_V4_PROFILES 8
 struct SettingsV4 {
-    uint32_t magic;
-    uint8_t  active_profile_idx;
-    uint8_t  current_brightness;
-    uint8_t  reposo_timeout_min;
-    uint8_t  profile_count;
-    uint8_t  padding[4];
-    uint32_t custom_oled_mask[SETTINGS_V4_PROFILES];
-    Profile  profiles[SETTINGS_V4_PROFILES];
+    uint32_t  magic;
+    uint8_t   active_profile_idx;
+    uint8_t   current_brightness;
+    uint8_t   reposo_timeout_min;
+    uint8_t   profile_count;
+    uint8_t   padding[4];
+    uint32_t  custom_oled_mask[SETTINGS_V4_PROFILES];
+    ProfileV5 profiles[SETTINGS_V4_PROFILES];
+};
+
+// Formato 3.1: tope de 16 perfiles, todavía sin páginas.
+struct SettingsV5 {
+    uint32_t  magic;
+    uint8_t   active_profile_idx;
+    uint8_t   current_brightness;
+    uint8_t   reposo_timeout_min;
+    uint8_t   profile_count;
+    uint8_t   padding[4];
+    uint32_t  custom_oled_mask[MAX_PROFILES];
+    ProfileV5 profiles[MAX_PROFILES];
 };
 
 struct Settings {
@@ -446,8 +562,9 @@ struct Settings {
     uint8_t  current_brightness;
     uint8_t  reposo_timeout_min;
     uint8_t  profile_count;
-    uint8_t  padding[4];
-    uint32_t custom_oled_mask[MAX_PROFILES];
+    uint8_t  active_page;
+    uint8_t  padding[3];
+    uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
     Profile  profiles[MAX_PROFILES];
 };
 
@@ -457,21 +574,58 @@ struct Settings {
 static uint8_t settings_blob[SETTINGS_BLOB_SIZE];
 
 // Guardas de disposición: si los perfiles crecen y dejan de caber, hay que
-// ampliar el sector reservado en lugar de pisar el banco de bitmaps.
+// ampliar la región reservada en lugar de pisar el banco de iconos.
 static_assert(SETTINGS_BLOB_SIZE <= FLASH_SETTINGS_BYTES,
               "Los ajustes ya no caben en la región reservada de Flash");
-static_assert(OLED_SLOTS * OLED_FB_SIZE <= OLED_PROFILE_STRIDE,
-              "El stride por perfil no cubre sus 20 bitmaps");
-static_assert(OLED_PROFILE_STRIDE % FLASH_PAGE_SIZE == 0,
+static_assert(OLED_SLOTS * OLED_FB_SIZE <= OLED_PAGE_STRIDE,
+              "El stride por página no cubre sus 20 bitmaps");
+static_assert(OLED_PAGE_STRIDE % FLASH_PAGE_SIZE == 0,
               "flash_range_program exige múltiplos de página");
-// Al subir MAX_PROFILES crecen las dos regiones: que no se coman el final de la
-// Flash ni pisen el programa, que vive al principio.
-static_assert(FLASH_OLED_AT(MAX_PROFILES - 1) + FLASH_OLED_SLICE <= PICO_FLASH_SIZE_BYTES,
-              "El banco de bitmaps se sale de la Flash del módulo");
+
+// ==========================================
+// ACCESO A LOS ICONOS
+// ==========================================
+// Un icono se lee de la Flash mapeada, salvo que su página sea la que se está
+// editando: entonces sale del búfer de preparación, para que un icono recién
+// subido se vea en la pantalla antes de grabarlo.
+static inline bool staging_holds(uint8_t profile, uint8_t page) {
+    return staging_profile == profile && staging_page == page;
+}
+
+static inline uint32_t oled_bank_of(uint8_t profile) {
+    return profiles[profile].oled_bank;
+}
+
+static const uint8_t* oled_slot_ptr(uint8_t profile, uint8_t page, uint8_t slot) {
+    if (staging_holds(profile, page)) return &oled_staging[slot * OLED_FB_SIZE];
+    return (const uint8_t*)(XIP_BASE + FLASH_OLED_AT(oled_bank_of(profile), page)
+                            + slot * OLED_FB_SIZE);
+}
+
+static inline bool oled_slot_used(uint8_t profile, uint8_t page, uint8_t slot) {
+    return (custom_oled_mask[profile][page] & (1u << slot)) != 0;
+}
+
+// Graba el búfer de preparación en su tramo de Flash. Se llama al terminar de
+// editar una página y antes de empezar con otra.
+static void flush_oled_staging();
+
+// Deja en el búfer la página indicada, leyéndola de la Flash, después de grabar
+// la que hubiera antes.
+static void load_oled_staging(uint8_t profile, uint8_t page) {
+    if (staging_holds(profile, page)) return;
+    flush_oled_staging();
+    memcpy(oled_staging,
+           (const uint8_t*)(XIP_BASE + FLASH_OLED_AT(oled_bank_of(profile), page)),
+           OLED_PAGE_STRIDE);
+    staging_profile = profile;
+    staging_page    = page;
+    staging_dirty   = false;
+}
 
 // Los perfiles de fábrica solo declaran teclas y etiquetas; las acciones
 // giratorias se rellenan aquí para no repetirlas en los cuatro literales.
-static void apply_default_rotaries(Profile& p) {
+static void apply_default_rotaries(Page& p) {
     p.rotary[ROT_ENC1_CW]    = { ROT_CONSUMER, 0, CONS_VOL_UP };
     p.rotary[ROT_ENC1_CCW]   = { ROT_CONSUMER, 0, CONS_VOL_DOWN };
     p.rotary[ROT_ENC1_CLICK] = { ROT_CONSUMER, 0, CONS_MUTE };
@@ -487,42 +641,92 @@ static void apply_default_rotaries(Profile& p) {
     }
 }
 
-static void apply_default_scroll(Profile& p) {
+static void apply_default_scroll(Page& p) {
     p.scroll_detents[0] = SCROLL_DETENTS_DEFAULT;
     p.scroll_detents[1] = SCROLL_DETENTS_DEFAULT;
     p.scroll_invert[0]  = 0;
     p.scroll_invert[1]  = 0;
 }
 
-// Perfil recién creado desde la app: sin atajos, con etiquetas numeradas para
-// que las pantallas no salgan en blanco.
-static void make_blank_profile(Profile& p, uint8_t number) {
+// Página en blanco: sin atajos y con etiquetas numeradas, para que las pantallas
+// no salgan vacías.
+static void make_blank_page(Page& pg) {
+    memset(&pg, 0, sizeof(pg));
+    for (int s = 0; s < 20; s++) {
+        snprintf(pg.oled_labels[s], sizeof(pg.oled_labels[s]), "T%d", (s % 10) + 1);
+    }
+    apply_default_rotaries(pg);
+    apply_default_scroll(pg);
+}
+
+// Perfil recién creado desde la app: una sola página, en blanco.
+static void make_blank_profile(Profile& p, uint8_t number, uint8_t bank) {
     memset(&p, 0, sizeof(p));
     snprintf(p.name, sizeof(p.name), "PERF%u", (unsigned)number);
-    for (int s = 0; s < 20; s++) {
-        snprintf(p.oled_labels[s], sizeof(p.oled_labels[s]), "T%d", (s % 10) + 1);
-    }
-    apply_default_rotaries(p);
-    apply_default_scroll(p);
+    p.page_count = 1;
+    p.oled_bank  = bank;
+    make_blank_page(p.pages[0]);
 }
 
 void load_defaults() {
     memset(profiles, 0, sizeof(profiles));
-    memcpy(profiles, default_profiles, sizeof(default_profiles));
     profile_count = DEFAULT_PROFILES;
     for (int i = 0; i < DEFAULT_PROFILES; i++) {
-        apply_default_rotaries(profiles[i]);
-        apply_default_scroll(profiles[i]);
+        Profile& p = profiles[i];
+        memcpy(p.name, default_profiles[i].name, sizeof(p.name));
+        p.page_count = 1;
+        p.oled_bank  = (uint8_t)i;
+        // Los literales de fábrica solo traen etiquetas y teclas, y van a la
+        // página 0; el resto de páginas no existe todavía.
+        memcpy(p.pages[0].oled_labels, default_profiles[i].oled_labels,
+               sizeof(p.pages[0].oled_labels));
+        memcpy(p.pages[0].key_mappings, default_profiles[i].key_mappings,
+               sizeof(p.pages[0].key_mappings));
+        apply_default_rotaries(p.pages[0]);
+        apply_default_scroll(p.pages[0]);
     }
-    memset(custom_oled_bank, 0, sizeof(custom_oled_bank));
+    // Los perfiles que aún no existen se quedan con su tramo de banco reservado,
+    // para que al crearlos no haya que buscar hueco.
+    for (int i = DEFAULT_PROFILES; i < MAX_PROFILES; i++) profiles[i].oled_bank = (uint8_t)i;
+
     memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
-    custom_oled_dirty = 0xFF; // hay que borrar en Flash lo que hubiera antes
+    staging_profile = staging_page = 0xFF;
+    staging_dirty = false;
     active_profile_idx = 0;
+    active_page = 0;
     current_brightness = 207;
     reposo_timeout_min = 5;
 }
 
+// Graba un tramo del banco. Es la única función que escribe iconos en la Flash.
+static void write_oled_slice(uint8_t bank, uint8_t page, const uint8_t* src) {
+    tud_task();
+    watchdog_update(); // borrar y programar 8 KB ronda los 120 ms
+
+    // La migración escribe iconos desde load_settings(), que corre ANTES de
+    // lanzar Core 1: pedirle entonces que se aparte bloquearía para siempre
+    // esperando a un core que todavía no existe.
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_erase(FLASH_OLED_AT(bank, page), FLASH_OLED_SLICE);
+    flash_range_program(FLASH_OLED_AT(bank, page), src, OLED_PAGE_STRIDE);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+}
+
+static void flush_oled_staging() {
+    if (!staging_dirty || staging_profile >= MAX_PROFILES) return;
+    write_oled_slice(oled_bank_of(staging_profile), staging_page, oled_staging);
+    staging_dirty = false;
+}
+
 void save_settings() {
+    // Primero los iconos pendientes: si se cortara la corriente a medias, es
+    // mejor tener los iconos sin la máscara que la máscara sin los iconos.
+    flush_oled_staging();
+
     Settings* s = (Settings*)settings_blob;
     memset(settings_blob, 0, sizeof(settings_blob));
 
@@ -531,59 +735,55 @@ void save_settings() {
     s->current_brightness     = current_brightness;
     s->reposo_timeout_min     = reposo_timeout_min;
     s->profile_count          = profile_count;
+    s->active_page            = active_page;
     memcpy(s->custom_oled_mask, custom_oled_mask, sizeof(custom_oled_mask));
     memcpy(s->profiles, profiles, sizeof(profiles));
 
-    // Ajustes y perfiles: dos sectores, ~120 ms con interrupciones cerradas.
+    tud_task();
+    watchdog_update();
+    const bool lock = multicore_lockout_victim_is_initialized(1);
     uint32_t ints = save_and_disable_interrupts();
-    multicore_lockout_start_blocking();
+    if (lock) multicore_lockout_start_blocking();
     flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SETTINGS_BYTES);
     flash_range_program(FLASH_TARGET_OFFSET, settings_blob, SETTINGS_BLOB_SIZE);
-    multicore_lockout_end_blocking();
+    if (lock) multicore_lockout_end_blocking();
     restore_interrupts(ints);
-
-    // Bitmaps: solo los perfiles tocados, y liberando el USB entre uno y otro
-    // para que el host no pierda el dispositivo durante el borrado.
-    for (uint8_t p = 0; p < MAX_PROFILES; p++) {
-        if (!(custom_oled_dirty & (1u << p))) continue;
-
-        tud_task();
-        watchdog_update(); // grabar los dieciséis perfiles lleva un par de segundos
-        ints = save_and_disable_interrupts();
-        multicore_lockout_start_blocking();
-        flash_range_erase(FLASH_OLED_AT(p), FLASH_OLED_SLICE);
-        flash_range_program(FLASH_OLED_AT(p), &custom_oled_bank[p * OLED_PROFILE_STRIDE], OLED_PROFILE_STRIDE);
-        multicore_lockout_end_blocking();
-        restore_interrupts(ints);
-    }
-    custom_oled_dirty = 0;
 }
 
-// Trae a RAM los bitmaps de los perfiles marcados en la máscara.
-static void load_oled_bank() {
-    memset(custom_oled_bank, 0, sizeof(custom_oled_bank));
-    for (uint8_t p = 0; p < MAX_PROFILES; p++) {
-        if (!custom_oled_mask[p]) continue;
-        memcpy(&custom_oled_bank[p * OLED_PROFILE_STRIDE],
-               (const uint8_t*)(XIP_BASE + FLASH_OLED_AT(p)),
-               OLED_PROFILE_STRIDE);
+// Migración del banco de iconos: los formatos anteriores lo tenían detrás de los
+// ajustes con un tramo por perfil, y ahora está en 1024 KB con un tramo por
+// (perfil, página). Los iconos viejos pasan a ser la página 0 de cada perfil.
+//
+// Las dos zonas son disjuntas (origen 1544-1672 KB, destino 1024-1536 KB), así
+// que se puede copiar en orden y sin solapamientos. Eso sí: hay que copiar ANTES
+// de reescribir los ajustes, porque la región de ajustes nueva sí pisa la del
+// banco viejo.
+static void migrate_oled_bank(uint32_t old_slice_at(uint8_t), uint8_t count) {
+    for (uint8_t p = 0; p < count && p < MAX_PROFILES; p++) {
+        if (!custom_oled_mask[p][0]) continue;
+        memcpy(oled_staging, (const uint8_t*)(XIP_BASE + old_slice_at(p)), OLED_PAGE_STRIDE);
+        write_oled_slice(profiles[p].oled_bank, 0, oled_staging);
     }
-    custom_oled_dirty = 0;
+    staging_profile = staging_page = 0xFF;
+    staging_dirty = false;
 }
 
-// Igual, pero leyendo de donde los dejó el firmware 3.0 y dejándolos marcados
-// para que el próximo SAVE_STATE los reescriba en su sitio nuevo. Sin esto,
-// ampliar el número de perfiles habría borrado todos los iconos dibujados.
-static void load_oled_bank_v3(uint8_t profiles_count) {
-    memset(custom_oled_bank, 0, sizeof(custom_oled_bank));
-    custom_oled_dirty = 0;
-    for (uint8_t p = 0; p < profiles_count && p < MAX_PROFILES; p++) {
-        if (!custom_oled_mask[p]) continue;
-        memcpy(&custom_oled_bank[p * OLED_PROFILE_STRIDE],
-               (const uint8_t*)(XIP_BASE + FLASH_OLED_AT_V3(p)),
-               OLED_PROFILE_STRIDE);
-        custom_oled_dirty |= (1u << p);
-    }
+static uint32_t old_slice_v5(uint8_t p) { return FLASH_OLED_AT_V5(p); }
+static uint32_t old_slice_v3(uint8_t p) { return FLASH_OLED_AT_V3(p); }
+
+// Convierte un perfil sin páginas en uno de una sola página.
+static void adopt_v5_profile(Profile& dst, const ProfileV5& src, uint8_t bank) {
+    memset(&dst, 0, sizeof(dst));
+    memcpy(dst.name, src.name, sizeof(dst.name));
+    dst.page_count = 1;
+    dst.oled_bank  = bank;
+    memcpy(dst.pages[0].oled_labels,  src.oled_labels,  sizeof(dst.pages[0].oled_labels));
+    memcpy(dst.pages[0].key_mappings, src.key_mappings, sizeof(dst.pages[0].key_mappings));
+    memcpy(dst.pages[0].rotary,       src.rotary,       sizeof(dst.pages[0].rotary));
+    dst.pages[0].scroll_detents[0] = src.scroll_detents[0];
+    dst.pages[0].scroll_detents[1] = src.scroll_detents[1];
+    dst.pages[0].scroll_invert[0]  = src.scroll_invert[0];
+    dst.pages[0].scroll_invert[1]  = src.scroll_invert[1];
 }
 
 static void sanitize_loaded() {
@@ -591,15 +791,37 @@ static void sanitize_loaded() {
     if (profile_count > MAX_PROFILES) profile_count = MAX_PROFILES;
     if (active_profile_idx >= profile_count) active_profile_idx = 0;
 
+    // Los tramos del banco tienen que ser válidos y no repetirse: dos perfiles
+    // compartiendo tramo se pisarían los iconos.
+    bool taken[MAX_PROFILES] = { false };
     for (uint8_t i = 0; i < MAX_PROFILES; i++) {
-        for (uint8_t l = 0; l < 2; l++) {
-            uint8_t d = profiles[i].scroll_detents[l];
-            if (d < SCROLL_DETENTS_MIN || d > SCROLL_DETENTS_MAX) {
-                profiles[i].scroll_detents[l] = SCROLL_DETENTS_DEFAULT;
+        uint8_t b = profiles[i].oled_bank;
+        if (b >= MAX_PROFILES || taken[b]) {
+            for (uint8_t c = 0; c < MAX_PROFILES; c++) {
+                if (!taken[c]) { b = c; break; }
             }
-            profiles[i].scroll_invert[l] = profiles[i].scroll_invert[l] ? 1 : 0;
+            profiles[i].oled_bank = b;
+        }
+        taken[b] = true;
+    }
+
+    for (uint8_t i = 0; i < MAX_PROFILES; i++) {
+        if (profiles[i].page_count < 1) profiles[i].page_count = 1;
+        if (profiles[i].page_count > MAX_PAGES) profiles[i].page_count = MAX_PAGES;
+
+        for (uint8_t pg = 0; pg < MAX_PAGES; pg++) {
+            for (uint8_t l = 0; l < 2; l++) {
+                uint8_t d = profiles[i].pages[pg].scroll_detents[l];
+                if (d < SCROLL_DETENTS_MIN || d > SCROLL_DETENTS_MAX) {
+                    profiles[i].pages[pg].scroll_detents[l] = SCROLL_DETENTS_DEFAULT;
+                }
+                profiles[i].pages[pg].scroll_invert[l] =
+                    profiles[i].pages[pg].scroll_invert[l] ? 1 : 0;
+            }
         }
     }
+
+    if (active_page >= profiles[active_profile_idx].page_count) active_page = 0;
 }
 
 void load_settings() {
@@ -611,30 +833,46 @@ void load_settings() {
         current_brightness     = s->current_brightness;
         reposo_timeout_min     = s->reposo_timeout_min;
         profile_count          = s->profile_count;
+        active_page            = s->active_page;
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
         sanitize_loaded();
-        load_oled_bank();
         return;
     }
 
-    if (magic == SETTINGS_MAGIC_V4) {
-        // Formato 3.0: hasta 8 perfiles y los bitmaps un sector más atrás. Los
-        // perfiles se copian tal cual (la estructura no ha cambiado) y los
-        // iconos se rescatan de su posición antigua.
-        const SettingsV4* s = (const SettingsV4*)(XIP_BASE + FLASH_TARGET_OFFSET);
-        active_profile_idx = s->active_profile_idx;
-        current_brightness = s->current_brightness;
-        reposo_timeout_min = s->reposo_timeout_min;
-        profile_count      = s->profile_count;
+    // --- Formatos sin páginas (3.0 y 3.1) ---
+    // Lo guardado se convierte en la página 0 de cada perfil, y sus iconos se
+    // copian del banco viejo al nuevo ANTES de reescribir los ajustes: la región
+    // de ajustes nueva se solapa con la del banco antiguo.
+    if (magic == SETTINGS_MAGIC_V5 || magic == SETTINGS_MAGIC_V4) {
+        const bool v5 = (magic == SETTINGS_MAGIC_V5);
+        const SettingsV5* s5 = (const SettingsV5*)(XIP_BASE + FLASH_TARGET_OFFSET);
+        const SettingsV4* s4 = (const SettingsV4*)(XIP_BASE + FLASH_TARGET_OFFSET);
 
+        active_profile_idx = v5 ? s5->active_profile_idx : s4->active_profile_idx;
+        current_brightness = v5 ? s5->current_brightness : s4->current_brightness;
+        reposo_timeout_min = v5 ? s5->reposo_timeout_min : s4->reposo_timeout_min;
+        profile_count      = v5 ? s5->profile_count      : s4->profile_count;
+        active_page        = 0;
+
+        const uint8_t count = v5 ? MAX_PROFILES : SETTINGS_V4_PROFILES;
         memset(profiles, 0, sizeof(profiles));
         memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
-        memcpy(profiles, s->profiles, sizeof(s->profiles));
-        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(s->custom_oled_mask));
-
+        for (uint8_t i = 0; i < MAX_PROFILES; i++) {
+            if (i < count) {
+                adopt_v5_profile(profiles[i], v5 ? s5->profiles[i] : s4->profiles[i], i);
+                custom_oled_mask[i][0] = v5 ? s5->custom_oled_mask[i] : s4->custom_oled_mask[i];
+            } else {
+                profiles[i].oled_bank = i;
+            }
+        }
         sanitize_loaded();
-        load_oled_bank_v3(SETTINGS_V4_PROFILES);
+        // El banco viejo de la 3.1 iba dos sectores detrás de los ajustes; el de
+        // la 3.0, uno.
+        migrate_oled_bank(v5 ? old_slice_v5 : old_slice_v3, count);
+        // Se graba ya en el formato nuevo: si no, la migración se repetiría en
+        // cada arranque y reescribiría los iconos una y otra vez.
+        save_settings();
         return;
     }
 
@@ -651,21 +889,25 @@ void load_settings() {
         memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(s->custom_oled_mask));
 
+        for (int i = 0; i < MAX_PROFILES; i++) profiles[i].oled_bank = (uint8_t)i;
         for (int i = 0; i < 4; i++) {
-            memcpy(profiles[i].name,         s->profiles[i].name,         sizeof(profiles[i].name));
-            memcpy(profiles[i].oled_labels,  s->profiles[i].oled_labels,  sizeof(profiles[i].oled_labels));
-            memcpy(profiles[i].key_mappings, s->profiles[i].key_mappings, sizeof(profiles[i].key_mappings));
+            Page& pg = profiles[i].pages[0];
+            profiles[i].page_count = 1;
+            memcpy(profiles[i].name, s->profiles[i].name, sizeof(profiles[i].name));
+            memcpy(pg.oled_labels,  s->profiles[i].oled_labels,  sizeof(pg.oled_labels));
+            memcpy(pg.key_mappings, s->profiles[i].key_mappings, sizeof(pg.key_mappings));
             for (uint8_t r = 0; r < ROT_LAYER_STRIDE; r++) {
-                profiles[i].rotary[r] = s->profiles[i].rotary[r];
-                profiles[i].rotary[ROT_LAYER_STRIDE + r] = s->profiles[i].rotary[r];
+                pg.rotary[r] = s->profiles[i].rotary[r];
+                pg.rotary[ROT_LAYER_STRIDE + r] = s->profiles[i].rotary[r];
             }
-            profiles[i].scroll_detents[0] = s->scroll_detents_per_rev;
-            profiles[i].scroll_detents[1] = s->scroll_detents_per_rev;
-            profiles[i].scroll_invert[0]  = s->scroll_invert;
-            profiles[i].scroll_invert[1]  = s->scroll_invert;
+            pg.scroll_detents[0] = s->scroll_detents_per_rev;
+            pg.scroll_detents[1] = s->scroll_detents_per_rev;
+            pg.scroll_invert[0]  = s->scroll_invert;
+            pg.scroll_invert[1]  = s->scroll_invert;
         }
         sanitize_loaded();
-        load_oled_bank_v3(4);
+        migrate_oled_bank(old_slice_v3, 4);
+        save_settings();
         return;
     }
 
@@ -680,21 +922,25 @@ void load_settings() {
         profile_count      = 4;
         memset(profiles, 0, sizeof(profiles));
         memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
-        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(s->custom_oled_mask));
+        for (int i = 0; i < 4; i++) custom_oled_mask[i][0] = s->custom_oled_mask[i];
 
+        for (int i = 0; i < MAX_PROFILES; i++) profiles[i].oled_bank = (uint8_t)i;
         for (int i = 0; i < 4; i++) {
-            memcpy(profiles[i].name,         s->profiles[i].name,         sizeof(profiles[i].name));
-            memcpy(profiles[i].oled_labels,  s->profiles[i].oled_labels,  sizeof(profiles[i].oled_labels));
-            memcpy(profiles[i].key_mappings, s->profiles[i].key_mappings, sizeof(profiles[i].key_mappings));
-            apply_default_rotaries(profiles[i]);
-            apply_default_scroll(profiles[i]);
-            profiles[i].scroll_detents[0] = s->scroll_detents_per_rev;
-            profiles[i].scroll_detents[1] = s->scroll_detents_per_rev;
-            profiles[i].scroll_invert[0]  = s->scroll_invert;
-            profiles[i].scroll_invert[1]  = s->scroll_invert;
+            Page& pg = profiles[i].pages[0];
+            profiles[i].page_count = 1;
+            memcpy(profiles[i].name, s->profiles[i].name, sizeof(profiles[i].name));
+            memcpy(pg.oled_labels,  s->profiles[i].oled_labels,  sizeof(pg.oled_labels));
+            memcpy(pg.key_mappings, s->profiles[i].key_mappings, sizeof(pg.key_mappings));
+            apply_default_rotaries(pg);
+            apply_default_scroll(pg);
+            pg.scroll_detents[0] = s->scroll_detents_per_rev;
+            pg.scroll_detents[1] = s->scroll_detents_per_rev;
+            pg.scroll_invert[0]  = s->scroll_invert;
+            pg.scroll_invert[1]  = s->scroll_invert;
         }
         sanitize_loaded();
-        load_oled_bank_v3(4);
+        migrate_oled_bank(old_slice_v3, 4);
+        save_settings();
         return;
     }
 
@@ -706,8 +952,7 @@ void load_settings() {
         current_brightness = s->current_brightness;
         reposo_timeout_min = s->reposo_timeout_min;
         sanitize_loaded();
-        custom_oled_dirty = 0; // no había bitmaps guardados que borrar
-        return;
+        return; // no había bitmaps guardados que rescatar
     }
 
     load_defaults();
@@ -716,20 +961,26 @@ void load_settings() {
 // ==========================================
 // GESTIÓN DE PERFILES (CREAR / DUPLICAR / BORRAR)
 // ==========================================
-// Los bitmaps viven en un banco paralelo indexado por perfil, así que cualquier
-// movimiento de la lista tiene que arrastrar también su tramo y su máscara: si
-// no, los iconos se quedarían pegados al hueco antiguo.
+// Cada perfil se queda con su tramo del banco de iconos (`oled_bank`) mientras
+// viva, así que reordenar la lista solo mueve metadatos: los iconos se quedan
+// donde están y se siguen encontrando por el tramo, no por el índice. Antes, con
+// el banco indexado por posición, borrar un perfil obligaba a arrastrar el tramo
+// de todos los siguientes; ahora eso serían medio megabyte de Flash por nada.
 
-static void oled_copy_slice(uint8_t dst, uint8_t src) {
-    memcpy(&custom_oled_bank[dst * OLED_PROFILE_STRIDE],
-           &custom_oled_bank[src * OLED_PROFILE_STRIDE],
-           OLED_PROFILE_STRIDE);
-    custom_oled_mask[dst] = custom_oled_mask[src];
-}
-
-static void oled_clear_slice(uint8_t idx) {
-    memset(&custom_oled_bank[idx * OLED_PROFILE_STRIDE], 0, OLED_PROFILE_STRIDE);
-    custom_oled_mask[idx] = 0;
+// Copia los iconos de un perfil a otro, página a página. Es lo único que sí
+// obliga a escribir en la Flash, y solo pasa al duplicar un perfil a mano.
+static void oled_copy_profile(uint8_t dst, uint8_t src) {
+    flush_oled_staging();
+    for (uint8_t pg = 0; pg < MAX_PAGES; pg++) {
+        custom_oled_mask[dst][pg] = custom_oled_mask[src][pg];
+        if (!custom_oled_mask[src][pg]) continue;
+        memcpy(oled_staging,
+               (const uint8_t*)(XIP_BASE + FLASH_OLED_AT(profiles[src].oled_bank, pg)),
+               OLED_PAGE_STRIDE);
+        write_oled_slice(profiles[dst].oled_bank, pg, oled_staging);
+    }
+    staging_profile = staging_page = 0xFF;
+    staging_dirty = false;
 }
 
 // Devuelve el índice del perfil nuevo, o -1 si ya no caben más.
@@ -737,36 +988,121 @@ static int profile_add(int copy_from) {
     if (profile_count >= MAX_PROFILES) return -1;
 
     uint8_t idx = profile_count;
+    // El tramo de banco que ya tenía reservado este hueco se conserva: los
+    // huecos libres arrastran su tramo desde load_defaults / sanitize_loaded.
+    uint8_t bank = profiles[idx].oled_bank;
+
     if (copy_from >= 0 && copy_from < (int)profile_count) {
         profiles[idx] = profiles[copy_from];
-        oled_copy_slice(idx, (uint8_t)copy_from);
+        profiles[idx].oled_bank = bank;   // el suyo, no el del original
+        profile_count = idx + 1;
+        oled_copy_profile(idx, (uint8_t)copy_from);
     } else {
-        make_blank_profile(profiles[idx], (uint8_t)(idx + 1));
-        oled_clear_slice(idx);
+        make_blank_profile(profiles[idx], (uint8_t)(idx + 1), bank);
+        for (uint8_t pg = 0; pg < MAX_PAGES; pg++) custom_oled_mask[idx][pg] = 0;
+        profile_count = idx + 1;
     }
-
-    profile_count = idx + 1;
-    custom_oled_dirty |= (1u << idx);
     return idx;
 }
 
 static bool profile_remove(uint8_t idx) {
     if (profile_count <= 1 || idx >= profile_count) return false;
 
-    for (uint8_t i = idx; i + 1 < profile_count; i++) {
-        profiles[i] = profiles[i + 1];
-        oled_copy_slice(i, (uint8_t)(i + 1));
-        custom_oled_dirty |= (1u << i);
+    // Si el búfer de edición apuntaba al perfil que se va, se descarta: grabarlo
+    // después escribiría en un tramo que ya no le pertenece a nadie.
+    if (staging_profile == idx) {
+        staging_profile = staging_page = 0xFF;
+        staging_dirty = false;
     }
 
+    // Los metadatos se desplazan arrastrando cada uno su tramo y su máscara.
+    Profile  gone      = profiles[idx];
+    uint32_t gone_mask[MAX_PAGES];
+    memcpy(gone_mask, custom_oled_mask[idx], sizeof(gone_mask));
+
+    for (uint8_t i = idx; i + 1 < profile_count; i++) {
+        profiles[i] = profiles[i + 1];
+        memcpy(custom_oled_mask[i], custom_oled_mask[i + 1], sizeof(gone_mask));
+    }
+
+    // El hueco que queda libre hereda el tramo del perfil borrado, para que
+    // ningún tramo se quede huérfano y todos sigan siendo distintos.
     uint8_t last = (uint8_t)(profile_count - 1);
     memset(&profiles[last], 0, sizeof(profiles[last]));
-    oled_clear_slice(last);
-    custom_oled_dirty |= (1u << last);
+    profiles[last].oled_bank = gone.oled_bank;
+    memset(custom_oled_mask[last], 0, sizeof(gone_mask));
     profile_count = last;
+    (void)gone_mask;
 
     if (active_profile_idx >= profile_count) active_profile_idx = (uint8_t)(profile_count - 1);
     else if (active_profile_idx > idx)       active_profile_idx--;
+    if (active_page >= profiles[active_profile_idx].page_count) active_page = 0;
+    return true;
+}
+
+// ==========================================
+// PÁGINAS: CAMBIO Y GESTIÓN
+// ==========================================
+static void set_active_page(uint8_t pg) {
+    uint8_t count = profiles[active_profile_idx].page_count;
+    if (count < 1) count = 1;
+    if (pg >= count) pg = 0;
+    if (pg == active_page) return;
+    active_page = pg;
+    system_refresh_req = true;
+}
+
+static void next_page() {
+    uint8_t count = profiles[active_profile_idx].page_count;
+    if (count <= 1) return;
+    set_active_page((uint8_t)((active_page + 1) % count));
+}
+
+// Añade una página al perfil, copiando la actual para no partir de un lienzo en
+// blanco. Devuelve false si ya está en el tope.
+static bool page_add(uint8_t profile, bool copy_current) {
+    if (profile >= MAX_PROFILES) return false;
+    Profile& p = profiles[profile];
+    if (p.page_count >= MAX_PAGES) return false;
+    uint8_t idx = p.page_count;
+    if (copy_current && active_page < idx) p.pages[idx] = p.pages[active_page];
+    else                                   make_blank_page(p.pages[idx]);
+    custom_oled_mask[profile][idx] = 0;
+    p.page_count = (uint8_t)(idx + 1);
+    return true;
+}
+
+static bool page_remove(uint8_t profile, uint8_t pg) {
+    if (profile >= MAX_PROFILES) return false;
+    Profile& p = profiles[profile];
+    if (p.page_count <= 1 || pg >= p.page_count) return false;
+
+    flush_oled_staging();
+    if (staging_profile == profile) {
+        staging_profile = staging_page = 0xFF;
+        staging_dirty = false;
+    }
+    // Aquí sí hay que mover los iconos: el número de página ES el índice de su
+    // tramo, así que desplazar las páginas sin desplazarlos los descuadraría.
+    // En orden ascendente nunca se lee un tramo ya sobrescrito.
+    for (uint8_t i = pg; i + 1 < p.page_count; i++) {
+        p.pages[i] = p.pages[i + 1];
+        custom_oled_mask[profile][i] = custom_oled_mask[profile][i + 1];
+        if (custom_oled_mask[profile][i]) {
+            memcpy(oled_staging,
+                   (const uint8_t*)(XIP_BASE + FLASH_OLED_AT(p.oled_bank, i + 1)),
+                   OLED_PAGE_STRIDE);
+            write_oled_slice(p.oled_bank, i, oled_staging);
+        }
+    }
+    staging_profile = staging_page = 0xFF;
+    staging_dirty = false;
+    uint8_t last = (uint8_t)(p.page_count - 1);
+    memset(&p.pages[last], 0, sizeof(p.pages[last]));
+    custom_oled_mask[profile][last] = 0;
+    p.page_count = last;
+
+    if (profile == active_profile_idx && active_page >= p.page_count) active_page = 0;
     return true;
 }
 
@@ -840,8 +1176,8 @@ uint16_t get_consumer_key_from_index(uint8_t idx) {
 // micro-movimiento.
 static int32_t scroll_frac    = 0;  // resto de la conversión cuentas -> unidades
 static int32_t scroll_detent_frac = 0; // resto al degradar a detents clásicos
-static int32_t pending_wheel  = 0;  // unidades verticales pendientes
-static int32_t pending_pan    = 0;  // detents horizontales pendientes
+
+// La cola de salida y el envío del informe viven en wheel_out.h.
 
 // Ctrl pegajoso del zoom. Antes se pulsaba y se soltaba en cada detent, con la
 // rueda enviada en medio; a poco que se girase rápido, el host recibía la rueda
@@ -849,31 +1185,6 @@ static int32_t pending_pan    = 0;  // detents horizontales pendientes
 // girando y se suelta sola un rato después del último paso.
 #define ZOOM_HOLD_MS 250
 static uint32_t zoom_hold_until = 0;
-static bool     zoom_pending    = false;
-
-// Vacía las colas de scroll sin bloquear: si el endpoint HID está ocupado, lo
-// pendiente se conserva para el siguiente ciclo en vez de perderse.
-void wheel_flush() {
-    if ((pending_wheel == 0 && pending_pan == 0) || !tud_hid_ready()) return;
-
-    // Con zoom, la rueda no sale hasta que el Ctrl ha llegado al host de verdad.
-    if (zoom_pending && !(HidOut::sent_modifiers() & KEYBOARD_MODIFIER_LEFTCTRL)) return;
-
-    int32_t v = pending_wheel;
-    if (v >  32767) v =  32767;
-    if (v < -32767) v = -32767;
-
-    int32_t h = pending_pan;
-    if (h >  127) h =  127;
-    if (h < -127) h = -127;
-
-    orby_mouse_report_t rpt = { 0, 0, 0, (int16_t)v, (int8_t)h };
-    if (tud_hid_report(REPORT_ID_MOUSE, &rpt, sizeof(rpt))) {
-        pending_wheel -= v;
-        pending_pan   -= h;
-        if (pending_wheel == 0) zoom_pending = false;
-    }
-}
 
 // ==========================================
 // EJECUCIÓN DE LAS ACCIONES GIRATORIAS
@@ -890,7 +1201,7 @@ static void emit_scroll(uint8_t type, int32_t detents) {
     if (detents == 0) return;
 
     if (type == ROT_SCROLL_H) {
-        pending_pan += detents;
+        WheelOut::add_pan(detents * (g_hires_pan ? HID_HIRES_MULTIPLIER : 1));
         return;
     }
 
@@ -899,13 +1210,13 @@ static void emit_scroll(uint8_t type, int32_t detents) {
         // navegadores y editores como acercar/alejar. Lo suelta el bucle
         // principal cuando pasa ZOOM_HOLD_MS sin más pasos.
         zoom_hold_until = to_ms_since_boot(get_absolute_time()) + ZOOM_HOLD_MS;
-        zoom_pending = true;
+        WheelOut::zoom_arm();
         HidOut::set_sticky_mod(KEYBOARD_MODIFIER_LEFTCTRL);
-        pending_wheel += detents * (g_hires_multiplier ? HID_HIRES_MULTIPLIER : 1);
+        WheelOut::add_wheel(detents * (g_hires_multiplier ? HID_HIRES_MULTIPLIER : 1));
         return;
     }
 
-    pending_wheel += detents * (g_hires_multiplier ? HID_HIRES_MULTIPLIER : 1);
+    WheelOut::add_wheel(detents * (g_hires_multiplier ? HID_HIRES_MULTIPLIER : 1));
 }
 
 // Una sola repetición de una acción discreta (tecla o multimedia).
@@ -938,7 +1249,7 @@ void apply_rotary(const RotaryAction& cw, const RotaryAction& ccw, int32_t steps
 
 void wheel_accumulate(int32_t delta_counts) {
     const bool super = super_active;
-    const Profile& p = profiles[active_profile_idx];
+    const Page& p = cur_page();
     const RotaryAction& cw  = p.rotary[rot_slot(ROT_WHEEL_CW,  super)];
     const RotaryAction& ccw = p.rotary[rot_slot(ROT_WHEEL_CCW, super)];
 
@@ -950,10 +1261,14 @@ void wheel_accumulate(int32_t delta_counts) {
     scroll_frac  -= units * AS5600_COUNTS_PER_REV;
     if (units == 0) return;
 
-    // Solo el desplazamiento vertical aprovecha la alta resolución; el resto de
+    // Los dos desplazamientos aprovechan la alta resolución; el resto de
     // acciones son discretas y necesitan detents completos.
     if (cw.type == ROT_SCROLL_V && g_hires_multiplier != 0) {
-        pending_wheel += units;
+        WheelOut::add_wheel(units);
+        return;
+    }
+    if (cw.type == ROT_SCROLL_H && g_hires_pan != 0) {
+        WheelOut::add_pan(units);
         return;
     }
 
@@ -1004,10 +1319,26 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
     if (current_mode == MODE_NORMAL) {
         uint8_t slot = (uint8_t)((screen_num - 1) + (super_active ? 10 : 0));
 
-        if (slot < OLED_SLOTS && oled_slot_used(active_profile_idx, slot)) {
+        // Una tecla configurada como estado de páginas enseña en qué página
+        // estás, así que su pantalla no la manda el icono sino el estado.
+        uint8_t ki = key_index_for_screen(screen_num);
+        const KeyAction& act = cur_page().key_mappings[ki + (super_active ? 12 : 0)];
+        if (act.modifier == KEYACT_PAGE_STATE) {
+            char txt[8];
+            snprintf(txt, sizeof(txt), "P%u/%u",
+                     (unsigned)(active_page + 1),
+                     (unsigned)profiles[active_profile_idx].page_count);
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer(txt, fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+            return;
+        }
+
+        if (slot < OLED_SLOTS && oled_slot_used(active_profile_idx, active_page, slot)) {
             // Icono personalizado subido desde la app con OLED_CHUNK
-            oleds.paint_screen(screen_num, oled_slot_ptr(active_profile_idx, slot));
-        } else if (active_profile_idx == 0 && !super_active) {
+            oleds.paint_screen(screen_num, oled_slot_ptr(active_profile_idx, active_page, slot));
+        } else if (active_profile_idx == 0 && active_page == 0 && !super_active) {
             // Perfil por defecto (OFIM) -> Carga mapas de bits pre-horneados
             const uint8_t* bmp = OledBitmaps::get_bitmap_by_index(screen_num - 1);
             oleds.paint_screen(screen_num, bmp);
@@ -1015,7 +1346,7 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
             // Perfiles de fábrica de texto personalizado con contorno premium (o OFIM en SUPER)
             draw_premium_frame(fb);
             int label_idx = (screen_num - 1) + (super_active ? 10 : 0);
-            const char* label = profiles[active_profile_idx].oled_labels[label_idx];
+            const char* label = cur_page().oled_labels[label_idx];
             OledText::render_string_to_framebuffer(label, fb);
             draw_premium_frame(fb); // Volver a aplicar el marco tras renderizar el texto
             oleds.paint_screen(screen_num, fb);
@@ -1111,6 +1442,27 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
             oleds.paint_screen(screen_num, fb);
         }
     }
+    else if (current_mode == MODE_MENU_PAGES) {
+        // Gestor de páginas: una pantalla por página con su número. La página en
+        // la que estás se marca invirtiendo la pantalla (lo hace el bucle de
+        // Core 1, aquí solo va el número).
+        uint8_t count = profiles[active_profile_idx].page_count;
+        if (screen_num <= count) {
+            char txt[8];
+            snprintf(txt, sizeof(txt), "%u", (unsigned)screen_num);
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer(txt, fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+        } else if (screen_num == 10) {
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer("BACK", fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+        } else {
+            oleds.paint_screen(screen_num, fb);
+        }
+    }
 }
 
 void core1_entry() {
@@ -1174,6 +1526,13 @@ void core1_entry() {
                 oleds.invert_screen(1, false);
                 oleds.invert_screen(2, false);
                 oleds.invert_screen(5, true);
+            } else if (current_mode == MODE_MENU_PAGES) {
+                // La página en la que estás, en negativo: así se ve de un golpe
+                // cuál es sin tener que leer los números.
+                uint8_t count = profiles[active_profile_idx].page_count;
+                for (int i = 1; i <= count; i++) {
+                    oleds.invert_screen(i, (i - 1) == (int)active_page);
+                }
             }
             current_inversions = 0; // Reiniciar estado local tras refresco
         } else if (current_mode == MODE_NORMAL) {
@@ -1254,43 +1613,78 @@ static const char* next_field(const char* p, int* out) {
 // Refleja la rueda tal y como está funcionando ahora mismo: perfil activo y
 // capa que se esté pulsando.
 static void send_scroll_state() {
-    cdc_printf("SCROLL:OK:%d:%d:%d\n",
+    // El cuarto campo (alta resolución del paneo horizontal) va al final para no
+    // romper a quien solo lea los tres primeros.
+    cdc_printf("SCROLL:OK:%d:%d:%d:%d\n",
                (int)cur_scroll_detents(),
                (int)(cur_scroll_invert() ? 1 : 0),
-               (int)(g_hires_multiplier != 0 ? 1 : 0));
+               (int)(g_hires_multiplier != 0 ? 1 : 0),
+               (int)(g_hires_pan != 0 ? 1 : 0));
 }
 
 static void send_profile_count() {
     cdc_printf("PROFILES:OK:%d:%d\n", (int)profile_count, (int)active_profile_idx);
 }
 
-static void dump_profile(uint8_t idx) {
-    const Profile& p = profiles[idx];
-    cdc_printf("PROF:%d:NAME:%.*s\n", idx, (int)sizeof(p.name), p.name);
+// Página sobre la que actúan los comandos que no la especifican. La app antigua
+// no sabe de páginas, así que edita la que está puesta si habla del perfil
+// activo, y la primera de cualquier otro: es lo que ella cree que está editando.
+static inline uint8_t cmd_page(uint8_t profile) {
+    uint8_t pg = (profile == active_profile_idx) ? (uint8_t)active_page : 0;
+    if (pg >= profiles[profile].page_count) pg = 0;
+    return pg;
+}
+
+static inline Page& page_of(uint8_t profile, uint8_t pg) {
+    return profiles[profile].pages[pg];
+}
+
+// Volcado de una página. Las líneas antiguas (PROF:<n>:LBL:...) se mantienen tal
+// cual para la página que la app cree estar editando, y las nuevas llevan el
+// número de página delante (PROF:<n>:P<pg>:LBL:...). Así una app que no conozca
+// las páginas sigue funcionando: ignora las líneas que no entiende.
+static void dump_profile_page(uint8_t idx, uint8_t pg, bool legacy) {
+    const Page& p = page_of(idx, pg);
+    char head[24];
+    if (legacy) snprintf(head, sizeof(head), "PROF:%d", idx);
+    else        snprintf(head, sizeof(head), "PROF:%d:P%d", idx, pg);
+
     for (int s = 0; s < 20; s++) {
-        cdc_printf("PROF:%d:LBL:%d:%.*s\n", idx, s, (int)sizeof(p.oled_labels[s]), p.oled_labels[s]);
+        cdc_printf("%s:LBL:%d:%.*s\n", head, s, (int)sizeof(p.oled_labels[s]), p.oled_labels[s]);
     }
     for (int s = 0; s < 24; s++) {
-        cdc_printf("PROF:%d:KEY:%d:%d:%d\n", idx, s,
+        cdc_printf("%s:KEY:%d:%d:%d\n", head, s,
                    p.key_mappings[s].modifier, p.key_mappings[s].keycode);
     }
     for (int s = 0; s < ROT_SLOT_COUNT; s++) {
-        cdc_printf("PROF:%d:ROT:%d:%d:%d:%d\n", idx, s,
+        cdc_printf("%s:ROT:%d:%d:%d:%d\n", head, s,
                    p.rotary[s].type, p.rotary[s].modifier, p.rotary[s].keycode);
     }
     for (int l = 0; l < 2; l++) {
-        cdc_printf("PROF:%d:SCR:%d:%d:%d\n", idx, l,
-                   p.scroll_detents[l], p.scroll_invert[l]);
+        cdc_printf("%s:SCR:%d:%d:%d\n", head, l, p.scroll_detents[l], p.scroll_invert[l]);
     }
-    cdc_printf("PROF:%d:OLEDMASK:%lu\n", idx, (unsigned long)custom_oled_mask[idx]);
+    cdc_printf("%s:OLEDMASK:%lu\n", head, (unsigned long)custom_oled_mask[idx][pg]);
+}
+
+static void dump_profile(uint8_t idx) {
+    const Profile& p = profiles[idx];
+    cdc_printf("PROF:%d:NAME:%.*s\n", idx, (int)sizeof(p.name), p.name);
+    cdc_printf("PROF:%d:PAGES:%d:%d\n", idx, p.page_count, MAX_PAGES);
+
+    // Primero la página «sin numerar», que es la que lee la app antigua.
+    dump_profile_page(idx, cmd_page(idx), true);
+    for (uint8_t pg = 0; pg < p.page_count; pg++) dump_profile_page(idx, pg, false);
+
     cdc_printf("PROF:%d:END\n", idx);
 }
 
 void process_command(const char* cmd) {
     // ---------- Descubrimiento y estado ----------
     if (strncmp(cmd, "ACK", 3) == 0) {
-        cdc_printf("ORBY_V4:FW=3.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MODE=%s\n",
-                   (int)profile_count, MAX_PROFILES,
+        // MAXPAGES lo añade el firmware 4.0; una app anterior lo ignora y una
+        // app nueva puede usarlo para saber si este teclado tiene páginas.
+        cdc_printf("ORBY_V4:FW=4.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MODE=%s\n",
+                   (int)profile_count, MAX_PROFILES, MAX_PAGES,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
     }
@@ -1302,6 +1696,8 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:TIMEOUT:%d\n", (int)reposo_timeout_min);
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
+        cdc_printf("STATE:PAGE:%d:%d:%d\n", (int)active_page,
+                   (int)profiles[active_profile_idx].page_count, MAX_PAGES);
         send_scroll_state();
         cdc_printf("STATE:END\n");
         return;
@@ -1312,6 +1708,7 @@ void process_command(const char* cmd) {
         int profile_idx = atoi(cmd + 12);
         if (profile_idx >= 0 && profile_idx < (int)profile_count) {
             active_profile_idx = profile_idx;
+            active_page = 0; // el perfil nuevo puede tener menos páginas
             push_system_refresh();
             cdc_printf("PROFILE:OK:%d\n", (int)active_profile_idx);
         } else {
@@ -1347,8 +1744,7 @@ void process_command(const char* cmd) {
     // La sensibilidad es un ajuste del perfil y de la capa, así que las formas
     // cortas actúan sobre lo que está activo en ese momento.
     if (strncmp(cmd, "SET_SCROLL_INV:", 15) == 0) {
-        profiles[active_profile_idx].scroll_invert[super_active ? 1 : 0] =
-            (atoi(cmd + 15) != 0) ? 1 : 0;
+        cur_page().scroll_invert[super_active ? 1 : 0] = (atoi(cmd + 15) != 0) ? 1 : 0;
         send_scroll_state();
         return;
     }
@@ -1356,7 +1752,7 @@ void process_command(const char* cmd) {
     if (strncmp(cmd, "SET_SCROLL:", 11) == 0) {
         int val = atoi(cmd + 11);
         if (val >= SCROLL_DETENTS_MIN && val <= SCROLL_DETENTS_MAX) {
-            profiles[active_profile_idx].scroll_detents[super_active ? 1 : 0] = (uint8_t)val;
+            cur_page().scroll_detents[super_active ? 1 : 0] = (uint8_t)val;
             send_scroll_state();
         } else {
             cdc_printf("ERR:SCROLL_RANGE:%d:%d\n", SCROLL_DETENTS_MIN, SCROLL_DETENTS_MAX);
@@ -1366,6 +1762,52 @@ void process_command(const char* cmd) {
 
     if (strcmp(cmd, "GET_SCROLL") == 0) {
         send_scroll_state();
+        return;
+    }
+
+    // ---------- Páginas ----------
+    // Los comandos de edición que no llevan número de página actúan sobre la que
+    // esté puesta (ver cmd_page), así que para editar otra basta con cambiarla
+    // antes con SET_PAGE.
+    if (strncmp(cmd, "SET_PAGE:", 9) == 0) {
+        int pg = atoi(cmd + 9);
+        if (pg < 0 || pg >= (int)profiles[active_profile_idx].page_count) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        set_active_page((uint8_t)pg);
+        cdc_printf("PAGE:OK:%d:%d\n", (int)active_page,
+                   (int)profiles[active_profile_idx].page_count);
+        return;
+    }
+
+    // ADD_PAGE:<perfil>[:<copiar 0-1>]  — por defecto copia la página actual
+    if (strncmp(cmd, "ADD_PAGE:", 9) == 0) {
+        int idx = 0, copy = 1;
+        const char* p = next_field(cmd + 9, &idx);
+        if (p) next_field(p, &copy);
+        if (idx < 0 || idx >= (int)profile_count) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        if (!page_add((uint8_t)idx, copy != 0)) {
+            cdc_printf("ERR:PAGE_LIMIT:%d\n", MAX_PAGES);
+            return;
+        }
+        if ((int)active_profile_idx == idx) push_system_refresh();
+        cdc_printf("PAGE:ADDED:%d:%d\n", idx, (int)profiles[idx].page_count);
+        return;
+    }
+
+    // DEL_PAGE:<perfil>:<página>
+    if (strncmp(cmd, "DEL_PAGE:", 9) == 0) {
+        int idx = 0, pg = 0;
+        const char* p = next_field(cmd + 9, &idx);
+        p = next_field(p, &pg);
+        if (!p || idx < 0 || idx >= (int)profile_count) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        if (!page_remove((uint8_t)idx, (uint8_t)pg)) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        if ((int)active_profile_idx == idx) push_system_refresh();
+        cdc_printf("PAGE:DELETED:%d:%d:%d\n", idx, pg, (int)profiles[idx].page_count);
         return;
     }
 
@@ -1381,8 +1823,8 @@ void process_command(const char* cmd) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
         }
-        profiles[idx].scroll_detents[layer] = (uint8_t)det;
-        profiles[idx].scroll_invert[layer]  = inv ? 1 : 0;
+        page_of((uint8_t)idx, cmd_page((uint8_t)idx)).scroll_detents[layer] = (uint8_t)det;
+        page_of((uint8_t)idx, cmd_page((uint8_t)idx)).scroll_invert[layer]  = inv ? 1 : 0;
         cdc_printf("PSCROLL:OK:%d:%d:%d:%d\n", idx, layer, det, inv ? 1 : 0);
         return;
     }
@@ -1450,8 +1892,9 @@ void process_command(const char* cmd) {
         const char* p = next_field(cmd + 10, &idx);
         p = next_field(p, &slot);
         if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
-        memset(profiles[idx].oled_labels[slot], 0, sizeof(profiles[idx].oled_labels[slot]));
-        strncpy(profiles[idx].oled_labels[slot], p, sizeof(profiles[idx].oled_labels[slot]) - 1);
+        Page& pg = page_of((uint8_t)idx, cmd_page((uint8_t)idx));
+        memset(pg.oled_labels[slot], 0, sizeof(pg.oled_labels[slot]));
+        strncpy(pg.oled_labels[slot], p, sizeof(pg.oled_labels[slot]) - 1);
         if ((int)active_profile_idx == idx) push_system_refresh();
         cdc_printf("LABEL:OK:%d:%d\n", idx, slot);
         return;
@@ -1470,8 +1913,9 @@ void process_command(const char* cmd) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
         }
-        profiles[idx].key_mappings[slot].modifier = (uint8_t)mod;
-        profiles[idx].key_mappings[slot].keycode  = (uint8_t)key;
+        Page& pg = page_of((uint8_t)idx, cmd_page((uint8_t)idx));
+        pg.key_mappings[slot].modifier = (uint8_t)mod;
+        pg.key_mappings[slot].keycode  = (uint8_t)key;
         cdc_printf("KEYMAP:OK:%d:%d\n", idx, slot);
         return;
     }
@@ -1491,7 +1935,7 @@ void process_command(const char* cmd) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
         }
-        profiles[idx].rotary[slot] = { (uint8_t)type, (uint8_t)mod, (uint8_t)key };
+        page_of((uint8_t)idx, cmd_page((uint8_t)idx)).rotary[slot] = { (uint8_t)type, (uint8_t)mod, (uint8_t)key };
         cdc_printf("ROTARY:OK:%d:%d\n", idx, slot);
         return;
     }
@@ -1510,7 +1954,11 @@ void process_command(const char* cmd) {
             return;
         }
 
-        uint8_t* dst = oled_slot_ptr((uint8_t)idx, (uint8_t)slot);
+        // Los iconos viven en la Flash, así que el trozo entra en el búfer de
+        // preparación de esa página. Se graba al guardar o al cambiar de página.
+        uint8_t page = cmd_page((uint8_t)idx);
+        load_oled_staging((uint8_t)idx, page);
+        uint8_t* dst = &oled_staging[slot * OLED_FB_SIZE];
         int written = 0;
         while (p[0] && p[1] && (offset + written) < OLED_FB_SIZE) {
             int hi = hex_nibble(p[0]);
@@ -1521,8 +1969,8 @@ void process_command(const char* cmd) {
             p += 2;
         }
 
-        custom_oled_mask[idx] |= (1u << slot);
-        custom_oled_dirty |= (1u << idx);
+        custom_oled_mask[idx][page] |= (1u << slot);
+        staging_dirty = true;
         if ((int)active_profile_idx == idx) push_system_refresh();
         cdc_printf("OLED:OK:%d:%d:%d:%d\n", idx, slot, offset, written);
         return;
@@ -1537,13 +1985,14 @@ void process_command(const char* cmd) {
         p = next_field(p, &slot);
         if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
-        if (!oled_slot_used((uint8_t)idx, (uint8_t)slot)) {
+        uint8_t page = cmd_page((uint8_t)idx);
+        if (!oled_slot_used((uint8_t)idx, page, (uint8_t)slot)) {
             cdc_printf("OLEDDATA:%d:%d:NONE\n", idx, slot);
             return;
         }
 
         static const char HEXCHARS[] = "0123456789abcdef";
-        const uint8_t* src = oled_slot_ptr((uint8_t)idx, (uint8_t)slot);
+        const uint8_t* src = oled_slot_ptr((uint8_t)idx, page, (uint8_t)slot);
         char hex[181];
 
         for (int off = 0; off < OLED_FB_SIZE; off += 90) {
@@ -1566,17 +2015,19 @@ void process_command(const char* cmd) {
         p = next_field(p, &slot);
         if (idx < 0 || idx >= (int)profile_count) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
+        uint8_t page = cmd_page((uint8_t)idx);
+        load_oled_staging((uint8_t)idx, page);
         if (slot == 255) {
-            custom_oled_mask[idx] = 0;
-            memset(oled_slot_ptr((uint8_t)idx, 0), 0, OLED_SLOTS * OLED_FB_SIZE);
+            custom_oled_mask[idx][page] = 0;
+            memset(oled_staging, 0, OLED_SLOTS * OLED_FB_SIZE);
         } else if (slot >= 0 && slot <= 19) {
-            custom_oled_mask[idx] &= ~(1u << slot);
-            memset(oled_slot_ptr((uint8_t)idx, (uint8_t)slot), 0, OLED_FB_SIZE);
+            custom_oled_mask[idx][page] &= ~(1u << slot);
+            memset(&oled_staging[slot * OLED_FB_SIZE], 0, OLED_FB_SIZE);
         } else {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
         }
-        custom_oled_dirty |= (1u << idx);
+        staging_dirty = true;
         if ((int)active_profile_idx == idx) push_system_refresh();
         cdc_printf("OLED:CLEARED:%d:%d\n", idx, slot);
         return;
@@ -1775,7 +2226,7 @@ int main() {
                 tud_cdc_n_write_flush(0);
 
                 // Acción configurada en el perfil activo y la capa en curso
-                const Profile& p = profiles[active_profile_idx];
+                const Page& p = cur_page();
                 apply_rotary(p.rotary[rot_slot(ROT_ENC1_CW,  super_active)],
                              p.rotary[rot_slot(ROT_ENC1_CCW, super_active)], delta_izq);
             } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_PERF || current_mode == MODE_MENU_REPO) {
@@ -1809,7 +2260,7 @@ int main() {
                 tud_cdc_n_write_flush(0);
 
                 // Acción configurada en el perfil activo y la capa en curso
-                const Profile& p = profiles[active_profile_idx];
+                const Page& p = cur_page();
                 apply_rotary(p.rotary[rot_slot(ROT_ENC2_CW,  super_active)],
                              p.rotary[rot_slot(ROT_ENC2_CCW, super_active)], delta_der);
             } else if (current_mode == MODE_MENU_BRIL) {
@@ -1839,8 +2290,7 @@ int main() {
 
                 if (stable_enc1_sw_state) {
                     if (current_mode == MODE_NORMAL) {
-                        emit_discrete(profiles[active_profile_idx]
-                                          .rotary[rot_slot(ROT_ENC1_CLICK, super_active)]);
+                        emit_discrete(cur_page().rotary[rot_slot(ROT_ENC1_CLICK, super_active)]);
                     } else if (current_mode == MODE_MENU_MAIN) {
                         // Confirmar opción
                         if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
@@ -1860,6 +2310,7 @@ int main() {
                     } else if (current_mode == MODE_MENU_PERF) {
                     if (selected_menu_idx < profile_count) {
                         active_profile_idx = selected_menu_idx;
+                        active_page = 0;
                         // save_settings() eliminado
                         current_mode = MODE_NORMAL;
                         char tel2[24];
@@ -1911,8 +2362,7 @@ int main() {
                 tud_cdc_n_write_flush(0);
 
                 if (stable_enc2_sw_state && current_mode == MODE_NORMAL) {
-                    emit_discrete(profiles[active_profile_idx]
-                                      .rotary[rot_slot(ROT_ENC2_CLICK, super_active)]);
+                    emit_discrete(cur_page().rotary[rot_slot(ROT_ENC2_CLICK, super_active)]);
                 }
             }
         } else {
@@ -1971,13 +2421,16 @@ int main() {
         }
         // La rueda tiene preferencia sobre el endpoint: es lo que más se nota
         // si se retrasa. Después va lo que haya pendiente de teclado.
-        wheel_flush();
+        WheelOut::flush();
         HidOut::pump();
 
-        // Soltar el Ctrl del zoom cuando se deja de girar.
+        // Soltar el Ctrl del zoom cuando se deja de girar. Hay que abrir también
+        // la compuerta: si quedaran unidades a medias, se quedaría esperando un
+        // Ctrl que ya no va a volver y la rueda enmudecería para siempre.
         if (zoom_hold_until != 0 && (int32_t)(now - zoom_hold_until) >= 0) {
             zoom_hold_until = 0;
             HidOut::set_sticky_mod(0);
+            WheelOut::zoom_disarm();
         }
 
         if (wheel_tel_accum != 0 && (uint32_t)(now - last_wheel_tel) >= 50) {
@@ -1994,7 +2447,7 @@ int main() {
         }
 
         // --- LECTURA ANTIRREBOTE DE LAS DOCE TECLAS ---
-        // Todo lo que viene detrás (SUPER, la tecla 12 y los atajos) lee de
+        // Todo lo que viene detrás (SUPER, el menú y los atajos) lee de
         // aquí, nunca del pin en crudo.
         {
             uint32_t now_us = time_us_32();
@@ -2008,13 +2461,16 @@ int main() {
             }
         }
 
-        // --- DETECTAR ACCESO RÁPIDO A PERFILES (HOLD 1 SEGUNDO EN TECLA 12) ---
-        bool key12_pressed = key_stable[11];
-        static uint32_t key12_hold_start = 0;
-        if (key12_pressed && current_mode == MODE_NORMAL) {
-            if (key12_hold_start == 0) {
-                key12_hold_start = now;
-            } else if (now - key12_hold_start >= 1000) {
+        // --- TECLA DE MENÚ: CORTA CAMBIA DE PÁGINA, LARGA ABRE LOS PERFILES ---
+        bool menu_key_pressed = key_stable[KEY_IDX_MENU];
+        static uint32_t menu_hold_start = 0;
+        static bool     menu_long_fired = false;
+        if (menu_key_pressed && current_mode == MODE_NORMAL) {
+            if (menu_hold_start == 0) {
+                menu_hold_start = now;
+                menu_long_fired = false;
+            } else if (!menu_long_fired && now - menu_hold_start >= 1000) {
+                menu_long_fired = true;
                 activity_detected = true;
                 current_mode = MODE_MENU_PERF;
                 perf_menu_open();
@@ -2026,40 +2482,48 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
                 
-                key12_hold_start = 0;
-                // Esperar a que se libere Key 12 para no disparar atajos accidentales
-                while (!gpio_get(Pins::KEY_12)) {
+                // Esperar a que se libere para no disparar atajos accidentales
+                while (!gpio_get(key_pins[KEY_IDX_MENU])) {
                     tud_task();
                     watchdog_update(); // el usuario puede tenerla apretada un buen rato
                     sleep_ms(10);
                 }
+                menu_hold_start = 0;
             }
         } else {
-            key12_hold_start = 0;
+            // Al soltar: si no llegó al segundo, era una pulsación corta y toca
+            // pasar de página. El menú largo ya se ha encargado de lo suyo.
+            if (menu_hold_start != 0 && !menu_long_fired && current_mode == MODE_NORMAL) {
+                activity_detected = true;
+                next_page();
+            }
+            menu_hold_start = 0;
+            menu_long_fired = false;
         }
 
         // --- TECLAS ---
-        // Primero, actualizar el estado de la tecla SUPER (Tecla 10, index 9)
-        bool super_pressed = key_stable[9]; // Tecla 10
+        // Primero, actualizar el estado de la tecla SUPER
+        bool super_pressed = key_stable[KEY_IDX_SUPER];
         if (super_pressed != super_active) {
             super_active = super_pressed;
             if (current_mode == MODE_NORMAL) {
                 push_system_refresh();
             }
-            
+
             // Telemetría serial
             char tel[24];
-            int len = snprintf(tel, sizeof(tel), "KEY_EV:10:%d\n", super_active ? 1 : 0);
+            int len = snprintf(tel, sizeof(tel), "KEY_EV:%d:%d\n",
+                               KEY_IDX_SUPER + 1, super_active ? 1 : 0);
             tud_cdc_n_write(0, tel, len);
             tud_cdc_n_write_flush(0);
         }
 
         for (int i = 0; i < 12; i++) {
-            // Tecla 10 (index 9) se maneja por separado como SUPER
-            if (i == 9) continue;
-            
-            // Tecla 12 (index 11) en Modo Normal solo responde al hold largo (ya manejado arriba)
-            if (i == 11 && current_mode == MODE_NORMAL) continue;
+            // La tecla SUPER se maneja por separado, arriba
+            if (i == KEY_IDX_SUPER) continue;
+
+            // La tecla de menú, en modo normal, solo responde al hold largo
+            if (i == KEY_IDX_MENU && current_mode == MODE_NORMAL) continue;
 
             bool is_pressed = key_stable[i];
             if (is_pressed != last_key_state[i]) {
@@ -2089,16 +2553,47 @@ int main() {
                     // tecla hundida ya no puede dejarla pegada.
                     if (is_pressed) {
                         uint8_t mapping_idx = i + (super_active ? 12 : 0);
-                        uint8_t mod = profiles[active_profile_idx].key_mappings[mapping_idx].modifier;
-                        uint8_t key = profiles[active_profile_idx].key_mappings[mapping_idx].keycode;
-                        if (mod == 0xFE) {
+                        uint8_t mod = cur_page().key_mappings[mapping_idx].modifier;
+                        uint8_t key = cur_page().key_mappings[mapping_idx].keycode;
+                        if (mod == KEYACT_CONSUMER) {
                             // Acción multimedia, traducida de su índice de tabla
                             HidOut::consumer_tap(get_consumer_key_from_index(key));
+                        } else if (mod == KEYACT_GOTO_PAGE) {
+                            // Salto directo. El número va en base 1, que es como
+                            // lo ve el usuario en la app y en las pantallas.
+                            if (key >= 1 && key <= MAX_PAGES) set_active_page((uint8_t)(key - 1));
+                        } else if (mod == KEYACT_PAGE_STATE) {
+                            // Abre el gestor de páginas
+                            current_mode = MODE_MENU_PAGES;
+                            push_system_refresh();
+                        } else if (mod != 0 && key != 0 && ORBY_COMBO_AS_TAP) {
+                            // Combinación tipo Ctrl+C: pulsación breve, no
+                            // mantenida. Si se mantuviera, el Ctrl se queda
+                            // puesto en el host y este convierte la rueda en
+                            // zoom (y el Shift, en scroll horizontal): era la
+                            // razón de que la rueda «no hiciera scroll» con una
+                            // tecla apretada.
+                            HidOut::tap(mod, key);
                         } else if (mod != 0 || key != 0) {
+                            // Tecla suelta o modificador a pelo: se mantiene, que
+                            // es lo que hace falta para el autorrepetido y para
+                            // usarla como modificador del ratón.
                             HidOut::key_down((uint8_t)i, mod, key);
                         }
                     } else {
                         HidOut::key_up((uint8_t)i);
+                    }
+                } else if (is_pressed && current_mode == MODE_MENU_PAGES) {
+                    // Gestor de páginas: cada tecla con número salta a su página.
+                    // La de la pantalla 10 sale sin cambiar nada.
+                    uint8_t count = profiles[active_profile_idx].page_count;
+                    if (i < count) {
+                        set_active_page((uint8_t)i);
+                        current_mode = MODE_NORMAL;
+                        push_system_refresh();
+                    } else if (i == key_index_for_screen(10)) {
+                        current_mode = MODE_NORMAL;
+                        push_system_refresh();
                     }
                 } else if (is_pressed) {
                     // En cualquier menú, las teclas 1 a 5 actúan como atajos de selección
@@ -2123,6 +2618,7 @@ int main() {
                         } else if (current_mode == MODE_MENU_PERF) {
                             if (selected_menu_idx < profile_count) {
                                 active_profile_idx = selected_menu_idx;
+                                active_page = 0;
                                 save_settings();
                                 current_mode = MODE_NORMAL;
                                 char tel[24];

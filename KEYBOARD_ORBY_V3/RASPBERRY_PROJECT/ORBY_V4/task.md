@@ -279,6 +279,175 @@ animación se diseña en el PC y el firmware solo la reproduce.
 - [x] Si el reinicio vino del watchdog se salta la intro, para dejar el teclado
       operativo cuanto antes.
 
+## Rueda: modificadores pegados y paneo de alta resolución (hecho)
+
+### «La rueda no hace scroll si hay alguna tecla pulsada»
+
+No era la contienda por el endpoint: una prueba que reproduce el bucle real
+(`tools/test/test_wheel.cpp`) demuestra que con una tecla mantenida salen los 50
+informes de rueda de 200 ms y **no se pierde ni una unidad**. El firmware
+mandaba el scroll perfectamente.
+
+La causa era el host: una tecla mapeada a `Ctrl+algo` mantiene el Ctrl puesto
+mientras esté hundida, y con Ctrl puesto la rueda deja de hacer scroll y hace
+zoom (con Shift, scroll horizontal). Es lo mismo que pasaría en cualquier
+teclado; lo que lo hacía visible es que un macropad manda atajos, no teclas.
+
+- [x] Las combinaciones con modificador (`mod != 0 && key != 0`) se envían como
+      pulsación breve en vez de mantenerse: `ORBY_COMBO_AS_TAP`. Mantener Ctrl+C
+      dos segundos no copiaba dos veces, solo dejaba el Ctrl puesto.
+- [x] Las teclas sueltas y los modificadores a pelo (Ctrl sin tecla, para usarlo
+      con el ratón) **siguen manteniéndose**: hacen falta para el autorrepetido
+      y para modificar clics.
+- [x] Se pierde el autorrepetido de combinaciones tipo Ctrl+Z. Está en un
+      `#define` para poder volver atrás.
+- [x] Arreglada de paso una fuga en la compuerta del zoom: si al dejar de girar
+      quedaban unidades a medias, se quedaba esperando un Ctrl que ya no iba a
+      volver y la rueda enmudecía para siempre.
+
+### Paneo horizontal de alta resolución
+
+- [x] `AC Pan` pasa de 8 a 16 bits y gana **su propio multiplicador de
+      resolución**, en una Logical Collection aparte: el host los negocia por
+      separado (`g_hires_pan`).
+- [x] El paneo acumula en unidades de alta resolución igual que el vertical, con
+      el resto conservado. Antes viajaba en detents enteros, así que iba a
+      tirones aunque el vertical fuese suave, y por encima de 127 se recortaba.
+- [x] Feature report reorganizado: dos bits de multiplicador vertical, dos de
+      horizontal y cuatro de relleno, en un byte.
+- [x] **PID de 0x4006 a 0x4007.** Windows cachea el descriptor por VID/PID; sin
+      subirlo leería el informe descuadrado.
+- [x] `SCROLL:OK` gana un cuarto campo con el estado del paneo, al final para no
+      romper a quien lea solo tres. La app lo muestra junto al del vertical.
+- [x] `tools/test/check_descriptor.py`: valida que las Collection cuadran, que el
+      informe declarado coincide con `orby_mouse_report_t` (56 bits, 7 bytes) y
+      que hay dos multiplicadores. Un descriptor mal formado no da un error
+      bonito: Windows rechaza el dispositivo entero.
+- [x] La salida de la rueda sale de `main.cpp` a `include/wheel_out.h`, que es lo
+      que permite probarla en el PC.
+- [x] Sentido por defecto del paneo **invertido** (`ORBY_PAN_INVERT`), solo el
+      horizontal. Se hace en `add_pan()`, que es el único punto por el que pasa
+      todo el movimiento horizontal, así que la rueda magnética y los encoders
+      configurados como paneo quedan igual. El vertical no se toca y el
+      interruptor de invertir de cada perfil sigue funcionando encima.
+
+## SUPER y menú intercambiados (hecho)
+
+- [x] Ahora **SUPER es la tecla 12** y **el menú la 10**; estaban al revés.
+- [x] En el firmware las dos teclas de sistema pasan a tener nombre
+      (`KEY_IDX_SUPER` y `KEY_IDX_MENU`, base 0): cambiarlas de sitio otra vez
+      es cambiar dos líneas, en vez de perseguir índices sueltos por el bucle.
+- [x] La telemetría `KEY_EV` de SUPER sale con el número de tecla correcto, y la
+      app deja de comparar contra el 10 a pelo.
+- [x] Lo mismo en la app: `KEY_SUPER` y `KEY_MENU` en `store.js`, usados por el
+      dashboard, la vista de perfiles y el editor de iconos. Los textos que
+      explicaban qué hace cada tecla se generan de esas constantes.
+- [x] `tools/test/check_keys.py`: comprueba que firmware y app coinciden en qué
+      tecla es cada cosa, y que ninguna de las dos tiene pantalla asignada. Si
+      se desincronizan, la app pinta los papeles al revés y el interruptor
+      NORMAL/SUPER deja de seguir a la tecla real: un fallo silencioso.
+- [x] README de la app actualizado.
+
+## Firmware 4.0 — páginas por perfil (firmware hecho, app pendiente)
+
+Cada perfil tiene de una a cuatro páginas, y una página es un juego completo de
+lo que hace el teclado: teclas, etiquetas, mandos, rueda **e iconos**.
+
+### El banco de iconos se muda a la Flash
+
+El problema era solo uno: lo barato de una página son 260 bytes, pero los iconos
+son 7424 por página. Con 16 perfiles × 4 páginas serían 464 KB de los 264 KB de
+RAM del chip.
+
+- [x] El banco sale de la RAM y vive en Flash de 1024 a 1536 KB: 64 tramos de
+      8 KB, uno por (perfil, página). Se **pinta directamente desde ahí** — el
+      RP2040 mapea la Flash (XIP), así que al SPI se le pasa un puntero y no hay
+      que copiar ni descomprimir.
+- [x] **BSS de 140.064 a 53.988 bytes: 86 KB liberados.**
+- [x] En RAM solo queda un búfer de 7,4 KB con la página en edición, para que un
+      icono recién subido se vea antes de grabarlo.
+- [x] Cada perfil se queda con su tramo (`Profile.oled_bank`) mientras viva, así
+      borrar un perfil solo reordena metadatos. Con el banco indexado por
+      posición habría que arrastrar medio megabyte de Flash.
+- [x] Descartada la idea de comprimir: ahorraría Flash que no falta (512 KB de
+      1400 libres) a cambio de registros de tamaño variable —cambiar un icono
+      obligaría a reescribir el perfil entero— y de que un blob corrupto se lleve
+      el perfil en vez de un icono. Buena palanca si algún día hacen falta 8
+      páginas o 32 perfiles.
+
+### Migración
+
+- [x] Formato `0xDEB00400`, con rutas desde los cinco anteriores. Lo guardado
+      pasa a ser la página 0 de cada perfil.
+- [x] **El orden importa**: los iconos viejos se copian antes de reescribir los
+      ajustes, porque la región de ajustes nueva pisa la del banco antiguo. Las
+      zonas de origen y destino son disjuntas, así que la copia no se destruye a
+      sí misma. Lo comprueba `tools/test/check_flash_map.py`.
+- [x] Se graba en el formato nuevo en cuanto migra, para no repetir la migración
+      —y su desgaste de Flash— en cada arranque.
+- [x] Arreglado un cuelgue de arranque que introduje yo: la migración escribe en
+      Flash desde `load_settings()`, que corre **antes** de lanzar Core 1, y
+      pedía el `multicore_lockout` a un core que todavía no existía. Ahora se
+      consulta `multicore_lockout_victim_is_initialized(1)`.
+- [x] Los literales de los perfiles de fábrica no se han tocado: tienen su propio
+      tipo sin páginas (`DefaultProfile`) y se copian a la página 0, en vez de
+      reestructurar 150 líneas de llaves anidadas.
+
+### Las tres formas de cambiar de página
+
+- [x] **Botón de menú, pulsación corta**: siguiente página, en ciclo. La larga
+      sigue abriendo el menú de perfiles.
+- [x] **Tecla «ir a la página N»** (`0xFD` en el modificador, número en base 1 en
+      el keycode).
+- [x] **Tecla «estado de páginas»** (`0xFC`): su pantalla enseña `P2/4`, y al
+      pulsarla entra al gestor, donde cada pantalla lleva un número, la página
+      actual sale en negativo y pulsar un número salta a esa página. La pantalla
+      10 sale sin cambiar nada.
+- [x] Las acciones especiales van en el campo `modifier`, que un atajo normal
+      nunca alcanza, así que no hace falta cambiar la estructura ni migrar.
+- [x] Al cambiar de perfil la página vuelve a la primera: el perfil nuevo puede
+      tener menos.
+
+### Protocolo
+
+- [x] `SET_PAGE`, `ADD_PAGE`, `DEL_PAGE`, `STATE:PAGE:<actual>:<total>:<tope>` y
+      `MAXPAGES` en el ACK (FW=4.0).
+- [x] `GET_PROFILE` vuelca primero la página sin numerar —la que lee la app
+      actual— y después una por página con el número delante. Los comandos de
+      edición que no llevan página actúan sobre la que esté puesta, así que **la
+      app actual sigue funcionando** aunque no vea las páginas todavía.
+
+## OrbyGUI 4.0 — páginas en la app (hecho)
+
+- [x] El modelo del perfil pasa a tener `pages[]`, y `labels`, `keys`, `rotary`,
+      `scroll` y `oledMask` se convierten en **accesos** (`Object.defineProperty`)
+      a la página seleccionada. Así las 2100 líneas de las vistas siguen escritas
+      igual y no puede haber dos copias que se desincronicen. No son enumerables,
+      para que la copia de seguridad vea la estructura de páginas de verdad.
+- [x] `GET_PROFILE` lee todas las páginas; si el firmware es anterior al 4.0 y no
+      manda ninguna numerada, lo que llega sin numerar se toma como la única.
+- [x] Pestañas de página en el editor de perfiles, con **+** (añade copiando la
+      actual) y **−** (elimina, con confirmación). Solo aparecen si el firmware
+      las soporta: con `maxPages` a 1 la vista queda exactamente como antes.
+- [x] Elegir una pestaña **cambia también la página en el teclado**, porque los
+      comandos de edición del firmware actúan sobre la activa. Efecto secundario
+      bueno: las pantallas enseñan siempre lo que estás tocando. Solo se permite
+      en el perfil activo; en los demás se edita su primera página.
+- [x] Las dos acciones nuevas en el inspector de teclas, con su explicación.
+      Multimedia y páginas se apropian del campo del modificador, así que tocar
+      un modificador sale de ese modo en vez de mezclarse con él.
+- [x] **La caché de iconos lleva la página en la clave.** Sin eso, el mismo
+      (perfil, hueco) es un icono distinto en cada página y la app enseñaría los
+      de la anterior.
+- [x] Copia de seguridad v3: guarda `pages` con **todas** las páginas. Antes de
+      esto habría guardado solo la que estuviese seleccionada y el usuario no se
+      habría enterado hasta querer restaurarla. Al restaurar crea las páginas que
+      falten antes de escribir en ellas.
+- [x] `tools/test/check_keys.py` comprueba también que firmware y app usan los
+      mismos códigos para las tres acciones especiales (`0xFE`, `0xFD`, `0xFC`):
+      si divergen, la app graba algo que el teclado no reconoce y la tecla se
+      queda muda sin dar ningún error.
+
 ## Pendiente
 
 - [ ] Probar en hardware: flashear `build/ORBY_V4.uf2` y verificar el scroll
@@ -287,8 +456,18 @@ animación se diseña en el PC y el firmware solo la reproduce.
       pantallas siguen despertando bien al salir del reposo.
 - [ ] Probar en hardware el antirrebote, el rollover (mantener dos teclas a la
       vez) y que el zoom con Ctrl sigue funcionando en el navegador.
+- [ ] Probar el paneo horizontal en algo que lo aproveche (Excel, un lienzo de
+      Figma, una línea de tiempo) y comprobar que la app enseña «Paneo
+      horizontal en alta resolución» tras enchufarlo.
 - [ ] `BOOT_SETTLE_MS` está en 300 ms. Si algún arranque se ve raro, era el
       único valor de los tres cambios que es un juicio y no un cálculo.
+- [ ] **Páginas: probar en hardware.** Hay copia de seguridad hecha. Lo primero
+      que hay que comprobar es que los iconos siguen ahí después de migrar, y
+      después el ciclo con el botón de menú, la tecla de salto y el gestor.
+- [ ] **Páginas en la app**: hoy la app edita la página que esté puesta y no sabe
+      que existen las demás. Falta la interfaz (pestañas de página, alta y baja,
+      las dos acciones nuevas en el inspector de teclas) y llevar las páginas a la
+      copia de seguridad y a las variaciones por aplicación.
 - [ ] Afinar la animación a gusto en `tools/anim` y volver a exportar. Los
       huecos (`Hueco horizontal` y `Hueco vertical`) son lo único que conviene
       calibrar mirando el teclado de verdad.

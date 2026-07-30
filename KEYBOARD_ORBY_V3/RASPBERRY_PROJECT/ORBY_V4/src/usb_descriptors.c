@@ -1,8 +1,11 @@
 #include "tusb.h"
 #include "hid_hires.h"
 
-// Multiplicador de resolución negociado con el host (ver hid_hires.h).
+// Multiplicadores de resolución negociados con el host (ver hid_hires.h). Son
+// dos independientes: el host puede activar la alta resolución en un eje y no
+// en el otro.
 volatile uint8_t g_hires_multiplier = 0;
+volatile uint8_t g_hires_pan        = 0;
 
 //--------------------------------------------------------------------+
 // Device Descriptors
@@ -22,7 +25,10 @@ tusb_desc_device_t const desc_device = {
     // Windows cachea el report descriptor HID por VID/PID. Al cambiar la
     // estructura del informe de ratón hay que subir el PID o el host seguirá
     // usando el descriptor antiguo (sin alta resolución).
-    .idProduct          = 0x4006,
+    // 0x4007: el paneo horizontal pasa de 8 a 16 bits y el Feature report gana
+    // un segundo multiplicador. Sin subir el PID, Windows reutilizaría el
+    // descriptor viejo y leería el informe descuadrado.
+    .idProduct          = 0x4007,
     .bcdDevice          = 0x0100,
 
     .iManufacturer      = 0x01,
@@ -94,18 +100,36 @@ uint8_t const * tud_descriptor_device_cb(void) {
     0x95, 0x01,        /*       Report Count (1)                */ \
     0x81, 0x06,        /*       Input (Data,Var,Rel)            */ \
     0xC0,              /*     End Collection                    */ \
-    /* Relleno del Feature report hasta 1 byte completo */         \
-    0x75, 0x06,        /*     Report Size (6)                   */ \
+    /* --- Scroll horizontal (AC Pan) de alta resolución --- */    \
+    /* Lleva su propio multiplicador, en una Logical Collection    \
+       aparte: el host los negocia por separado. Al entrar aquí la \
+       página sigue siendo Generic Desktop, que es donde vive el   \
+       Usage 0x48. */                                              \
+    0xA1, 0x02,        /*     Collection (Logical)              */ \
+    0x09, 0x48,        /*       Usage (Resolution Multiplier)   */ \
+    0x15, 0x00,        /*       Logical Minimum (0)             */ \
+    0x25, 0x01,        /*       Logical Maximum (1)             */ \
+    0x35, 0x01,        /*       Physical Minimum (1)            */ \
+    0x45, 0x78,        /*       Physical Maximum (120)          */ \
+    0x75, 0x02,        /*       Report Size (2)                 */ \
+    0x95, 0x01,        /*       Report Count (1)                */ \
+    0xB1, 0x02,        /*       Feature (Data,Var,Abs)          */ \
+    0x35, 0x00,        /*       Physical Minimum (0) -> reset   */ \
+    0x45, 0x00,        /*       Physical Maximum (0) -> reset   */ \
+    0x05, 0x0C,        /*       Usage Page (Consumer)           */ \
+    0x0A, 0x38, 0x02,  /*       Usage (AC Pan)                  */ \
+    0x16, 0x01, 0x80,  /*       Logical Minimum (-32767)        */ \
+    0x26, 0xFF, 0x7F,  /*       Logical Maximum (32767)         */ \
+    0x75, 0x10,        /*       Report Size (16)                */ \
+    0x95, 0x01,        /*       Report Count (1)                */ \
+    0x81, 0x06,        /*       Input (Data,Var,Rel)            */ \
+    0xC0,              /*     End Collection                    */ \
+    /* Relleno del Feature report hasta 1 byte completo: dos bits  \
+       de multiplicador vertical, dos de horizontal y cuatro de    \
+       relleno. */                                                 \
+    0x75, 0x04,        /*     Report Size (4)                   */ \
     0x95, 0x01,        /*     Report Count (1)                  */ \
     0xB1, 0x03,        /*     Feature (Const,Var,Abs)           */ \
-    /* --- Scroll horizontal (AC Pan) --- */                       \
-    0x05, 0x0C,        /*     Usage Page (Consumer)             */ \
-    0x0A, 0x38, 0x02,  /*     Usage (AC Pan)                    */ \
-    0x15, 0x81,        /*     Logical Minimum (-127)            */ \
-    0x25, 0x7F,        /*     Logical Maximum (127)             */ \
-    0x75, 0x08,        /*     Report Size (8)                   */ \
-    0x95, 0x01,        /*     Report Count (1)                  */ \
-    0x81, 0x06,        /*     Input (Data,Var,Rel)              */ \
     0xC0,              /*   End Collection                      */ \
     0xC0               /* End Collection                        */
 
@@ -206,7 +230,9 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
     (void) instance;
 
     if (report_type == HID_REPORT_TYPE_FEATURE && report_id == REPORT_ID_MOUSE && reqlen >= 1) {
-        buffer[0] = (uint8_t)(g_hires_multiplier & 0x03);
+        // Bits 0-1 el multiplicador vertical, bits 2-3 el horizontal.
+        buffer[0] = (uint8_t)((g_hires_multiplier & 0x03) |
+                              ((g_hires_pan & 0x03) << 2));
         return 1;
     }
     return 0;
@@ -232,6 +258,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 
     if (id == REPORT_ID_MOUSE && len >= 1) {
         g_hires_multiplier = (uint8_t)(data[0] & 0x03);
+        g_hires_pan        = (uint8_t)((data[0] >> 2) & 0x03);
     }
 }
 

@@ -15,8 +15,10 @@
 
 import * as device from '../device.js';
 import { state, notify, markDirty, subscribe, syncFromDevice, profileMeta, labelSlot, keymapSlot,
-         rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN } from '../store.js';
-import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, KEY_GROUPS, describeAction, eventToAction,
+         rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU,
+         hasPages, maxPages, pageCountOf, selectPage, addPage, removePage } from '../store.js';
+import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER,
+         KEY_GROUPS, describeAction, eventToAction,
          ROTARY_TYPES, ROTARY_SLOTS, isScrollType, describeRotary } from '../hid-keys.js';
 import { icon } from '../icons.js';
 import { toast } from '../ui.js';
@@ -193,6 +195,12 @@ function onClick(e) {
     view.layer = el.dataset.layer;
     view.selected = null;
     render();
+  } else if (act === 'page') {
+    choosePage(Number(el.dataset.page));
+  } else if (act === 'page-add') {
+    createPage();
+  } else if (act === 'page-del') {
+    deletePage(Number(el.dataset.page));
   } else if (act === 'pick-key') {
     view.selected = { kind: 'key', index: Number(el.dataset.key) };
     render();
@@ -222,12 +230,19 @@ function onClick(e) {
     render();
   } else if (act === 'clear-action') {
     applyKeymap(0, 0);
+  } else if (act === 'set-goto-page') {
+    applyKeymap(GOTO_PAGE_MODIFIER, Number(el.dataset.page));
+  } else if (act === 'set-page-state') {
+    applyKeymap(PAGE_STATE_MODIFIER, 0);
   } else if (act === 'set-consumer') {
     applyKeymap(CONSUMER_MODIFIER, Number(el.dataset.index));
   } else if (act === 'toggle-mod') {
     const bit = Number(el.dataset.bit);
     const current = currentAction();
-    if (current.modifier === CONSUMER_MODIFIER) applyKeymap(bit, 0);
+    // Multimedia y páginas ocupan el campo del modificador, así que tocar un
+    // modificador sale de ese modo en vez de mezclarse con él.
+    if (current.modifier >= CONSUMER_MODIFIER || current.modifier === GOTO_PAGE_MODIFIER
+        || current.modifier === PAGE_STATE_MODIFIER) applyKeymap(bit, 0);
     else applyKeymap(current.modifier ^ bit, current.keycode);
   } else if (act === 'profile-new') {
     createProfile(null);
@@ -723,10 +738,12 @@ export function render() {
               <button class="toggle-btn ${view.layer === 'normal' ? 'active' : ''}" data-act="layer" data-layer="normal">NORMAL</button>
               <button class="toggle-btn ${view.layer === 'super' ? 'active' : ''}" data-act="layer" data-layer="super">SUPER</button>
             </div>
+            ${renderPageBar()}
             ${view.editingProfile === state.activeProfileIdx
               ? '<span class="pill pill-live">Perfil activo</span>'
               : '<button class="secondary-btn" data-act="activate">Activar en el teclado</button>'}
           </div>
+          ${renderPageHint()}
 
           <div class="okey-grid" id="profile-key-grid">${renderKeyGridInner()}</div>
           <p class="grid-status" id="profile-grid-status"></p>
@@ -813,6 +830,114 @@ function renderVariantBar() {
         <button class="chip ghost" data-act="new-variant">${icon('plus', 14)} Nueva variación</button>
       </div>
     </div>`;
+}
+
+// ---------- Páginas ----------
+// Editar la página N exige que el teclado tenga puesta la página N, porque los
+// comandos de edición del firmware actúan sobre la activa. Por eso elegir una
+// pestaña la cambia también en el teclado (y solo tiene sentido en el perfil
+// activo; en los demás se edita su primera página).
+async function choosePage(idx) {
+  const prof = state.profiles[view.editingProfile];
+  if (!prof || idx === (prof.pageIdx || 0)) return;
+
+  if (view.editingProfile !== state.activeProfileIdx) {
+    toast('Para editar otra página, activa antes este perfil en el teclado');
+    return;
+  }
+  view.selected = null;
+  try {
+    await selectPage(idx);
+    cache.loadProfile(view.editingProfile);   // los iconos son de cada página
+    render();
+  } catch (e) {
+    toast(`No he podido cambiar de página: ${e.message}`);
+    render();
+  }
+}
+
+async function createPage() {
+  const prof = state.profiles[view.editingProfile];
+  if (!prof) return;
+  if (view.editingProfile !== state.activeProfileIdx) {
+    toast('Activa este perfil en el teclado para añadirle páginas');
+    return;
+  }
+  try {
+    if (await addPage()) {
+      const p = state.profiles[view.editingProfile];
+      await selectPage(pageCountOf(p) - 1);   // abrir la recién creada
+      cache.loadProfile(view.editingProfile);
+      toast(`Página ${pageCountOf(p)} añadida, copiando la anterior`);
+    } else {
+      toast(`El tope es de ${maxPages()} páginas por perfil`);
+    }
+    render();
+  } catch (e) {
+    toast(`No he podido añadir la página: ${e.message}`);
+  }
+}
+
+async function deletePage(idx) {
+  const prof = state.profiles[view.editingProfile];
+  if (!prof || pageCountOf(prof) <= 1) return;
+  if (view.editingProfile !== state.activeProfileIdx) {
+    toast('Activa este perfil en el teclado para borrarle páginas');
+    return;
+  }
+  if (!confirm(`¿Eliminar la página ${idx + 1} de ${escape(prof.name)}?\n\n`
+             + 'Se van sus teclas, etiquetas, mandos e iconos. Las páginas siguientes '
+             + 'se recolocan.')) return;
+  try {
+    await removePage(idx);
+    cache.loadProfile(view.editingProfile);
+    view.selected = null;
+    toast(`Página ${idx + 1} eliminada`);
+    render();
+  } catch (e) {
+    toast(`No he podido eliminar la página: ${e.message}`);
+  }
+}
+
+// Pestañas de página. Solo aparecen si el firmware las soporta: con uno anterior
+// al 4.0, maxPages es 1 y la barra no se dibuja, así que la vista queda como antes.
+function renderPageBar() {
+  if (!hasPages()) return '';
+  const prof = state.profiles[view.editingProfile];
+  if (!prof) return '';
+  const count = pageCountOf(prof);
+  const cur = prof.pageIdx || 0;
+
+  let tabs = '';
+  for (let i = 0; i < count; i++) {
+    tabs += `<button class="toggle-btn ${i === cur ? 'active' : ''}"
+                     data-act="page" data-page="${i}" title="Página ${i + 1}">${i + 1}</button>`;
+  }
+  const canAdd = count < maxPages();
+  return `
+    <div class="layer-toggle page-toggle">
+      ${tabs}
+      ${canAdd ? `<button class="toggle-btn page-add" data-act="page-add"
+                          title="Añadir una página copiando la actual">+</button>` : ''}
+      ${count > 1 ? `<button class="toggle-btn page-del" data-act="page-del" data-page="${cur}"
+                             title="Eliminar la página ${cur + 1}">−</button>` : ''}
+    </div>`;
+}
+
+function renderPageHint() {
+  if (!hasPages()) return '';
+  const prof = state.profiles[view.editingProfile];
+  if (!prof) return '';
+  const count = pageCountOf(prof);
+  if (count <= 1) {
+    return `<p class="grid-status">Este perfil tiene una sola página. Con
+      <strong>+</strong> añades otra copiando esta, y el teclado alterna entre ellas
+      con una pulsación corta del botón de menú.</p>`;
+  }
+  const live = view.editingProfile === state.activeProfileIdx;
+  return `<p class="grid-status">Editando la <strong>página ${(prof.pageIdx || 0) + 1}</strong>
+    de ${count}. Cada página tiene sus teclas, etiquetas, mandos, rueda e iconos.
+    ${live ? 'La página que elijas aquí es la que se pone en el teclado, así que las pantallas enseñan lo que estás tocando.' : ''}</p>`;
 }
 
 function renderVariantSettings() {
@@ -905,7 +1030,7 @@ function renderKeyGridInner() {
           ${screen
             ? (bmp ? `<canvas class="okey-canvas" data-bmp="${cache.cacheKey(view.editingProfile, lslot)}"></canvas>`
                    : `<span class="okey-text">${escape(label || '—')}</span>`)
-            : `<span class="okey-role">${i === 9 ? 'SUPER' : 'MENÚ'}</span>`}
+            : `<span class="okey-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`}
         </span>
         <span class="okey-action ${assigned ? 'assigned' : ''}">${escape(describeAction(action.modifier, action.keycode))}</span>
       </button>`;
@@ -921,8 +1046,9 @@ function paintKeyGrid() {
   if (status) {
     status.textContent = cache.isLoading()
       ? 'Leyendo iconos del teclado…'
-      : `Capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'} · las teclas 10 y 12 no tienen pantalla: `
-        + 'la 10 es el modificador SUPER y la 12 abre el menú al mantenerla.';
+      : `Capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'} · las teclas ${KEY_MENU} y ${KEY_SUPER} `
+        + `no tienen pantalla: la ${KEY_SUPER} es el modificador SUPER y la ${KEY_MENU} abre el menú `
+        + 'al mantenerla.';
   }
 }
 
@@ -1006,6 +1132,12 @@ function renderWheelCard() {
           <div class="hires-state ${state.scroll.hires ? 'ok' : 'off'}">
             <span class="hires-dot"></span>
             <strong>${state.scroll.hires ? 'Alta resolución activa' : 'Alta resolución no negociada'}</strong>
+          </div>
+          <div class="hires-state ${state.scroll.hiresPan ? 'ok' : 'off'}">
+            <span class="hires-dot"></span>
+            <strong>${state.scroll.hiresPan
+              ? 'Paneo horizontal en alta resolución'
+              : 'Paneo horizontal sin negociar'}</strong>
           </div>
           <div class="wheel-dial">
             <div class="wheel-dial-face">${wheelDial.markerHtml('scroll-live-needle')}</div>
@@ -1182,8 +1314,12 @@ function renderKeyInspector() {
   const variant = editingVariant();
   const lslot = labelSlot(i, view.layer);
   const action = currentAction();
+  // Los tres modos que se apropian del campo del modificador: mientras uno esté
+  // puesto, ni los modificadores ni la tecla pintan nada.
   const isConsumer = action.modifier === CONSUMER_MODIFIER;
-  const keyOptions = keycodeOptions(isConsumer ? 0 : action.keycode);
+  const isSpecial  = isConsumer || action.modifier === GOTO_PAGE_MODIFIER
+                                || action.modifier === PAGE_STATE_MODIFIER;
+  const keyOptions = keycodeOptions(isSpecial ? 0 : action.keycode);
   const hasIcon = lslot >= 0 && Boolean(cache.get(view.editingProfile, lslot));
   const baseAction = prof.keys[keymapSlot(i, view.layer)] || { modifier: 0, keycode: 0 };
   const changed = Boolean(variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
@@ -1234,15 +1370,15 @@ function renderKeyInspector() {
                  data-act="edit-label" data-slot="${lslot}">
         </label>` : `
         <p class="setting-desc">
-          Esta tecla no tiene pantalla: la 10 es el modificador SUPER y la 12 abre el menú
-          del teclado al mantenerla, así que el firmware no ejecuta su atajo.
+          Esta tecla no tiene pantalla: la ${KEY_SUPER} es el modificador SUPER y la ${KEY_MENU}
+          abre el menú del teclado al mantenerla, así que el firmware no ejecuta su atajo.
         </p>`}
 
       <div class="field">
         <span class="field-label">Modificadores</span>
         <div class="mod-grid">
           ${MODIFIERS.map((m) => `
-            <button class="mod-chip ${!isConsumer && (action.modifier & m.bit) ? 'on' : ''}"
+            <button class="mod-chip ${!isSpecial && (action.modifier & m.bit) ? 'on' : ''}"
                     data-act="toggle-mod" data-bit="${m.bit}">${m.label}</button>`).join('')}
         </div>
       </div>
@@ -1250,7 +1386,7 @@ function renderKeyInspector() {
       <label class="field">
         <span class="field-label">Tecla</span>
         <select class="select-input" data-act="pick-keycode">
-          <option value="0" ${!isConsumer && !action.keycode ? 'selected' : ''}>— ninguna —</option>
+          <option value="0" ${!isSpecial && !action.keycode ? 'selected' : ''}>— ninguna —</option>
           ${keyOptions}
         </select>
       </label>
@@ -1264,6 +1400,8 @@ function renderKeyInspector() {
         </div>
       </div>
 
+      ${renderPageActions(action)}
+
       <div class="inspector-actions">
         <button class="primary-btn ${view.capturing ? 'is-capturing' : ''}" data-act="capture">
           ${icon('key', 16)} ${view.capturing ? 'Pulsa el atajo… (Esc cancela)' : 'Capturar atajo del teclado'}
@@ -1275,6 +1413,41 @@ function renderKeyInspector() {
         <span class="field-label">Resultado</span>
         <code>${escape(describeAction(action.modifier, action.keycode))}</code>
       </div>
+    </div>`;
+}
+
+// Las dos acciones de página. Como las multimedia, no llevan modificadores ni
+// tecla: son un modo aparte.
+function renderPageActions(action) {
+  if (!hasPages()) return '';
+  const prof = state.profiles[view.editingProfile];
+  const count = prof ? pageCountOf(prof) : 1;
+  const isGoto  = action.modifier === GOTO_PAGE_MODIFIER;
+  const isState = action.modifier === PAGE_STATE_MODIFIER;
+
+  let chips = '';
+  for (let n = 1; n <= maxPages(); n++) {
+    const beyond = n > count;
+    chips += `<button class="consumer-chip ${isGoto && action.keycode === n ? 'on' : ''}"
+                      data-act="set-goto-page" data-page="${n}"
+                      title="${beyond ? 'Este perfil todavía no tiene esa página' : ''}">
+                Página ${n}${beyond ? ' ·' : ''}
+              </button>`;
+  }
+
+  return `
+    <div class="field">
+      <span class="field-label">Páginas</span>
+      <div class="consumer-grid">${chips}</div>
+      <button class="consumer-chip full ${isState ? 'on' : ''}" data-act="set-page-state">
+        Estado de páginas
+      </button>
+      <p class="setting-desc">
+        <strong>Página N</strong> salta directamente a esa página.
+        <strong>Estado de páginas</strong> hace que la tecla enseñe en qué página estás
+        (por ejemplo <code>P2/${count}</code>) y que al pulsarla se abra el gestor: cada
+        pantalla con su número, la actual en negativo, y pulsas para saltar.
+      </p>
     </div>`;
 }
 
