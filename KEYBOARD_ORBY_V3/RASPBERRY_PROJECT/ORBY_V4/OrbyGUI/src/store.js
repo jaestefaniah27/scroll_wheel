@@ -76,8 +76,17 @@ export function subscribe(fn) {
   return () => subscribers.delete(fn);
 }
 
+// Cada suscriptor va en su propio try/catch: si una vista revienta al pintar,
+// no debe bloquear a las demás (en particular, que el indicador de "Guardar
+// en Flash" siga actualizándose pase lo que pase en otra vista).
 export function notify() {
-  for (const fn of subscribers) fn(state);
+  for (const fn of subscribers) {
+    try {
+      fn(state);
+    } catch (err) {
+      console.error('Error en un suscriptor de store.notify():', err);
+    }
+  }
 }
 
 export function markDirty() {

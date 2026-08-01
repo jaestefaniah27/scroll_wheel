@@ -17,6 +17,12 @@ const DEFAULTS = {
   // [{ id, profile, name, match, field, keys, rotary, labels }]
   profileVariants: [],
 
+  // Macros (secuencias) que ejecuta el PC al recibir MACRO:<id> por CDC. El
+  // firmware solo guarda el id en el campo del modificador de la tecla o del
+  // mando; la secuencia en sí vive aquí, no en el teclado.
+  // [{ id, actions: [{ type: 'center_mouse' | 'mouse_click' | 'delay' | 'key', ... }] }]
+  macros: [],
+
   // Calibración del dibujo de la rueda: depende de cómo estén montados el imán
   // y el marcador de la tapa, así que es del PC y no del firmware.
   // Medidos sobre el Orby montado: el giro va espejado y el marcador de la tapa

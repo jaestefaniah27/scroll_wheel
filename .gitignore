@@ -2,6 +2,9 @@
 ORBY_BLE/main/.build_hash
 ORBY_BLE/main/binarios/*
 ORBY_BLE/main/compile.log
+# Ninguna carpeta node_modules entra en el repositorio, este a la
+# profundidad que este (OrbyGUI y cualquier proyecto npm que se anada).
 node_modules/
+**/node_modules/
 build/
 .vscode/

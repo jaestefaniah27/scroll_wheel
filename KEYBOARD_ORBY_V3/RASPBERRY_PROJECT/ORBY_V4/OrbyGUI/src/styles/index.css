@@ -491,6 +491,12 @@ body {
 }
 .premium-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
 
+/* Etiquetas a los lados de un slider, tipo "Más lento" / "Más rápido". */
+.slider-row {
+  display: flex; justify-content: space-between; margin-top: 4px;
+  font-size: 11px; color: var(--text-muted);
+}
+
 /* Segmented Control */
 .timeout-selector {
   display: flex; background: rgba(0,0,0,0.3); border-radius: var(--radius-sm);
@@ -775,11 +781,13 @@ body {
   display: inline-block; margin-left: 2px;
 }
 
-.editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
+.editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 520px; gap: 24px; align-items: start; }
 .editor-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .editor-board { padding: 24px; }
-.editor-board-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
-.editor-board-head .layer-toggle { margin-left: auto; }
+.editor-board-head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+.editor-board-head .head-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.editor-board-head .head-row:first-child { justify-content: space-between; }
+.editor-board-head .layer-toggle { margin-right: auto; }
 
 /* Vista previa de la pantalla dentro del inspector, junto al botón que salta al
    editor de iconos con esta misma tecla ya seleccionada. */
@@ -849,6 +857,29 @@ body {
 .editor-inspector { padding: 24px; position: sticky; top: 0; }
 .inspector-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .inspector-head h3 { font-size: 18px; }
+
+/* Pestañas del inspector de tecla: Atajo / Secuencia / Multimedia / Páginas. */
+.inspector-tabs {
+  display: flex; gap: 4px; margin-bottom: 18px; padding: 4px;
+  background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+.inspector-tab {
+  flex: 1; padding: 8px 6px; font-size: 12px; font-weight: 600; font-family: inherit;
+  background: transparent; border: none; border-radius: var(--radius-sm);
+  color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+}
+.inspector-tab:hover { color: var(--text-main); }
+.inspector-tab.active { background: var(--primary); color: #fff; }
+
+/* Pasos de una macro (secuencia ejecutada en el PC). */
+.seq-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.seq-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; font-size: 12px; color: var(--text-main);
+  background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-sm);
+}
 .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .mod-chip, .consumer-chip, .chip, .preset-btn {
   background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);

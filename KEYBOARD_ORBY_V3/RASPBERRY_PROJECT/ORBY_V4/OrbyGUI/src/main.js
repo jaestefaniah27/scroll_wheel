@@ -145,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wheelDial.init().then(() => {
     dashboard.refreshMarker();
     if (activeView === 'view-profiles') profiles.render();
+    if (activeView === 'view-settings') settings.render();
   });
 
   // Variaciones de perfil por aplicación: se leen del disco antes de que el

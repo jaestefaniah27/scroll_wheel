@@ -22,6 +22,10 @@ export const CONSUMER_MODIFIER = 0xFE;
 export const GOTO_PAGE_MODIFIER  = 0xFD;  // keycode = número de página, base 1
 export const PAGE_STATE_MODIFIER = 0xFC;  // la tecla enseña la página y abre el gestor
 
+// keycode = id de una macro (secuencia) del PC, guardada en la configuración
+// local. El firmware no la ejecuta: solo manda MACRO:<id> por CDC.
+export const MACRO_MODIFIER = 0xFB;
+
 // Índices de la tabla get_consumer_key_from_index() del firmware.
 export const CONSUMER_ACTIONS = [
   { index: 7,  label: 'Subir volumen' },
@@ -181,6 +185,7 @@ export function describeAction(modifier, keycode) {
   }
   if (modifier === GOTO_PAGE_MODIFIER)  return `Ir a la página ${keycode}`;
   if (modifier === PAGE_STATE_MODIFIER) return 'Estado de páginas';
+  if (modifier === MACRO_MODIFIER)      return `Secuencia ${keycode}`;
   if (!modifier && !keycode) return 'Sin asignar';
 
   const parts = MODIFIERS.filter((m) => modifier & m.bit).map((m) => m.short);

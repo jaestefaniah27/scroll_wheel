@@ -18,20 +18,18 @@ import { state, notify, markDirty, subscribe, syncFromDevice, profileMeta, label
          rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU,
          hasPages, maxPages, pageCountOf, selectPage, addPage, removePage } from '../store.js';
 import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER,
-         KEY_GROUPS, describeAction, eventToAction,
+         MACRO_MODIFIER, KEY_GROUPS, describeAction, eventToAction,
          ROTARY_TYPES, ROTARY_SLOTS, isScrollType, describeRotary } from '../hid-keys.js';
 import { icon } from '../icons.js';
 import { toast } from '../ui.js';
 import { goTo } from '../nav.js';
 import * as cache from '../oled-cache.js';
-import * as wheelDial from '../wheel-dial.js';
 import * as variants from '../variants.js';
-import * as dashboard from './dashboard.js';
 
 // Mandos giratorios agrupados como se ven en el teclado.
 const ROTARY_GROUPS = [
   {
-    name: 'Encoder izquierdo', icon: 'reset',
+    name: 'Izquierdo', icon: 'reset',
     parts: [
       { slot: ROTARY_SLOTS.ENC1_CW,    label: 'Giro horario',     short: '↻' },
       { slot: ROTARY_SLOTS.ENC1_CCW,   label: 'Giro antihorario', short: '↺' },
@@ -39,14 +37,7 @@ const ROTARY_GROUPS = [
     ],
   },
   {
-    name: 'Rueda de scroll', icon: 'wheel',
-    parts: [
-      { slot: ROTARY_SLOTS.WHEEL_CW,  label: 'Hacia abajo', short: '↓' },
-      { slot: ROTARY_SLOTS.WHEEL_CCW, label: 'Hacia arriba', short: '↑' },
-    ],
-  },
-  {
-    name: 'Encoder derecho', icon: 'reset',
+    name: 'Derecho', icon: 'reset',
     parts: [
       { slot: ROTARY_SLOTS.ENC2_CW,    label: 'Giro horario',     short: '↻' },
       { slot: ROTARY_SLOTS.ENC2_CCW,   label: 'Giro antihorario', short: '↺' },
@@ -54,6 +45,17 @@ const ROTARY_GROUPS = [
     ],
   },
 ];
+
+// La rueda ya no comparte rejilla con los encoders (tiene su propia tarjeta,
+// más abajo, con botones directos para "hacia abajo" y "hacia arriba"), pero
+// el inspector necesita su nombre y su etiqueta cuando se abre desde ahí.
+const WHEEL_GROUP = {
+  name: 'Rueda de scroll', icon: 'wheel',
+  parts: [
+    { slot: ROTARY_SLOTS.WHEEL_CW,  label: 'Hacia abajo',  short: '↓' },
+    { slot: ROTARY_SLOTS.WHEEL_CCW, label: 'Hacia arriba', short: '↑' },
+  ],
+};
 
 // Tipos ofrecidos en el inspector. Los de desplazamiento no tienen sentido en
 // una pulsación, que es un evento suelto sin dirección.
@@ -78,7 +80,8 @@ const view = {
   layer: 'normal',
   variantId: null,  // null = perfil base; si no, la variación que se edita
   selected: null,   // { kind: 'key', index } | { kind: 'rotary', slot }
-  capturing: false,
+  tab: 'shortcut',  // pestaña del inspector de tecla: shortcut | sequence | media | pages
+  capturing: false, // false | true (atajo) | 'sequence' (grabando una macro)
   busy: false,      // hay un alta/baja de perfil en marcha
 };
 
@@ -88,9 +91,42 @@ function editingVariant() {
   return view.variantId ? variants.get(view.variantId) : null;
 }
 
-// Giro acumulado de la rueda para la prueba en vivo.
-let liveTotal = 0;
-let liveDecay = null;
+// --- Macros (secuencias ejecutadas en el PC) --------------------------------
+// Viven en la configuración local (window.orby.getConfig/setConfig), no en el
+// teclado: el firmware solo guarda el id en el campo del modificador de la
+// tecla o del mando (MACRO_MODIFIER) y avisa por CDC al pulsarla.
+let pcMacros = [];
+
+async function loadPCMacros() {
+  try {
+    const cfg = await window.orby.getConfig();
+    pcMacros = cfg?.macros || [];
+  } catch {
+    pcMacros = [];
+  }
+}
+
+function savePCMacros() {
+  window.orby.setConfig({ macros: pcMacros });
+}
+
+function macroById(id) {
+  return pcMacros.find((m) => m.id === id);
+}
+
+function ensureMacro(id) {
+  let m = macroById(id);
+  if (!m) {
+    m = { id, actions: [] };
+    pcMacros.push(m);
+    savePCMacros();
+  }
+  return m;
+}
+
+function nextMacroId() {
+  return pcMacros.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+}
 
 function selectedKeyIndex() {
   return view.selected?.kind === 'key' ? view.selected.index : null;
@@ -101,7 +137,7 @@ function selectedRotarySlot() {
 }
 
 function rotaryPart(baseSlot) {
-  for (const g of ROTARY_GROUPS) {
+  for (const g of [...ROTARY_GROUPS, WHEEL_GROUP]) {
     const p = g.parts.find((x) => x.slot === baseSlot);
     if (p) return { group: g, part: p };
   }
@@ -135,13 +171,10 @@ export function init() {
   // completa hay que repintar la rejilla, no la vista entera.
   cache.onChange(() => { if (isActiveView()) renderKeyGrid(); });
 
-  device.on('telemetry', (line) => {
-    if (line.startsWith('WHEEL:') && isActiveView()) onWheelTelemetry(parseInt(line.slice(6), 10));
-  });
-
-  // El dibujo de la rueda lo lleva wheel-dial.js con el ángulo absoluto del
-  // sensor, así que la aguja se queda donde esté la rueda de verdad.
-  wheelDial.onUpdate(paintDialMarker);
+  // Las macros (secuencias) viven en la configuración local del PC, no en el
+  // teclado: se leen una vez al arrancar y se repintan si ya se estaba
+  // enseñando el inspector de una tecla en modo "Secuencia".
+  loadPCMacros().then(() => { if (isActiveView() && view.selected) render(); });
 
   // Cuando el detector de aplicaciones aplica o quita una variación hay que
   // reflejarlo aquí (el distintivo de "aplicada ahora").
@@ -203,9 +236,12 @@ function onClick(e) {
     deletePage(Number(el.dataset.page));
   } else if (act === 'pick-key') {
     view.selected = { kind: 'key', index: Number(el.dataset.key) };
+    view.capturing = false;
+    view.tab = tabForAction(currentAction());
     render();
   } else if (act === 'pick-rotary') {
     view.selected = { kind: 'rotary', slot: Number(el.dataset.slot) };
+    view.capturing = false;
     render();
   } else if (act === 'edit-icon') {
     // Salta al editor de iconos con este perfil, esta tecla y esta capa.
@@ -254,24 +290,37 @@ function onClick(e) {
     applyScroll({ detentsPerRev: Number(el.dataset.value) });
   } else if (act === 'scroll-invert') {
     applyScroll({ invert: !currentScroll().invert });
-  } else if (act === 'dial-marker') {
-    applyDialSetting({ marker: el.dataset.marker });
-  } else if (act === 'dial-invert') {
-    applyDialSetting({ invert: !wheelDial.dial.invert });
-  } else if (act === 'dial-nudge') {
-    applyDialSetting({ offsetDeg: wheelDial.normalize(wheelDial.dial.offsetDeg + Number(el.dataset.d)) });
-  } else if (act === 'dial-align') {
-    wheelDial.alignHere();
+  } else if (act === 'set-tab') {
+    setTab(el.dataset.tab);
+  } else if (act === 'seq-add-center') {
+    seqAddAction({ type: 'center_mouse' });
+  } else if (act === 'seq-add-click') {
+    seqAddAction({ type: 'mouse_click' });
+  } else if (act === 'seq-add-delay') {
+    seqAddAction({ type: 'delay', ms: 300 });
+  } else if (act === 'seq-del') {
+    seqRemoveAction(Number(el.dataset.index));
+  } else if (act === 'seq-record') {
+    view.capturing = view.capturing === 'sequence' ? false : 'sequence';
     render();
-    dashboard.refreshMarker();
+  } else if (act === 'seq-clear') {
+    view.tab = 'shortcut';
+    applyKeymap(0, 0);
+  } else if (act === 'rotary-macro') {
+    applyRotaryMacro();
   }
 }
 
 function onChange(e) {
   const act = e.target.dataset.act;
   if (act === 'pick-keycode') {
+    // Multimedia, páginas y secuencias se apropian del campo del modificador;
+    // elegir una tecla desde la pestaña Atajo sale de esos modos igual que
+    // tocar un modificador (ver toggle-mod).
     const current = currentAction();
-    const mod = current.modifier === CONSUMER_MODIFIER ? 0 : current.modifier;
+    const isSpecial = current.modifier === CONSUMER_MODIFIER || current.modifier === GOTO_PAGE_MODIFIER
+                    || current.modifier === PAGE_STATE_MODIFIER || current.modifier === MACRO_MODIFIER;
+    const mod = isSpecial ? 0 : current.modifier;
     applyKeymap(mod, Number(e.target.value));
   } else if (act === 'rotary-keycode') {
     const cur = currentRotary();
@@ -345,13 +394,6 @@ function onInput(e) {
     const readout = document.getElementById('scroll-value');
     if (readout) readout.textContent = val;
     updateDerived(val);
-
-  } else if (act === 'dial-offset') {
-    // El desfase se ve al momento en la aguja, sin repintar la vista entera.
-    const deg = Number(e.target.value);
-    wheelDial.setDial({ offsetDeg: deg });
-    const label = document.getElementById('dial-offset-val');
-    if (label) label.textContent = `${deg}°`;
   }
 }
 
@@ -362,6 +404,15 @@ function onCapture(e) {
   e.stopPropagation();
 
   if (e.key === 'Escape') { view.capturing = false; render(); return; }
+
+  // Grabando una secuencia: cada tecla capturable se añade como un paso más,
+  // sin salir del modo (se graban varias seguidas). Solo cubre lo que sabe
+  // reproducir el ejecutor de macros del PC: letras, dígitos, Enter y Espacio.
+  if (view.capturing === 'sequence') {
+    if (!SEQUENCE_CAPTURABLE.has(e.code)) return;
+    seqAddAction({ type: 'key', code: e.code });
+    return;
+  }
 
   const action = eventToAction(e);
   if (!action.keycode) return; // solo modificadores: seguimos esperando
@@ -374,14 +425,39 @@ function onCapture(e) {
   }
 }
 
+// Códigos que sabe reproducir electron/macros.js (mapCodeToNutKey): letras,
+// dígitos, Enter y Espacio. Ampliar esa tabla y esta lista a la vez.
+const SEQUENCE_CAPTURABLE = new Set([
+  ...Array.from({ length: 26 }, (_, i) => `Key${String.fromCharCode(65 + i)}`),
+  ...Array.from({ length: 10 }, (_, i) => `Digit${i}`),
+  'Enter', 'Space',
+]);
+
 // --- Variaciones ------------------------------------------------------------
+
+// `foreground.current()` solo devuelve algo si el proceso PowerShell que vigila
+// la ventana en primer plano ya está arrancado, y eso solo pasa si la función
+// "Auto" (cambio de perfil por app) se ha activado alguna vez. Si nadie la ha
+// tocado, current() siempre da null aunque haya algo enfocado: aquí se arranca
+// bajo demanda y se reintenta unas cuantas veces mientras llega el primer dato.
+async function getCurrentWindowInfo() {
+  let info = await window.orby.foreground.current();
+  if (info) return info;
+
+  await window.orby.foreground.start();
+  for (let i = 0; i < 8 && !info; i++) {
+    await new Promise((r) => setTimeout(r, 300));
+    info = await window.orby.foreground.current();
+  }
+  return info;
+}
 
 // Se propone la app que tengas delante: es casi siempre para la que quieres la
 // variación, y ahorra escribir el nombre del ejecutable a mano.
 async function createVariant() {
   let match = '';
   try {
-    const info = await window.orby.foreground.current();
+    const info = await getCurrentWindowInfo();
     match = (info?.process || '').toLowerCase();
   } catch { /* sin detector: se rellena a mano */ }
 
@@ -415,7 +491,7 @@ function addMatchFromField() {
 
 async function addCurrentApp() {
   try {
-    const info = await window.orby.foreground.current();
+    const info = await getCurrentWindowInfo();
     const proc = (info?.process || '').toLowerCase();
     if (!proc) { toast('Aún no se ha detectado ninguna ventana', 'error'); return; }
     if (!variants.addMatch(view.variantId, proc)) {
@@ -473,6 +549,7 @@ async function clearOverrideOfSelection() {
       toast('El teclado no confirmó la vuelta al valor base', 'error');
     }
   }
+  if (view.selected.kind === 'key') view.tab = tabForAction(currentAction());
   render();
 }
 
@@ -648,6 +725,66 @@ async function applyRotary(action) {
   }
 }
 
+// Pestaña que abre el inspector de tecla por defecto, según lo que ya tenga
+// asignado el hueco elegido.
+function tabForAction(action) {
+  if (action.modifier === CONSUMER_MODIFIER) return 'media';
+  if (action.modifier === GOTO_PAGE_MODIFIER || action.modifier === PAGE_STATE_MODIFIER) return 'pages';
+  if (action.modifier === MACRO_MODIFIER) return 'sequence';
+  return 'shortcut';
+}
+
+// Cambia de pestaña en el inspector de tecla. La primera vez que se entra en
+// "Secuencia" no hay macro todavía: se crea una vacía y se asigna al vuelo.
+function setTab(tab) {
+  const wasSequence = view.tab === 'sequence';
+  view.tab = tab;
+  if (tab === 'sequence' && !wasSequence) {
+    const action = currentAction();
+    if (action.modifier !== MACRO_MODIFIER) {
+      const id = nextMacroId();
+      ensureMacro(id);
+      applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
+      return;
+    }
+  }
+  render();
+}
+
+// Macro asignada al hueco seleccionado (tecla o mando), o null si no lo es.
+function currentMacroId() {
+  const a = view.selected?.kind === 'rotary' ? currentRotary() : currentAction();
+  return a.modifier === MACRO_MODIFIER ? a.keycode : null;
+}
+
+function seqAddAction(action) {
+  const id = currentMacroId();
+  if (id === null) return;
+  const m = ensureMacro(id);
+  m.actions.push(action);
+  savePCMacros();
+  render();
+}
+
+function seqRemoveAction(index) {
+  const id = currentMacroId();
+  if (id === null) return;
+  const m = macroById(id);
+  if (!m) return;
+  m.actions.splice(index, 1);
+  savePCMacros();
+  render();
+}
+
+// Botón "Secuencia" del inspector de mando: mismo mecanismo que en las teclas,
+// pero sin pestañas, porque el mando ya elige su acción con el type-grid.
+function applyRotaryMacro() {
+  if (currentRotary().modifier === MACRO_MODIFIER) return;
+  const id = nextMacroId();
+  ensureMacro(id);
+  applyRotary({ type: ROTARY_TYPES.KEY, modifier: MACRO_MODIFIER, keycode: id });
+}
+
 // Sensibilidad e inversión de la rueda: un ajuste más del perfil y de la capa.
 async function applyScroll(patch) {
   const prof = currentProfile();
@@ -670,36 +807,6 @@ async function applyScroll(patch) {
   } catch {
     toast('El teclado no confirmó la calibración de la rueda', 'error');
   }
-}
-
-function paintDialMarker(deg) {
-  const marker = document.getElementById('scroll-live-needle');
-  if (marker) marker.style.transform = `rotate(${deg}deg)`;
-}
-
-function onWheelTelemetry(delta) {
-  if (!Number.isFinite(delta)) return;
-  liveTotal += delta;
-
-  const readout = document.getElementById('scroll-live-readout');
-  if (!readout) return;
-
-  const detents = (liveTotal * currentScroll().detentsPerRev) / 4096;
-  readout.textContent =
-    `Rueda en ${wheelDial.normalize(wheelDial.angle()).toFixed(0)}°  ·  `
-    + `${detents >= 0 ? '+' : ''}${detents.toFixed(2)} clics en este giro`;
-
-  clearTimeout(liveDecay);
-  liveDecay = setTimeout(() => { liveTotal = 0; }, 1200);
-}
-
-// Ajustes de cómo se dibuja la rueda: sentido de giro, desfase del marcador de
-// la tapa y forma. Son de montaje, así que se guardan en el PC.
-function applyDialSetting(patch) {
-  wheelDial.setDial(patch);
-  render();
-  // El dashboard tiene el mismo marcador y también hay que rehacerlo.
-  dashboard.refreshMarker();
 }
 
 // --- Render ----------------------------------------------------------------
@@ -729,19 +836,23 @@ export function render() {
         ${renderVariantSettings()}
         <div class="editor-board glass-panel">
           <div class="editor-board-head">
-            <label class="field-inline">
-              <span>Nombre</span>
-              <input type="text" maxlength="7" value="${escape(prof.name)}"
-                     data-act="edit-name" class="text-input compact">
-            </label>
-            <div class="layer-toggle">
-              <button class="toggle-btn ${view.layer === 'normal' ? 'active' : ''}" data-act="layer" data-layer="normal">NORMAL</button>
-              <button class="toggle-btn ${view.layer === 'super' ? 'active' : ''}" data-act="layer" data-layer="super">SUPER</button>
+            <div class="head-row">
+              <label class="field-inline">
+                <span>Nombre</span>
+                <input type="text" maxlength="7" value="${escape(prof.name)}"
+                       data-act="edit-name" class="text-input compact">
+              </label>
+              ${view.editingProfile === state.activeProfileIdx
+                ? '<span class="pill pill-live">Perfil activo</span>'
+                : '<button class="secondary-btn" data-act="activate">Activar en el teclado</button>'}
             </div>
-            ${renderPageBar()}
-            ${view.editingProfile === state.activeProfileIdx
-              ? '<span class="pill pill-live">Perfil activo</span>'
-              : '<button class="secondary-btn" data-act="activate">Activar en el teclado</button>'}
+            <div class="head-row">
+              <div class="layer-toggle">
+                <button class="toggle-btn ${view.layer === 'normal' ? 'active' : ''}" data-act="layer" data-layer="normal">NORMAL</button>
+                <button class="toggle-btn ${view.layer === 'super' ? 'active' : ''}" data-act="layer" data-layer="super">SUPER</button>
+              </div>
+              ${renderPageBar()}
+            </div>
           </div>
           ${renderPageHint()}
 
@@ -750,12 +861,12 @@ export function render() {
         </div>
 
         <div class="glass-panel oled-card">
-          <div class="card-header">${icon('reset', 20)}<h2>Mandos giratorios</h2></div>
+          <div class="card-header">${icon('reset', 20)}<h2>Encoders</h2></div>
           <div class="rotary-groups">${renderRotaryGroups()}</div>
           <p class="setting-desc mt-4">
             Cada capa guarda sus propias acciones: con <strong>SUPER</strong> mantenida los encoders
-            y la rueda hacen lo que configures aquí en la capa SUPER. Dentro del menú del teclado
-            los encoders siguen sirviendo para navegar.
+            hacen lo que configures aquí en la capa SUPER. Dentro del menú del teclado siguen
+            sirviendo para navegar.
           </p>
         </div>
 
@@ -770,7 +881,6 @@ export function render() {
   cache.paintThumbs(body);
   paintKeyGrid();
   updateDerived(currentScroll().detentsPerRev);
-  paintDialMarker(wheelDial.angle());
   cache.loadProfile(view.editingProfile);
 }
 
@@ -1086,6 +1196,10 @@ function renderRotaryGroups() {
 function renderWheelCard() {
   const s = currentScroll();
   const layerName = view.layer === 'super' ? 'SUPER' : 'normal';
+  const prof = currentProfile();
+  const variant = editingVariant();
+  const cw  = variants.effectiveRotary(prof, variant, ROTARY_SLOTS.WHEEL_CW,  view.layer);
+  const ccw = variants.effectiveRotary(prof, variant, ROTARY_SLOTS.WHEEL_CCW, view.layer);
 
   return `
     <div class="glass-panel oled-card">
@@ -1109,6 +1223,11 @@ function renderWheelCard() {
 
           <input type="range" id="scroll-slider" class="premium-slider" data-act="scroll-slider"
                  min="6" max="240" step="1" value="${s.detentsPerRev}">
+
+          <div class="slider-row">
+            <span>Más lento</span>
+            <span>Más rápido</span>
+          </div>
 
           <div class="preset-row">
             ${SCROLL_PRESETS.map((p) => `
@@ -1139,56 +1258,31 @@ function renderWheelCard() {
               ? 'Paneo horizontal en alta resolución'
               : 'Paneo horizontal sin negociar'}</strong>
           </div>
-          <div class="wheel-dial">
-            <div class="wheel-dial-face">${wheelDial.markerHtml('scroll-live-needle')}</div>
-          </div>
-          <p class="wheel-live-readout" id="scroll-live-readout">Gira la rueda para comprobar el recorrido</p>
 
-          ${renderDialCalibration()}
+          <div class="field">
+            <span class="field-label">Acción del giro</span>
+            <button class="rotary-part ${selectedRotarySlot() === ROTARY_SLOTS.WHEEL_CW ? 'selected' : ''}"
+                    data-act="pick-rotary" data-slot="${ROTARY_SLOTS.WHEEL_CW}">
+              <span class="rp-dir">↓</span>
+              <span class="rp-body"><em>Hacia abajo</em><strong>${escape(describeRotary(cw))}</strong></span>
+            </button>
+            <button class="rotary-part ${selectedRotarySlot() === ROTARY_SLOTS.WHEEL_CCW ? 'selected' : ''}"
+                    data-act="pick-rotary" data-slot="${ROTARY_SLOTS.WHEEL_CCW}">
+              <span class="rp-dir">↑</span>
+              <span class="rp-body"><em>Hacia arriba</em><strong>${escape(describeRotary(ccw))}</strong></span>
+            </button>
+          </div>
 
           <p class="setting-desc">
             La sensibilidad pertenece a <strong>${escape(currentProfile().name)}</strong> en la capa
-            ${layerName}: cada perfil —y cada capa— puede tener la suya.
+            ${layerName}: cada perfil —y cada capa— puede tener la suya. El dibujo de la rueda en
+            pantalla (forma del marcador, sentido, desfase) se calibra en <strong>Ajustes</strong>.
             ${state.scroll.hires
               ? 'Con el multiplicador negociado el desplazamiento viaja en unidades de 1/120 de clic.'
               : 'Hasta que Windows pida el multiplicador, las aplicaciones antiguas saltarán de tres en tres líneas.'}
           </p>
         </div>
       </div>
-    </div>`;
-}
-
-// Cómo se dibuja la rueda en la app. No toca el teclado: solo hace que el
-// dibujo coincida con el marcador que lleve pegado la tapa.
-function renderDialCalibration() {
-  const d = wheelDial.dial;
-
-  return `
-    <div class="dial-calib">
-      <span class="field-label">Marcador en pantalla</span>
-
-      <div class="chip-row">
-        <button class="chip ${d.marker === 'dot' ? 'on' : ''}" data-act="dial-marker" data-marker="dot">Círculo</button>
-        <button class="chip ${d.marker === 'line' ? 'on' : ''}" data-act="dial-marker" data-marker="line">Raya</button>
-        <button class="chip ${d.invert ? 'on' : ''}" data-act="dial-invert"
-                title="Si el dibujo gira al revés que la rueda">Invertir giro</button>
-      </div>
-
-      <div class="dial-offset">
-        <button class="tool-btn small" data-act="dial-nudge" data-d="-1" title="1° menos">${icon('minus', 14)}</button>
-        <input type="range" class="premium-slider" data-act="dial-offset"
-               min="0" max="359" step="1" value="${Math.round(d.offsetDeg)}">
-        <button class="tool-btn small" data-act="dial-nudge" data-d="1" title="1° más">${icon('plus', 14)}</button>
-        <b id="dial-offset-val">${Math.round(d.offsetDeg)}°</b>
-      </div>
-
-      <button class="secondary-btn full" data-act="dial-align">
-        ${icon('fit', 16)} El marcador está arriba: alinear aquí
-      </button>
-      <p class="setting-desc">
-        Pon el circulito de la tapa mirando hacia arriba y pulsa el botón: el de la
-        pantalla se coloca en el mismo sitio. Con la barra afinas grado a grado.
-      </p>
     </div>`;
 }
 
@@ -1229,6 +1323,7 @@ function renderRotaryInspector() {
   const found = rotaryPart(base);
   const action = currentRotary();
   const isClick = Boolean(found?.part.discrete);
+  const isMacro = action.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER;
   const types = ROTARY_TYPE_OPTIONS.filter((t) => !(isClick && t.turnOnly));
 
   const variant = editingVariant();
@@ -1258,8 +1353,9 @@ function renderRotaryInspector() {
         <span class="field-label">Tipo de acción</span>
         <div class="type-grid">
           ${types.map((t) => `
-            <button class="type-chip ${action.type === t.type ? 'on' : ''}"
+            <button class="type-chip ${action.type === t.type && !(t.type === ROTARY_TYPES.KEY && isMacro) ? 'on' : ''}"
                     data-act="rotary-type" data-type="${t.type}">${t.label}</button>`).join('')}
+          <button class="type-chip ${isMacro ? 'on' : ''}" data-act="rotary-macro">Secuencia</button>
         </div>
       </div>
 
@@ -1273,7 +1369,9 @@ function renderRotaryInspector() {
           </div>
         </div>` : ''}
 
-      ${action.type === ROTARY_TYPES.KEY ? `
+      ${isMacro ? renderSequenceEditor(action.keycode) : ''}
+
+      ${action.type === ROTARY_TYPES.KEY && !isMacro ? `
         <div class="field">
           <span class="field-label">Modificadores</span>
           <div class="mod-grid">
@@ -1314,16 +1412,18 @@ function renderKeyInspector() {
   const variant = editingVariant();
   const lslot = labelSlot(i, view.layer);
   const action = currentAction();
-  // Los tres modos que se apropian del campo del modificador: mientras uno esté
-  // puesto, ni los modificadores ni la tecla pintan nada.
+  // Los cuatro modos que se apropian del campo del modificador: mientras uno
+  // esté puesto, ni los modificadores ni la tecla pintan nada.
   const isConsumer = action.modifier === CONSUMER_MODIFIER;
-  const isSpecial  = isConsumer || action.modifier === GOTO_PAGE_MODIFIER
-                                || action.modifier === PAGE_STATE_MODIFIER;
+  const isMacro     = action.modifier === MACRO_MODIFIER;
+  const isSpecial  = isConsumer || isMacro || action.modifier === GOTO_PAGE_MODIFIER
+                                            || action.modifier === PAGE_STATE_MODIFIER;
   const keyOptions = keycodeOptions(isSpecial ? 0 : action.keycode);
   const hasIcon = lslot >= 0 && Boolean(cache.get(view.editingProfile, lslot));
   const baseAction = prof.keys[keymapSlot(i, view.layer)] || { modifier: 0, keycode: 0 };
   const changed = Boolean(variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
                                    || variants.override(variant, 'labels', lslot)));
+  const tab = view.tab;
 
   return `
     <div class="editor-inspector glass-panel">
@@ -1356,11 +1456,6 @@ function renderKeyInspector() {
               ${icon('pencil', 16)} ${hasIcon ? 'Editar icono' : 'Dibujar icono'}
             </button>
           </div>
-          <p class="setting-desc">
-            ${hasIcon
-              ? 'La pantalla muestra este icono; la etiqueta de texto queda de reserva.'
-              : 'Sin icono, la pantalla muestra la etiqueta de texto.'}
-          </p>
         </div>
 
         <label class="field">
@@ -1374,45 +1469,100 @@ function renderKeyInspector() {
           abre el menú del teclado al mantenerla, así que el firmware no ejecuta su atajo.
         </p>`}
 
-      <div class="field">
-        <span class="field-label">Modificadores</span>
-        <div class="mod-grid">
-          ${MODIFIERS.map((m) => `
-            <button class="mod-chip ${!isSpecial && (action.modifier & m.bit) ? 'on' : ''}"
-                    data-act="toggle-mod" data-bit="${m.bit}">${m.label}</button>`).join('')}
+      <div class="inspector-tabs">
+        <button class="inspector-tab ${tab === 'shortcut' ? 'active' : ''}" data-act="set-tab" data-tab="shortcut">Atajo</button>
+        <button class="inspector-tab ${tab === 'sequence' ? 'active' : ''}" data-act="set-tab" data-tab="sequence">Secuencia</button>
+        <button class="inspector-tab ${tab === 'media' ? 'active' : ''}" data-act="set-tab" data-tab="media">Multimedia</button>
+        ${hasPages() ? `<button class="inspector-tab ${tab === 'pages' ? 'active' : ''}" data-act="set-tab" data-tab="pages">Páginas</button>` : ''}
+      </div>
+
+      ${tab === 'shortcut' ? `
+        <div class="field">
+          <span class="field-label">Modificadores</span>
+          <div class="mod-grid">
+            ${MODIFIERS.map((m) => `
+              <button class="mod-chip ${!isSpecial && (action.modifier & m.bit) ? 'on' : ''}"
+                      data-act="toggle-mod" data-bit="${m.bit}">${m.label}</button>`).join('')}
+          </div>
         </div>
+
+        <label class="field">
+          <span class="field-label">Tecla</span>
+          <select class="select-input" data-act="pick-keycode">
+            <option value="0" ${!isSpecial && !action.keycode ? 'selected' : ''}>— ninguna —</option>
+            ${keyOptions}
+          </select>
+        </label>
+
+        <div class="inspector-actions">
+          <button class="primary-btn ${view.capturing === true ? 'is-capturing' : ''}" data-act="capture">
+            ${icon('key', 16)} ${view.capturing === true ? 'Pulsa el atajo… (Esc cancela)' : 'Capturar atajo del teclado'}
+          </button>
+          <button class="secondary-btn" data-act="clear-action">${icon('trash', 16)} Quitar</button>
+        </div>` : ''}
+
+      ${tab === 'sequence' ? renderSequenceEditor(isMacro ? action.keycode : null) : ''}
+
+      ${tab === 'media' ? `
+        <div class="field">
+          <span class="field-label">Acción multimedia</span>
+          <div class="consumer-grid">
+            ${CONSUMER_ACTIONS.map((c) => `
+              <button class="consumer-chip ${isConsumer && action.keycode === c.index ? 'on' : ''}"
+                      data-act="set-consumer" data-index="${c.index}">${c.label}</button>`).join('')}
+          </div>
+        </div>` : ''}
+
+      ${tab === 'pages' ? renderPageActions(action) : ''}
+    </div>`;
+}
+
+// Editor de una macro (secuencia ejecutada en el PC): lista de acciones con
+// botón de borrar cada una, botones para añadir las de un solo paso, y un modo
+// de grabación que captura pulsaciones reales del teclado del PC.
+function renderSequenceEditor(macroId) {
+  const macro = macroId === null ? null : macroById(macroId);
+  const actions = macro?.actions || [];
+  const recording = view.capturing === 'sequence';
+
+  const describe = (a) => {
+    if (a.type === 'center_mouse') return 'Centrar ratón';
+    if (a.type === 'mouse_click')  return 'Clic';
+    if (a.type === 'delay')        return `Pausa de ${a.ms} ms`;
+    if (a.type === 'key')          return `Tecla ${a.code}`;
+    return a.type;
+  };
+
+  return `
+    <div class="field">
+      <span class="field-label">Pasos de la secuencia</span>
+      ${actions.length ? `
+        <ul class="seq-list">
+          ${actions.map((a, idx) => `
+            <li class="seq-item">
+              <span>${idx + 1}. ${escape(describe(a))}</span>
+              <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+                ${icon('trash', 14)}
+              </button>
+            </li>`).join('')}
+        </ul>` : `<p class="setting-desc">Todavía no tiene ningún paso.</p>`}
+
+      <div class="row-inline mt-4">
+        <button class="secondary-btn" data-act="seq-add-center">${icon('fit', 16)} Centrar ratón</button>
+        <button class="secondary-btn" data-act="seq-add-click">${icon('bolt', 16)} Clic</button>
+        <button class="secondary-btn" data-act="seq-add-delay">${icon('reset', 16)} Pausa</button>
       </div>
 
-      <label class="field">
-        <span class="field-label">Tecla</span>
-        <select class="select-input" data-act="pick-keycode">
-          <option value="0" ${!isSpecial && !action.keycode ? 'selected' : ''}>— ninguna —</option>
-          ${keyOptions}
-        </select>
-      </label>
+      <button class="primary-btn full ${recording ? 'is-capturing' : ''}" data-act="seq-record">
+        ${icon('key', 16)} ${recording ? 'Grabando… pulsa teclas (Esc termina)' : 'Grabar secuencia de teclas'}
+      </button>
 
-      <div class="field">
-        <span class="field-label">Acción multimedia</span>
-        <div class="consumer-grid">
-          ${CONSUMER_ACTIONS.map((c) => `
-            <button class="consumer-chip ${isConsumer && action.keycode === c.index ? 'on' : ''}"
-                    data-act="set-consumer" data-index="${c.index}">${c.label}</button>`).join('')}
-        </div>
-      </div>
+      <p class="setting-desc">
+        Se ejecuta en el PC, no en el teclado, así que sigue funcionando aunque cambies de
+        perfil o de página. La grabación solo reconoce letras, dígitos, Enter y Espacio.
+      </p>
 
-      ${renderPageActions(action)}
-
-      <div class="inspector-actions">
-        <button class="primary-btn ${view.capturing ? 'is-capturing' : ''}" data-act="capture">
-          ${icon('key', 16)} ${view.capturing ? 'Pulsa el atajo… (Esc cancela)' : 'Capturar atajo del teclado'}
-        </button>
-        <button class="secondary-btn" data-act="clear-action">${icon('trash', 16)} Quitar</button>
-      </div>
-
-      <div class="inspector-summary">
-        <span class="field-label">Resultado</span>
-        <code>${escape(describeAction(action.modifier, action.keycode))}</code>
-      </div>
+      <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar secuencia</button>
     </div>`;
 }
 

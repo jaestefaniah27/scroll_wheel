@@ -40,6 +40,7 @@
 #define KEYACT_CONSUMER   0xFE  // keycode = índice de la tabla multimedia
 #define KEYACT_GOTO_PAGE  0xFD  // keycode = número de página (1..MAX_PAGES)
 #define KEYACT_PAGE_STATE 0xFC  // enseña la página actual y abre el gestor
+#define KEYACT_MACRO      0xFB  // keycode = id de la macro; la ejecuta el PC, no el teclado
 
 // Las dos teclas de sistema: no llevan pantalla y no envían atajos. Son índices
 // base 0 dentro de key_pins, así que la tecla N está en N-1.
@@ -1163,6 +1164,15 @@ uint16_t get_consumer_key_from_index(uint8_t idx) {
     }
 }
 
+// Dispara una macro del PC. El firmware no sabe qué hace la macro (mover el
+// ratón, pulsar teclas...): solo avisa por CDC y quien ejecuta es la app.
+static void trigger_macro(uint8_t id) {
+    char tel[24];
+    int len = snprintf(tel, sizeof(tel), "MACRO:%d\n", (int)id);
+    tud_cdc_n_write(0, tel, len);
+    tud_cdc_n_write_flush(0);
+}
+
 // El envío de informes vive en hid_out.h: estado de teclas con rollover de seis
 // y cola para las pulsaciones puntuales, sin esperas bloqueantes.
 
@@ -1224,7 +1234,11 @@ static void emit_discrete(const RotaryAction& a) {
     if (a.type == ROT_CONSUMER) {
         HidOut::consumer_tap(get_consumer_key_from_index(a.keycode));
     } else if (a.type == ROT_KEY) {
-        HidOut::tap(a.modifier, a.keycode);
+        // Una macro es un ROT_KEY con el modificador reservado KEYACT_MACRO: no
+        // hace falta un RotaryType nuevo, con reutilizar el campo basta, igual
+        // que en KeyAction.
+        if (a.modifier == KEYACT_MACRO) trigger_macro(a.keycode);
+        else HidOut::tap(a.modifier, a.keycode);
     }
 }
 
@@ -2566,6 +2580,9 @@ int main() {
                             // Abre el gestor de páginas
                             current_mode = MODE_MENU_PAGES;
                             push_system_refresh();
+                        } else if (mod == KEYACT_MACRO) {
+                            // La secuencia la ejecuta el PC, no el teclado.
+                            trigger_macro(key);
                         } else if (mod != 0 && key != 0 && ORBY_COMBO_AS_TAP) {
                             // Combinación tipo Ctrl+C: pulsación breve, no
                             // mantenida. Si se mantuviera, el Ctrl se queda

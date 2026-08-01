@@ -4,6 +4,7 @@ const fs = require('fs');
 const { OrbySerial } = require('./serial');
 const { ForegroundWatcher } = require('./foreground');
 const config = require('./config');
+const { executeMacro } = require('./macros');
 
 let mainWindow = null;
 let serial = null;
@@ -61,9 +62,19 @@ function createWindow() {
 
   forward('connected', 'serial:connected');
   forward('disconnected', 'serial:disconnected');
-  forward('data', 'serial:data');
   forward('error', 'serial:error');
   forward('searching', 'serial:searching');
+
+  // Las líneas MACRO:<id> las dispara el firmware pero las ejecuta el PC; se
+  // interceptan aquí además de seguir reenviándolas al renderer como siempre,
+  // para que la consola de la app también las vea.
+  serial.on('data', (line) => {
+    if (line.startsWith('MACRO:')) {
+      const id = parseInt(line.slice(6), 10);
+      if (Number.isInteger(id)) executeMacro(id).catch((err) => console.error('Macro:', err.message));
+    }
+    mainWindow?.webContents.send('serial:data', line);
+  });
 
   serial.startAutoScan();
 
