@@ -81,9 +81,15 @@ const view = {
   variantId: null,  // null = perfil base; si no, la variación que se edita
   selected: null,   // { kind: 'key', index } | { kind: 'rotary', slot }
   tab: 'shortcut',  // pestaña del inspector de tecla: shortcut | sequence | media | pages
-  capturing: false, // false | true (atajo) | 'sequence' (grabando una macro)
+  capturing: false, // false | true (atajo) | 'sequence' (grabando una macro) | 'position' (capturando dónde poner el ratón)
   busy: false,      // hay un alta/baja de perfil en marcha
 };
+
+// Tiempo de espera que se inserta automáticamente entre dos pasos de una
+// secuencia. Bastante bajo para no notarse, pero suficiente para que el
+// sistema/la app de destino registre el paso anterior (mover el ratón, un
+// clic) antes del siguiente.
+const DEFAULT_STEP_DELAY_MS = 50;
 
 // Variación que se está editando. Editar el perfil base es lo normal; al elegir
 // una variación, cada cambio se guarda como diferencia respecto a ese base.
@@ -106,8 +112,11 @@ async function loadPCMacros() {
   }
 }
 
-function savePCMacros() {
+// `id`, si se da, es la macro que acaba de cambiar: además de persistir la
+// configuración del PC, se intenta subir (o limpiar) su copia en el teclado.
+function savePCMacros(id) {
   window.orby.setConfig({ macros: pcMacros });
+  if (id !== undefined) syncMacroToDevice(id);
 }
 
 function macroById(id) {
@@ -119,13 +128,88 @@ function ensureMacro(id) {
   if (!m) {
     m = { id, actions: [] };
     pcMacros.push(m);
-    savePCMacros();
+    savePCMacros(id);
   }
   return m;
 }
 
 function nextMacroId() {
   return pcMacros.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+}
+
+// --- Reproducción en el propio teclado ---------------------------------
+// El firmware sabe tocar espera, tecla, clic y movimiento relativo sin ayuda
+// de nadie. Debe coincidir con MacroStepType en main.cpp.
+//
+// TODO(homing-absoluto): la posición absoluta (MSTEP_HOME_MOVE en main.cpp,
+// tipo 5) se implementó y funciona byte a byte tal y como se pidió —lo
+// confirma la telemetría de MACRO_TEST: home a +4000,+4000 y tramo final a
+// (x - esquina, y - esquina) salen exactos, sin redondeos ni signos
+// cambiados—, pero el resultado en pantalla depende del multiplicador de
+// velocidad del puntero de Windows (el de "velocidad del puntero", no el de
+// "mejorar precisión"; ese ya se descartó), que no hay forma de leer ni
+// anular desde el teclado. Sin una calibración (mandar un desplazamiento
+// conocido, medir cuánto se movió de verdad y guardar el factor), la
+// posición absoluta sin la app abierta no es fiable, así que de momento NO
+// se sube al teclado (se queda excluida de DEVICE_STEP_TYPE, cae siempre al
+// camino del PC) y la esquina de home queda aparcada. Retomar con una
+// pantalla de calibración en el editor antes de reactivarlo. Aparcada a
+// petición expresa del usuario — no es la prioridad ahora.
+const DEVICE_STEP_TYPE = { delay: 1, hotkey: 2, mouse_move: 3, mouse_click: 4 };
+const MACRO_MAX_STEPS_DEVICE = 24; // == MACRO_MAX_STEPS en main.cpp
+const CLICK_BUTTON_CODE = { left: 0, middle: 1, right: 2 };
+
+function macroDeviceEligible(m) {
+  const acts = m?.actions || [];
+  return acts.length > 0
+      && acts.length <= MACRO_MAX_STEPS_DEVICE
+      && acts.every((a) => a.type in DEVICE_STEP_TYPE);
+}
+
+// Sube (o, si ya no es jugable en el teclado, limpia) la copia de una macro en
+// el dispositivo. No bloquea al que llama: si falla, la macro se queda
+// funcionando por el camino del PC hasta el próximo intento.
+async function syncMacroToDevice(id) {
+  // Sin esto, un firmware anterior a esta función respondería "ERR:UNKNOWN_CMD"
+  // a SET_MACRO_STEP, que ninguna petición espera: cada intento agotaría su
+  // tiempo de espera (varios segundos) en vez de fallar al momento.
+  if (!state.connected || state.deviceInfo?.macros !== '1') return;
+  const m = macroById(id);
+
+  if (!m || !macroDeviceEligible(m)) {
+    try { await device.macroClear(id); } catch { /* sin conexión o firmware viejo: no pasa nada */ }
+    return;
+  }
+
+  try {
+    for (let i = 0; i < m.actions.length; i++) {
+      const a = m.actions[i];
+      const type = DEVICE_STEP_TYPE[a.type];
+      let p1 = 0, p2 = 0;
+      if (a.type === 'delay') p1 = Math.max(0, Math.min(32767, Math.round(a.ms) || 0));
+      else if (a.type === 'hotkey') { p1 = a.modifier || 0; p2 = a.keycode || 0; }
+      else if (a.type === 'mouse_move') { p1 = a.dx || 0; p2 = a.dy || 0; }
+      else if (a.type === 'mouse_click') { p1 = CLICK_BUTTON_CODE[a.button] ?? 0; }
+      await device.setMacroStep(id, i, type, p1, p2);
+    }
+    await device.macroTrunc(id, m.actions.length);
+    // Vive en RAM del teclado hasta que se guarde en Flash, igual que un
+    // cambio de atajo: sin esto, el aviso de "Guardar en Flash" no se
+    // encendería y un apagado se llevaría la secuencia por delante.
+    markDirty();
+  } catch {
+    // El teclado puede no estar conectado o llevar un firmware sin este
+    // comando: la macro sigue funcionando por el PC mientras tanto.
+  }
+}
+
+// Reenvía todas las secuencias al conectar: cubre tanto un teclado recién
+// reflasheado (su Flash de secuencias está vacía) como una macro editada
+// mientras estaba desconectado.
+export async function syncAllMacrosToDevice() {
+  if (state.deviceInfo?.macros !== '1') return;
+  await loadPCMacros();
+  for (const m of pcMacros) await syncMacroToDevice(m.id);
 }
 
 function selectedKeyIndex() {
@@ -246,6 +330,10 @@ function onClick(e) {
   } else if (act === 'edit-icon') {
     // Salta al editor de iconos con este perfil, esta tecla y esta capa.
     goTo('view-oled', { profile: view.editingProfile, key: Number(el.dataset.key), layer: view.layer });
+  } else if (act === 'copy-key') {
+    copyKey();
+  } else if (act === 'paste-key') {
+    pasteKey();
   } else if (act === 'rotary-type') {
     applyRotary({ type: Number(el.dataset.type), modifier: 0, keycode: 0 });
   } else if (act === 'rotary-consumer') {
@@ -292,12 +380,23 @@ function onClick(e) {
     applyScroll({ invert: !currentScroll().invert });
   } else if (act === 'set-tab') {
     setTab(el.dataset.tab);
-  } else if (act === 'seq-add-center') {
-    seqAddAction({ type: 'center_mouse' });
+  } else if (act === 'seq-add-position') {
+    if (view.capturing === 'position') stopPositionCapture(false);
+    else startPositionCapture();
+  } else if (act === 'seq-recapture') {
+    if (view.capturing === 'position') stopPositionCapture(false);
+    else startPositionCapture(Number(el.dataset.index));
   } else if (act === 'seq-add-click') {
-    seqAddAction({ type: 'mouse_click' });
-  } else if (act === 'seq-add-delay') {
-    seqAddAction({ type: 'delay', ms: 300 });
+    seqAddAction({ type: 'mouse_click', button: 'left' });
+  } else if (act === 'seq-add-move') {
+    seqAddAction({ type: 'mouse_move', dx: 10, dy: 0 });
+  } else if (act === 'seq-key-mod') {
+    seqKeyBuilder.modifier ^= Number(el.dataset.bit);
+    render();
+  } else if (act === 'seq-add-hotkey') {
+    if (!seqKeyBuilder.modifier && !seqKeyBuilder.keycode) return;
+    seqAddAction({ type: 'hotkey', modifier: seqKeyBuilder.modifier, keycode: seqKeyBuilder.keycode });
+    seqKeyBuilder = { ...seqKeyBuilder, keycode: 0 };
   } else if (act === 'seq-del') {
     seqRemoveAction(Number(el.dataset.index));
   } else if (act === 'seq-record') {
@@ -333,7 +432,35 @@ function onChange(e) {
     // `change` salta al salir del campo: repintar aquí no corta la escritura.
     variants.update(view.variantId, { name: e.target.value.trim() });
     render();
+  } else if (act === 'seq-click-button') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.button = e.target.value; savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-delay-ms') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.ms = Math.max(0, Number(e.target.value) || 0); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-pos-x') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.x = Math.round(Number(e.target.value) || 0); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-pos-y') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.y = Math.round(Number(e.target.value) || 0); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-move-dx') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.dx = clampMoveDelta(e.target.value); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-move-dy') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.dy = clampMoveDelta(e.target.value); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-key-pick') {
+    seqKeyBuilder.keycode = Number(e.target.value);
   }
+}
+
+// El paso "mover ratón" viaja al teclado como delta relativo de 8 bits con
+// signo (lo que cabe en un informe HID de ratón): más que esto no tiene
+// sentido pedirlo desde el editor.
+function clampMoveDelta(v) {
+  const n = Math.round(Number(v) || 0);
+  return Math.max(-127, Math.min(127, n));
 }
 
 let labelDebounce = null;
@@ -344,31 +471,7 @@ function onInput(e) {
     const slot = Number(e.target.dataset.slot);
     const text = e.target.value.slice(0, 7);
     clearTimeout(labelDebounce);
-    labelDebounce = setTimeout(async () => {
-      const prof = currentProfile();
-      if (!prof) return;
-      const variant = editingVariant();
-
-      if (variant) {
-        variants.setOverride(variant.id, 'labels', slot, text);
-        renderKeyGrid();
-        if (variants.isApplied(variant.id)) {
-          try { await device.setLabel(view.editingProfile, slot, text); }
-          catch { toast('El teclado no confirmó la etiqueta', 'error'); }
-        }
-        return;
-      }
-
-      prof.labels[slot] = text;
-      try {
-        await device.setLabel(view.editingProfile, slot, text);
-        markDirty();
-        await variants.reassertSlot('labels', slot);
-        renderKeyGrid();
-      } catch {
-        toast('El teclado no confirmó la etiqueta', 'error');
-      }
-    }, 250);
+    labelDebounce = setTimeout(() => writeLabel(slot, text), 250);
 
   } else if (act === 'edit-name') {
     const text = e.target.value.slice(0, 7);
@@ -400,17 +503,30 @@ function onInput(e) {
 // Captura un atajo pulsándolo físicamente en el teclado del PC.
 function onCapture(e) {
   if (!view.capturing || !view.selected) return;
+
+  // Capturando una posición de ratón: el ratón es la entrada, el teclado solo
+  // hace falta para fijarla con Esc. El resto de teclas no se toca.
+  if (view.capturing === 'position') {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); stopPositionCapture(true); }
+    return;
+  }
+
   e.preventDefault();
   e.stopPropagation();
 
   if (e.key === 'Escape') { view.capturing = false; render(); return; }
 
   // Grabando una secuencia: cada tecla capturable se añade como un paso más,
-  // sin salir del modo (se graban varias seguidas). Solo cubre lo que sabe
-  // reproducir el ejecutor de macros del PC: letras, dígitos, Enter y Espacio.
+  // sin salir del modo (se graban varias seguidas). Se guarda en HID (modifier
+  // + keycode), como un paso "tecla" cualquiera: así el teclado también sabe
+  // reproducirla, no solo el PC. Solo cubre lo que reconoce el navegador con
+  // este código: letras, dígitos, Enter y Espacio, con los modificadores que
+  // se tuvieran pulsados en ese instante.
   if (view.capturing === 'sequence') {
     if (!SEQUENCE_CAPTURABLE.has(e.code)) return;
-    seqAddAction({ type: 'key', code: e.code });
+    const captured = eventToAction(e);
+    if (!captured.keycode) return;
+    seqAddAction({ type: 'hotkey', modifier: captured.modifier, keycode: captured.keycode });
     return;
   }
 
@@ -636,6 +752,34 @@ function currentScroll() {
   return scrollFor(currentProfile(), view.layer);
 }
 
+// Escribe la etiqueta de un hueco, respetando variación (igual que applyKeymap):
+// se usa tanto al escribir en el campo de texto como al pegar una tecla copiada.
+async function writeLabel(slot, text) {
+  const prof = currentProfile();
+  if (!prof) return;
+  const variant = editingVariant();
+
+  if (variant) {
+    variants.setOverride(variant.id, 'labels', slot, text);
+    renderKeyGrid();
+    if (variants.isApplied(variant.id)) {
+      try { await device.setLabel(view.editingProfile, slot, text); }
+      catch { toast('El teclado no confirmó la etiqueta', 'error'); }
+    }
+    return;
+  }
+
+  prof.labels[slot] = text;
+  try {
+    await device.setLabel(view.editingProfile, slot, text);
+    markDirty();
+    await variants.reassertSlot('labels', slot);
+    renderKeyGrid();
+  } catch {
+    toast('El teclado no confirmó la etiqueta', 'error');
+  }
+}
+
 async function applyKeymap(modifier, keycode) {
   const prof = currentProfile();
   const index = selectedKeyIndex();
@@ -671,6 +815,85 @@ async function applyKeymap(modifier, keycode) {
   } catch {
     toast('No se pudo escribir la asignación', 'error');
   }
+}
+
+// --- Copiar y pegar teclas ---------------------------------------------------
+// Copia el icono (si tiene uno propio), la etiqueta y la acción de la tecla
+// seleccionada, para poder pegarlos en cualquier otra tecla: de otra capa, de
+// otra página o de otro perfil. Vive solo en memoria (no sobrevive a cerrar la
+// app), como el resto de estado transitorio de este editor.
+let keyClipboard = null;
+
+async function copyKey() {
+  const prof = currentProfile();
+  const i = selectedKeyIndex();
+  if (!prof || i === null) return;
+
+  const action = currentAction();
+  const lslot = labelSlot(i, view.layer);
+  const label = lslot >= 0 ? variants.effectiveLabel(prof, editingVariant(), i, view.layer) : '';
+  const iconBytes = lslot >= 0 ? cache.get(view.editingProfile, lslot) : null;
+
+  // Una secuencia no viaja por su id (lo reutilizaría, enlazando las dos
+  // teclas): se lleva una copia de sus pasos para duplicarla al pegar.
+  let macroActions = null;
+  if (action.modifier === MACRO_MODIFIER) {
+    const m = macroById(action.keycode);
+    if (m) macroActions = JSON.parse(JSON.stringify(m.actions || []));
+  }
+
+  keyClipboard = {
+    action: { modifier: action.modifier, keycode: action.keycode },
+    label,
+    icon: iconBytes ? Uint8Array.from(iconBytes) : null,
+    macroActions,
+  };
+  toast('Tecla copiada');
+  render();
+}
+
+async function pasteKey() {
+  if (!keyClipboard) return;
+  const prof = currentProfile();
+  const i = selectedKeyIndex();
+  if (!prof || i === null) return;
+
+  let { modifier, keycode } = keyClipboard.action;
+  if (modifier === MACRO_MODIFIER && keyClipboard.macroActions) {
+    const id = nextMacroId();
+    const m = ensureMacro(id);
+    m.actions = JSON.parse(JSON.stringify(keyClipboard.macroActions));
+    savePCMacros(id);
+    keycode = id;
+  }
+
+  await applyKeymap(modifier, keycode);
+
+  const lslot = labelSlot(i, view.layer);
+  if (lslot < 0) { toast('Tecla pegada'); return; }
+
+  await writeLabel(lslot, keyClipboard.label || '');
+
+  try {
+    if (keyClipboard.icon) {
+      await device.uploadOled(view.editingProfile, lslot, keyClipboard.icon);
+      cache.set(view.editingProfile, lslot, Uint8Array.from(keyClipboard.icon));
+      prof.oledMask |= (1 << lslot);
+      markDirty();
+    } else if (cache.get(view.editingProfile, lslot)) {
+      // La copiada no tenía icono propio: si el destino sí, se limpia para
+      // que enseñe la etiqueta de texto, igual que la tecla de origen.
+      await device.clearOled(view.editingProfile, lslot);
+      cache.set(view.editingProfile, lslot, null);
+      prof.oledMask &= ~(1 << lslot);
+      markDirty();
+    }
+    render();
+  } catch {
+    toast('No se pudo pegar el icono', 'error');
+  }
+
+  toast('Tecla pegada');
 }
 
 async function applyRotary(action) {
@@ -757,12 +980,18 @@ function currentMacroId() {
   return a.modifier === MACRO_MODIFIER ? a.keycode : null;
 }
 
+// Añade un paso y, si ya había alguno antes, la espera por defecto entre los
+// dos: así cada dos pasos consecutivos tienen siempre un hueco configurable
+// de por medio, sin tener que pedirlo aparte.
 function seqAddAction(action) {
   const id = currentMacroId();
   if (id === null) return;
   const m = ensureMacro(id);
+  if (m.actions.length && m.actions[m.actions.length - 1].type !== 'delay') {
+    m.actions.push({ type: 'delay', ms: DEFAULT_STEP_DELAY_MS });
+  }
   m.actions.push(action);
-  savePCMacros();
+  savePCMacros(id);
   render();
 }
 
@@ -772,8 +1001,83 @@ function seqRemoveAction(index) {
   const m = macroById(id);
   if (!m) return;
   m.actions.splice(index, 1);
-  savePCMacros();
+  normalizeSequence(m);
+  savePCMacros(id);
   render();
+}
+
+// Quita esperas huérfanas después de borrar un paso: ninguna al principio, ni
+// al final, ni dos seguidas (podría pasar al borrar el paso que había entre
+// ambas).
+function normalizeSequence(m) {
+  const out = [];
+  for (const a of m.actions) {
+    if (a.type === 'delay' && (!out.length || out[out.length - 1].type === 'delay')) continue;
+    out.push(a);
+  }
+  if (out.length && out[out.length - 1].type === 'delay') out.pop();
+  m.actions = out;
+}
+
+// Paso concreto de la secuencia que se está editando ahora mismo, por índice
+// (usado al cambiar el botón de un clic o la duración de una espera).
+function seqActionAt(index) {
+  const id = currentMacroId();
+  const m = id === null ? null : macroById(id);
+  return m?.actions[index] || null;
+}
+
+// Constructor de un paso "tecla": el mismo selector de modificadores + tecla
+// que la pestaña Atajo, pero como paso de secuencia en vez de la acción de la
+// tecla física. Estado transitorio, se resetea la tecla (no los modificadores,
+// para encadenar varias con el mismo modificador) tras cada "Añadir".
+let seqKeyBuilder = { modifier: 0, keycode: 0 };
+
+// --- Captura de posición del ratón ------------------------------------------
+// A diferencia de la grabación de teclas, aquí el ratón es la entrada: se
+// enseña la posición del cursor en pantalla en vivo (viene del proceso
+// principal porque puede estar fuera de la ventana) y Esc fija el paso.
+let lastMousePos = { x: 0, y: 0 };
+let posPollTimer = null;
+// null = capturando un paso nuevo; si no, índice del paso que se está
+// recapturando (el botón de destino junto a cada "Posición de ratón").
+let capturePosEditIndex = null;
+
+function startPositionCapture(editIndex = null) {
+  view.capturing = 'position';
+  capturePosEditIndex = editIndex;
+  render();
+  if (posPollTimer) clearInterval(posPollTimer);
+  posPollTimer = setInterval(async () => {
+    try {
+      const p = await window.orby.getMousePosition();
+      lastMousePos = p;
+      const el = document.getElementById('seq-live-pos');
+      if (el) el.textContent = `(${p.x}, ${p.y}) — mueve el ratón y pulsa Esc para fijarla`;
+    } catch { /* sin Electron (dev en navegador suelto): no hay nada que sondear */ }
+  }, 80);
+}
+
+function stopPositionCapture(commit) {
+  if (posPollTimer) { clearInterval(posPollTimer); posPollTimer = null; }
+  view.capturing = false;
+  const editIndex = capturePosEditIndex;
+  capturePosEditIndex = null;
+
+  if (!commit) { render(); return; }
+
+  if (editIndex !== null) {
+    const step = seqActionAt(editIndex);
+    if (step) {
+      step.type = 'mouse_position';
+      step.x = lastMousePos.x;
+      step.y = lastMousePos.y;
+      savePCMacros();
+    }
+    render();
+  } else {
+    seqAddAction({ type: 'mouse_position', x: lastMousePos.x, y: lastMousePos.y });
+  }
 }
 
 // Botón "Secuencia" del inspector de mando: mismo mecanismo que en las teclas,
@@ -814,6 +1118,14 @@ async function applyScroll(patch) {
 export function render() {
   const body = document.getElementById('profiles-body');
   if (!body) return;
+
+  // Cualquier repintado que no sea "seguimos capturando una posición" corta
+  // el sondeo: evita dejarlo corriendo de fondo si se sale del modo por otro
+  // sitio (elegir otra tecla, cambiar de pestaña...).
+  if (view.capturing !== 'position' && posPollTimer) {
+    clearInterval(posPollTimer);
+    posPollTimer = null;
+  }
 
   if (!state.profiles.length) {
     body.innerHTML = `<div class="empty-panel glass-panel">
@@ -1214,21 +1526,26 @@ function renderWheelCard() {
           las variaciones cambian atajos y etiquetas, no la calibración.
         </p>` : ''}
 
+      <!-- El slider ocupa el ancho completo de la tarjeta, fuera de la rejilla de
+           dos columnas: son 234 pasos y cuanto más largo es el recorrido, más
+           fino se puede afinar el punto exacto. -->
+      <div class="wheel-tune-head">
+        <div class="wheel-readout">
+          <span id="scroll-value">${s.detentsPerRev}</span>
+          <small>clics por vuelta completa</small>
+        </div>
+
+        <input type="range" id="scroll-slider" class="premium-slider wheel-slider" data-act="scroll-slider"
+               min="3" max="120" step="1" value="${s.detentsPerRev}">
+
+        <div class="slider-row">
+          <span>Más lento · 3</span>
+          <span>120 · Más rápido</span>
+        </div>
+      </div>
+
       <div class="wheel-tune">
         <div class="wheel-tune-main">
-          <div class="wheel-readout">
-            <span id="scroll-value">${s.detentsPerRev}</span>
-            <small>clics por vuelta completa</small>
-          </div>
-
-          <input type="range" id="scroll-slider" class="premium-slider" data-act="scroll-slider"
-                 min="6" max="240" step="1" value="${s.detentsPerRev}">
-
-          <div class="slider-row">
-            <span>Más lento</span>
-            <span>Más rápido</span>
-          </div>
-
           <div class="preset-row">
             ${SCROLL_PRESETS.map((p) => `
               <button class="preset-btn ${s.detentsPerRev === p.value ? 'on' : ''}" data-act="scroll-preset" data-value="${p.value}">
@@ -1429,7 +1746,16 @@ function renderKeyInspector() {
     <div class="editor-inspector glass-panel">
       <div class="inspector-head">
         <h3>Tecla ${i + 1}</h3>
-        <span class="pill">${view.layer === 'super' ? 'Capa SUPER' : 'Capa normal'}</span>
+        <div class="row-inline" style="gap:6px">
+          <button class="tool-btn small" data-act="copy-key" title="Copiar icono, etiqueta y acción de esta tecla">
+            ${icon('copy', 15)}
+          </button>
+          <button class="tool-btn small" data-act="paste-key" title="${keyClipboard ? 'Pegar en esta tecla' : 'Copia una tecla primero'}"
+                  ${keyClipboard ? '' : 'disabled'}>
+            ${icon('paste', 15)}
+          </button>
+          <span class="pill">${view.layer === 'super' ? 'Capa SUPER' : 'Capa normal'}</span>
+        </div>
       </div>
 
       ${variant ? `
@@ -1524,46 +1850,172 @@ function renderSequenceEditor(macroId) {
   const macro = macroId === null ? null : macroById(macroId);
   const actions = macro?.actions || [];
   const recording = view.capturing === 'sequence';
+  const capturingPos = view.capturing === 'position';
 
-  const describe = (a) => {
-    if (a.type === 'center_mouse') return 'Centrar ratón';
-    if (a.type === 'mouse_click')  return 'Clic';
-    if (a.type === 'delay')        return `Pausa de ${a.ms} ms`;
-    if (a.type === 'key')          return `Tecla ${a.code}`;
-    return a.type;
-  };
+  const CLICK_LABELS = { left: 'Izquierdo', middle: 'Central', right: 'Derecho' };
+
+  let stepNum = 0;
+  const items = actions.map((a, idx) => {
+    // La espera entre dos pasos no es un paso más: es el hueco configurable
+    // que pide siempre haber entre dos pasos consecutivos.
+    if (a.type === 'delay') {
+      return `
+        <li class="seq-item seq-gap">
+          <span>${icon('reset', 13)} Espera</span>
+          <span class="row-inline" style="gap:4px">
+            <input type="number" class="text-input compact seq-gap-input" min="0" step="10"
+                   value="${a.ms}" data-act="seq-delay-ms" data-index="${idx}">
+            <span class="setting-desc">ms</span>
+          </span>
+        </li>`;
+    }
+
+    stepNum++;
+
+    if (a.type === 'mouse_position') {
+      return `
+        <li class="seq-item">
+          <span>${stepNum}. Posición de ratón</span>
+          <span class="row-inline" style="gap:6px">
+            <input type="number" class="text-input compact seq-pos-input" data-act="seq-pos-x" data-index="${idx}" value="${a.x}" title="x">
+            <input type="number" class="text-input compact seq-pos-input" data-act="seq-pos-y" data-index="${idx}" value="${a.y}" title="y">
+            <button class="tool-btn small" data-act="seq-recapture" data-index="${idx}" title="Recapturar con el ratón">
+              ${icon('fit', 14)}
+            </button>
+            <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+              ${icon('trash', 14)}
+            </button>
+          </span>
+        </li>`;
+    }
+
+    // Formato antiguo, sin coordenadas propias: solo se puede borrar, no
+    // editar ni recapturar (no hay paso nuevo de este tipo desde el editor).
+    if (a.type === 'center_mouse') {
+      return `
+        <li class="seq-item">
+          <span>${stepNum}. Centrar ratón</span>
+          <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+            ${icon('trash', 14)}
+          </button>
+        </li>`;
+    }
+
+    if (a.type === 'mouse_move') {
+      return `
+        <li class="seq-item">
+          <span>${stepNum}. Mover ratón</span>
+          <span class="row-inline" style="gap:6px">
+            <input type="number" class="text-input compact seq-pos-input" min="-127" max="127"
+                   data-act="seq-move-dx" data-index="${idx}" value="${a.dx}" title="dx">
+            <input type="number" class="text-input compact seq-pos-input" min="-127" max="127"
+                   data-act="seq-move-dy" data-index="${idx}" value="${a.dy}" title="dy">
+            <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+              ${icon('trash', 14)}
+            </button>
+          </span>
+        </li>`;
+    }
+
+    if (a.type === 'mouse_click') {
+      const btn = a.button || 'left';
+      return `
+        <li class="seq-item">
+          <span>${stepNum}. Clic</span>
+          <span class="row-inline" style="gap:6px">
+            <select class="select-input compact" data-act="seq-click-button" data-index="${idx}">
+              ${Object.entries(CLICK_LABELS).map(([value, label]) =>
+                `<option value="${value}" ${btn === value ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+            <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+              ${icon('trash', 14)}
+            </button>
+          </span>
+        </li>`;
+    }
+
+    if (a.type === 'hotkey') {
+      return `
+        <li class="seq-item">
+          <span>${stepNum}. ${escape(describeAction(a.modifier, a.keycode))}</span>
+          <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+            ${icon('trash', 14)}
+          </button>
+        </li>`;
+    }
+
+    // a.type === 'key' (grabado pulsando físicamente, sin modificadores)
+    return `
+      <li class="seq-item">
+        <span>${stepNum}. Tecla ${escape(a.code)}</span>
+        <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+          ${icon('trash', 14)}
+        </button>
+      </li>`;
+  }).join('');
 
   return `
     <div class="field">
       <span class="field-label">Pasos de la secuencia</span>
-      ${actions.length ? `
-        <ul class="seq-list">
-          ${actions.map((a, idx) => `
-            <li class="seq-item">
-              <span>${idx + 1}. ${escape(describe(a))}</span>
-              <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
-                ${icon('trash', 14)}
-              </button>
-            </li>`).join('')}
-        </ul>` : `<p class="setting-desc">Todavía no tiene ningún paso.</p>`}
+      ${actions.length ? `<ul class="seq-list">${items}</ul>`
+                        : `<p class="setting-desc">Todavía no tiene ningún paso.</p>`}
 
       <div class="row-inline mt-4">
-        <button class="secondary-btn" data-act="seq-add-center">${icon('fit', 16)} Centrar ratón</button>
+        <button class="secondary-btn ${capturingPos ? 'is-capturing' : ''}" data-act="seq-add-position">
+          ${icon('fit', 16)} ${capturingPos ? (capturePosEditIndex !== null ? 'Recapturando… (Esc fija)' : 'Capturando… (Esc fija)') : 'Posición de ratón'}
+        </button>
         <button class="secondary-btn" data-act="seq-add-click">${icon('bolt', 16)} Clic</button>
-        <button class="secondary-btn" data-act="seq-add-delay">${icon('reset', 16)} Pausa</button>
+        <button class="secondary-btn" data-act="seq-add-move">${icon('reset', 16)} Mover ratón</button>
+      </div>
+      ${capturingPos ? `<p class="setting-desc" id="seq-live-pos">(${lastMousePos.x}, ${lastMousePos.y}) — mueve el ratón y pulsa Esc para fijarla</p>` : ''}
+
+      <span class="field-label mt-4">Tecla (con modificadores)</span>
+      <div class="mod-grid">
+        ${MODIFIERS.map((m) => `
+          <button class="mod-chip ${seqKeyBuilder.modifier & m.bit ? 'on' : ''}"
+                  data-act="seq-key-mod" data-bit="${m.bit}">${m.label}</button>`).join('')}
+      </div>
+      <div class="row-inline mt-4">
+        <select class="select-input" data-act="seq-key-pick" style="flex:1">
+          <option value="0" ${!seqKeyBuilder.keycode ? 'selected' : ''}>— ninguna —</option>
+          ${keycodeOptions(seqKeyBuilder.keycode)}
+        </select>
+        <button class="secondary-btn" data-act="seq-add-hotkey">${icon('plus', 16)} Añadir</button>
       </div>
 
-      <button class="primary-btn full ${recording ? 'is-capturing' : ''}" data-act="seq-record">
+      <button class="primary-btn full mt-4 ${recording ? 'is-capturing' : ''}" data-act="seq-record">
         ${icon('key', 16)} ${recording ? 'Grabando… pulsa teclas (Esc termina)' : 'Grabar secuencia de teclas'}
       </button>
 
+      ${macro ? renderSequenceLocation(macro) : ''}
+
       <p class="setting-desc">
-        Se ejecuta en el PC, no en el teclado, así que sigue funcionando aunque cambies de
-        perfil o de página. La grabación solo reconoce letras, dígitos, Enter y Espacio.
+        "Grabar secuencia" solo reconoce letras, dígitos, Enter y Espacio; para el resto de
+        teclas o combinaciones con modificadores usa "Tecla" arriba. Entre cada dos pasos se
+        espera automáticamente lo que pongas en "Espera" (${DEFAULT_STEP_DELAY_MS} ms por
+        defecto suele bastar).
       </p>
 
       <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar secuencia</button>
     </div>`;
+}
+
+// Dice si esta secuencia la toca el propio teclado (sigue funcionando aunque
+// cierres la app) o si necesita el PC, y por qué: espera, tecla, clic y
+// movimiento relativo sí se suben; posición de ratón absoluta, de momento no
+// (ver TODO(homing-absoluto) junto a DEVICE_STEP_TYPE) — igual que el formato
+// antiguo "centrar ratón" o tener más pasos de los que caben en el teclado.
+function renderSequenceLocation(macro) {
+  if (macroDeviceEligible(macro)) {
+    return `<p class="setting-desc">${icon('check', 13)} Se ejecuta en el propio teclado: sigue
+              funcionando aunque cierres esta app.</p>`;
+  }
+  const needsPC = (macro.actions || []).some((a) => a.type === 'mouse_position' || a.type === 'center_mouse');
+  const reason = needsPC
+    ? 'usa una posición de ratón absoluta, que de momento solo sabe reproducir el PC'
+    : `tiene más de ${MACRO_MAX_STEPS_DEVICE} pasos, o alguno de un formato antiguo`;
+  return `<p class="setting-desc">Se ejecuta en el PC, no en el teclado (${reason}): solo
+            funciona con esta app abierta.</p>`;
 }
 
 // Las dos acciones de página. Como las multimedia, no llevan modificadores ni

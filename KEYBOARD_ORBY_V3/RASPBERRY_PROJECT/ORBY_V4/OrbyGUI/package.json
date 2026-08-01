@@ -9,10 +9,12 @@
     "preview": "vite preview",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win --publish never",
+    "release": "npm run build && electron-builder --win --publish always",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@nut-tree-fork/nut-js": "^4.2.6",
+    "electron-updater": "^6.8.9",
     "serialport": "^12.0.0"
   },
   "devDependencies": {
@@ -41,7 +43,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/orby-icon.png"
@@ -51,6 +55,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "OrbyGUI"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "jaestefaniah27",
+      "repo": "scroll_wheel"
     }
   }
 }

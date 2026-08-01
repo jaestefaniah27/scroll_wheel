@@ -43,6 +43,8 @@ export function init() {
     });
   });
 
+  initAutostart();
+
   document.getElementById('btn-reconnect').addEventListener('click', () => {
     window.orby.reconnect();
     toast('Buscando el dispositivo…', 'info');
@@ -73,6 +75,23 @@ export function init() {
   });
 
   initWheelCalib();
+}
+
+// ================= Autoarranque con Windows =================
+// El estado real vive en el registro de Windows (app.setLoginItemSettings), no
+// en config.json, así que se pregunta al proceso principal en vez de guardarlo
+// aparte: así el botón nunca puede desincronizarse de lo que Windows hace.
+async function initAutostart() {
+  const btn = document.getElementById('btn-autostart');
+  if (!btn) return;
+
+  btn.classList.toggle('on', await window.orby.autostart.get());
+
+  btn.addEventListener('click', async () => {
+    const enabled = await window.orby.autostart.set(!btn.classList.contains('on'));
+    btn.classList.toggle('on', enabled);
+    toast(enabled ? 'OrbyGUI arrancará con Windows' : 'Autoarranque desactivado');
+  });
 }
 
 // ================= Calibración de la rueda =================

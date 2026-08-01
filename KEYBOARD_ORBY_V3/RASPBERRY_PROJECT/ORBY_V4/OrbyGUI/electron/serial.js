@@ -149,7 +149,6 @@ class OrbySerial extends EventEmitter {
 
     // Check for command responses
     if (line.startsWith('PROFILE:OK:') ||
-        line.startsWith('BRIGHTNESS:OK:') ||
         line.startsWith('TIMEOUT:OK:') ||
         line.startsWith('OLED:OK:') ||
         line.startsWith('MACRO:OK:')) {
@@ -224,6 +223,26 @@ class OrbySerial extends EventEmitter {
       clearInterval(this.scanInterval);
       this.scanInterval = null;
     }
+  }
+
+  // El botón "Reconectar" necesita forzar un intento nuevo YA, no esperar al
+  // próximo tick del intervalo de 3s. Si el teclado ya estaba enchufado al
+  // abrir la app, el primer handshake pudo fallar (p.ej. el puerto entrega
+  // telemetría a medio escribir) y startAutoScan() por sí solo no hace nada
+  // porque el intervalo ya está corriendo (early return de arriba): por eso
+  // el botón parecía no responder. Aquí se cierra cualquier puerto a medio
+  // abrir y se relanza el escaneo desde cero.
+  forceRescan() {
+    this.stopAutoScan();
+    this.isScanning = false;
+    if (this.port) {
+      try {
+        this.port.removeAllListeners('close');
+        if (this.port.isOpen) this.port.close(() => {});
+      } catch {}
+      this.port = null;
+    }
+    this.startAutoScan();
   }
 
   async _doScan() {

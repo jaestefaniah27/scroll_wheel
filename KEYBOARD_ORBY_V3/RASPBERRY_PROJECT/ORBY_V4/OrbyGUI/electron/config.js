@@ -20,7 +20,8 @@ const DEFAULTS = {
   // Macros (secuencias) que ejecuta el PC al recibir MACRO:<id> por CDC. El
   // firmware solo guarda el id en el campo del modificador de la tecla o del
   // mando; la secuencia en sí vive aquí, no en el teclado.
-  // [{ id, actions: [{ type: 'center_mouse' | 'mouse_click' | 'delay' | 'key', ... }] }]
+  // [{ id, actions: [{ type: 'mouse_position', x, y } | { type: 'mouse_click', button: 'left'|'middle'|'right' }
+  //                 | { type: 'delay', ms } | { type: 'key', code } | { type: 'center_mouse' /* legado */ }] }]
   macros: [],
 
   // Calibración del dibujo de la rueda: depende de cómo estén montados el imán

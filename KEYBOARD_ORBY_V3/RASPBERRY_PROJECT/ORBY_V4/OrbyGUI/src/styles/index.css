@@ -880,6 +880,10 @@ body {
   background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
   border-radius: var(--radius-sm);
 }
+.seq-item .select-input.compact { width: auto; min-width: 92px; padding: 6px 8px; font-size: 12px; }
+.seq-gap { background: transparent; border-style: dashed; color: var(--text-muted); }
+.seq-gap-input { min-width: 56px; text-align: right; }
+.seq-pos-input { min-width: 60px; max-width: 72px; text-align: right; padding: 6px 8px; font-size: 12px; }
 .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .mod-chip, .consumer-chip, .chip, .preset-btn {
   background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);
@@ -906,6 +910,16 @@ body {
 .wheel-tune { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; align-items: start; }
 .wheel-tune-side { display: flex; flex-direction: column; }
 
+/* Banda del slider: va por encima de las dos columnas para aprovechar todo el
+   ancho de la tarjeta. .premium-slider se apoya en flex-grow, que aquí no se
+   aplica porque el contenedor no es flex: sin un width explícito el navegador
+   deja el <input type=range> en su ancho por defecto (~130px). */
+.wheel-tune-head { margin-bottom: 24px; }
+.wheel-slider { display: block; width: 100%; height: 10px; border-radius: 5px; }
+.wheel-slider::-webkit-slider-thumb { width: 26px; height: 26px; }
+/* El recorrido es largo: un poco de aire arriba y abajo evita clics fallidos. */
+.wheel-tune-head .slider-row { margin-top: 8px; }
+
 .wheel-readout { text-align: center; margin: 8px 0 20px; }
 .wheel-readout span {
   font-size: 48px; font-weight: 700; font-family: 'Consolas', monospace; line-height: 1;
@@ -915,6 +929,9 @@ body {
 .wheel-readout small { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
 
 .preset-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 20px 0; }
+/* Al subir el slider a su propia banda, los presets abren la columna: sin el
+   margen de arriba no se suma al que ya deja la banda. */
+.wheel-tune-main > .preset-row:first-child { margin-top: 0; }
 .preset-btn { display: flex; flex-direction: column; gap: 3px; padding: 12px; text-align: left; }
 .preset-btn strong { font-size: 13px; color: var(--text-main); }
 .preset-btn span { font-family: monospace; font-size: 11px; color: var(--primary); }
@@ -1035,6 +1052,8 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 .tool-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.06); }
 .tool-btn.on, .tool-btn.is-on { background: var(--primary); border-color: var(--primary); color: #fff; }
 .tool-btn.danger:hover { color: var(--danger); border-color: rgba(239,68,68,0.4); }
+.tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.tool-btn:disabled:hover { color: var(--text-muted); background: rgba(0,0,0,0.3); }
 .tool-sep { width: 1px; height: 22px; background: var(--border-light); margin: 0 4px; }
 
 /* El lienzo crece con el zoom, así que el contenedor desplaza en vez de

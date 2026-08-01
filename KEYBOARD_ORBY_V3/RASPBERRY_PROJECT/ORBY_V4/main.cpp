@@ -105,7 +105,7 @@ static inline uint8_t rot_slot(uint8_t base, bool super) {
 // La sensibilidad de la rueda también es un ajuste del perfil, y con dos
 // valores: uno por capa. Así un mismo perfil puede desplazar fino en normal y
 // a saltos largos con SUPER.
-#define SCROLL_DETENTS_MIN     6
+#define SCROLL_DETENTS_MIN     3
 #define SCROLL_DETENTS_MAX   240
 #define SCROLL_DETENTS_DEFAULT 60
 
@@ -356,7 +356,6 @@ enum AppMode {
     MODE_NORMAL,
     MODE_MENU_MAIN,
     MODE_MENU_PERF,
-    MODE_MENU_BRIL,
     MODE_MENU_REPO,
     MODE_MENU_INFO,
     MODE_MENU_PAGES   // gestor de páginas: un número por pantalla
@@ -371,6 +370,9 @@ static inline uint8_t key_index_for_screen(uint8_t screen_num) {
 volatile AppMode current_mode = MODE_NORMAL;
 volatile uint8_t active_profile_idx = 0;   // 0=OFIM, 1=PHTS, 2=ALTM, 3=PREM
 volatile uint8_t active_page = 0;          // Página en uso del perfil activo
+// Ya no es ajustable: las OLED no responden al registro de contraste, así que
+// el menú BRIL se quitó. Se deja el valor fijo por compatibilidad con lo ya
+// grabado en la Flash de teclados en uso.
 volatile uint8_t current_brightness = 207;   // 0xCF = 207 por defecto
 volatile uint8_t reposo_timeout_min = 5;    // 5 minutos por defecto (0=OFF)
 volatile uint8_t selected_menu_idx = 0;     // Opción de menú activa (0 a 4)
@@ -582,6 +584,109 @@ static_assert(OLED_SLOTS * OLED_FB_SIZE <= OLED_PAGE_STRIDE,
               "El stride por página no cubre sus 20 bitmaps");
 static_assert(OLED_PAGE_STRIDE % FLASH_PAGE_SIZE == 0,
               "flash_range_program exige múltiplos de página");
+
+// ==========================================
+// SECUENCIAS (MACROS) QUE EJECUTA EL PROPIO TECLADO
+// ==========================================
+// Antes toda secuencia la ejecutaba el PC al recibir "MACRO:<id>" por CDC (ver
+// trigger_macro más abajo), así que dejaban de funcionar en cuanto la app no
+// estaba abierta. Los pasos que no dependen de saber nada del host —esperar,
+// pulsar una tecla, mover el ratón un delta relativo, hacer clic— se guardan y
+// reproducen aquí. Solo la posición ABSOLUTA del cursor (exige conocer la
+// resolución/escala de la pantalla del PC, que el teclado no puede saber) sigue
+// yendo por CDC: una secuencia que la use se queda en el camino viejo (ver
+// trigger_macro: sin copia jugable en el teclado, avisa por CDC como antes).
+#define MACRO_MAX_COUNT  64
+#define MACRO_MAX_STEPS  24
+
+enum MacroStepType : uint8_t {
+    MSTEP_NONE      = 0,
+    MSTEP_DELAY     = 1,  // a = milisegundos de espera
+    MSTEP_KEY       = 2,  // a = modificador HID, b = keycode HID (pulsación breve)
+    MSTEP_MOVE      = 3,  // a = dx, b = dy: desplazamiento relativo del ratón (-127..127)
+    MSTEP_CLICK     = 4,  // a = botón: 0 izquierdo, 1 central, 2 derecho
+    // a = dx, b = dy: desplazamiento desde la esquina inferior derecha hasta el
+    // punto que se quería (normalmente números negativos o cero: la app calcula
+    // x - ancho_pantalla, y - alto_pantalla al capturar la posición). El ratón
+    // HID solo sabe mover en relativo, así que primero se manda un
+    // desplazamiento positivo grande (más que cualquier escritorio real) para
+    // que el sistema operativo lo recorte solo contra esa esquina —eso SIEMPRE
+    // pasa, haga lo que haga la aceleración del puntero, porque el recorte es
+    // lo último que se aplica— y desde esa esquina conocida se viaja en
+    // relativo hasta el punto final.
+    //
+    // TODO(homing-absoluto): el reproductor manda exactamente lo que se le
+    // pide —comprobado byte a byte con MACRO_TEST— pero el resultado en
+    // pantalla depende del multiplicador de "velocidad del puntero" de
+    // Windows (no de la aceleración/"mejorar precisión", eso no influye), que
+    // no se puede leer ni anular desde aquí. Sin una calibración (mandar un
+    // desplazamiento conocido, medir cuánto se movió de verdad y guardar el
+    // factor en la app) la posición absoluta no es fiable, así que la app NO
+    // sube pasos de este tipo por ahora (aparcado a petición del usuario). El
+    // reproductor y el protocolo (SET_MACRO_STEP tipo 5, MACRO_TEST para
+    // depurar) se dejan tal cual para retomarlo con la calibración.
+    MSTEP_HOME_MOVE = 5,
+};
+
+struct MacroStep {
+    uint8_t type;
+    int16_t a;
+    int16_t b;
+};
+
+struct FlashMacro {
+    uint8_t   step_count;
+    MacroStep steps[MACRO_MAX_STEPS];
+};
+
+// Copia viva y editable, igual que `profiles`: lo que se reproduce sale de
+// aquí, y la Flash es solo persistencia entre arranques.
+static FlashMacro macros[MACRO_MAX_COUNT];
+
+#define FLASH_MACROS_OFFSET  (FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES)
+#define FLASH_MACROS_SECTORS 4
+#define FLASH_MACROS_BYTES   (FLASH_MACROS_SECTORS * FLASH_SECTOR_SIZE)
+#define MACROS_MAGIC 0xDEB0AC10
+
+struct MacrosBlob {
+    uint32_t   magic;
+    FlashMacro items[MACRO_MAX_COUNT];
+};
+#define MACROS_BLOB_SIZE (((sizeof(MacrosBlob) + FLASH_PAGE_SIZE - 1) / FLASH_PAGE_SIZE) * FLASH_PAGE_SIZE)
+
+static uint8_t macros_blob[MACROS_BLOB_SIZE];
+
+static_assert(FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES <= PICO_FLASH_SIZE_BYTES,
+              "Las secuencias se salen de la Flash del módulo");
+static_assert(MACROS_BLOB_SIZE <= FLASH_MACROS_BYTES,
+              "Las secuencias ya no caben en su región reservada de Flash");
+
+static void save_macros() {
+    MacrosBlob* b = (MacrosBlob*)macros_blob;
+    memset(macros_blob, 0, sizeof(macros_blob));
+    b->magic = MACROS_MAGIC;
+    memcpy(b->items, macros, sizeof(macros));
+
+    tud_task();
+    watchdog_update();
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_erase(FLASH_MACROS_OFFSET, FLASH_MACROS_BYTES);
+    flash_range_program(FLASH_MACROS_OFFSET, macros_blob, MACROS_BLOB_SIZE);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+}
+
+static void load_macros() {
+    const uint32_t magic = *(const uint32_t*)(XIP_BASE + FLASH_MACROS_OFFSET);
+    if (magic == MACROS_MAGIC) {
+        const MacrosBlob* b = (const MacrosBlob*)(XIP_BASE + FLASH_MACROS_OFFSET);
+        memcpy(macros, b->items, sizeof(macros));
+    } else {
+        memset(macros, 0, sizeof(macros));
+    }
+}
 
 // ==========================================
 // ACCESO A LOS ICONOS
@@ -1164,9 +1269,224 @@ uint16_t get_consumer_key_from_index(uint8_t idx) {
     }
 }
 
-// Dispara una macro del PC. El firmware no sabe qué hace la macro (mover el
-// ratón, pulsar teclas...): solo avisa por CDC y quien ejecuta es la app.
+// ==========================================
+// REPRODUCTOR DE SECUENCIAS (no bloqueante)
+// ==========================================
+// Igual que zoom_hold_until: un "plazo" que se comprueba una vez por vuelta del
+// bucle, nunca una espera bloqueante. Como mucho se manda UN informe HID por
+// vuelta (el endpoint no admite más), así que cada paso que toca al ratón se
+// reintenta solo, sin congelar el resto del teclado (rueda, teclas, OLED).
+
+// Declarada más abajo (sección CDC); hace falta antes para la telemetría de
+// MACRO_TEST.
+static void cdc_printf(const char* fmt, ...);
+
+#define MACRO_CLICK_HOLD_MS 20
+
+// Cuánto se empuja de golpe hacia la esquina inferior derecha antes de dar por
+// hecho que el recorte del sistema operativo ya ha actuado. De sobra para
+// cualquier pantalla (unos 4000/127 ≈ 32 informes, así que no alarga la
+// espera nada que se note).
+#define MACRO_HOME_BURST_PX 4000
+
+enum MacroPhase : uint8_t {
+    MPH_IDLE          = 0, // nada pendiente: toca leer el siguiente paso
+    MPH_MOVE_SENT     = 1, // tras mandar un MSTEP_MOVE de un solo informe
+    MPH_CLICK_PRESSED = 2, // tras mandar la pulsación de un clic
+    MPH_CLICK_HOLD    = 3, // esperando el hold antes de soltarlo
+    MPH_CLICK_RELEASED = 4, // tras mandar la suelta
+    MPH_CHUNK_HOME    = 5, // empujón hacia la esquina, a trozos de ±127
+    MPH_CHUNK_TARGET  = 6, // desde la esquina hasta (x, y), a trozos de ±127
+};
+
+struct MacroPlayer {
+    bool     active;
+    uint8_t  id;
+    uint8_t  step;
+    uint8_t  phase;
+    uint32_t deadline;
+    bool     report_pending;
+    orby_mouse_report_t pending_report;
+    // Lo que le queda por recorrer al movimiento a trozos en curso (home o
+    // hacia el objetivo): con int32 no hay riesgo de desbordar sumando pasos
+    // de hasta ±20000.
+    int32_t  chunk_remaining_x;
+    int32_t  chunk_remaining_y;
+    // Solo con MACRO_TEST: manda por CDC cada trozo que se manda de verdad,
+    // para poder ver qué está calculando el reproductor aunque la app esté
+    // conectada (que si no, siempre gana el camino del PC y esto no se ve).
+    bool     debug;
+};
+static MacroPlayer macro_player = { false, 0, 0, 0, 0, false, { 0, 0, 0, 0, 0 }, 0, 0, false };
+
+static void macro_queue_report(uint8_t buttons, int8_t dx, int8_t dy) {
+    macro_player.pending_report = { buttons, dx, dy, 0, 0 };
+    macro_player.report_pending = true;
+}
+
+// Manda el informe de ratón pendiente sin bloquear: si el endpoint está ocupado
+// (lo comparte con teclado y rueda), se reintenta solo en la próxima vuelta.
+static bool macro_try_send_report() {
+    if (!tud_hid_ready()) return false;
+    if (!tud_hid_report(REPORT_ID_MOUSE, &macro_player.pending_report, sizeof(macro_player.pending_report))) return false;
+    macro_player.report_pending = false;
+    return true;
+}
+
+static void macro_player_start(uint8_t id) {
+    macro_player.active = true;
+    macro_player.id = id;
+    macro_player.step = 0;
+    macro_player.phase = MPH_IDLE;
+    macro_player.report_pending = false;
+    macro_player.deadline = to_ms_since_boot(get_absolute_time());
+    macro_player.debug = false;
+}
+
+// Encola como mucho un trozo de ±127 del movimiento a trozos en curso y lo
+// descuenta de lo que queda YA, no cuando se confirme el envío: el envío se
+// reintenta solo (vía el bloque de report_pending al principio de la vuelta)
+// mandando ese mismo trozo tal cual hasta que salga, así que si se restara al
+// confirmarse, un reintento no restaría nada y el movimiento no terminaría
+// nunca (justo lo que pasaba antes: se quedaba mandando el mismo trozo hacia
+// la esquina para siempre en cuanto el endpoint tardaba una vuelta en
+// quedar libre, que con teclado o rueda de por medio es lo normal).
+static void macro_queue_chunk() {
+    int32_t rx = macro_player.chunk_remaining_x;
+    int32_t ry = macro_player.chunk_remaining_y;
+    int16_t dx = rx > 127 ? 127 : (rx < -127 ? -127 : (int16_t)rx);
+    int16_t dy = ry > 127 ? 127 : (ry < -127 ? -127 : (int16_t)ry);
+    macro_player.chunk_remaining_x -= dx;
+    macro_player.chunk_remaining_y -= dy;
+    if (macro_player.debug) {
+        cdc_printf("MACRODBG:CHUNK:ph=%d:dx=%d:dy=%d:restaX=%ld:restaY=%ld\n",
+                   (int)macro_player.phase, (int)dx, (int)dy,
+                   (long)macro_player.chunk_remaining_x, (long)macro_player.chunk_remaining_y);
+    }
+    macro_queue_report(0, (int8_t)dx, (int8_t)dy);
+}
+
+// Se llama una vez por vuelta del bucle principal. Actúa como mucho un paso —o
+// un trozo de un movimiento largo, o media pulsación de clic— cada vez.
+static void macro_player_tick(uint32_t now) {
+    if (!macro_player.active) return;
+    MacroPlayer& mp = macro_player;
+
+    if (mp.report_pending) {
+        if (!macro_try_send_report()) return;
+        switch (mp.phase) {
+            case MPH_MOVE_SENT: mp.step++; mp.deadline = now; mp.phase = MPH_IDLE; break;
+            case MPH_CLICK_PRESSED: mp.deadline = now + MACRO_CLICK_HOLD_MS; mp.phase = MPH_CLICK_HOLD; return;
+            case MPH_CLICK_RELEASED: mp.step++; mp.deadline = now; mp.phase = MPH_IDLE; break;
+            case MPH_CHUNK_HOME: case MPH_CHUNK_TARGET: break; // se decide más abajo
+            default: break;
+        }
+    }
+
+    if ((int32_t)(now - mp.deadline) < 0) return;
+
+    if (mp.phase == MPH_CLICK_HOLD) {
+        macro_queue_report(0, 0, 0);
+        mp.phase = MPH_CLICK_RELEASED;
+        if (macro_try_send_report()) { mp.step++; mp.deadline = now; mp.phase = MPH_IDLE; }
+        return;
+    }
+
+    if (mp.phase == MPH_CHUNK_HOME || mp.phase == MPH_CHUNK_TARGET) {
+        if (mp.chunk_remaining_x == 0 && mp.chunk_remaining_y == 0) {
+            if (mp.phase == MPH_CHUNK_HOME) {
+                // Ya en la esquina inferior derecha: ahora, en relativo, el
+                // tramo final (a, b) hasta el punto que se quería.
+                const MacroStep& s = macros[mp.id].steps[mp.step];
+                mp.chunk_remaining_x = s.a;
+                mp.chunk_remaining_y = s.b;
+                mp.phase = MPH_CHUNK_TARGET;
+                if (mp.debug) {
+                    cdc_printf("MACRODBG:HOME_DONE:step=%d:objX=%d:objY=%d\n",
+                               (int)mp.step, (int)s.a, (int)s.b);
+                }
+                // sigue abajo: manda el primer trozo hacia el objetivo ya en
+                // esta misma vuelta, sin esperar a la próxima.
+            } else {
+                if (mp.debug) cdc_printf("MACRODBG:TARGET_DONE:step=%d\n", (int)mp.step);
+                mp.step++; mp.deadline = now; mp.phase = MPH_IDLE;
+                return;
+            }
+        }
+        macro_queue_chunk();
+        macro_try_send_report(); // si falla (endpoint ocupado), se reintenta solo arriba
+        return;
+    }
+
+    if (mp.id >= MACRO_MAX_COUNT || mp.step >= macros[mp.id].step_count) {
+        mp.active = false;
+        return;
+    }
+
+    const MacroStep& s = macros[mp.id].steps[mp.step];
+    switch (s.type) {
+        case MSTEP_DELAY:
+            mp.deadline = now + (uint32_t)(s.a > 0 ? s.a : 0);
+            mp.step++;
+            break;
+
+        case MSTEP_KEY:
+            HidOut::tap((uint8_t)s.a, (uint8_t)s.b);
+            mp.step++;
+            mp.deadline = now;
+            break;
+
+        case MSTEP_MOVE: {
+            int16_t dx = s.a < -127 ? -127 : (s.a > 127 ? 127 : s.a);
+            int16_t dy = s.b < -127 ? -127 : (s.b > 127 ? 127 : s.b);
+            macro_queue_report(0, (int8_t)dx, (int8_t)dy);
+            mp.phase = MPH_MOVE_SENT;
+            if (macro_try_send_report()) { mp.step++; mp.deadline = now; mp.phase = MPH_IDLE; }
+            break;
+        }
+
+        case MSTEP_CLICK: {
+            uint8_t bit = (s.a == 2) ? 0x02 : (s.a == 1) ? 0x04 : 0x01; // izq/centro/der
+            macro_queue_report(bit, 0, 0);
+            mp.phase = MPH_CLICK_PRESSED;
+            if (macro_try_send_report()) { mp.deadline = now + MACRO_CLICK_HOLD_MS; mp.phase = MPH_CLICK_HOLD; }
+            break;
+        }
+
+        case MSTEP_HOME_MOVE:
+            mp.chunk_remaining_x = MACRO_HOME_BURST_PX;
+            mp.chunk_remaining_y = MACRO_HOME_BURST_PX;
+            mp.phase = MPH_CHUNK_HOME;
+            // El paso avanza cuando el trozo hacia el objetivo termine, no aquí.
+            break;
+
+        default:
+            mp.step++;
+            break;
+    }
+
+    if (mp.phase == MPH_IDLE && mp.step >= macros[mp.id].step_count) mp.active = false;
+}
+
+// Dispara una macro. Reproducirla en el propio teclado —con el "homing" de
+// MSTEP_HOME_MOVE si le hace falta— es solo un mecanismo de supervivencia
+// para cuando no hay PC (o su app no está abierta): con la app conectada, se
+// prefiere avisarla por CDC y que la ejecute ella, que sabe la posición real
+// del ratón sin tener que empujarlo a una esquina primero. tud_cdc_n_connected
+// refleja el DTR que la app pone al abrir el puerto (ver electron/serial.js),
+// así que es un buen "¿hay alguien escuchando?" sin depender de que responda
+// a tiempo ni de nada más lento que consultar un bit.
 static void trigger_macro(uint8_t id) {
+    const bool app_connected = tud_cdc_n_connected(0);
+    const bool device_has_it = (id < MACRO_MAX_COUNT && macros[id].step_count > 0);
+
+    if (!app_connected && device_has_it) {
+        // Si ya hay una en marcha se ignora el reintento en vez de encolarla o
+        // mandarla también al PC, que la ejecutaría dos veces por dos caminos.
+        if (!macro_player.active) macro_player_start(id);
+        return;
+    }
+
     char tel[24];
     int len = snprintf(tel, sizeof(tel), "MACRO:%d\n", (int)id);
     tud_cdc_n_write(0, tel, len);
@@ -1309,22 +1629,6 @@ void draw_premium_frame(uint8_t* fb) {
     }
 }
 
-// Dibuja una barra de progreso interactiva para el brillo
-void draw_brightness_progress(uint8_t* fb, uint8_t val) {
-    int page = 2; // Página central (vertical)
-    // Marco exterior para la barra
-    fb[page * 72 + 4] = 0xFF;
-    fb[page * 72 + 67] = 0xFF;
-    for (int x = 5; x < 67; x++) {
-        fb[page * 72 + x] = 0x81; // Solo bits superior e inferior
-    }
-    // Relleno progresivo
-    int fill_width = (val * 60) / 255;
-    for (int x = 0; x < fill_width; x++) {
-        fb[page * 72 + 6 + x] = 0xFF; // Relleno total de la página
-    }
-}
-
 // Dibuja el contenido de una pantalla según el modo y perfil actual
 void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
     uint8_t fb[360];
@@ -1367,14 +1671,14 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
         }
     }
     else if (current_mode == MODE_MENU_MAIN) {
-        if (screen_num >= 1 && screen_num <= 5) {
+        if (screen_num >= 1 && screen_num <= 4) {
             draw_premium_frame(fb);
-            const char* menu_opts[5] = {"PERF", "BRIL", "REPO", "INFO", "EXIT"};
+            const char* menu_opts[4] = {"PERF", "REPO", "INFO", "EXIT"};
             OledText::render_string_to_framebuffer(menu_opts[screen_num - 1], fb);
             draw_premium_frame(fb);
             oleds.paint_screen(screen_num, fb);
         } else {
-            // Pantallas 6-10 vacías
+            // Pantallas 5-10 vacías
             oleds.paint_screen(screen_num, fb);
         }
     }
@@ -1391,24 +1695,6 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
         } else if (option == profile_count) {
             draw_premium_frame(fb);
             OledText::render_string_to_framebuffer("BACK", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else {
-            oleds.paint_screen(screen_num, fb);
-        }
-    }
-    else if (current_mode == MODE_MENU_BRIL) {
-        if (screen_num == 1) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("BRIL", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else if (screen_num == 2) {
-            draw_brightness_progress(fb, current_brightness);
-            oleds.paint_screen(screen_num, fb);
-        } else if (screen_num == 5) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("SAVE", fb);
             draw_premium_frame(fb);
             oleds.paint_screen(screen_num, fb);
         } else {
@@ -1535,11 +1821,6 @@ void core1_entry() {
                 for (int i = 1; i <= 5; i++) {
                     oleds.invert_screen(i, (i == 5));
                 }
-            } else if (current_mode == MODE_MENU_BRIL) {
-                // Destacar SAVE en la tecla 5
-                oleds.invert_screen(1, false);
-                oleds.invert_screen(2, false);
-                oleds.invert_screen(5, true);
             } else if (current_mode == MODE_MENU_PAGES) {
                 // La página en la que estás, en negativo: así se ve de un golpe
                 // cuál es sin tener que leer los números.
@@ -1697,7 +1978,11 @@ void process_command(const char* cmd) {
     if (strncmp(cmd, "ACK", 3) == 0) {
         // MAXPAGES lo añade el firmware 4.0; una app anterior lo ignora y una
         // app nueva puede usarlo para saber si este teclado tiene páginas.
-        cdc_printf("ORBY_V4:FW=4.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MODE=%s\n",
+        // MACROS=1 dice si este firmware sabe tocar secuencias él solo (los
+        // comandos SET_MACRO_STEP/GET_MACRO/...); sin él, la app no debe
+        // intentar subirlas o cada intento acabaría esperando una respuesta
+        // que nunca llega.
+        cdc_printf("ORBY_V4:FW=4.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -1706,7 +1991,6 @@ void process_command(const char* cmd) {
     if (strcmp(cmd, "GET_STATE") == 0) {
         cdc_printf("STATE:PROFILE:%d\n", (int)active_profile_idx);
         cdc_printf("STATE:PROFILES:%d:%d\n", (int)profile_count, MAX_PROFILES);
-        cdc_printf("STATE:BRIGHTNESS:%d\n", (int)current_brightness);
         cdc_printf("STATE:TIMEOUT:%d\n", (int)reposo_timeout_min);
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
@@ -1727,18 +2011,6 @@ void process_command(const char* cmd) {
             cdc_printf("PROFILE:OK:%d\n", (int)active_profile_idx);
         } else {
             cdc_printf("ERR:PROFILE_RANGE\n");
-        }
-        return;
-    }
-
-    if (strncmp(cmd, "SET_BRIGHTNESS:", 15) == 0) {
-        int val = atoi(cmd + 15);
-        if (val >= 0 && val <= 255) {
-            current_brightness = val;
-            push_system_refresh();
-            cdc_printf("BRIGHTNESS:OK:%d\n", (int)current_brightness);
-        } else {
-            cdc_printf("ERR:BRIGHTNESS_RANGE\n");
         }
         return;
     }
@@ -1954,6 +2226,79 @@ void process_command(const char* cmd) {
         return;
     }
 
+    // ---------- Secuencias (macros) que ejecuta el propio teclado ----------
+    // SET_MACRO_STEP:<id 0-63>:<paso 0-23>:<tipo>:<a>:<b>
+    // Escribe un paso y, si extiende la secuencia, sube el recuento a la vez;
+    // para acortarla hace falta MACRO_TRUNC.
+    if (strncmp(cmd, "SET_MACRO_STEP:", 15) == 0) {
+        int id = 0, step = 0, type = 0, a = 0, b = 0;
+        const char* p = next_field(cmd + 15, &id);
+        p = next_field(p, &step);
+        p = next_field(p, &type);
+        p = next_field(p, &a);
+        p = next_field(p, &b);
+        if (!p || id < 0 || id >= MACRO_MAX_COUNT || step < 0 || step >= MACRO_MAX_STEPS ||
+            type < 0 || type > 255 || a < -32768 || a > 32767 || b < -32768 || b > 32767) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        macros[id].steps[step] = { (uint8_t)type, (int16_t)a, (int16_t)b };
+        if (step >= macros[id].step_count) macros[id].step_count = (uint8_t)(step + 1);
+        cdc_printf("MACRO:OK:%d:%d\n", id, step);
+        return;
+    }
+
+    // MACRO_TRUNC:<id>:<pasos>  — fija el recuento exacto (recorta lo que sobre)
+    if (strncmp(cmd, "MACRO_TRUNC:", 12) == 0) {
+        int id = 0, count = 0;
+        const char* p = next_field(cmd + 12, &id);
+        p = next_field(p, &count);
+        if (!p || id < 0 || id >= MACRO_MAX_COUNT || count < 0 || count > MACRO_MAX_STEPS) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        macros[id].step_count = (uint8_t)count;
+        cdc_printf("MACRO:TRUNC:OK:%d:%d\n", id, count);
+        return;
+    }
+
+    // MACRO_CLEAR:<id>  — vacía la copia del teclado (la macro vuelve a
+    // ejecutarla el PC hasta que se le suba una jugable de nuevo)
+    if (strncmp(cmd, "MACRO_CLEAR:", 12) == 0) {
+        int id = atoi(cmd + 12);
+        if (id < 0 || id >= MACRO_MAX_COUNT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        memset(&macros[id], 0, sizeof(macros[id]));
+        cdc_printf("MACRO:CLEARED:%d\n", id);
+        return;
+    }
+
+    // GET_MACRO:<id>  — vuelca los pasos guardados en el teclado para esa macro
+    if (strncmp(cmd, "GET_MACRO:", 10) == 0) {
+        int id = atoi(cmd + 10);
+        if (id < 0 || id >= MACRO_MAX_COUNT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        const FlashMacro& m = macros[id];
+        for (uint8_t i = 0; i < m.step_count; i++) {
+            cdc_printf("MACRO:%d:STEP:%d:%d:%d:%d\n", id, (int)i,
+                       (int)m.steps[i].type, (int)m.steps[i].a, (int)m.steps[i].b);
+        }
+        cdc_printf("MACRO:%d:END\n", id);
+        return;
+    }
+
+    // MACRO_TEST:<id>  — SOLO PARA DEPURAR. Fuerza la reproducción en el
+    // propio teclado aunque la app esté conectada (que si no, siempre gana
+    // el camino del PC y no habría forma de ver esta telemetría), y manda
+    // por CDC cada trozo de movimiento que calcula de verdad.
+    if (strncmp(cmd, "MACRO_TEST:", 11) == 0) {
+        int id = atoi(cmd + 11);
+        if (id < 0 || id >= MACRO_MAX_COUNT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        if (macro_player.active) { cdc_printf("ERR:MACRO_BUSY\n"); return; }
+        macro_player_start((uint8_t)id);
+        macro_player.debug = true;
+        cdc_printf("MACRO:TEST:STARTED:%d\n", id);
+        return;
+    }
+
     // ---------- Iconos OLED personalizados ----------
     // OLED_CHUNK:<perfil>:<hueco 0-19>:<offset>:<hex>
     // El framebuffer es de 360 bytes (72x40, 5 páginas). La app lo trocea.
@@ -2050,6 +2395,7 @@ void process_command(const char* cmd) {
     // ---------- Persistencia ----------
     if (strcmp(cmd, "SAVE_STATE") == 0) {
         save_settings();
+        save_macros();
         cdc_printf("SAVE:OK\n");
         return;
     }
@@ -2109,6 +2455,7 @@ int main() {
 
     // Cargar configuración de Flash
     load_settings();
+    load_macros();
 
     // Si venimos de un reinicio por watchdog, algo se colgó: nada de intro, a
     // dejar el teclado operativo cuanto antes.
@@ -2245,18 +2592,12 @@ int main() {
                              p.rotary[rot_slot(ROT_ENC1_CCW, super_active)], delta_izq);
             } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_PERF || current_mode == MODE_MENU_REPO) {
                 // Desplazamiento de menú
-                int opts = (current_mode == MODE_MENU_PERF) ? perf_menu_count() : 5;
+                int opts = (current_mode == MODE_MENU_PERF) ? perf_menu_count()
+                         : (current_mode == MODE_MENU_MAIN) ? 4 : 5;
                 int next = ((int)selected_menu_idx + delta_izq) % opts;
                 if (next < 0) next += opts;
                 selected_menu_idx = (uint8_t)next;
                 if (current_mode == MODE_MENU_PERF) perf_menu_follow();
-                push_system_refresh();
-            } else if (current_mode == MODE_MENU_BRIL) {
-                // Ajuste de brillo en caliente
-                int new_bril = current_brightness + delta_izq * 8;
-                if (new_bril < 0) new_bril = 0;
-                if (new_bril > 255) new_bril = 255;
-                current_brightness = new_bril;
                 push_system_refresh();
             }
         }
@@ -2277,13 +2618,6 @@ int main() {
                 const Page& p = cur_page();
                 apply_rotary(p.rotary[rot_slot(ROT_ENC2_CW,  super_active)],
                              p.rotary[rot_slot(ROT_ENC2_CCW, super_active)], delta_der);
-            } else if (current_mode == MODE_MENU_BRIL) {
-                // También ajustar brillo con encoder derecho
-                int new_bril = current_brightness + delta_der * 8;
-                if (new_bril < 0) new_bril = 0;
-                if (new_bril > 255) new_bril = 255;
-                current_brightness = new_bril;
-                push_system_refresh();
             }
         }
 
@@ -2308,10 +2642,9 @@ int main() {
                     } else if (current_mode == MODE_MENU_MAIN) {
                         // Confirmar opción
                         if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
-                        else if (selected_menu_idx == 1) current_mode = MODE_MENU_BRIL;
-                        else if (selected_menu_idx == 2) current_mode = MODE_MENU_REPO;
-                        else if (selected_menu_idx == 3) current_mode = MODE_MENU_INFO;
-                        else if (selected_menu_idx == 4) {
+                        else if (selected_menu_idx == 1) current_mode = MODE_MENU_REPO;
+                        else if (selected_menu_idx == 2) current_mode = MODE_MENU_INFO;
+                        else if (selected_menu_idx == 3) {
                             current_mode = MODE_NORMAL;
                             char tel2[24];
                             int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
@@ -2325,7 +2658,10 @@ int main() {
                     if (selected_menu_idx < profile_count) {
                         active_profile_idx = selected_menu_idx;
                         active_page = 0;
-                        // save_settings() eliminado
+                        // Guardado inmediato: es un cambio discreto (no como el
+                        // encoder de la rueda), así que no hay riesgo de desgastar
+                        // la Flash a base de escrituras seguidas.
+                        save_settings();
                         current_mode = MODE_NORMAL;
                         char tel2[24];
                         int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
@@ -2336,23 +2672,18 @@ int main() {
                         }
                         selected_menu_idx = 0;
                         push_system_refresh();
-                    } else if (current_mode == MODE_MENU_BRIL) {
-                        // save_settings() eliminado (brillo se aplica temporalmente)
-                        current_mode = MODE_MENU_MAIN;
-                        selected_menu_idx = 1;
-                        push_system_refresh();
                     } else if (current_mode == MODE_MENU_REPO) {
                         if (selected_menu_idx >= 0 && selected_menu_idx <= 3) {
                             const uint8_t repo_vals[4] = {1, 5, 10, 0};
                             reposo_timeout_min = repo_vals[selected_menu_idx];
-                            // save_settings() eliminado
+                            save_settings();
                         }
                         current_mode = MODE_MENU_MAIN;
-                        selected_menu_idx = 2;
+                        selected_menu_idx = 1;
                         push_system_refresh();
                     } else if (current_mode == MODE_MENU_INFO) {
                         current_mode = MODE_MENU_MAIN;
-                        selected_menu_idx = 3;
+                        selected_menu_idx = 2;
                         push_system_refresh();
                     }
                 }
@@ -2437,6 +2768,7 @@ int main() {
         // si se retrasa. Después va lo que haya pendiente de teclado.
         WheelOut::flush();
         HidOut::pump();
+        macro_player_tick(now);
 
         // Soltar el Ctrl del zoom cuando se deja de girar. Hay que abrir también
         // la compuerta: si quedaran unidades a medias, se quedaría esperando un
@@ -2619,10 +2951,9 @@ int main() {
                         
                         if (current_mode == MODE_MENU_MAIN) {
                             if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
-                            else if (selected_menu_idx == 1) current_mode = MODE_MENU_BRIL;
-                            else if (selected_menu_idx == 2) current_mode = MODE_MENU_REPO;
-                            else if (selected_menu_idx == 3) current_mode = MODE_MENU_INFO;
-                            else if (selected_menu_idx == 4) {
+                            else if (selected_menu_idx == 1) current_mode = MODE_MENU_REPO;
+                            else if (selected_menu_idx == 2) current_mode = MODE_MENU_INFO;
+                            else if (selected_menu_idx == 3) {
                                 current_mode = MODE_NORMAL;
                                 char tel[24];
                                 int len = snprintf(tel, sizeof(tel), "MODE:NORMAL\n");
@@ -2647,13 +2978,6 @@ int main() {
                             }
                             selected_menu_idx = 0;
                             push_system_refresh();
-                        } else if (current_mode == MODE_MENU_BRIL) {
-                            if (selected_menu_idx == 4) {
-                                save_settings();
-                                current_mode = MODE_MENU_MAIN;
-                                selected_menu_idx = 1;
-                                push_system_refresh();
-                            }
                         } else if (current_mode == MODE_MENU_REPO) {
                             if (selected_menu_idx >= 0 && selected_menu_idx <= 3) {
                                 const uint8_t repo_vals[4] = {1, 5, 10, 0};
@@ -2661,12 +2985,12 @@ int main() {
                                 save_settings();
                             }
                             current_mode = MODE_MENU_MAIN;
-                            selected_menu_idx = 2;
+                            selected_menu_idx = 1;
                             push_system_refresh();
                         } else if (current_mode == MODE_MENU_INFO) {
                             if (selected_menu_idx == 4) {
                                 current_mode = MODE_MENU_MAIN;
-                                selected_menu_idx = 3;
+                                selected_menu_idx = 2;
                                 push_system_refresh();
                             }
                         }

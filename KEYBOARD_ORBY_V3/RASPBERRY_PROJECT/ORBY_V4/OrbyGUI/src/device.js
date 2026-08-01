@@ -59,7 +59,6 @@ export function send(command) {
 }
 
 export const setProfile   = (idx) => request(`SET_PROFILE:${idx}`, { match: (l) => l.startsWith('PROFILE:OK:') });
-export const setBrightness = (v)  => request(`SET_BRIGHTNESS:${v}`, { match: (l) => l.startsWith('BRIGHTNESS:OK:') });
 export const setTimeout_   = (v)  => request(`SET_TIMEOUT:${v}`,    { match: (l) => l.startsWith('TIMEOUT:OK:') });
 export const saveToFlash   = ()   => request('SAVE_STATE',          { match: (l) => l.startsWith('SAVE:OK'), timeout: 8000 });
 export const resetDefaults = ()   => request('RESET_DEFAULTS',      { match: (l) => l.startsWith('RESET:OK') });
@@ -86,6 +85,19 @@ export const setName = (profile, text) =>
 
 export const clearOled = (profile, slot) =>
   request(`OLED_CLEAR:${profile}:${slot}`, { match: (l) => l.startsWith(`OLED:CLEARED:${profile}:`) });
+
+// Secuencias que puede tocar el propio teclado (espera, tecla, clic, mover el
+// ratón un delta): se suben paso a paso, con el mismo id que guarda la tecla
+// en su modificador MACRO_MODIFIER. La posición absoluta del ratón no tiene
+// equivalente aquí: de esa se sigue encargando el PC por CDC (ver MACRO:<id>).
+export const setMacroStep = (id, step, type, a, b) =>
+  request(`SET_MACRO_STEP:${id}:${step}:${type}:${a}:${b}`, { match: (l) => l === `MACRO:OK:${id}:${step}` });
+
+export const macroTrunc = (id, count) =>
+  request(`MACRO_TRUNC:${id}:${count}`, { match: (l) => l === `MACRO:TRUNC:OK:${id}:${count}` });
+
+export const macroClear = (id) =>
+  request(`MACRO_CLEAR:${id}`, { match: (l) => l === `MACRO:CLEARED:${id}` });
 
 // --- Alta y baja de perfiles ------------------------------------------------
 // El teclado responde con PROFILE:ADDED/DELETED y, acto seguido, con el recuento
@@ -115,7 +127,6 @@ export function getState() {
         state.maxProfiles  = max;
         return true;
       }
-      if (line.startsWith('STATE:BRIGHTNESS:')) { state.brightness = parseInt(line.slice(17), 10); return true; }
       if (line.startsWith('STATE:TIMEOUT:'))    { state.timeout   = parseInt(line.slice(14), 10); return true; }
       if (line.startsWith('STATE:MODE:'))       { state.mode      = line.slice(11); return true; }
       if (line.startsWith('STATE:SUPER:'))      { state.superActive = line.slice(12) === '1'; return true; }

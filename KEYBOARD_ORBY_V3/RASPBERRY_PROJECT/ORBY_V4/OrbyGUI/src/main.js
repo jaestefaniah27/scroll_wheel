@@ -51,7 +51,8 @@ function switchView(target, params) {
 
 async function saveToFlash() {
   const btn = document.getElementById('btn-save-flash');
-  if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
+  if (!state.connected) return;
+  if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
 
   btn.disabled = true;
   try {
@@ -63,17 +64,36 @@ async function saveToFlash() {
       state.dirty = false;
       notify();
     });
-    toast('Configuración escrita en la memoria Flash');
   } catch {
-    toast('El teclado no confirmó el guardado', 'error');
+    // No se ha podido escribir todavía (p.ej. el teclado se desenchufó a
+    // mitad). state.dirty sigue en true: se reintenta solo, sin que el
+    // usuario tenga que volver a pulsar nada.
+    toast('El teclado no confirmó el guardado, reintentando…', 'error');
+    scheduleAutoSave();
   } finally {
     btn.disabled = false;
   }
 }
 
+// Guardado automático: cada cambio (marcado con markDirty) programa una
+// escritura a Flash sola, sin que el usuario tenga que acordarse de pulsar
+// nada. El retardo agrupa varios cambios seguidos (p.ej. reasignar varias
+// teclas seguidas) en una sola escritura en vez de una por tecla.
+const AUTO_SAVE_DELAY_MS = 1500;
+let autoSaveTimer = null;
+
+function scheduleAutoSave() {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null;
+    saveToFlash();
+  }, AUTO_SAVE_DELAY_MS);
+}
+
 // El indicador de "cambios sin guardar" evita el fallo más molesto de la
-// versión anterior: ajustar todo y perderlo al desenchufar, porque el firmware
-// solo persiste con SAVE_STATE.
+// versión anterior: ajustar todo y perderlo al desenchufar. Ahora el propio
+// guardado automático se encarga de que ese hueco dure como mucho
+// AUTO_SAVE_DELAY_MS; el indicador es solo para que se vea que está en curso.
 function renderChrome() {
   const badge = document.getElementById('connection-status-badge');
   const text = badge.querySelector('.status-text');
@@ -86,9 +106,11 @@ function renderChrome() {
     text.textContent = 'Desconectado';
   }
 
+  if (state.dirty && state.connected) scheduleAutoSave();
+
   const save = document.getElementById('btn-save-flash');
   save.classList.toggle('has-changes', state.dirty);
-  save.querySelector('.save-label').textContent = state.dirty ? 'Guardar en Flash' : 'Guardado';
+  save.querySelector('.save-label').textContent = state.dirty ? 'Guardando…' : 'Guardado';
   save.disabled = !state.connected;
 }
 
@@ -117,6 +139,11 @@ function wireDevice() {
     } catch (err) {
       toast(`No se pudo leer la configuración: ${err.message}`, 'error');
     }
+
+    // No bloquea el arranque: si el teclado lleva firmware con secuencias
+    // propias, reenvía las que haya (cubre un teclado recién reflasheado, cuya
+    // Flash de secuencias está vacía aunque la app ya las tuviera guardadas).
+    profiles.syncAllMacrosToDevice?.().catch(() => {});
   });
 
   device.on('disconnected', () => {

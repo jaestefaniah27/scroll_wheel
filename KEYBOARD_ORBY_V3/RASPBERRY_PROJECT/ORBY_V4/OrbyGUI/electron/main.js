@@ -1,14 +1,31 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
 const { OrbySerial } = require('./serial');
 const { ForegroundWatcher } = require('./foreground');
 const config = require('./config');
-const { executeMacro } = require('./macros');
+const { executeMacro, getMousePosition } = require('./macros');
 
 let mainWindow = null;
 let serial = null;
 let foreground = null;
+let tray = null;
+
+// Solo puede haber una instancia: si arranca sola (autostart) y luego el
+// usuario hace doble clic en el icono, la segunda instancia no debe abrir un
+// segundo tray ni pelear por el puerto serie con la primera.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+// Cerrar la ventana (la X de la barra de título propia) esconde la app en
+// vez de matarla: las secuencias las ejecuta este proceso al recibir
+// MACRO:<id> por CDC, así que si se cerrara de verdad dejarían de funcionar
+// en cuanto no hubiera una ventana abierta. Solo el menú de la bandeja (o un
+// cierre real del sistema) pone `quitting` a true y deja pasar el cierre.
+let quitting = false;
 
 // El modo desarrollo se pide explícitamente con --dev. Deducirlo de
 // app.isPackaged hacía que un `electron .` normal intentara conectarse al
@@ -44,6 +61,7 @@ function createWindow() {
     frame: false,
     titleBarStyle: 'hidden',
     show: false,
+    fullscreen: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -65,6 +83,29 @@ function createWindow() {
   forward('error', 'serial:error');
   forward('searching', 'serial:searching');
 
+  // Aviso de "acaba de enchufarse": sustituye al popup de instalación de
+  // hardware nuevo tipo Razer Synapse (eso exigiría Device Metadata Authoring +
+  // firma WHQL + ficha en Microsoft Store, ver docs/TODO_BACKGROUND_AUTOSTART.md).
+  // Se engancha al mismo evento 'connected' que ya dispara el escaneo por
+  // puerto serie cada 3s (ver serial.js) en vez de usar usb-detection: ese
+  // módulo requiere compilar código nativo con node-gyp, y este equipo no
+  // tiene Visual Studio Build Tools instalado. El resultado para el usuario
+  // es idéntico (toast al conectar, clic abre/enfoca la ventana) sin añadir
+  // esa dependencia nativa.
+  serial.on('connected', () => {
+    if (!Notification.isSupported()) return;
+    const notif = new Notification({
+      title: 'Orby conectado',
+      body: 'Se detectó el teclado. Haz clic para abrir OrbyGUI.',
+      icon: path.join(__dirname, '..', 'assets', 'orby-icon.png'),
+    });
+    notif.on('click', () => {
+      mainWindow?.show();
+      mainWindow?.focus();
+    });
+    notif.show();
+  });
+
   // Las líneas MACRO:<id> las dispara el firmware pero las ejecuta el PC; se
   // interceptan aquí además de seguir reenviándolas al renderer como siempre,
   // para que la consola de la app también las vea.
@@ -85,6 +126,22 @@ function createWindow() {
 
   if (config.load().autoProfile.enabled) foreground.start();
 
+  // La X de la barra propia manda 'window:close', que llama a .close() más
+  // abajo: se intercepta aquí para esconder en vez de cerrar de verdad.
+  let balloonShown = false;
+  mainWindow.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    mainWindow.hide();
+    if (!balloonShown && tray) {
+      balloonShown = true;
+      tray.displayBalloon({
+        title: 'OrbyGUI sigue activo',
+        content: 'Se quedó en la bandeja del sistema para poder seguir ejecutando secuencias. Para cerrarlo del todo, usa "Salir" en el icono de la bandeja.',
+      });
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
     serial?.stopAutoScan();
@@ -93,18 +150,87 @@ function createWindow() {
   });
 }
 
+// Icono en la bandeja del sistema: es lo que permite que la app siga viva
+// (y por tanto ejecutando secuencias) después de "cerrar" la ventana.
+function createTray() {
+  const iconPath = path.join(__dirname, '..', 'assets', 'orby-icon.png');
+  const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  tray = new Tray(trayIcon);
+  tray.setToolTip('OrbyGUI');
+
+  const showWindow = () => { mainWindow?.show(); mainWindow?.focus(); };
+
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Abrir OrbyGUI', click: showWindow },
+    { type: 'separator' },
+    { label: 'Salir', click: () => { quitting = true; app.quit(); } },
+  ]));
+
+  tray.on('click', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isVisible()) mainWindow.hide();
+    else showWindow();
+  });
+  tray.on('double-click', showWindow);
+}
+
+// --- Actualizaciones automáticas ---
+// Se comprueba contra las Releases de GitHub (ver "publish" en package.json).
+// Solo tiene sentido con la app empaquetada e instalada: en dev no hay
+// instalador que sustituir ni feed de actualizaciones que consultar.
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('error', (err) => console.error('AutoUpdater:', err.message));
+
+  autoUpdater.on('update-downloaded', (info) => {
+    if (!Notification.isSupported()) return;
+    const notif = new Notification({
+      title: `OrbyGUI ${info.version} disponible`,
+      body: 'Se instalará al cerrar la app. Haz clic para instalar ahora.',
+      icon: path.join(__dirname, '..', 'assets', 'orby-icon.png'),
+    });
+    notif.on('click', () => {
+      quitting = true;
+      autoUpdater.quitAndInstall();
+    });
+    notif.show();
+  });
+
+  autoUpdater.checkForUpdates().catch((err) => console.error('AutoUpdater:', err.message));
+}
+
 // --- IPC: serie ---
 ipcMain.handle('serial:send', async (_e, cmd) => (serial ? serial.sendCommand(cmd) : false));
 ipcMain.handle('serial:getInfo', async () => serial?.getDeviceInfo() ?? null);
 ipcMain.handle('serial:getStatus', async () => serial?.getStatus() ?? 'disconnected');
 ipcMain.handle('serial:reconnect', async () => {
-  serial?.startAutoScan();
+  serial?.forceRescan();
   return Boolean(serial);
 });
+
+// --- IPC: ratón (para capturar posiciones al editar una secuencia) ---
+// Se pregunta a nut.js, no al módulo screen de Electron: tiene que devolver
+// coordenadas en el mismo sistema que usa mouse.setPosition al reproducir la
+// secuencia, o la posición capturada queda desplazada en pantallas con escalado.
+ipcMain.handle('mouse:getPosition', async () => getMousePosition());
 
 // --- IPC: configuración local ---
 ipcMain.handle('config:get', async () => config.load());
 ipcMain.handle('config:set', async (_e, patch) => config.save(patch));
+
+// --- IPC: autoarranque con Windows ---
+// app.setLoginItemSettings ya persiste el valor en el registro de Windows por
+// su cuenta (no hace falta guardarlo también en config.json): consultamos
+// siempre el estado real en vez de duplicarlo.
+ipcMain.handle('autostart:get', async () => app.getLoginItemSettings().openAtLogin);
+ipcMain.handle('autostart:set', async (_e, enabled) => {
+  app.setLoginItemSettings({ openAtLogin: enabled });
+  return app.getLoginItemSettings().openAtLogin;
+});
 
 // --- IPC: copias de seguridad ---
 // Guardar los perfiles y los iconos en un archivo del PC es el único respaldo
@@ -155,11 +281,31 @@ ipcMain.on('window:maximize', () => {
 });
 ipcMain.on('window:close', () => mainWindow?.close());
 
-app.whenReady().then(createWindow);
+if (gotSingleInstanceLock) {
+  // Lanzar la app de nuevo (autostart ya corriendo + doble clic manual, o
+  // el propio instalador) llega aquí en vez de abrir una segunda instancia:
+  // simplemente se muestra la ventana que ya existe.
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
-app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => foreground?.stop());
+  app.whenReady().then(() => {
+    createWindow();
+    createTray();
+    setupAutoUpdater();
+  });
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
+  app.on('window-all-closed', () => app.quit());
+  app.on('before-quit', () => {
+    quitting = true;
+    foreground?.stop();
+  });
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else mainWindow?.show();
+  });
+}

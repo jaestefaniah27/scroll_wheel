@@ -13,9 +13,18 @@ contextBridge.exposeInMainWorld('orby', {
   onError: (cb) => ipcRenderer.on('serial:error', (_e, err) => cb(err)),
   onSearching: (cb) => ipcRenderer.on('serial:searching', () => cb()),
 
+  // Ratón: posición actual del cursor en pantalla (captura de posiciones al editar una secuencia)
+  getMousePosition: () => ipcRenderer.invoke('mouse:getPosition'),
+
   // Configuración local (solo del PC, no del firmware)
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
+
+  // Autoarranque con Windows (app.setLoginItemSettings)
+  autostart: {
+    get: () => ipcRenderer.invoke('autostart:get'),
+    set: (enabled) => ipcRenderer.invoke('autostart:set', enabled),
+  },
 
   // Copias de seguridad en un archivo del PC
   saveBackup: (data) => ipcRenderer.invoke('backup:save', data),

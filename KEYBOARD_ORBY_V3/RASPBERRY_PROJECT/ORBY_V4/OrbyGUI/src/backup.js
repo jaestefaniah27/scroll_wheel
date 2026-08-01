@@ -36,7 +36,6 @@ export async function exportAll(onProgress = () => {}) {
     version: VERSION,
     savedAt: new Date().toISOString(),
     firmware: state.deviceInfo?.fw || null,
-    brightness: state.brightness,
     timeout: state.timeout,
     activeProfile: state.activeProfileIdx,
     profiles: [],
@@ -80,7 +79,8 @@ export async function exportAll(onProgress = () => {}) {
   return payload;
 }
 
-// Vuelca una copia al teclado. No escribe en Flash: eso lo decide el usuario.
+// Vuelca una copia al teclado. Como cualquier otro cambio, queda marcada como
+// pendiente y el guardado automático la escribe en Flash sola.
 export async function importAll(data, onProgress = () => {}) {
   if (data?.format !== FORMAT) throw new Error('El archivo no es una copia de Orby');
   if (!state.connected) throw new Error('Teclado no conectado');
@@ -137,8 +137,6 @@ export async function importAll(data, onProgress = () => {}) {
       await device.uploadOled(p, slot, hexToBytes(icons[slot]));
     }
   }
-
-  if (Number.isInteger(data.brightness)) await device.setBrightness(data.brightness);
 
   // Los iconos del teclado ya no son los que hay en la caché de la app.
   cache.invalidate();

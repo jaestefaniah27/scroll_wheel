@@ -19,7 +19,6 @@ export const state = {
   maxProfiles: 8,
   deviceMode: 'NORMAL',
   superActive: false,
-  brightness: 207,
   timeout: 5,
   scroll: { detentsPerRev: 60, invert: false, hires: false }, // lo que aplica ahora mismo
   profiles: [],       // rellenado desde el firmware
@@ -154,7 +153,6 @@ export async function syncFromDevice() {
       if (Number.isInteger(s.profile))      state.activeProfileIdx = s.profile;
       if (Number.isInteger(s.profileCount)) count = s.profileCount;
       if (Number.isInteger(s.maxProfiles))  state.maxProfiles = s.maxProfiles;
-      if (Number.isInteger(s.brightness))   state.brightness = s.brightness;
       if (Number.isInteger(s.timeout))      state.timeout = s.timeout;
       if (typeof s.superActive === 'boolean') state.superActive = s.superActive;
       if (s.mode)   state.deviceMode = s.mode;
