@@ -782,8 +782,36 @@ body {
   display: inline-block; margin-left: 2px;
 }
 
-.editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 520px; gap: 24px; align-items: start; }
-.editor-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+/* El panel de configuración de tecla (derecha) y la rejilla de teclas
+   (izquierda) escrollean cada uno por su cuenta: la vista pasa a ser una
+   columna flex de altura fija y ambos paneles se reparten esa altura con su
+   propio overflow, en vez de compartir el scroll único de `.view`. */
+.view:has(.editor-layout) { display: flex; flex-direction: column; overflow: hidden; }
+.view:has(.editor-layout) > .view-header { flex-shrink: 0; }
+/* `#profiles-body` es un div sin estilo entre `.view-header` y `.editor-layout`
+   (lo rellena profiles.js con innerHTML). Sin hacerlo también columna flex con
+   `flex:1; min-height:0`, el `flex:1` de `.editor-layout` no tiene contra qué
+   resolverse -su padre no es flex- y vuelve a crecer al contenido. */
+#profiles-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+#profiles-body > .profile-bar, #profiles-body > .variant-bar { flex-shrink: 0; }
+/* `align-items: stretch` (el valor por defecto, así que basta con no pisarlo
+   con `start`) es lo que le da a cada columna un alto definido igual al de
+   la fila: sin eso el `height: 100%` de abajo no tiene contra qué resolverse
+   (cae a `auto`), cada panel crece a su contenido y `overflow:hidden` de
+   `.view` lo recorta en vez de dejarlo escrollar. */
+/* `grid-template-rows` explícito es necesario: sin él la fila (auto) crece
+   al contenido natural de sus hijos -altura 100%, que en esta fase de
+   cálculo cuenta como "auto"-, así que la rejilla entera se hace tan alta
+   como el panel más largo, `.view` la recorta con overflow:hidden y no
+   queda scroll en ningún sitio. */
+.editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 520px; grid-template-rows: minmax(0, 1fr); gap: 24px; flex: 1; min-height: 0; overflow: hidden; }
+/* El hijo real de la grid a la izquierda es `.editor-main` (variantes +
+   `.editor-board` + tarjeta de Encoders), no `.editor-board` suelto: el
+   scroll y el alto van aquí, si no solo se estira un bloque de dentro y el
+   resto de `.editor-main` se sale sin contenedor que lo recorte ni lo deje
+   escrollar. */
+.editor-main, .editor-inspector { height: 100%; overflow-y: auto; }
+.editor-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; }
 .editor-board { padding: 24px; }
 .editor-board-head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
 .editor-board-head .head-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -855,7 +883,7 @@ body {
 .type-chip:hover { color: var(--text-main); background: rgba(255,255,255,0.06); }
 .type-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 
-.editor-inspector { padding: 24px; position: sticky; top: 0; }
+.editor-inspector { padding: 24px; }
 .inspector-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .inspector-head h3 { font-size: 18px; }
 
@@ -885,6 +913,8 @@ body {
 .seq-gap { background: transparent; border-style: dashed; color: var(--text-muted); }
 .seq-gap-input { min-width: 56px; text-align: right; }
 .seq-pos-input { min-width: 60px; max-width: 72px; text-align: right; padding: 6px 8px; font-size: 12px; }
+.seq-count-input { min-width: 44px; max-width: 52px; text-align: center; padding: 6px 6px; font-size: 12px; }
+.seq-gap-input { min-width: 56px; max-width: 68px; text-align: center; padding: 6px 6px; font-size: 12px; }
 .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .mod-chip, .consumer-chip, .chip, .preset-btn {
   background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);
@@ -1197,8 +1227,14 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 /* ================= RESPONSIVE ================= */
 @media (max-width: 1180px) {
   .editor-layout, .oled-grid, .auto-grid, .wheel-tune { grid-template-columns: minmax(0, 1fr); }
-  .editor-inspector { position: static; }
   .orby-board { flex-direction: column; align-items: center; gap: 24px; }
+
+  /* En pantalla estrecha los dos paneles se apilan: vuelve a haber un único
+     scroll de página, como en el resto de vistas. */
+  .view:has(.editor-layout) { display: block; overflow-y: auto; }
+  #profiles-body { display: block; flex: initial; overflow: visible; }
+  .editor-layout { flex: initial; overflow: visible; }
+  .editor-main, .editor-inspector { height: auto; overflow: visible; }
 }
 
 /* --- Páginas de perfil --- */

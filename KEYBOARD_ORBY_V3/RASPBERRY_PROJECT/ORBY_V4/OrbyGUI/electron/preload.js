@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('orby', {
   saveBackup: (data) => ipcRenderer.invoke('backup:save', data),
   loadBackup: () => ipcRenderer.invoke('backup:load'),
 
+  // Elegir una app o archivo (pestaña "App" y paso "Abrir…" de una secuencia)
+  pickAppOrFile: (kind) => ipcRenderer.invoke('dialog:pickAppOrFile', kind),
+
   // Detección de la aplicación en primer plano
   foreground: {
     start: () => ipcRenderer.invoke('foreground:start'),

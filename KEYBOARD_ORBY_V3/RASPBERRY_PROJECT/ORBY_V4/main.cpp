@@ -613,7 +613,10 @@ static_assert(OLED_PAGE_STRIDE % FLASH_PAGE_SIZE == 0,
 // yendo por CDC: una secuencia que la use se queda en el camino viejo (ver
 // trigger_macro: sin copia jugable en el teclado, avisa por CDC como antes).
 #define MACRO_MAX_COUNT  64
-#define MACRO_MAX_STEPS  24
+// Cada paso "real" (tecla, clic, movimiento) que añade el editor se guarda con
+// una espera delante (menos el primero), así que el tope efectivo de pasos
+// jugables en el teclado es la mitad de este número, no el número entero.
+#define MACRO_MAX_STEPS  48
 
 enum MacroStepType : uint8_t {
     MSTEP_NONE      = 0,
@@ -648,6 +651,12 @@ struct MacroStep {
     uint8_t type;
     int16_t a;
     int16_t b;
+    // Solo se usan en MSTEP_KEY y MSTEP_CLICK (ver sameStep en profiles.js):
+    // repetir el mismo paso `repeat` veces, con `gap` ms de espera entre cada
+    // una, sin que cuente como pasos de más ni en la lista ni contra
+    // MACRO_MAX_STEPS. En el resto de tipos se suben en 1/0 y no se miran.
+    uint8_t repeat;
+    int16_t gap;
 };
 
 struct FlashMacro {
@@ -660,7 +669,7 @@ struct FlashMacro {
 static FlashMacro macros[MACRO_MAX_COUNT];
 
 #define FLASH_MACROS_OFFSET  (FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES)
-#define FLASH_MACROS_SECTORS 4
+#define FLASH_MACROS_SECTORS 8
 #define FLASH_MACROS_BYTES   (FLASH_MACROS_SECTORS * FLASH_SECTOR_SIZE)
 #define MACROS_MAGIC 0xDEB0AC10
 
@@ -1346,8 +1355,11 @@ struct MacroPlayer {
     // para poder ver qué está calculando el reproductor aunque la app esté
     // conectada (que si no, siempre gana el camino del PC y esto no se ve).
     bool     debug;
+    // Repeticiones que le quedan al paso actual (MSTEP_KEY/MSTEP_CLICK), 0 =
+    // todavía no se ha cargado para este paso (ver macro_player_tick).
+    uint8_t  rep_left;
 };
-static MacroPlayer macro_player = { false, 0, 0, 0, 0, false, { 0, 0, 0, 0, 0 }, 0, 0, false };
+static MacroPlayer macro_player = { false, 0, 0, 0, 0, false, { 0, 0, 0, 0, 0 }, 0, 0, false, 0 };
 
 static void macro_queue_report(uint8_t buttons, int8_t dx, int8_t dy) {
     macro_player.pending_report = { buttons, dx, dy, 0, 0 };
@@ -1371,6 +1383,24 @@ static void macro_player_start(uint8_t id) {
     macro_player.report_pending = false;
     macro_player.deadline = to_ms_since_boot(get_absolute_time());
     macro_player.debug = false;
+    macro_player.rep_left = 0;
+}
+
+// Tras completar un MSTEP_KEY o la suelta de un MSTEP_CLICK: si al paso le
+// quedan repeticiones, lo vuelve a lanzar tras `s.gap` ms (sin tocar mp.step,
+// así que no cuenta como paso nuevo); si no, avanza al siguiente paso normal.
+static void macro_repeat_or_advance(uint32_t now, const MacroStep& s) {
+    MacroPlayer& mp = macro_player;
+    if (mp.rep_left > 1) {
+        mp.rep_left--;
+        mp.phase = MPH_IDLE;
+        mp.deadline = now + (uint32_t)(s.gap > 0 ? s.gap : 0);
+    } else {
+        mp.rep_left = 0;
+        mp.step++;
+        mp.deadline = now;
+        mp.phase = MPH_IDLE;
+    }
 }
 
 // Encola como mucho un trozo de ±127 del movimiento a trozos en curso y lo
@@ -1405,9 +1435,9 @@ static void macro_player_tick(uint32_t now) {
     if (mp.report_pending) {
         if (!macro_try_send_report()) return;
         switch (mp.phase) {
-            case MPH_MOVE_SENT: mp.step++; mp.deadline = now; mp.phase = MPH_IDLE; break;
+            case MPH_MOVE_SENT: mp.step++; mp.rep_left = 0; mp.deadline = now; mp.phase = MPH_IDLE; break;
             case MPH_CLICK_PRESSED: mp.deadline = now + MACRO_CLICK_HOLD_MS; mp.phase = MPH_CLICK_HOLD; return;
-            case MPH_CLICK_RELEASED: mp.step++; mp.deadline = now; mp.phase = MPH_IDLE; break;
+            case MPH_CLICK_RELEASED: macro_repeat_or_advance(now, macros[mp.id].steps[mp.step]); break;
             case MPH_CHUNK_HOME: case MPH_CHUNK_TARGET: break; // se decide más abajo
             default: break;
         }
@@ -1418,7 +1448,7 @@ static void macro_player_tick(uint32_t now) {
     if (mp.phase == MPH_CLICK_HOLD) {
         macro_queue_report(0, 0, 0);
         mp.phase = MPH_CLICK_RELEASED;
-        if (macro_try_send_report()) { mp.step++; mp.deadline = now; mp.phase = MPH_IDLE; }
+        if (macro_try_send_report()) macro_repeat_or_advance(now, macros[mp.id].steps[mp.step]);
         return;
     }
 
@@ -1439,7 +1469,7 @@ static void macro_player_tick(uint32_t now) {
                 // esta misma vuelta, sin esperar a la próxima.
             } else {
                 if (mp.debug) cdc_printf("MACRODBG:TARGET_DONE:step=%d\n", (int)mp.step);
-                mp.step++; mp.deadline = now; mp.phase = MPH_IDLE;
+                mp.step++; mp.rep_left = 0; mp.deadline = now; mp.phase = MPH_IDLE;
                 return;
             }
         }
@@ -1454,16 +1484,21 @@ static void macro_player_tick(uint32_t now) {
     }
 
     const MacroStep& s = macros[mp.id].steps[mp.step];
+    // Se carga una sola vez por paso (al llegar a él con rep_left en 0, que es
+    // como arranca cada paso nuevo): en las vueltas siguientes, mientras se
+    // van gastando repeticiones, mp.step no cambia y esto no se vuelve a tocar.
+    if (mp.rep_left == 0) mp.rep_left = s.repeat ? s.repeat : 1;
+
     switch (s.type) {
         case MSTEP_DELAY:
             mp.deadline = now + (uint32_t)(s.a > 0 ? s.a : 0);
             mp.step++;
+            mp.rep_left = 0;
             break;
 
         case MSTEP_KEY:
             HidOut::tap((uint8_t)s.a, (uint8_t)s.b);
-            mp.step++;
-            mp.deadline = now;
+            macro_repeat_or_advance(now, s);
             break;
 
         case MSTEP_MOVE: {
@@ -1471,7 +1506,7 @@ static void macro_player_tick(uint32_t now) {
             int16_t dy = s.b < -127 ? -127 : (s.b > 127 ? 127 : s.b);
             macro_queue_report(0, (int8_t)dx, (int8_t)dy);
             mp.phase = MPH_MOVE_SENT;
-            if (macro_try_send_report()) { mp.step++; mp.deadline = now; mp.phase = MPH_IDLE; }
+            if (macro_try_send_report()) { mp.step++; mp.rep_left = 0; mp.deadline = now; mp.phase = MPH_IDLE; }
             break;
         }
 
@@ -1492,6 +1527,7 @@ static void macro_player_tick(uint32_t now) {
 
         default:
             mp.step++;
+            mp.rep_left = 0;
             break;
     }
 
@@ -2307,22 +2343,27 @@ void process_command(const char* cmd) {
     }
 
     // ---------- Secuencias (macros) que ejecuta el propio teclado ----------
-    // SET_MACRO_STEP:<id 0-63>:<paso 0-23>:<tipo>:<a>:<b>
+    // SET_MACRO_STEP:<id 0-63>:<paso 0-47>:<tipo>:<a>:<b>:<repeat>:<gap>
     // Escribe un paso y, si extiende la secuencia, sube el recuento a la vez;
-    // para acortarla hace falta MACRO_TRUNC.
+    // para acortarla hace falta MACRO_TRUNC. `repeat`/`gap` solo los usa el
+    // reproductor en MSTEP_KEY/MSTEP_CLICK (ver macro_repeat_or_advance); el
+    // resto de tipos los suben en 1/0 y no se miran.
     if (strncmp(cmd, "SET_MACRO_STEP:", 15) == 0) {
-        int id = 0, step = 0, type = 0, a = 0, b = 0;
+        int id = 0, step = 0, type = 0, a = 0, b = 0, repeat = 1, gap = 0;
         const char* p = next_field(cmd + 15, &id);
         p = next_field(p, &step);
         p = next_field(p, &type);
         p = next_field(p, &a);
         p = next_field(p, &b);
+        p = next_field(p, &repeat);
+        p = next_field(p, &gap);
         if (!p || id < 0 || id >= MACRO_MAX_COUNT || step < 0 || step >= MACRO_MAX_STEPS ||
-            type < 0 || type > 255 || a < -32768 || a > 32767 || b < -32768 || b > 32767) {
+            type < 0 || type > 255 || a < -32768 || a > 32767 || b < -32768 || b > 32767 ||
+            repeat < 1 || repeat > 255 || gap < 0 || gap > 32767) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
         }
-        macros[id].steps[step] = { (uint8_t)type, (int16_t)a, (int16_t)b };
+        macros[id].steps[step] = { (uint8_t)type, (int16_t)a, (int16_t)b, (uint8_t)repeat, (int16_t)gap };
         if (step >= macros[id].step_count) macros[id].step_count = (uint8_t)(step + 1);
         cdc_printf("MACRO:OK:%d:%d\n", id, step);
         return;
@@ -2358,8 +2399,9 @@ void process_command(const char* cmd) {
         if (id < 0 || id >= MACRO_MAX_COUNT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
         const FlashMacro& m = macros[id];
         for (uint8_t i = 0; i < m.step_count; i++) {
-            cdc_printf("MACRO:%d:STEP:%d:%d:%d:%d\n", id, (int)i,
-                       (int)m.steps[i].type, (int)m.steps[i].a, (int)m.steps[i].b);
+            cdc_printf("MACRO:%d:STEP:%d:%d:%d:%d:%d:%d\n", id, (int)i,
+                       (int)m.steps[i].type, (int)m.steps[i].a, (int)m.steps[i].b,
+                       (int)m.steps[i].repeat, (int)m.steps[i].gap);
         }
         cdc_printf("MACRO:%d:END\n", id);
         return;

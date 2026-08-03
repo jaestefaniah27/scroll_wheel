@@ -156,8 +156,14 @@ function nextMacroId() {
 // pantalla de calibración en el editor antes de reactivarlo. Aparcada a
 // petición expresa del usuario — no es la prioridad ahora.
 const DEVICE_STEP_TYPE = { delay: 1, hotkey: 2, mouse_move: 3, mouse_click: 4 };
-const MACRO_MAX_STEPS_DEVICE = 24; // == MACRO_MAX_STEPS en main.cpp
+const MACRO_MAX_STEPS_DEVICE = 48; // == MACRO_MAX_STEPS en main.cpp
 const CLICK_BUTTON_CODE = { left: 0, middle: 1, right: 2 };
+// Hueco por defecto entre cada repetición de un mismo paso (tecla o clic
+// repetido, ver sameStep): se usa mientras el paso no traiga uno propio (el
+// campo `gap`, editable en el inspector a partir de 2 repeticiones). Debe
+// coincidir con el mismo nombre en electron/macros.js (ahí se usa para las
+// secuencias que corren por el camino del PC, no del teclado).
+const DEFAULT_REPEAT_GAP_MS = 20;
 
 function macroDeviceEligible(m) {
   const acts = m?.actions || [];
@@ -190,7 +196,12 @@ async function syncMacroToDevice(id) {
       else if (a.type === 'hotkey') { p1 = a.modifier || 0; p2 = a.keycode || 0; }
       else if (a.type === 'mouse_move') { p1 = a.dx || 0; p2 = a.dy || 0; }
       else if (a.type === 'mouse_click') { p1 = CLICK_BUTTON_CODE[a.button] ?? 0; }
-      await device.setMacroStep(id, i, type, p1, p2);
+      // Solo tecla y clic saben repetirse en el firmware (ver sameStep): el
+      // resto de tipos siempre suben con 1 repetición y sin hueco.
+      const repeatable = a.type === 'hotkey' || a.type === 'mouse_click';
+      const count = repeatable ? Math.max(1, Math.min(255, a.count || 1)) : 1;
+      const gap = count > 1 ? Math.max(0, Math.min(32767, Math.round(a.gap ?? DEFAULT_REPEAT_GAP_MS))) : 0;
+      await device.setMacroStep(id, i, type, p1, p2, count, gap);
     }
     await device.macroTrunc(id, m.actions.length);
     // Vive en RAM del teclado hasta que se guarde en Flash, igual que un
@@ -354,6 +365,7 @@ function onClick(e) {
     render();
   } else if (act === 'clear-action') {
     applyKeymap(0, 0);
+    clearKeyIcon();
   } else if (act === 'set-goto-page') {
     applyKeymap(GOTO_PAGE_MODIFIER, Number(el.dataset.page));
   } else if (act === 'set-page-state') {
@@ -388,6 +400,14 @@ function onClick(e) {
     else startPositionCapture(Number(el.dataset.index));
   } else if (act === 'seq-add-click') {
     seqAddAction({ type: 'mouse_click', button: 'left' });
+  } else if (act === 'seq-add-open') {
+    pickOpenTarget();
+  } else if (act === 'seq-open-browse') {
+    pickOpenTarget(Number(el.dataset.index));
+  } else if (act === 'app-kind') {
+    setAppKind(el.dataset.kind);
+  } else if (act === 'app-browse') {
+    pickAppTarget(el.dataset.kind);
   } else if (act === 'seq-add-move') {
     seqAddAction({ type: 'mouse_move', dx: 10, dy: 0 });
   } else if (act === 'seq-key-mod') {
@@ -399,6 +419,10 @@ function onClick(e) {
     seqKeyBuilder = { ...seqKeyBuilder, keycode: 0 };
   } else if (act === 'seq-del') {
     seqRemoveAction(Number(el.dataset.index));
+  } else if (act === 'seq-move-up') {
+    seqMoveAction(Number(el.dataset.index), -1);
+  } else if (act === 'seq-move-down') {
+    seqMoveAction(Number(el.dataset.index), 1);
   } else if (act === 'seq-record') {
     view.capturing = view.capturing === 'sequence' ? false : 'sequence';
     render();
@@ -435,15 +459,34 @@ function onChange(e) {
   } else if (act === 'seq-click-button') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) { step.button = e.target.value; savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-count') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) {
+      step.count = Math.max(1, Math.min(99, Math.round(Number(e.target.value)) || 1));
+      savePCMacros(currentMacroId());
+      render();
+    }
   } else if (act === 'seq-delay-ms') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) { step.ms = Math.max(0, Number(e.target.value) || 0); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-gap-ms') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) {
+      step.gap = Math.max(0, Math.min(32767, Math.round(Number(e.target.value)) || 0));
+      savePCMacros(currentMacroId());
+    }
   } else if (act === 'seq-pos-x') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) { step.x = Math.round(Number(e.target.value) || 0); savePCMacros(currentMacroId()); }
   } else if (act === 'seq-pos-y') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) { step.y = Math.round(Number(e.target.value) || 0); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-open-target') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.target = e.target.value; savePCMacros(currentMacroId()); }
+  } else if (act === 'app-target') {
+    const step = currentAppStep();
+    if (step) { step.target = e.target.value; savePCMacros(currentMacroId()); }
   } else if (act === 'seq-move-dx') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) { step.dx = clampMoveDelta(e.target.value); savePCMacros(currentMacroId()); }
@@ -519,11 +562,11 @@ function onCapture(e) {
   // Grabando una secuencia: cada tecla capturable se añade como un paso más,
   // sin salir del modo (se graban varias seguidas). Se guarda en HID (modifier
   // + keycode), como un paso "tecla" cualquiera: así el teclado también sabe
-  // reproducirla, no solo el PC. Solo cubre lo que reconoce el navegador con
-  // este código: letras, dígitos, Enter y Espacio, con los modificadores que
-  // se tuvieran pulsados en ese instante.
+  // reproducirla, no solo el PC. Cubre cualquier tecla que EVENT_CODE_TO_HID
+  // (hid-keys.js) sepa resolver a un keycode HID: letras, dígitos, F1-F24,
+  // flechas, numérico, edición..., con los modificadores que se tuvieran
+  // pulsados en ese instante.
   if (view.capturing === 'sequence') {
-    if (!SEQUENCE_CAPTURABLE.has(e.code)) return;
     const captured = eventToAction(e);
     if (!captured.keycode) return;
     seqAddAction({ type: 'hotkey', modifier: captured.modifier, keycode: captured.keycode });
@@ -540,14 +583,6 @@ function onCapture(e) {
     applyKeymap(action.modifier, action.keycode);
   }
 }
-
-// Códigos que sabe reproducir electron/macros.js (mapCodeToNutKey): letras,
-// dígitos, Enter y Espacio. Ampliar esa tabla y esta lista a la vez.
-const SEQUENCE_CAPTURABLE = new Set([
-  ...Array.from({ length: 26 }, (_, i) => `Key${String.fromCharCode(65 + i)}`),
-  ...Array.from({ length: 10 }, (_, i) => `Digit${i}`),
-  'Enter', 'Space',
-]);
 
 // --- Variaciones ------------------------------------------------------------
 
@@ -817,6 +852,27 @@ async function applyKeymap(modifier, keycode) {
   }
 }
 
+// Borra el icono propio de la tecla seleccionada (capa actual), si tiene uno.
+// El icono es del hueco (perfil, capa, tecla), no de la variación en edición
+// -esa distinción no existe para el OLED-, así que se limpia igual que hace
+// pasteKey al pegar sobre un destino con icono.
+async function clearKeyIcon() {
+  const i = selectedKeyIndex();
+  if (i === null) return;
+  const lslot = labelSlot(i, view.layer);
+  if (lslot < 0 || !cache.get(view.editingProfile, lslot)) return;
+
+  try {
+    await device.clearOled(view.editingProfile, lslot);
+    cache.set(view.editingProfile, lslot, null);
+    currentProfile().oledMask &= ~(1 << lslot);
+    markDirty();
+    render();
+  } catch {
+    toast('No se pudo quitar el icono', 'error');
+  }
+}
+
 // --- Copiar y pegar teclas ---------------------------------------------------
 // Copia el icono (si tiene uno propio), la etiqueta y la acción de la tecla
 // seleccionada, para poder pegarlos en cualquier otra tecla: de otra capa, de
@@ -948,29 +1004,54 @@ async function applyRotary(action) {
   }
 }
 
+// Una macro "vale" para la pestaña App si es justo lo que esa pestaña sabe
+// editar: un único paso de abrir algo. Cualquier otra cosa (varios pasos, u
+// otro tipo) es una Secuencia de verdad.
+function isAppMacro(id) {
+  const acts = macroById(id)?.actions || [];
+  return acts.length === 1 && acts[0].type === 'open_app';
+}
+
 // Pestaña que abre el inspector de tecla por defecto, según lo que ya tenga
 // asignado el hueco elegido.
 function tabForAction(action) {
   if (action.modifier === CONSUMER_MODIFIER) return 'media';
   if (action.modifier === GOTO_PAGE_MODIFIER || action.modifier === PAGE_STATE_MODIFIER) return 'pages';
-  if (action.modifier === MACRO_MODIFIER) return 'sequence';
+  if (action.modifier === MACRO_MODIFIER) return isAppMacro(action.keycode) ? 'app' : 'sequence';
   return 'shortcut';
 }
 
 // Cambia de pestaña en el inspector de tecla. La primera vez que se entra en
-// "Secuencia" no hay macro todavía: se crea una vacía y se asigna al vuelo.
+// "Secuencia" o en "App" sin que el hueco ya tenga una macro de esa forma, se
+// crea una macro nueva (vacía, o con un paso "abrir" en blanco) y se asigna
+// al vuelo. Si ya había una macro de la forma correcta (se venía de la misma
+// pestaña, o se vuelve a ella), se reutiliza tal cual, sin perder su contenido.
 function setTab(tab) {
-  const wasSequence = view.tab === 'sequence';
+  const prevTab = view.tab;
   view.tab = tab;
-  if (tab === 'sequence' && !wasSequence) {
+
+  if (tab === 'sequence' && prevTab !== 'sequence') {
     const action = currentAction();
-    if (action.modifier !== MACRO_MODIFIER) {
+    if (action.modifier !== MACRO_MODIFIER || isAppMacro(action.keycode)) {
       const id = nextMacroId();
       ensureMacro(id);
       applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
       return;
     }
   }
+
+  if (tab === 'app' && prevTab !== 'app') {
+    const action = currentAction();
+    if (action.modifier !== MACRO_MODIFIER || !isAppMacro(action.keycode)) {
+      const id = nextMacroId();
+      const m = ensureMacro(id);
+      m.actions = [{ type: 'open_app', target: '' }];
+      savePCMacros(id);
+      applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
+      return;
+    }
+  }
+
   render();
 }
 
@@ -980,19 +1061,135 @@ function currentMacroId() {
   return a.modifier === MACRO_MODIFIER ? a.keycode : null;
 }
 
+// ¿Son el mismo gesto repetido? Solo tiene sentido para pasos de una sola
+// pulsación/clic: repetir un movimiento de ratón o una posición no significa
+// nada (cada uno lleva sus propias coordenadas).
+function sameStep(a, b) {
+  if (a.type !== b.type) return false;
+  if (a.type === 'hotkey') return a.modifier === b.modifier && a.keycode === b.keycode;
+  if (a.type === 'mouse_click') return a.button === b.button;
+  return false;
+}
+
 // Añade un paso y, si ya había alguno antes, la espera por defecto entre los
 // dos: así cada dos pasos consecutivos tienen siempre un hueco configurable
 // de por medio, sin tener que pedirlo aparte.
+//
+// Si el paso nuevo es exactamente el mismo gesto que el último de la lista
+// (mismo atajo, mismo botón de clic...), no se añade una línea más: se suma
+// a su contador de repeticiones. Así "flecha abajo ×15" o un doble clic no
+// acumulan pasos de verdad (ni cuentan contra el límite de la macro en el
+// propio teclado), y grabar la misma tecla varias veces seguidas no llena la
+// lista de líneas idénticas.
 function seqAddAction(action) {
   const id = currentMacroId();
   if (id === null) return;
   const m = ensureMacro(id);
+  const last = m.actions[m.actions.length - 1];
+  if (last && last.type !== 'delay' && sameStep(last, action)) {
+    last.count = (last.count || 1) + (action.count || 1);
+    savePCMacros(id);
+    render();
+    return;
+  }
   if (m.actions.length && m.actions[m.actions.length - 1].type !== 'delay') {
     m.actions.push({ type: 'delay', ms: DEFAULT_STEP_DELAY_MS });
   }
-  m.actions.push(action);
+  m.actions.push({ ...action, count: action.count || 1 });
   savePCMacros(id);
   render();
+}
+
+// --- Pestaña "App": una tecla que abre directamente una app o un archivo ---
+// Reutiliza el mismo mecanismo de macro que "Secuencia" (MACRO_MODIFIER + id,
+// ver más arriba), pero limitado a un único paso "open_app": no hay lista de
+// pasos que gestionar, solo el objetivo. Ver isAppMacro/setTab para cómo se
+// distingue de una secuencia de verdad.
+function currentAppStep() {
+  const id = currentMacroId();
+  const m = id === null ? null : macroById(id);
+  if (!m) return null;
+  if (!m.actions.length) m.actions.push({ type: 'open_app', target: '' });
+  return m.actions[0];
+}
+
+function setAppKind(kind) {
+  const step = currentAppStep();
+  if (!step) return;
+  step.kind = kind;
+  savePCMacros(currentMacroId());
+  render();
+}
+
+async function pickAppTarget(kind) {
+  const step = currentAppStep();
+  if (!step) return;
+  let picked;
+  try {
+    picked = await window.orby.pickAppOrFile(kind);
+  } catch {
+    toast('El selector de archivos no está disponible', 'error');
+    return;
+  }
+  if (!picked?.ok) return;
+  step.target = picked.path;
+  step.kind = kind;
+  savePCMacros(currentMacroId());
+  render();
+}
+
+function renderAppTab(macroId) {
+  const step = macroId === null ? { target: '', kind: 'app' } : (macroById(macroId)?.actions?.[0] || { target: '', kind: 'app' });
+  const kind = step.kind === 'file' ? 'file' : 'app';
+
+  return `
+    <div class="field">
+      <span class="field-label">Qué abrir</span>
+      <div class="row-inline" style="gap:6px">
+        <button class="type-chip ${kind === 'app' ? 'on' : ''}" data-act="app-kind" data-kind="app">Aplicación</button>
+        <button class="type-chip ${kind === 'file' ? 'on' : ''}" data-act="app-kind" data-kind="file">Archivo</button>
+      </div>
+    </div>
+
+    <label class="field">
+      <span class="field-label">${kind === 'file' ? 'Archivo' : 'Aplicación'}</span>
+      <div class="row-inline" style="gap:6px">
+        <input type="text" class="text-input" style="flex:1" data-act="app-target"
+               value="${escape(step.target || '')}"
+               placeholder="${kind === 'file' ? 'Ruta del archivo' : 'Ruta del ejecutable'}">
+        <button class="secondary-btn" data-act="app-browse" data-kind="${kind}">
+          ${icon('upload', 16)} Examinar…
+        </button>
+      </div>
+    </label>
+
+    <p class="setting-desc">
+      Se ejecuta en el PC al pulsar la tecla (necesita esta app abierta), igual que un paso
+      "Abrir" de una secuencia.
+    </p>
+
+    <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar</button>`;
+}
+
+// Abre el selector nativo de archivos para elegir qué abrir con este paso.
+// Sin `editIndex`, añade un paso nuevo; con él, sustituye el objetivo del
+// paso existente (botón "Examinar" junto a cada paso "Abrir…").
+async function pickOpenTarget(editIndex = null) {
+  let picked;
+  try {
+    picked = await window.orby.pickAppOrFile();
+  } catch {
+    toast('El selector de archivos no está disponible', 'error');
+    return;
+  }
+  if (!picked?.ok) return;
+
+  if (editIndex !== null) {
+    const step = seqActionAt(editIndex);
+    if (step) { step.target = picked.path; savePCMacros(currentMacroId()); render(); }
+  } else {
+    seqAddAction({ type: 'open_app', target: picked.path });
+  }
 }
 
 function seqRemoveAction(index) {
@@ -1002,6 +1199,25 @@ function seqRemoveAction(index) {
   if (!m) return;
   m.actions.splice(index, 1);
   normalizeSequence(m);
+  savePCMacros(id);
+  render();
+}
+
+// Reordena un paso real (nunca una espera) intercambiándolo con el paso real
+// más cercano en esa dirección. Las esperas se quedan donde están: siguen
+// marcando el hueco entre "el paso de antes" y "el de después" de esa
+// posición de la lista, sea cual sea la acción que acabe ocupándola.
+function seqMoveAction(index, dir) {
+  const id = currentMacroId();
+  if (id === null) return;
+  const m = macroById(id);
+  if (!m) return;
+  const acts = m.actions;
+  if (!acts[index] || acts[index].type === 'delay') return;
+  let j = index + dir;
+  while (acts[j] && acts[j].type === 'delay') j += dir;
+  if (!acts[j]) return;
+  [acts[index], acts[j]] = [acts[j], acts[index]];
   savePCMacros(id);
   render();
 }
@@ -1119,6 +1335,12 @@ export function render() {
   const body = document.getElementById('profiles-body');
   if (!body) return;
 
+  // El repintado sustituye TODO el innerHTML (rejilla e inspector incluidos),
+  // así que sin esto cada tecleo en un campo o cada clic perdía el scroll de
+  // las dos columnas y las devolvía arriba del todo.
+  const scrollMain = body.querySelector('.editor-main')?.scrollTop;
+  const scrollInspector = body.querySelector('.editor-inspector')?.scrollTop;
+
   // Cualquier repintado que no sea "seguimos capturando una posición" corta
   // el sondeo: evita dejarlo corriendo de fondo si se sale del modo por otro
   // sitio (elegir otra tecla, cambiar de pestaña...).
@@ -1194,6 +1416,15 @@ export function render() {
   paintKeyGrid();
   updateDerived(currentScroll().detentsPerRev);
   cache.loadProfile(view.editingProfile);
+
+  if (scrollMain !== undefined) {
+    const el = body.querySelector('.editor-main');
+    if (el) el.scrollTop = scrollMain;
+  }
+  if (scrollInspector !== undefined) {
+    const el = body.querySelector('.editor-inspector');
+    if (el) el.scrollTop = scrollInspector;
+  }
 }
 
 function renderTabsInner() {
@@ -1798,6 +2029,7 @@ function renderKeyInspector() {
       <div class="inspector-tabs">
         <button class="inspector-tab ${tab === 'shortcut' ? 'active' : ''}" data-act="set-tab" data-tab="shortcut">Atajo</button>
         <button class="inspector-tab ${tab === 'sequence' ? 'active' : ''}" data-act="set-tab" data-tab="sequence">Secuencia</button>
+        <button class="inspector-tab ${tab === 'app' ? 'active' : ''}" data-act="set-tab" data-tab="app">App</button>
         <button class="inspector-tab ${tab === 'media' ? 'active' : ''}" data-act="set-tab" data-tab="media">Multimedia</button>
         ${hasPages() ? `<button class="inspector-tab ${tab === 'pages' ? 'active' : ''}" data-act="set-tab" data-tab="pages">Páginas</button>` : ''}
       </div>
@@ -1824,10 +2056,12 @@ function renderKeyInspector() {
           <button class="primary-btn ${view.capturing === true ? 'is-capturing' : ''}" data-act="capture">
             ${icon('key', 16)} ${view.capturing === true ? 'Pulsa el atajo… (Esc cancela)' : 'Capturar atajo del teclado'}
           </button>
-          <button class="secondary-btn" data-act="clear-action">${icon('trash', 16)} Quitar</button>
+          <button class="secondary-btn" data-act="clear-action" title="Quita el atajo/macro y el icono de esta tecla">${icon('trash', 16)} Quitar</button>
         </div>` : ''}
 
       ${tab === 'sequence' ? renderSequenceEditor(isMacro ? action.keycode : null) : ''}
+
+      ${tab === 'app' ? renderAppTab(isMacro ? action.keycode : null) : ''}
 
       ${tab === 'media' ? `
         <div class="field">
@@ -1853,6 +2087,29 @@ function renderSequenceEditor(macroId) {
   const capturingPos = view.capturing === 'position';
 
   const CLICK_LABELS = { left: 'Izquierdo', middle: 'Central', right: 'Derecho' };
+  const lastRealIdx = actions.reduce((acc, a, i) => (a.type === 'delay' ? acc : i), -1);
+
+  // Botones para subir/bajar un paso, deshabilitados en los extremos.
+  const moveButtons = (idx, isFirst, isLast) => `
+    <button class="tool-btn small" data-act="seq-move-up" data-index="${idx}" title="Subir paso" ${isFirst ? 'disabled' : ''}>
+      ${icon('up', 14)}
+    </button>
+    <button class="tool-btn small" data-act="seq-move-down" data-index="${idx}" title="Bajar paso" ${isLast ? 'disabled' : ''}>
+      ${icon('down', 14)}
+    </button>`;
+
+  // Cuántas veces se repite el gesto (mismo atajo o mismo clic seguido, ver
+  // seqAddAction): no añade pasos de verdad, solo repite este al ejecutarlo.
+  const countField = (a, idx) => `
+    <input type="number" class="text-input compact seq-count-input" min="1" max="99"
+           data-act="seq-count" data-index="${idx}" value="${a.count || 1}" title="Veces">`;
+
+  // Hueco entre cada repetición: solo tiene sentido a partir de 2 veces (con
+  // 1 no hay nada que espaciar). Si la acción no trae uno propio (secuencias
+  // guardadas antes de que esto existiera), se enseña el valor por defecto.
+  const gapField = (a, idx) => a.count > 1 ? `
+    <input type="number" class="text-input compact seq-gap-input" min="0" max="32767" step="5"
+           data-act="seq-gap-ms" data-index="${idx}" value="${a.gap ?? DEFAULT_REPEAT_GAP_MS}" title="Espera entre repeticiones (ms)">` : '';
 
   let stepNum = 0;
   const items = actions.map((a, idx) => {
@@ -1882,6 +2139,7 @@ function renderSequenceEditor(macroId) {
             <button class="tool-btn small" data-act="seq-recapture" data-index="${idx}" title="Recapturar con el ratón">
               ${icon('fit', 14)}
             </button>
+            ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
             <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
               ${icon('trash', 14)}
             </button>
@@ -1895,9 +2153,12 @@ function renderSequenceEditor(macroId) {
       return `
         <li class="seq-item">
           <span>${stepNum}. Centrar ratón</span>
-          <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
-            ${icon('trash', 14)}
-          </button>
+          <span class="row-inline" style="gap:4px">
+            ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
+            <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+              ${icon('trash', 14)}
+            </button>
+          </span>
         </li>`;
     }
 
@@ -1910,6 +2171,7 @@ function renderSequenceEditor(macroId) {
                    data-act="seq-move-dx" data-index="${idx}" value="${a.dx}" title="dx">
             <input type="number" class="text-input compact seq-pos-input" min="-127" max="127"
                    data-act="seq-move-dy" data-index="${idx}" value="${a.dy}" title="dy">
+            ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
             <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
               ${icon('trash', 14)}
             </button>
@@ -1921,12 +2183,34 @@ function renderSequenceEditor(macroId) {
       const btn = a.button || 'left';
       return `
         <li class="seq-item">
-          <span>${stepNum}. Clic</span>
+          <span>${stepNum}. Clic ${a.count > 1 ? `×${a.count}` : ''}</span>
           <span class="row-inline" style="gap:6px">
             <select class="select-input compact" data-act="seq-click-button" data-index="${idx}">
               ${Object.entries(CLICK_LABELS).map(([value, label]) =>
                 `<option value="${value}" ${btn === value ? 'selected' : ''}>${label}</option>`).join('')}
             </select>
+            ${countField(a, idx)}
+            ${gapField(a, idx)}
+            ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
+            <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+              ${icon('trash', 14)}
+            </button>
+          </span>
+        </li>`;
+    }
+
+    if (a.type === 'open_app') {
+      return `
+        <li class="seq-item">
+          <span>${stepNum}. Abrir</span>
+          <span class="row-inline" style="gap:6px">
+            <input type="text" class="text-input compact" style="flex:1;min-width:120px"
+                   data-act="seq-open-target" data-index="${idx}" value="${escape(a.target || '')}"
+                   placeholder="Ruta de la app o el archivo" title="${escape(a.target || '')}">
+            <button class="tool-btn small" data-act="seq-open-browse" data-index="${idx}" title="Examinar…">
+              ${icon('upload', 14)}
+            </button>
+            ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
             <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
               ${icon('trash', 14)}
             </button>
@@ -1937,10 +2221,15 @@ function renderSequenceEditor(macroId) {
     if (a.type === 'hotkey') {
       return `
         <li class="seq-item">
-          <span>${stepNum}. ${escape(describeAction(a.modifier, a.keycode))}</span>
-          <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
-            ${icon('trash', 14)}
-          </button>
+          <span>${stepNum}. ${escape(describeAction(a.modifier, a.keycode))} ${a.count > 1 ? `×${a.count}` : ''}</span>
+          <span class="row-inline" style="gap:4px">
+            ${countField(a, idx)}
+            ${gapField(a, idx)}
+            ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
+            <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+              ${icon('trash', 14)}
+            </button>
+          </span>
         </li>`;
     }
 
@@ -1948,9 +2237,12 @@ function renderSequenceEditor(macroId) {
     return `
       <li class="seq-item">
         <span>${stepNum}. Tecla ${escape(a.code)}</span>
-        <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
-          ${icon('trash', 14)}
-        </button>
+        <span class="row-inline" style="gap:4px">
+          ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
+          <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+            ${icon('trash', 14)}
+          </button>
+        </span>
       </li>`;
   }).join('');
 
@@ -1966,6 +2258,7 @@ function renderSequenceEditor(macroId) {
         </button>
         <button class="secondary-btn" data-act="seq-add-click">${icon('bolt', 16)} Clic</button>
         <button class="secondary-btn" data-act="seq-add-move">${icon('reset', 16)} Mover ratón</button>
+        <button class="secondary-btn" data-act="seq-add-open">${icon('upload', 16)} Abrir app/archivo</button>
       </div>
       ${capturingPos ? `<p class="setting-desc" id="seq-live-pos">(${lastMousePos.x}, ${lastMousePos.y}) — mueve el ratón y pulsa Esc para fijarla</p>` : ''}
 
@@ -2001,7 +2294,8 @@ function renderSequenceEditor(macroId) {
 }
 
 // Dice si esta secuencia la toca el propio teclado (sigue funcionando aunque
-// cierres la app) o si necesita el PC, y por qué: espera, tecla, clic y
+// cierres la app) o si necesita el PC, y por qué: espera, tecla, clic (con
+// repeticiones incluidas, ver macro_repeat_or_advance en main.cpp) y
 // movimiento relativo sí se suben; posición de ratón absoluta, de momento no
 // (ver TODO(homing-absoluto) junto a DEVICE_STEP_TYPE) — igual que el formato
 // antiguo "centrar ratón" o tener más pasos de los que caben en el teclado.
@@ -2010,8 +2304,11 @@ function renderSequenceLocation(macro) {
     return `<p class="setting-desc">${icon('check', 13)} Se ejecuta en el propio teclado: sigue
               funcionando aunque cierres esta app.</p>`;
   }
-  const needsPC = (macro.actions || []).some((a) => a.type === 'mouse_position' || a.type === 'center_mouse');
-  const reason = needsPC
+  const needsOpen = (macro.actions || []).some((a) => a.type === 'open_app');
+  const needsPos = (macro.actions || []).some((a) => a.type === 'mouse_position' || a.type === 'center_mouse');
+  const reason = needsOpen
+    ? 'abre una app o un archivo, algo que solo sabe hacer el PC'
+    : needsPos
     ? 'usa una posición de ratón absoluta, que de momento solo sabe reproducir el PC'
     : `tiene más de ${MACRO_MAX_STEPS_DEVICE} pasos, o alguno de un formato antiguo`;
   return `<p class="setting-desc">Se ejecuta en el PC, no en el teclado (${reason}): solo

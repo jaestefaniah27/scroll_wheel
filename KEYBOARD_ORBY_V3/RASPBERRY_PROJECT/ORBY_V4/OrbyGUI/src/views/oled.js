@@ -41,6 +41,7 @@ const TOOLS = [
   { id: 'pencil', icon: 'pencil', label: 'Lápiz' },
   { id: 'eraser', icon: 'eraser', label: 'Borrador' },
   { id: 'fill',   icon: 'fill',   label: 'Relleno' },
+  { id: 'select', icon: 'select', label: 'Selección (mover/redimensionar)' },
 ];
 
 const view = {
@@ -55,10 +56,12 @@ const view = {
   lastPos: null,
   undoStack: [],
 
-  // Capa flotante en colocación (imagen importada o texto generado)
+  // Capa flotante en colocación (imagen importada, texto generado, o una
+  // selección recortada del propio lienzo con la herramienta "select")
   source: null,
   layerXf: null,   // { x, y, scale, threshold, blur, dither, invert, mode }
   dragging: null,  // { kind:'move'|'resize', ... }
+  selecting: null, // { x0, y0, x1, y1 } mientras se arrastra un recuadro de selección
 
   textDraft: '',
   textFont: 'Segoe UI',
@@ -308,6 +311,14 @@ function bindCanvas() {
       return;
     }
 
+    // Herramienta de selección: el propio arrastre dibuja el recuadro, y al
+    // soltar (ver pointerup) se recorta a una capa flotante que se puede
+    // mover o redimensionar con el mismo mecanismo de arriba.
+    if (view.tool === 'select') {
+      view.selecting = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+      return;
+    }
+
     pushUndo();
     const px = Math.floor(p.x), py = Math.floor(p.y);
     if (view.tool === 'fill') {
@@ -340,6 +351,13 @@ function bindCanvas() {
       return;
     }
 
+    if (view.selecting) {
+      view.selecting.x1 = p.x;
+      view.selecting.y1 = p.y;
+      repaint();
+      return;
+    }
+
     if (!view.drawing) return;
     const px = Math.floor(p.x), py = Math.floor(p.y);
     if (view.lastPos) fb.drawLine(view.buffer, view.lastPos.x, view.lastPos.y, px, py, view.drawValue);
@@ -347,9 +365,14 @@ function bindCanvas() {
     repaint();
   });
 
-  const stop = () => { view.drawing = false; view.lastPos = null; view.dragging = null; };
+  const stop = () => {
+    view.drawing = false; view.lastPos = null; view.dragging = null;
+    if (view.selecting) finishSelection();
+  };
   canvas.addEventListener('pointerup', stop);
-  canvas.addEventListener('pointercancel', stop);
+  canvas.addEventListener('pointercancel', () => {
+    view.drawing = false; view.lastPos = null; view.dragging = null; view.selecting = null;
+  });
   canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
 
   canvas.style.cursor = view.layerXf ? 'move' : 'crosshair';
@@ -370,7 +393,10 @@ function defaultTransform(source) {
     // produce esos bordes mordidos, así que arranca desactivado.
     dither: false,
     invert: 'none',
-    mode: 'replace',
+    // El texto se añade por encima de lo que ya hubiera dibujado (se puede ir
+    // metiendo texto varias veces en el mismo icono); una imagen importada
+    // sustituye el lienzo entero, que es lo esperable al pegar una foto.
+    mode: source.kind === 'text' ? 'merge' : 'replace',
   };
 }
 
@@ -456,6 +482,52 @@ function refreshTextSource() {
   updateXfLabels();
 }
 
+// Recorta el recuadro que se acaba de arrastrar con la herramienta de
+// selección: los píxeles que había se quitan del lienzo (se cortan, no se
+// copian) y pasan a una capa flotante normal, en el mismo sitio, lista para
+// moverse o redimensionarse con el mecanismo ya existente de capas.
+function finishSelection() {
+  const { x0, y0, x1, y1 } = view.selecting;
+  view.selecting = null;
+
+  const left = Math.max(0, Math.floor(Math.min(x0, x1)));
+  const top = Math.max(0, Math.floor(Math.min(y0, y1)));
+  const right = Math.min(fb.OLED_W, Math.ceil(Math.max(x0, x1)));
+  const bottom = Math.min(fb.OLED_H, Math.ceil(Math.max(y0, y1)));
+  const width = right - left, height = bottom - top;
+  if (width < 1 || height < 1) { repaint(); return; }
+
+  let any = false;
+  for (let y = top; y < bottom && !any; y++) {
+    for (let x = left; x < right; x++) {
+      if (fb.getPixel(view.buffer, x, y)) { any = true; break; }
+    }
+  }
+  if (!any) { repaint(); return; } // nada dibujado ahí: no crea una capa vacía
+
+  pushUndo();
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (fb.getPixel(view.buffer, left + x, top + y)) {
+        ctx.fillRect(x, y, 1, 1);
+        fb.setPixel(view.buffer, left + x, top + y, 0);
+      }
+    }
+  }
+
+  view.source = { kind: 'image', bitmap: canvas, naturalWidth: width, naturalHeight: height, cut: true };
+  view.layerXf = {
+    x: left, y: top, scale: 1, threshold: 128, blur: 0, dither: false, invert: 'none', mode: 'merge',
+  };
+  render();
+}
+
 function applyLayer() {
   if (!view.layerXf) return;
   pushUndo();
@@ -467,7 +539,12 @@ function applyLayer() {
 }
 
 function cancelLayer(rerender = true) {
+  view.selecting = null;
   if (!view.layerXf) return;
+  // Una selección cortada ya había quitado sus píxeles del lienzo (ver
+  // finishSelection): al cancelar hay que devolvérselos, no solo descartar
+  // la capa flotante.
+  if (view.source?.cut) view.buffer = view.undoStack.pop() || view.buffer;
   view.source = null;
   view.layerXf = null;
   if (rerender) render();
@@ -494,9 +571,19 @@ function displayBuffer() {
   return fb.compose(view.buffer, raster, view.layerXf.mode);
 }
 
+function selectingBounds() {
+  const { x0, y0, x1, y1 } = view.selecting;
+  return {
+    x: Math.min(x0, x1), y: Math.min(y0, y1),
+    width: Math.abs(x1 - x0), height: Math.abs(y1 - y0),
+  };
+}
+
 function repaint() {
   const shown = displayBuffer();
-  const outline = view.layerXf ? fb.layerBounds(view.source, view.layerXf) : null;
+  const outline = view.layerXf ? fb.layerBounds(view.source, view.layerXf)
+                : view.selecting ? selectingBounds()
+                : null;
 
   const canvas = document.getElementById('oled-canvas');
   if (canvas) fb.renderToCanvas(shown, canvas, { zoom: view.zoom, outline });

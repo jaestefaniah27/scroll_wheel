@@ -5,7 +5,7 @@ const { autoUpdater } = require('electron-updater');
 const { OrbySerial } = require('./serial');
 const { ForegroundWatcher } = require('./foreground');
 const config = require('./config');
-const { executeMacro, getMousePosition } = require('./macros');
+const { executeMacro, getMousePosition, warmup } = require('./macros');
 
 let mainWindow = null;
 let serial = null;
@@ -280,6 +280,24 @@ ipcMain.handle('backup:load', async () => {
   }
 });
 
+// --- IPC: elegir app o archivo para un paso "Abrir…" de una secuencia ---
+ipcMain.handle('dialog:pickAppOrFile', async (_e, kind) => {
+  // El filtro que va primero es el que el diálogo enseña seleccionado; el
+  // otro sigue disponible en el desplegable, así que "Aplicación" y "Archivo"
+  // solo cambian la sugerencia inicial, no lo que se puede elegir.
+  const programFilter = { name: 'Programas', extensions: ['exe', 'lnk', 'bat', 'cmd'] };
+  const allFilter = { name: 'Todos los archivos', extensions: ['*'] };
+  const filters = kind === 'file' ? [allFilter, programFilter] : [programFilter, allFilter];
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: kind === 'file' ? 'Elegir archivo' : 'Elegir aplicación',
+    properties: ['openFile'],
+    filters,
+  });
+  if (canceled || !filePaths?.length) return { ok: false, canceled: true };
+  return { ok: true, path: filePaths[0] };
+});
+
 // --- IPC: detector de aplicaciones ---
 ipcMain.handle('foreground:start', async () => foreground?.start() ?? false);
 ipcMain.handle('foreground:stop', async () => { foreground?.stop(); return true; });
@@ -309,6 +327,10 @@ if (gotSingleInstanceLock) {
     createWindow();
     createTray();
     setupAutoUpdater();
+
+    // Después de la ventana, no antes: requiere el binario nativo de nut.js y
+    // puede tardar (ver warmup() en macros.js), no debe retrasar el arranque.
+    setImmediate(warmup);
 
     // Migra entradas de autoarranque creadas antes de que existiera el flag
     // --hidden (se abrirían solas igualmente sin esto).

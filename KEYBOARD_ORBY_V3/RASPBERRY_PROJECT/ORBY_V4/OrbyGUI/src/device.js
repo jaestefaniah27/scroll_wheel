@@ -90,8 +90,11 @@ export const clearOled = (profile, slot) =>
 // ratón un delta): se suben paso a paso, con el mismo id que guarda la tecla
 // en su modificador MACRO_MODIFIER. La posición absoluta del ratón no tiene
 // equivalente aquí: de esa se sigue encargando el PC por CDC (ver MACRO:<id>).
-export const setMacroStep = (id, step, type, a, b) =>
-  request(`SET_MACRO_STEP:${id}:${step}:${type}:${a}:${b}`, { match: (l) => l === `MACRO:OK:${id}:${step}` });
+// `repeat`/`gap` solo los usa el reproductor en tecla y clic (ver
+// macro_repeat_or_advance en main.cpp); el resto de tipos van con 1/0.
+export const setMacroStep = (id, step, type, a, b, repeat = 1, gap = 0) =>
+  request(`SET_MACRO_STEP:${id}:${step}:${type}:${a}:${b}:${repeat}:${gap}`,
+          { match: (l) => l === `MACRO:OK:${id}:${step}` });
 
 export const macroTrunc = (id, count) =>
   request(`MACRO_TRUNC:${id}:${count}`, { match: (l) => l === `MACRO:TRUNC:OK:${id}:${count}` });

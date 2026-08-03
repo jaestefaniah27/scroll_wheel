@@ -1,3 +1,4 @@
+const { shell } = require('electron');
 const config = require('./config');
 
 // Ejecuta en el PC las macros que el propio teclado NO puede reproducir solo
@@ -16,6 +17,15 @@ function loadNutJs() {
   if (nutjs || nutjsFailed) return nutjs;
   try {
     nutjs = require('@nut-tree-fork/nut-js');
+    // nut.js mete su propio hueco ANTES de cada pulsación/clic (keyboard 300ms,
+    // mouse 100ms, ver keyboard.class.js/mouse.class.js autoDelayMs), pensado
+    // para separar llamadas sueltas hechas a mano. Aquí ya controlamos nosotros
+    // el ritmo -la "Espera" entre pasos y el "gap" entre repeticiones, ver
+    // repeatWithGap-, así que ese hueco extra solo suma un despropósito por
+    // pulsación (con 11 repeticiones, 11 × 600ms = 6.6s de nada) que ningún
+    // ajuste del editor podía tocar: no era el gap configurable, era este.
+    nutjs.keyboard.config.autoDelayMs = 0;
+    nutjs.mouse.config.autoDelayMs = 0;
   } catch (err) {
     nutjsFailed = true;
     console.error('No se pudo cargar @nut-tree-fork/nut-js:', err.message);
@@ -79,6 +89,11 @@ function modifierKeys(modifier, Key) {
   return keys;
 }
 
+// Hueco por defecto entre repeticiones cuando la acción no trae el suyo
+// propio (secuencias guardadas antes de que el editor dejara elegirlo, ver
+// DEFAULT_REPEAT_GAP_MS en profiles.js — debe coincidir con ese valor).
+const DEFAULT_REPEAT_GAP_MS = 20;
+
 async function runAction(action) {
   const nut = loadNutJs();
   if (!nut) return;
@@ -93,14 +108,23 @@ async function runAction(action) {
     await mouse.setPosition(new Point(action.x, action.y));
   } else if (action.type === 'mouse_click') {
     const button = Button[CLICK_BUTTONS[action.button] || 'LEFT'];
-    await mouse.click(button);
+    await repeatWithGap(action.count, action.gap, () => mouse.click(button));
   } else if (action.type === 'delay') {
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, action.ms || 0)));
   } else if (action.type === 'key') {
     const key = mapCodeToNutKey(action.code, Key);
     if (key === null || key === undefined) return;
-    await keyboard.pressKey(key);
-    await keyboard.releaseKey(key);
+    await repeatWithGap(action.count, action.gap, async () => {
+      await keyboard.pressKey(key);
+      await keyboard.releaseKey(key);
+    });
+  } else if (action.type === 'open_app') {
+    // No hay opcode de firmware para esto (abrir algo requiere el SO): siempre
+    // corre por el camino del PC, nunca se sube al teclado (ver DEVICE_STEP_TYPE
+    // en profiles.js, que no lo incluye a propósito).
+    if (!action.target) return;
+    const err = await shell.openPath(action.target);
+    if (err) console.error(`No se pudo abrir "${action.target}":`, err);
   } else if (action.type === 'hotkey') {
     // Cualquier tecla (con o sin modificadores) del mismo selector que usa la
     // pestaña Atajo: { modifier, keycode } en usage HID.
@@ -109,8 +133,23 @@ async function runAction(action) {
     const main = mainName ? Key[mainName] : undefined;
     const keys = main !== undefined ? [...mods, main] : mods;
     if (!keys.length) return;
-    await keyboard.pressKey(...keys);
-    await keyboard.releaseKey(...keys);
+    await repeatWithGap(action.count, action.gap, async () => {
+      await keyboard.pressKey(...keys);
+      await keyboard.releaseKey(...keys);
+    });
+  }
+}
+
+// Repite un gesto (pulsación o clic) `count` veces, con un hueco de `gap` ms
+// entre cada una: sin él, el SO puede llegar a fundir pulsaciones consecutivas
+// en una sola (o no reconocer un doble clic como tal). Con `count` 1 o sin
+// definir corre una sola vez, igual que antes de que existiera esta opción.
+async function repeatWithGap(count, gap, run) {
+  const times = Math.max(1, Math.round(count) || 1);
+  const ms = Math.max(0, Math.round(gap ?? DEFAULT_REPEAT_GAP_MS));
+  for (let i = 0; i < times; i++) {
+    await run();
+    if (i < times - 1) await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
@@ -139,4 +178,15 @@ async function getMousePosition() {
   return { x: Math.round(p.x), y: Math.round(p.y) };
 }
 
-module.exports = { executeMacro, getMousePosition };
+// Carga nut.js por adelantado al arrancar la app, en vez de esperar a la
+// primera secuencia que caiga por el camino del PC (una macro no subida
+// todavía al teclado, o con posición absoluta). Sin esto, esa primera
+// ejecución paga sola el coste de cargar el binario nativo -normal que tarde
+// notablemente, y peor aún si OneDrive tiene el node_modules como marcador de
+// nube y tiene que bajarlo primero-, lo que se nota como un retraso enorme e
+// inexplicable la primera vez.
+function warmup() {
+  loadNutJs();
+}
+
+module.exports = { executeMacro, getMousePosition, warmup };
