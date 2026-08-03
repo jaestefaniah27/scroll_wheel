@@ -33,6 +33,11 @@ let quitting = false;
 const isDev = process.argv.includes('--dev');
 const DEV_URL = 'http://localhost:5173';
 
+// Autoarranque relanza con este flag (ver autostart:set) para que la ventana
+// no se muestre sola al iniciar sesión: el usuario la abre desde la bandeja
+// si quiere. Sin esto, ready-to-show la enseña siempre.
+const startHidden = process.argv.includes('--hidden');
+
 // En desarrollo Electron y Vite arrancan a la vez, así que la primera carga
 // puede llegar antes de que el servidor escuche. Reintentamos en vez de
 // depender de wait-on.
@@ -61,7 +66,6 @@ function createWindow() {
     frame: false,
     titleBarStyle: 'hidden',
     show: false,
-    fullscreen: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -70,7 +74,9 @@ function createWindow() {
     icon: path.join(__dirname, '..', 'assets', 'orby-icon.png'),
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    if (!startHidden) mainWindow.show();
+  });
   loadRenderer(mainWindow);
 
   // --- Serie ---
@@ -226,10 +232,17 @@ ipcMain.handle('config:set', async (_e, patch) => config.save(patch));
 // app.setLoginItemSettings ya persiste el valor en el registro de Windows por
 // su cuenta (no hace falta guardarlo también en config.json): consultamos
 // siempre el estado real en vez de duplicarlo.
-ipcMain.handle('autostart:get', async () => app.getLoginItemSettings().openAtLogin);
+// En Windows, getLoginItemSettings() compara path+args con lo registrado: hay
+// que pasarle los mismos args que usa setLoginItemSettings o siempre devuelve
+// openAtLogin:false aunque el autoarranque esté activo (no encuentra el item
+// porque busca uno sin args).
+const AUTOSTART_ARGS = ['--hidden'];
+ipcMain.handle('autostart:get', async () => app.getLoginItemSettings({ args: AUTOSTART_ARGS }).openAtLogin);
 ipcMain.handle('autostart:set', async (_e, enabled) => {
-  app.setLoginItemSettings({ openAtLogin: enabled });
-  return app.getLoginItemSettings().openAtLogin;
+  // --hidden le dice a este mismo main.js (ver startHidden más arriba) que no
+  // muestre la ventana al arrancar por login; sin el flag se abriría sola.
+  app.setLoginItemSettings({ openAtLogin: enabled, args: enabled ? AUTOSTART_ARGS : [] });
+  return app.getLoginItemSettings({ args: AUTOSTART_ARGS }).openAtLogin;
 });
 
 // --- IPC: copias de seguridad ---
@@ -296,6 +309,12 @@ if (gotSingleInstanceLock) {
     createWindow();
     createTray();
     setupAutoUpdater();
+
+    // Migra entradas de autoarranque creadas antes de que existiera el flag
+    // --hidden (se abrirían solas igualmente sin esto).
+    if (app.getLoginItemSettings().openAtLogin) {
+      app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
+    }
   });
 
   app.on('window-all-closed', () => app.quit());

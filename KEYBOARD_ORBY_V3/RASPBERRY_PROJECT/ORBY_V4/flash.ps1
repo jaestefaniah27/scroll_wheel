@@ -16,7 +16,11 @@ if (Test-Path .\build\CMakeCache.txt) {
 }
 
 try {
-    if (-not (Test-Path .\build)) {
+    # Se comprueba CMakeCache.txt, no solo que exista la carpeta: un build
+    # interrumpido a medias deja "build\" creada (p.ej. solo CMakeFiles\) sin
+    # llegar a generar la caché, y "cmake --build" contra eso falla con
+    # "could not load cache" en vez de volver a configurar.
+    if (-not (Test-Path .\build\CMakeCache.txt)) {
         Write-Host "Generando archivos del proyecto con CMake..." -ForegroundColor Gray
         cmake -B build -G "Ninja"
     }

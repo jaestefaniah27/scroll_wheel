@@ -51,14 +51,11 @@ static bool rle_decode(const uint8_t* src, uint16_t len, uint8_t* dst) {
 // paint_final : pinta una pantalla con su contenido normal (refresh_single_screen)
 static void run(HardwareOled& oleds,
                 bool (*should_skip)(),
-                void (*paint_final)(HardwareOled&, uint8_t),
-                uint8_t brightness) {
+                void (*paint_final)(HardwareOled&, uint8_t)) {
 
     const uint8_t* p   = intro_stream;
     const uint8_t* end = intro_stream + sizeof(intro_stream);
     uint8_t fb[360];
-
-    oleds.set_brightness(brightness);
 
     // Ritmo con espera activa en vez de sleep_until: este core no tiene nada
     // más que hacer durante la intro y así no se toca el pool de alarmas, que
@@ -95,10 +92,8 @@ static void run(HardwareOled& oleds,
 
 static void run(HardwareOled& oleds,
                 bool (*should_skip)(),
-                void (*paint_final)(HardwareOled&, uint8_t),
-                uint8_t brightness) {
+                void (*paint_final)(HardwareOled&, uint8_t)) {
     (void)should_skip;
-    oleds.set_brightness(brightness);
     for (uint8_t i = 1; i <= 10; i++) paint_final(oleds, i);
 }
 

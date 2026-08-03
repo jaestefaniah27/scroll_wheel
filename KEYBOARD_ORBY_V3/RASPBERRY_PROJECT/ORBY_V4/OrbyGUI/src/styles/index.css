@@ -466,10 +466,11 @@ body {
 
 /* ================= SETTINGS VIEW ================= */
 .settings-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-auto-rows: min-content; align-items: start; gap: 20px;
 }
-.settings-card { padding: 24px; }
-.card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.settings-card { padding: 20px; }
+.card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .card-header i { font-size: 24px; color: var(--primary); }
 .card-header h2 { font-size: 18px; font-weight: 600; }
 .setting-body { display: flex; flex-direction: column; gap: 12px; }
@@ -944,22 +945,22 @@ body {
 .hires-state.off { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--warning); }
 .hires-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
 
-.wheel-dial { display: flex; justify-content: center; margin: 16px 0 10px; }
+.wheel-dial { display: flex; justify-content: center; margin: 8px 0 6px; }
 .wheel-dial-face {
-  width: 108px; height: 108px; border-radius: 50%; position: relative;
+  width: 84px; height: 84px; border-radius: 50%; position: relative;
   background: radial-gradient(circle at 35% 30%, #2b2b3a, #101018);
   border: 2px solid #2a2a38; box-shadow: inset 0 4px 16px rgba(0,0,0,0.7);
 }
 /* El dial pequeño usa el mismo marcador que el dashboard, a menor escala. */
-.wheel-dial-face .dial-marker.as-dot::after { top: 7px; width: 11px; height: 11px; margin-left: -5.5px; }
-.wheel-dial-face .dial-marker.as-line::after { top: 8px; width: 4px; height: 34px; margin-left: -2px; }
+.wheel-dial-face .dial-marker.as-dot::after { top: 5px; width: 9px; height: 9px; margin-left: -4.5px; }
+.wheel-dial-face .dial-marker.as-line::after { top: 6px; width: 3px; height: 26px; margin-left: -1.5px; }
 
-.wheel-live-readout { text-align: center; font-family: monospace; font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+.wheel-live-readout { text-align: center; font-family: monospace; font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
 
 /* Calibración del marcador: forma, sentido y desfase respecto a la tapa. */
 .dial-calib {
-  display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;
-  padding: 14px; border-radius: var(--radius-sm);
+  display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px;
+  padding: 12px; border-radius: var(--radius-sm);
   background: rgba(0,0,0,0.28); border: 1px solid var(--border-light);
 }
 .dial-offset { display: flex; align-items: center; gap: 8px; }

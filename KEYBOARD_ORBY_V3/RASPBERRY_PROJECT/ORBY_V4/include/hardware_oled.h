@@ -125,24 +125,6 @@ public:
         apply_cs(0);
     }
 
-    void set_brightness(uint8_t value) {
-        // Broadcast a todas las pantallas (todos los CS a LOW)
-        gpio_put(Pins::SHIFT_LATCH, 0);
-        for (int i = 0; i < 16; i++) {
-            gpio_put(Pins::SHIFT_DATA, 0);
-            gpio_put(Pins::SHIFT_CLK, 1);
-            __asm volatile ("nop\n");
-            gpio_put(Pins::SHIFT_CLK, 0);
-        }
-        gpio_put(Pins::SHIFT_LATCH, 1);
-        sleep_us(5);
-
-        send_command(0x81); // Set Contrast Control
-        send_command(value);
-
-        apply_cs(0); // Aislar todas
-    }
-
     void set_all_displays_on(bool on) {
         // Broadcast a todas las pantallas (todos los CS a LOW)
         gpio_put(Pins::SHIFT_LATCH, 0);

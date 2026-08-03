@@ -358,7 +358,9 @@ enum AppMode {
     MODE_MENU_PERF,
     MODE_MENU_REPO,
     MODE_MENU_INFO,
-    MODE_MENU_PAGES   // gestor de páginas: un número por pantalla
+    MODE_MENU_PAGES,   // gestor de páginas: un número por pantalla
+    MODE_MENU_SCROLL,  // invertir sentido de la rueda (normal / SUPER)
+    MODE_MENU_RESET    // confirmar reset de fábrica (por defecto en NO)
 };
 
 // Qué tecla (índice base 0) hay debajo de cada pantalla. Las pantallas 1 a 9 van
@@ -370,10 +372,6 @@ static inline uint8_t key_index_for_screen(uint8_t screen_num) {
 volatile AppMode current_mode = MODE_NORMAL;
 volatile uint8_t active_profile_idx = 0;   // 0=OFIM, 1=PHTS, 2=ALTM, 3=PREM
 volatile uint8_t active_page = 0;          // Página en uso del perfil activo
-// Ya no es ajustable: las OLED no responden al registro de contraste, así que
-// el menú BRIL se quitó. Se deja el valor fijo por compatibilidad con lo ya
-// grabado en la Flash de teclados en uso.
-volatile uint8_t current_brightness = 207;   // 0xCF = 207 por defecto
 volatile uint8_t reposo_timeout_min = 5;    // 5 minutos por defecto (0=OFF)
 volatile uint8_t selected_menu_idx = 0;     // Opción de menú activa (0 a 4)
 volatile bool super_active = false;         // Estado de la tecla modificadora SUPER
@@ -473,9 +471,13 @@ static_assert(FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES <= PICO_FLASH_SIZE_BYTE
 #define SETTINGS_MAGIC_V5 0xDEB00310  // + tope de 16 perfiles: los ajustes pasan
                                       //   a dos sectores y la región de bitmaps
                                       //   se desplaza uno
-#define SETTINGS_MAGIC    0xDEB00400  // + páginas por perfil: el banco de iconos
+#define SETTINGS_MAGIC_V6 0xDEB00400  // + páginas por perfil: el banco de iconos
                                       //   se muda a 1024 KB con un tramo por
                                       //   (perfil, página) y sale de la RAM
+#define SETTINGS_MAGIC    0xDEB00410  // - current_brightness: el registro de
+                                      //   contraste nunca hizo nada en esta
+                                      //   placa (ver hardware_oled.h), campo
+                                      //   eliminado
 
 // Diseños antiguos, conservados solo para poder leer lo ya grabado.
 struct ProfileV2 {
@@ -559,10 +561,24 @@ struct SettingsV5 {
     ProfileV5 profiles[MAX_PROFILES];
 };
 
-struct Settings {
+// Formato 4.0: idéntico al 4.1 salvo por current_brightness, que se guardaba
+// pero nunca llegó a hacer nada en el hardware. Se conserva solo para poder
+// leer lo ya grabado en la Flash de teclados en uso.
+struct SettingsV6 {
     uint32_t magic;
     uint8_t  active_profile_idx;
     uint8_t  current_brightness;
+    uint8_t  reposo_timeout_min;
+    uint8_t  profile_count;
+    uint8_t  active_page;
+    uint8_t  padding[3];
+    uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
+    Profile  profiles[MAX_PROFILES];
+};
+
+struct Settings {
+    uint32_t magic;
+    uint8_t  active_profile_idx;
     uint8_t  reposo_timeout_min;
     uint8_t  profile_count;
     uint8_t  active_page;
@@ -800,7 +816,6 @@ void load_defaults() {
     staging_dirty = false;
     active_profile_idx = 0;
     active_page = 0;
-    current_brightness = 207;
     reposo_timeout_min = 5;
 }
 
@@ -838,7 +853,6 @@ void save_settings() {
 
     s->magic                  = SETTINGS_MAGIC;
     s->active_profile_idx     = active_profile_idx;
-    s->current_brightness     = current_brightness;
     s->reposo_timeout_min     = reposo_timeout_min;
     s->profile_count          = profile_count;
     s->active_page            = active_page;
@@ -936,13 +950,27 @@ void load_settings() {
     if (magic == SETTINGS_MAGIC) {
         const Settings* s = (const Settings*)(XIP_BASE + FLASH_TARGET_OFFSET);
         active_profile_idx     = s->active_profile_idx;
-        current_brightness     = s->current_brightness;
         reposo_timeout_min     = s->reposo_timeout_min;
         profile_count          = s->profile_count;
         active_page            = s->active_page;
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
         sanitize_loaded();
+        return;
+    }
+
+    // Formato 4.0: mismos campos que el actual salvo por current_brightness,
+    // que se descarta (nunca hizo nada en el hardware).
+    if (magic == SETTINGS_MAGIC_V6) {
+        const SettingsV6* s = (const SettingsV6*)(XIP_BASE + FLASH_TARGET_OFFSET);
+        active_profile_idx     = s->active_profile_idx;
+        reposo_timeout_min     = s->reposo_timeout_min;
+        profile_count          = s->profile_count;
+        active_page            = s->active_page;
+        memcpy(profiles, s->profiles, sizeof(profiles));
+        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
+        sanitize_loaded();
+        save_settings();
         return;
     }
 
@@ -956,7 +984,6 @@ void load_settings() {
         const SettingsV4* s4 = (const SettingsV4*)(XIP_BASE + FLASH_TARGET_OFFSET);
 
         active_profile_idx = v5 ? s5->active_profile_idx : s4->active_profile_idx;
-        current_brightness = v5 ? s5->current_brightness : s4->current_brightness;
         reposo_timeout_min = v5 ? s5->reposo_timeout_min : s4->reposo_timeout_min;
         profile_count      = v5 ? s5->profile_count      : s4->profile_count;
         active_page        = 0;
@@ -988,7 +1015,6 @@ void load_settings() {
         // duplica la capa normal en SUPER, que es el comportamiento previo.
         const SettingsV3* s = (const SettingsV3*)(XIP_BASE + FLASH_TARGET_OFFSET);
         active_profile_idx = s->active_profile_idx;
-        current_brightness = s->current_brightness;
         reposo_timeout_min = s->reposo_timeout_min;
         profile_count      = 4;
         memset(profiles, 0, sizeof(profiles));
@@ -1023,7 +1049,6 @@ void load_settings() {
         // solo se rellenan de fábrica los mandos, que antes no existían.
         const SettingsV2* s = (const SettingsV2*)(XIP_BASE + FLASH_TARGET_OFFSET);
         active_profile_idx = s->active_profile_idx;
-        current_brightness = s->current_brightness;
         reposo_timeout_min = s->reposo_timeout_min;
         profile_count      = 4;
         memset(profiles, 0, sizeof(profiles));
@@ -1055,7 +1080,6 @@ void load_settings() {
         const SettingsV1* s = (const SettingsV1*)(XIP_BASE + FLASH_TARGET_OFFSET);
         load_defaults();
         active_profile_idx = s->active_profile_idx;
-        current_brightness = s->current_brightness;
         reposo_timeout_min = s->reposo_timeout_min;
         sanitize_loaded();
         return; // no había bitmaps guardados que rescatar
@@ -1239,6 +1263,12 @@ static void perf_menu_open() {
     selected_menu_idx = (active_profile_idx < profile_count) ? active_profile_idx : 0;
     perf_menu_first = 0;
     perf_menu_follow();
+}
+
+// El reset de fábrica arranca siempre en NO: es destructivo (borra perfiles y
+// macros) y hay que moverse a propósito hasta SI para confirmarlo.
+static void reset_menu_open() {
+    selected_menu_idx = 1;
 }
 
 // ==========================================
@@ -1468,19 +1498,18 @@ static void macro_player_tick(uint32_t now) {
     if (mp.phase == MPH_IDLE && mp.step >= macros[mp.id].step_count) mp.active = false;
 }
 
-// Dispara una macro. Reproducirla en el propio teclado —con el "homing" de
-// MSTEP_HOME_MOVE si le hace falta— es solo un mecanismo de supervivencia
-// para cuando no hay PC (o su app no está abierta): con la app conectada, se
-// prefiere avisarla por CDC y que la ejecute ella, que sabe la posición real
-// del ratón sin tener que empujarlo a una esquina primero. tud_cdc_n_connected
-// refleja el DTR que la app pone al abrir el puerto (ver electron/serial.js),
-// así que es un buen "¿hay alguien escuchando?" sin depender de que responda
-// a tiempo ni de nada más lento que consultar un bit.
+// Dispara una macro. Se reproduce en el propio teclado siempre que la app la
+// haya subido (device_has_it): es HID real, así que funciona igual con la
+// app cerrada, en la pantalla de bloqueo o en otra sesión, y sin el retardo
+// que mete nut.js en el PC. Solo se manda por CDC para que la ejecute el PC
+// cuando el teclado NO tiene copia jugable — hoy eso es exactamente lo que
+// exige saber algo que el teclado no puede saber (posición ABSOLUTA del
+// ratón, ver MSTEP_HOME_MOVE arriba); el resto de tipos de paso siempre caben
+// en el teclado.
 static void trigger_macro(uint8_t id) {
-    const bool app_connected = tud_cdc_n_connected(0);
     const bool device_has_it = (id < MACRO_MAX_COUNT && macros[id].step_count > 0);
 
-    if (!app_connected && device_has_it) {
+    if (device_has_it) {
         // Si ya hay una en marcha se ignora el reintento en vez de encolarla o
         // mandarla también al PC, que la ejecutaría dos veces por dos caminos.
         if (!macro_player.active) macro_player_start(id);
@@ -1671,14 +1700,14 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
         }
     }
     else if (current_mode == MODE_MENU_MAIN) {
-        if (screen_num >= 1 && screen_num <= 4) {
+        if (screen_num >= 1 && screen_num <= 6) {
             draw_premium_frame(fb);
-            const char* menu_opts[4] = {"PERF", "REPO", "INFO", "EXIT"};
+            const char* menu_opts[6] = {"PERF", "REPO", "SCRL", "RSET", "INFO", "EXIT"};
             OledText::render_string_to_framebuffer(menu_opts[screen_num - 1], fb);
             draw_premium_frame(fb);
             oleds.paint_screen(screen_num, fb);
         } else {
-            // Pantallas 5-10 vacías
+            // Pantallas 7-10 vacías
             oleds.paint_screen(screen_num, fb);
         }
     }
@@ -1718,19 +1747,30 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
         }
     }
     else if (current_mode == MODE_MENU_INFO) {
+        // Diagnóstico real: útil precisamente cuando no hay app a mano para
+        // mirar este mismo estado por CDC.
+        char txt[12];
         if (screen_num == 1) {
             draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("FW10", fb);
+            OledText::render_string_to_framebuffer(profiles[active_profile_idx].name, fb);
             draw_premium_frame(fb);
             oleds.paint_screen(screen_num, fb);
         } else if (screen_num == 2) {
+            snprintf(txt, sizeof(txt), "PAG %u/%u",
+                     (unsigned)(active_page + 1),
+                     (unsigned)profiles[active_profile_idx].page_count);
             draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("CONN", fb);
+            OledText::render_string_to_framebuffer(txt, fb);
             draw_premium_frame(fb);
             oleds.paint_screen(screen_num, fb);
         } else if (screen_num == 3) {
             draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("ORBY", fb);
+            OledText::render_string_to_framebuffer(tud_cdc_n_connected(0) ? "HOST OK" : "SIN HOST", fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+        } else if (screen_num == 4) {
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer(__DATE__, fb);
             draw_premium_frame(fb);
             oleds.paint_screen(screen_num, fb);
         } else if (screen_num == 5) {
@@ -1763,6 +1803,44 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
             oleds.paint_screen(screen_num, fb);
         }
     }
+    else if (current_mode == MODE_MENU_SCROLL) {
+        // Invierte la rueda de la capa normal y de SUPER por separado: cada
+        // pantalla muestra su estado actual y lo cambia al confirmarla, sin
+        // salir del submenú (para poder tantear varias veces seguidas).
+        if (screen_num == 1) {
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer(cur_page().scroll_invert[0] ? "NORM ON" : "NORM OFF", fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+        } else if (screen_num == 2) {
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer(cur_page().scroll_invert[1] ? "SUP ON" : "SUP OFF", fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+        } else if (screen_num == 3) {
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer("BACK", fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+        } else {
+            oleds.paint_screen(screen_num, fb);
+        }
+    }
+    else if (current_mode == MODE_MENU_RESET) {
+        if (screen_num == 1) {
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer("SI, BORRAR", fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+        } else if (screen_num == 2) {
+            draw_premium_frame(fb);
+            OledText::render_string_to_framebuffer("NO", fb);
+            draw_premium_frame(fb);
+            oleds.paint_screen(screen_num, fb);
+        } else {
+            oleds.paint_screen(screen_num, fb);
+        }
+    }
 }
 
 void core1_entry() {
@@ -1773,7 +1851,7 @@ void core1_entry() {
     // Intro de arranque. Si no hay animación horneada se limita a pintar el
     // contenido normal, que es lo que había aquí antes.
     intro_running = true;
-    OledIntro::run(oleds, intro_should_skip, refresh_single_screen, current_brightness);
+    OledIntro::run(oleds, intro_should_skip, refresh_single_screen);
     intro_running = false;
 
     uint16_t current_inversions = 0;
@@ -1790,9 +1868,6 @@ void core1_entry() {
 
         if (system_refresh_req) {
             system_refresh_req = false;
-
-            // Aplicar brillo y estado en caliente
-            oleds.set_brightness(current_brightness);
 
             // Restablecer la inversión de todas las pantallas a NORMAL (false)
             // Esto soluciona que queden pantallas invertidas al entrar o salir de menús
@@ -1812,7 +1887,12 @@ void core1_entry() {
                 for (int i = 1; i <= PERF_MENU_SCREENS; i++) {
                     oleds.invert_screen(i, (selected_menu_idx == perf_menu_first + i - 1));
                 }
-            } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_REPO) {
+            } else if (current_mode == MODE_MENU_MAIN) {
+                for (int i = 1; i <= 6; i++) {
+                    oleds.invert_screen(i, (selected_menu_idx == (i - 1)));
+                }
+            } else if (current_mode == MODE_MENU_REPO || current_mode == MODE_MENU_SCROLL
+                       || current_mode == MODE_MENU_RESET) {
                 for (int i = 1; i <= 5; i++) {
                     oleds.invert_screen(i, (selected_menu_idx == (i - 1)));
                 }
@@ -2590,10 +2670,14 @@ int main() {
                 const Page& p = cur_page();
                 apply_rotary(p.rotary[rot_slot(ROT_ENC1_CW,  super_active)],
                              p.rotary[rot_slot(ROT_ENC1_CCW, super_active)], delta_izq);
-            } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_PERF || current_mode == MODE_MENU_REPO) {
+            } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_PERF
+                       || current_mode == MODE_MENU_REPO || current_mode == MODE_MENU_SCROLL
+                       || current_mode == MODE_MENU_RESET) {
                 // Desplazamiento de menú
-                int opts = (current_mode == MODE_MENU_PERF) ? perf_menu_count()
-                         : (current_mode == MODE_MENU_MAIN) ? 4 : 5;
+                int opts = (current_mode == MODE_MENU_PERF)  ? perf_menu_count()
+                         : (current_mode == MODE_MENU_MAIN)  ? 6
+                         : (current_mode == MODE_MENU_SCROLL) ? 3
+                         : (current_mode == MODE_MENU_RESET)  ? 2 : 5;
                 int next = ((int)selected_menu_idx + delta_izq) % opts;
                 if (next < 0) next += opts;
                 selected_menu_idx = (uint8_t)next;
@@ -2643,8 +2727,10 @@ int main() {
                         // Confirmar opción
                         if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
                         else if (selected_menu_idx == 1) current_mode = MODE_MENU_REPO;
-                        else if (selected_menu_idx == 2) current_mode = MODE_MENU_INFO;
-                        else if (selected_menu_idx == 3) {
+                        else if (selected_menu_idx == 2) current_mode = MODE_MENU_SCROLL;
+                        else if (selected_menu_idx == 3) current_mode = MODE_MENU_RESET;
+                        else if (selected_menu_idx == 4) current_mode = MODE_MENU_INFO;
+                        else if (selected_menu_idx == 5) {
                             current_mode = MODE_NORMAL;
                             char tel2[24];
                             int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
@@ -2653,6 +2739,7 @@ int main() {
                         }
                         selected_menu_idx = 0;
                         if (current_mode == MODE_MENU_PERF) perf_menu_open();
+                        else if (current_mode == MODE_MENU_RESET) reset_menu_open();
                         push_system_refresh();
                     } else if (current_mode == MODE_MENU_PERF) {
                     if (selected_menu_idx < profile_count) {
@@ -2681,9 +2768,39 @@ int main() {
                         current_mode = MODE_MENU_MAIN;
                         selected_menu_idx = 1;
                         push_system_refresh();
+                    } else if (current_mode == MODE_MENU_SCROLL) {
+                        // Idx 0/1 alternan el estado y se quedan en el submenú
+                        // (para poder tantear varias veces); idx 2 es BACK.
+                        if (selected_menu_idx == 0) {
+                            cur_page().scroll_invert[0] = !cur_page().scroll_invert[0];
+                            save_settings();
+                        } else if (selected_menu_idx == 1) {
+                            cur_page().scroll_invert[1] = !cur_page().scroll_invert[1];
+                            save_settings();
+                        } else {
+                            current_mode = MODE_MENU_MAIN;
+                            selected_menu_idx = 2;
+                        }
+                        push_system_refresh();
+                    } else if (current_mode == MODE_MENU_RESET) {
+                        if (selected_menu_idx == 0) {
+                            // Confirmado: borra perfiles, macros e iconos y
+                            // vuelve a fábrica. No hay marcha atrás.
+                            load_defaults();
+                            save_settings();
+                            current_mode = MODE_NORMAL;
+                            char tel2[24];
+                            int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
+                            tud_cdc_n_write(0, tel2, len2);
+                            tud_cdc_n_write_flush(0);
+                        } else {
+                            current_mode = MODE_MENU_MAIN;
+                            selected_menu_idx = 3;
+                        }
+                        push_system_refresh();
                     } else if (current_mode == MODE_MENU_INFO) {
                         current_mode = MODE_MENU_MAIN;
-                        selected_menu_idx = 2;
+                        selected_menu_idx = 4;
                         push_system_refresh();
                     }
                 }
@@ -2945,15 +3062,17 @@ int main() {
                         push_system_refresh();
                     }
                 } else if (is_pressed) {
-                    // En cualquier menú, las teclas 1 a 5 actúan como atajos de selección
-                    if (i >= 0 && i <= 4) {
+                    // En cualquier menú, las teclas 1 a 6 actúan como atajos de selección
+                    if (i >= 0 && i <= 5) {
                         selected_menu_idx = i;
-                        
+
                         if (current_mode == MODE_MENU_MAIN) {
                             if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
                             else if (selected_menu_idx == 1) current_mode = MODE_MENU_REPO;
-                            else if (selected_menu_idx == 2) current_mode = MODE_MENU_INFO;
-                            else if (selected_menu_idx == 3) {
+                            else if (selected_menu_idx == 2) current_mode = MODE_MENU_SCROLL;
+                            else if (selected_menu_idx == 3) current_mode = MODE_MENU_RESET;
+                            else if (selected_menu_idx == 4) current_mode = MODE_MENU_INFO;
+                            else if (selected_menu_idx == 5) {
                                 current_mode = MODE_NORMAL;
                                 char tel[24];
                                 int len = snprintf(tel, sizeof(tel), "MODE:NORMAL\n");
@@ -2962,6 +3081,7 @@ int main() {
                             }
                             selected_menu_idx = 0;
                             if (current_mode == MODE_MENU_PERF) perf_menu_open();
+                            else if (current_mode == MODE_MENU_RESET) reset_menu_open();
                             push_system_refresh();
                         } else if (current_mode == MODE_MENU_PERF) {
                             if (selected_menu_idx < profile_count) {
@@ -2987,10 +3107,36 @@ int main() {
                             current_mode = MODE_MENU_MAIN;
                             selected_menu_idx = 1;
                             push_system_refresh();
+                        } else if (current_mode == MODE_MENU_SCROLL) {
+                            if (selected_menu_idx == 0) {
+                                cur_page().scroll_invert[0] = !cur_page().scroll_invert[0];
+                                save_settings();
+                            } else if (selected_menu_idx == 1) {
+                                cur_page().scroll_invert[1] = !cur_page().scroll_invert[1];
+                                save_settings();
+                            } else {
+                                current_mode = MODE_MENU_MAIN;
+                                selected_menu_idx = 2;
+                            }
+                            push_system_refresh();
+                        } else if (current_mode == MODE_MENU_RESET) {
+                            if (selected_menu_idx == 0) {
+                                load_defaults();
+                                save_settings();
+                                current_mode = MODE_NORMAL;
+                                char tel[24];
+                                int len = snprintf(tel, sizeof(tel), "MODE:NORMAL\n");
+                                tud_cdc_n_write(0, tel, len);
+                                tud_cdc_n_write_flush(0);
+                            } else {
+                                current_mode = MODE_MENU_MAIN;
+                                selected_menu_idx = 3;
+                            }
+                            push_system_refresh();
                         } else if (current_mode == MODE_MENU_INFO) {
                             if (selected_menu_idx == 4) {
                                 current_mode = MODE_MENU_MAIN;
-                                selected_menu_idx = 2;
+                                selected_menu_idx = 4;
                                 push_system_refresh();
                             }
                         }

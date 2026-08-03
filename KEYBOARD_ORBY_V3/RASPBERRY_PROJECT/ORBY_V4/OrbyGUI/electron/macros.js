@@ -1,8 +1,13 @@
 const config = require('./config');
 
-// Ejecuta en el PC las macros que el firmware solo anuncia (MACRO:<id> por
-// CDC): el teclado no sabe mover el ratón ni pulsar teclas del sistema, así
-// que cada acción de la secuencia se reproduce aquí con nut.js.
+// Ejecuta en el PC las macros que el propio teclado NO puede reproducir solo
+// (avisa por CDC con MACRO:<id> en vez de tocarlas él, ver trigger_macro en
+// main.cpp): hoy eso es únicamente lo que necesita posición ABSOLUTA del
+// ratón, que exige conocer la resolución/escala de la pantalla. El resto de
+// pasos (tecla, espera, clic, movimiento relativo) los toca el teclado por su
+// cuenta —más rápido y sin depender de que esta app esté abierta— así que ya
+// no deberían llegar aquí; se deja el reproductor completo por compatibilidad
+// con macros antiguas que no se hayan podido subir al dispositivo.
 
 let nutjs = null;
 let nutjsFailed = false;

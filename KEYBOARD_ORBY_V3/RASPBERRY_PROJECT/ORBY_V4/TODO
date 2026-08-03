@@ -1,0 +1,8 @@
+Secuencia no capura F5, flechas, numpad, etc.
+Solo 12 pasos se queda corto.
+Panel de conf de tecla scrolleable por separado de lo de la izquierda.
+Borrar una tecla también borra el icono. 
+Poder mover pasos hacia arriba o hacia abajo.
+Añadir texto a un icono no borra lo que ya hay. Se tiene que poder añadir texto varias veces en un mismo icono.
+Poder mover los pixeles que ya hay con una herramienta de selección (incluso cambiar su tamaño).
+Hay un bug que cuando arranca la app, la rueda de scroll va super lenta, tienes que desenchufar el teclado y volverlo a conectar.
