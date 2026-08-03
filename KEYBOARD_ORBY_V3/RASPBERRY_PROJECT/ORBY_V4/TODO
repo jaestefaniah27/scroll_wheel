@@ -1,8 +1,6 @@
-Secuencia no capura F5, flechas, numpad, etc.
-Solo 12 pasos se queda corto.
-Panel de conf de tecla scrolleable por separado de lo de la izquierda.
-Borrar una tecla también borra el icono. 
-Poder mover pasos hacia arriba o hacia abajo.
-Añadir texto a un icono no borra lo que ya hay. Se tiene que poder añadir texto varias veces en un mismo icono.
-Poder mover los pixeles que ya hay con una herramienta de selección (incluso cambiar su tamaño).
-Hay un bug que cuando arranca la app, la rueda de scroll va super lenta, tienes que desenchufar el teclado y volverlo a conectar.
+Pestaña ajustes de hardware no se ve bien todavía
+Quitar atajo sigue sin borrar icono: tendría que dejar la tecla en negro.
+Quiero que el editor de iconos se acceda únicamente desde perfiles y macros, cuando estés configurando una tecla, que edites ese icono, y solo puedas editar ese y ninguno más. si pulsas en enviar a tecla, se vuelve al menú anterior de configuración en perfiles y macros. quiero que en editor de iconos haya dos botones arriba sticky (que no se tapen aunque scrollees) para guardar (enviaría icono a la tecla) o salir sin guardar.
+Pulsar una secuencia deja la pantalla invertida hasta que termina la secuencia.
+Que todos los perfiles y configuraciones, secuencias y macros, se guarden también en el PC, para poder editarlas aunque no esté conectado el Orby.
+Nueva feature: nuevo tipo de acción: grabar operación. repetir operación en bucle(sin parar hasta que se vuelve a pulsar)/una vez/mientras se tenga pulsado(se hace hasta que se suelte tecla). Sirve para cuando tienes que hacer una acción repetitiva, pulsarías la tecla para empezar a grabar, en el teclado aparecería que se está grabando, pulsas de nuevo para dejar de grabar, y aparecería que se ha grabado exitosamente. después puedes realizar la acción grabada.

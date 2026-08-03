@@ -1,0 +1,1105 @@
+{
+  "format": "orby-backup",
+  "version": 3,
+  "savedAt": "2026-08-03T21:46:21.802Z",
+  "firmware": "4.0",
+  "timeout": 10,
+  "activeProfile": 0,
+  "profiles": [
+    {
+      "name": "OFIM",
+      "labels": [
+        "COPY",
+        "PAST",
+        "CUT",
+        "UNDO",
+        "REDO",
+        "ALL",
+        "SAVE",
+        "FIND",
+        "Escrito",
+        "SNAP",
+        "EXCL",
+        "WORD",
+        "BROW",
+        "CALC",
+        "ENTER",
+        "UNLOCK",
+        "PLAY",
+        "STOP",
+        "Lock",
+        "PREV"
+      ],
+      "keys": [
+        {
+          "modifier": 1,
+          "keycode": 6
+        },
+        {
+          "modifier": 1,
+          "keycode": 25
+        },
+        {
+          "modifier": 1,
+          "keycode": 27
+        },
+        {
+          "modifier": 1,
+          "keycode": 29
+        },
+        {
+          "modifier": 3,
+          "keycode": 29
+        },
+        {
+          "modifier": 1,
+          "keycode": 8
+        },
+        {
+          "modifier": 1,
+          "keycode": 10
+        },
+        {
+          "modifier": 1,
+          "keycode": 9
+        },
+        {
+          "modifier": 8,
+          "keycode": 7
+        },
+        {
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "modifier": 10,
+          "keycode": 22
+        },
+        {
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "modifier": 7,
+          "keycode": 8
+        },
+        {
+          "modifier": 7,
+          "keycode": 26
+        },
+        {
+          "modifier": 254,
+          "keycode": 1
+        },
+        {
+          "modifier": 254,
+          "keycode": 2
+        },
+        {
+          "modifier": 0,
+          "keycode": 40
+        },
+        {
+          "modifier": 251,
+          "keycode": 17
+        },
+        {
+          "modifier": 254,
+          "keycode": 3
+        },
+        {
+          "modifier": 254,
+          "keycode": 4
+        },
+        {
+          "modifier": 8,
+          "keycode": 15
+        },
+        {
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "modifier": 254,
+          "keycode": 6
+        },
+        {
+          "modifier": 0,
+          "keycode": 0
+        }
+      ],
+      "rotary": [
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 11
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 10
+        },
+        {
+          "type": 0,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 8
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 7
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 9
+        },
+        {
+          "type": 3,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 3,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 11
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 10
+        },
+        {
+          "type": 0,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 8
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 7
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 9
+        },
+        {
+          "type": 4,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 4,
+          "modifier": 0,
+          "keycode": 0
+        }
+      ],
+      "scroll": [
+        {
+          "detentsPerRev": 21,
+          "invert": false
+        },
+        {
+          "detentsPerRev": 20,
+          "invert": false
+        }
+      ],
+      "pageCount": 2,
+      "pages": [
+        {
+          "labels": [
+            "COPY",
+            "PAST",
+            "CUT",
+            "UNDO",
+            "REDO",
+            "ALL",
+            "SAVE",
+            "FIND",
+            "Escrito",
+            "SNAP",
+            "EXCL",
+            "WORD",
+            "BROW",
+            "CALC",
+            "ENTER",
+            "UNLOCK",
+            "PLAY",
+            "STOP",
+            "Lock",
+            "PREV"
+          ],
+          "keys": [
+            {
+              "modifier": 1,
+              "keycode": 6
+            },
+            {
+              "modifier": 1,
+              "keycode": 25
+            },
+            {
+              "modifier": 1,
+              "keycode": 27
+            },
+            {
+              "modifier": 1,
+              "keycode": 29
+            },
+            {
+              "modifier": 3,
+              "keycode": 29
+            },
+            {
+              "modifier": 1,
+              "keycode": 8
+            },
+            {
+              "modifier": 1,
+              "keycode": 10
+            },
+            {
+              "modifier": 1,
+              "keycode": 9
+            },
+            {
+              "modifier": 8,
+              "keycode": 7
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 10,
+              "keycode": 22
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 7,
+              "keycode": 8
+            },
+            {
+              "modifier": 7,
+              "keycode": 26
+            },
+            {
+              "modifier": 254,
+              "keycode": 1
+            },
+            {
+              "modifier": 254,
+              "keycode": 2
+            },
+            {
+              "modifier": 0,
+              "keycode": 40
+            },
+            {
+              "modifier": 251,
+              "keycode": 17
+            },
+            {
+              "modifier": 254,
+              "keycode": 3
+            },
+            {
+              "modifier": 254,
+              "keycode": 4
+            },
+            {
+              "modifier": 8,
+              "keycode": 15
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 254,
+              "keycode": 6
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            }
+          ],
+          "rotary": [
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 11
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 10
+            },
+            {
+              "type": 0,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 8
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 7
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 9
+            },
+            {
+              "type": 3,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 3,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 11
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 10
+            },
+            {
+              "type": 0,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 8
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 7
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 9
+            },
+            {
+              "type": 4,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 4,
+              "modifier": 0,
+              "keycode": 0
+            }
+          ],
+          "scroll": [
+            {
+              "detentsPerRev": 21,
+              "invert": false
+            },
+            {
+              "detentsPerRev": 20,
+              "invert": false
+            }
+          ],
+          "oledMask": 296959
+        },
+        {
+          "labels": [
+            "COPY",
+            "PAST",
+            "CUT",
+            "UNDO",
+            "REDO",
+            "OrbPATH",
+            "homing",
+            "COMPILE",
+            "OrbyGUI",
+            "SNAP",
+            "EXCL",
+            "WORD",
+            "BROW",
+            "CALC",
+            "TASK",
+            "UNLOCK",
+            "PLAY",
+            "FIND",
+            "OrbyGUI",
+            "PREV"
+          ],
+          "keys": [
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 251,
+              "keycode": 26
+            },
+            {
+              "modifier": 251,
+              "keycode": 21
+            },
+            {
+              "modifier": 5,
+              "keycode": 5
+            },
+            {
+              "modifier": 251,
+              "keycode": 18
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 251,
+              "keycode": 25
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 7,
+              "keycode": 8
+            },
+            {
+              "modifier": 7,
+              "keycode": 26
+            },
+            {
+              "modifier": 254,
+              "keycode": 1
+            },
+            {
+              "modifier": 254,
+              "keycode": 2
+            },
+            {
+              "modifier": 3,
+              "keycode": 41
+            },
+            {
+              "modifier": 0,
+              "keycode": 93
+            },
+            {
+              "modifier": 254,
+              "keycode": 3
+            },
+            {
+              "modifier": 251,
+              "keycode": 13
+            },
+            {
+              "modifier": 251,
+              "keycode": 10
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 254,
+              "keycode": 6
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            }
+          ],
+          "rotary": [
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 11
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 10
+            },
+            {
+              "type": 0,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 8
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 7
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 9
+            },
+            {
+              "type": 3,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 3,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 11
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 10
+            },
+            {
+              "type": 0,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 8
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 7
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 9
+            },
+            {
+              "type": 4,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 4,
+              "modifier": 0,
+              "keycode": 0
+            }
+          ],
+          "scroll": [
+            {
+              "detentsPerRev": 21,
+              "invert": false
+            },
+            {
+              "detentsPerRev": 30,
+              "invert": false
+            }
+          ],
+          "oledMask": 263152
+        }
+      ],
+      "iconsPage": 0,
+      "icons": {
+        "4": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000784c82020000000000000000000000000000c0300804040282814142261800000000000000000000000000000000000000000080808080800000000000000000000000000000000000000102040408080808080808080808040405061a62818100000000000000000000000000000000000000000000c0300c82818080404020231c00000000000000000000000000000000000000000000003e40800000000000c02020101010109161020202020404040404040404020202020202020101030d0808101010109090080808080808040000000000000000000000000000000000000000030408080f0818182424424281808080808080808080808080404040402020202010101008080404020202010302020202000000",
+        "5": "00c0f0fcfefe1f030301010307fffefcf8f0000103ffffffffff010183ffffff7e3c0000010103ffffffff8181c3ffff7f3e3e010103071f7ffffff9e18080e1791f0f030101000000031f3f7f7ff8c0c08080c0e0ff7f3f1f0f008080ffffffffff838f1f3ffffcf8f0c0c08080c0ffffffffc08080c1ffff7f7e3c000000008080ffffffffffc08000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000101ffffffffff010183fffffffe7c00000000c0f07e3ffffffcf0800000001f1f07030101ffffffff010103071f1f0103ffffffffff8181808181ffffffffff01010000000000008080ffffffffffc18101010100008080c0f0fe8f8504040587bffffffef0c08080008080c0ffffffffc080800000008080ffffffffff8080008080ffffffffff80800000000000",
+        "6": "1f1f1f1f1f1f1fffffffffffffff1f1f1f1f1f1f1f000000ffffffffffff1f1f1f1f1f1f1f1f1f00000000fffffffffffffffffffce000000000000000c0f8ffffffffffffffffff00000000000000ffffffffffffff00000000000000000000fffffffffffff8f8f8f8f8f8f8f87800000000ffffffffffff073ffffffffff8c00080f0feffffff1f03ffffffffffff00000000000000ffffffffffffff00000000000000000000ffffffffffff00000000000000000000000000ffffffffffff0000010f3ffffffffeffffff3f07000000ffffffffffff000000000000000303030303030300000000000000000000030303c3c383c0c0c080000080c0c0c0f8f800c3f3fbdbdb030000000000010303030303010000000000030303030303000000000000000000000000000000000000000000000000000000ffff0d18181f0f00070f1d18081f1f00001f1f0000000000000000000000000000000000000000000000000000",
+        "7": "00f0f0f0f000000000000080808080808080800000101010f0f0f0f01010101000000080808080808000103070f0f0c080c0f0f0703010000000000000000000000000000000000000ffffffffc0c0c0c0c00079f9fccc84c5ffffff00000000ffffffff000000003c7f7fffc4848587c7c780c0e0f9ff3f0f3ffff8e0c08000000000000000000000000000000000000080c0c0e06020206060c000000000000000000000000000000000000000000000000000000000000000000000000000000000303030300000f0f0f0f000000000000000000000000c7fffffe18000008080c0007cfeffff0101fffffe7c00ffffffff0301fffffffe0301fffffef800ffffffff0301e7ffff7e00ffffffff0000ffffffff007cfeffff89090f8f8e8c000000000101010101010000000001010101010100000001010101000001010101000001010101000f0f0f0f01010101000000010101010000010101010000000101010101010100",
+        "8": "0000e0e0e0202060e0e0c00000e0e0e0202020202000e0e0e0202020202000e0e0e0202060e0e0c000e0e0e0e0202020202080c0e0e020202060e000e0e0e0e0000000e0e0e0000000007f7f7f040c3e7f7b7140407f7f7f4242424242007f7f7f0202020202007f7f7f040c3e7f7b71407f7f7f7f42424242403173674746467e7e3c187f7f7f7f0202027f7f7f000000000000000000000000000000000000000000000000000000e0e0e0e02020202000e0e0e0e020202020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007f7f7f7f020202020071716141417f7f3e1c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "9": "000000e000000000000080000000000000000000e00000000000008060201030e0e00000f80c0870800000808080800000000000000000800000202060800000c020e00000000000000000000718608000c03f010638c0000000c03c030000f00c020103000000807f0007f8ffa01008070e132040800000000000000000000ff02010080c8378462120ff60000000000000000000000001060300000000011e380601000000001f2040402010080403000000003f030c30c0000000000103050a0a121414242818080f0000010000000000030000000000000000000000000000000000000000000000000000c020201010080804040202000000000000808080e0909088884444444444242428300000000000000000000000000000000000000000000000000000000000000000000000000000030408101020204040408080800000000000000704080808081010101010101010100808080808080808080808080404040404",
+        "18": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0f0f8fc3c1e0e0e0e1e1efcfcf8f080000000fcfefefe1e0e0e0e1efcfcf8f000000000fcfefefe1e0e0e0e1ebefcfcf8700000000e3efefcf8e0800000c0e0f8fc7e1e04000000ffffffff00000000000000c0ffffff7f000000ffffffff3e1c3c7effffefc70100000000ffffffff1f0e0e0e0f1ffffffdf0c00000000000030f3fffffffff1f07010000000000000103070f0f1e1c1c1c1e0f0f070701000000000f1f1f0f00000000030f1f1f1f0c0000008f1f1f1f1e1c1c1c1c1e0f0f07030000000000000000000f1f1f0f00000000000000000000000000000000000000030c102018041820100c0300003f00003f020c103f00000404043f04040400003f21211e000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "ALTM",
+      "labels": [
+        "WIRE",
+        "PORT",
+        "PAD",
+        "UNDO",
+        "REDO",
+        "VIA",
+        "MOVE",
+        "TRAC",
+        "TGA",
+        "3D",
+        "SCH",
+        "PCB",
+        "LIB",
+        "COMP",
+        "GRID",
+        "MEAS",
+        "RULE",
+        "ERC",
+        "DRC",
+        "GEN"
+      ],
+      "keys": [
+        {
+          "modifier": 0,
+          "keycode": 26
+        },
+        {
+          "modifier": 0,
+          "keycode": 21
+        },
+        {
+          "modifier": 0,
+          "keycode": 19
+        },
+        {
+          "modifier": 1,
+          "keycode": 29
+        },
+        {
+          "modifier": 1,
+          "keycode": 28
+        },
+        {
+          "modifier": 0,
+          "keycode": 25
+        },
+        {
+          "modifier": 0,
+          "keycode": 16
+        },
+        {
+          "modifier": 0,
+          "keycode": 23
+        },
+        {
+          "modifier": 0,
+          "keycode": 4
+        },
+        {
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "modifier": 0,
+          "keycode": 32
+        },
+        {
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "modifier": 0,
+          "keycode": 7
+        },
+        {
+          "modifier": 4,
+          "keycode": 7
+        },
+        {
+          "modifier": 0,
+          "keycode": 15
+        },
+        {
+          "modifier": 1,
+          "keycode": 29
+        },
+        {
+          "modifier": 1,
+          "keycode": 28
+        },
+        {
+          "modifier": 0,
+          "keycode": 10
+        },
+        {
+          "modifier": 1,
+          "keycode": 16
+        },
+        {
+          "modifier": 4,
+          "keycode": 21
+        },
+        {
+          "modifier": 4,
+          "keycode": 7
+        },
+        {
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "modifier": 4,
+          "keycode": 18
+        },
+        {
+          "modifier": 0,
+          "keycode": 0
+        }
+      ],
+      "rotary": [
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 7
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 8
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 9
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 10
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 11
+        },
+        {
+          "type": 0,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 3,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 3,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 7
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 8
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 9
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 10
+        },
+        {
+          "type": 1,
+          "modifier": 0,
+          "keycode": 11
+        },
+        {
+          "type": 0,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 3,
+          "modifier": 0,
+          "keycode": 0
+        },
+        {
+          "type": 3,
+          "modifier": 0,
+          "keycode": 0
+        }
+      ],
+      "scroll": [
+        {
+          "detentsPerRev": 30,
+          "invert": false
+        },
+        {
+          "detentsPerRev": 30,
+          "invert": false
+        }
+      ],
+      "pageCount": 1,
+      "pages": [
+        {
+          "labels": [
+            "WIRE",
+            "PORT",
+            "PAD",
+            "UNDO",
+            "REDO",
+            "VIA",
+            "MOVE",
+            "TRAC",
+            "TGA",
+            "3D",
+            "SCH",
+            "PCB",
+            "LIB",
+            "COMP",
+            "GRID",
+            "MEAS",
+            "RULE",
+            "ERC",
+            "DRC",
+            "GEN"
+          ],
+          "keys": [
+            {
+              "modifier": 0,
+              "keycode": 26
+            },
+            {
+              "modifier": 0,
+              "keycode": 21
+            },
+            {
+              "modifier": 0,
+              "keycode": 19
+            },
+            {
+              "modifier": 1,
+              "keycode": 29
+            },
+            {
+              "modifier": 1,
+              "keycode": 28
+            },
+            {
+              "modifier": 0,
+              "keycode": 25
+            },
+            {
+              "modifier": 0,
+              "keycode": 16
+            },
+            {
+              "modifier": 0,
+              "keycode": 23
+            },
+            {
+              "modifier": 0,
+              "keycode": 4
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 0,
+              "keycode": 32
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 0,
+              "keycode": 7
+            },
+            {
+              "modifier": 4,
+              "keycode": 7
+            },
+            {
+              "modifier": 0,
+              "keycode": 15
+            },
+            {
+              "modifier": 1,
+              "keycode": 29
+            },
+            {
+              "modifier": 1,
+              "keycode": 28
+            },
+            {
+              "modifier": 0,
+              "keycode": 10
+            },
+            {
+              "modifier": 1,
+              "keycode": 16
+            },
+            {
+              "modifier": 4,
+              "keycode": 21
+            },
+            {
+              "modifier": 4,
+              "keycode": 7
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "modifier": 4,
+              "keycode": 18
+            },
+            {
+              "modifier": 0,
+              "keycode": 0
+            }
+          ],
+          "rotary": [
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 7
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 8
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 9
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 10
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 11
+            },
+            {
+              "type": 0,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 3,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 3,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 7
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 8
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 9
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 10
+            },
+            {
+              "type": 1,
+              "modifier": 0,
+              "keycode": 11
+            },
+            {
+              "type": 0,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 3,
+              "modifier": 0,
+              "keycode": 0
+            },
+            {
+              "type": 3,
+              "modifier": 0,
+              "keycode": 0
+            }
+          ],
+          "scroll": [
+            {
+              "detentsPerRev": 30,
+              "invert": false
+            },
+            {
+              "detentsPerRev": 30,
+              "invert": false
+            }
+          ],
+          "oledMask": 256
+        }
+      ],
+      "iconsPage": 0,
+      "icons": {
+        "8": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000202020202fe020202020202020202020000000000000000c0201010080800000000000000000000000000000000806010187080000000000000000000000000000000000000000000000000e01f0000000000000000000000000000c020180700000000000040404040c0000000000000000000e01c03000000003fc000000000000000000000000000000000000000000000001f0000000000000000000000000000000f1020408080808040404020100c03000000000080700c0b0808080804040404ff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0300c0300000000000000000000000f00000000000000000000000000"
+      }
+    }
+  ]
+}
