@@ -401,13 +401,22 @@ function onClick(e) {
   } else if (act === 'seq-add-click') {
     seqAddAction({ type: 'mouse_click', button: 'left' });
   } else if (act === 'seq-add-open') {
-    pickOpenTarget();
+    // En blanco, como el primer estado de la pestaña App: se rellena con los
+    // mismos controles (App en foco / Examinar / buscador) que enseña cada
+    // paso ya en la lista.
+    seqAddAction({ type: 'open_app', target: '', kind: 'app' });
   } else if (act === 'seq-open-browse') {
-    pickOpenTarget(Number(el.dataset.index));
+    pickOpenTarget(Number(el.dataset.index), el.dataset.kind);
+  } else if (act === 'seq-open-kind') {
+    setSeqOpenKind(Number(el.dataset.index), el.dataset.kind);
+  } else if (act === 'seq-open-focus') {
+    pickSeqOpenFocus(Number(el.dataset.index));
   } else if (act === 'app-kind') {
     setAppKind(el.dataset.kind);
   } else if (act === 'app-browse') {
     pickAppTarget(el.dataset.kind);
+  } else if (act === 'app-focus') {
+    pickAppFocus();
   } else if (act === 'seq-add-move') {
     seqAddAction({ type: 'mouse_move', dx: 10, dy: 0 });
   } else if (act === 'seq-key-mod') {
@@ -1138,9 +1147,63 @@ async function pickAppTarget(kind) {
   render();
 }
 
+// Toma directamente la app que está en primer plano ahora mismo: mismo
+// detector que usa "Añadir app actual" en las variaciones (ver
+// getCurrentWindowInfo más arriba), pero aquí hace falta el ejecutable
+// entero, no solo el nombre del proceso.
+async function pickAppFocus() {
+  const step = currentAppStep();
+  if (!step) return;
+  let info;
+  try {
+    info = await getCurrentWindowInfo();
+  } catch {
+    toast('El detector de aplicaciones no está disponible', 'error');
+    return;
+  }
+  if (!info?.path) {
+    toast('No se ha podido saber qué ejecutable es esa ventana', 'error');
+    return;
+  }
+  step.target = info.path;
+  step.kind = 'app';
+  savePCMacros(currentMacroId());
+  render();
+  toast(`Añadida "${info.process || info.path}"`);
+}
+
+// Apps instaladas para el buscador de la pestaña "App": se piden una vez al
+// proceso principal (recorre el menú Inicio, ver electron/apps.js) y se
+// guardan en memoria; no cambian mientras la app sigue abierta.
+let installedApps = [];
+let installedAppsLoading = false;
+
+function ensureInstalledApps() {
+  if (installedAppsLoading || installedApps.length) return;
+  installedAppsLoading = true;
+  window.orby.listInstalledApps()
+    .then((list) => { installedApps = list || []; })
+    .catch(() => { installedApps = []; })
+    .finally(() => {
+      installedAppsLoading = false;
+      if (isActiveView() && (view.tab === 'app' || view.tab === 'sequence')) render();
+    });
+}
+
+// Compartido entre la pestaña "App" y los pasos "Abrir" de una secuencia:
+// mismo <datalist>, mismo id, así que el navegador solo necesita uno vivo en
+// el DOM a la vez (las dos pestañas nunca se enseñan juntas).
+function installedAppsDatalist() {
+  return `<datalist id="installed-apps-list">
+    ${installedApps.map((a) => `<option value="${escape(a.target)}" label="${escape(a.name)}"></option>`).join('')}
+  </datalist>`;
+}
+
 function renderAppTab(macroId) {
   const step = macroId === null ? { target: '', kind: 'app' } : (macroById(macroId)?.actions?.[0] || { target: '', kind: 'app' });
   const kind = step.kind === 'file' ? 'file' : 'app';
+
+  if (kind === 'app') ensureInstalledApps();
 
   return `
     <div class="field">
@@ -1151,17 +1214,33 @@ function renderAppTab(macroId) {
       </div>
     </div>
 
-    <label class="field">
-      <span class="field-label">${kind === 'file' ? 'Archivo' : 'Aplicación'}</span>
-      <div class="row-inline" style="gap:6px">
-        <input type="text" class="text-input" style="flex:1" data-act="app-target"
-               value="${escape(step.target || '')}"
-               placeholder="${kind === 'file' ? 'Ruta del archivo' : 'Ruta del ejecutable'}">
-        <button class="secondary-btn" data-act="app-browse" data-kind="${kind}">
-          ${icon('upload', 16)} Examinar…
-        </button>
+    ${kind === 'app' ? `
+      <div class="row-inline mt-4" style="gap:6px">
+        <button class="secondary-btn" data-act="app-focus">${icon('fit', 16)} App en foco</button>
+        <button class="secondary-btn" data-act="app-browse" data-kind="app">${icon('upload', 16)} Examinar…</button>
       </div>
-    </label>
+
+      <label class="field mt-4">
+        <span class="field-label">Aplicación</span>
+        <input type="text" class="text-input" list="installed-apps-list" data-act="app-target"
+               value="${escape(step.target || '')}"
+               placeholder="Escribe para buscar entre las instaladas, o usa los botones de arriba">
+        ${installedAppsDatalist()}
+        ${installedAppsLoading && !installedApps.length
+          ? '<span class="setting-desc">Buscando aplicaciones instaladas…</span>' : ''}
+      </label>
+    ` : `
+      <label class="field mt-4">
+        <span class="field-label">Archivo</span>
+        <div class="row-inline" style="gap:6px">
+          <input type="text" class="text-input" style="flex:1" data-act="app-target"
+                 value="${escape(step.target || '')}" placeholder="Ruta del archivo">
+          <button class="secondary-btn" data-act="app-browse" data-kind="file">
+            ${icon('upload', 16)} Examinar…
+          </button>
+        </div>
+      </label>
+    `}
 
     <p class="setting-desc">
       Se ejecuta en el PC al pulsar la tecla (necesita esta app abierta), igual que un paso
@@ -1174,10 +1253,10 @@ function renderAppTab(macroId) {
 // Abre el selector nativo de archivos para elegir qué abrir con este paso.
 // Sin `editIndex`, añade un paso nuevo; con él, sustituye el objetivo del
 // paso existente (botón "Examinar" junto a cada paso "Abrir…").
-async function pickOpenTarget(editIndex = null) {
+async function pickOpenTarget(editIndex = null, kind = 'app') {
   let picked;
   try {
-    picked = await window.orby.pickAppOrFile();
+    picked = await window.orby.pickAppOrFile(kind);
   } catch {
     toast('El selector de archivos no está disponible', 'error');
     return;
@@ -1186,10 +1265,45 @@ async function pickOpenTarget(editIndex = null) {
 
   if (editIndex !== null) {
     const step = seqActionAt(editIndex);
-    if (step) { step.target = picked.path; savePCMacros(currentMacroId()); render(); }
+    if (step) { step.target = picked.path; step.kind = kind; savePCMacros(currentMacroId()); render(); }
   } else {
-    seqAddAction({ type: 'open_app', target: picked.path });
+    seqAddAction({ type: 'open_app', target: picked.path, kind });
   }
+}
+
+// Cambia si un paso "Abrir" de la secuencia busca una app o un archivo:
+// mismo distingo que en la pestaña App (ver setAppKind), pero por índice de
+// paso en vez de sobre el único paso de esa pestaña.
+function setSeqOpenKind(index, kind) {
+  const step = seqActionAt(index);
+  if (!step) return;
+  step.kind = kind;
+  savePCMacros(currentMacroId());
+  render();
+}
+
+// Botón "App en foco" de un paso de secuencia: mismo mecanismo que
+// pickAppFocus (pestaña App), pero escribe en el paso `index` en vez de en
+// el único paso de esa pestaña.
+async function pickSeqOpenFocus(index) {
+  const step = seqActionAt(index);
+  if (!step) return;
+  let info;
+  try {
+    info = await getCurrentWindowInfo();
+  } catch {
+    toast('El detector de aplicaciones no está disponible', 'error');
+    return;
+  }
+  if (!info?.path) {
+    toast('No se ha podido saber qué ejecutable es esa ventana', 'error');
+    return;
+  }
+  step.target = info.path;
+  step.kind = 'app';
+  savePCMacros(currentMacroId());
+  render();
+  toast(`Añadida "${info.process || info.path}"`);
 }
 
 function seqRemoveAction(index) {
@@ -2086,6 +2200,10 @@ function renderSequenceEditor(macroId) {
   const recording = view.capturing === 'sequence';
   const capturingPos = view.capturing === 'position';
 
+  // El buscador de apps instaladas (datalist) de cada paso "Abrir" necesita
+  // la lista cargada, igual que en la pestaña App (ver ensureInstalledApps).
+  if (actions.some((a) => a.type === 'open_app' && a.kind !== 'file')) ensureInstalledApps();
+
   const CLICK_LABELS = { left: 'Izquierdo', middle: 'Central', right: 'Derecho' };
   const lastRealIdx = actions.reduce((acc, a, i) => (a.type === 'delay' ? acc : i), -1);
 
@@ -2200,21 +2318,44 @@ function renderSequenceEditor(macroId) {
     }
 
     if (a.type === 'open_app') {
+      const openKind = a.kind === 'file' ? 'file' : 'app';
       return `
-        <li class="seq-item">
-          <span>${stepNum}. Abrir</span>
-          <span class="row-inline" style="gap:6px">
-            <input type="text" class="text-input compact" style="flex:1;min-width:120px"
+        <li class="seq-item seq-item-open">
+          <div class="row-inline" style="justify-content:space-between">
+            <span>${stepNum}. Abrir</span>
+            <span class="row-inline" style="gap:4px">
+              ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
+              <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+                ${icon('trash', 14)}
+              </button>
+            </span>
+          </div>
+          <div class="row-inline mt-4" style="gap:6px">
+            <button class="type-chip small ${openKind === 'app' ? 'on' : ''}" data-act="seq-open-kind" data-index="${idx}" data-kind="app">Aplicación</button>
+            <button class="type-chip small ${openKind === 'file' ? 'on' : ''}" data-act="seq-open-kind" data-index="${idx}" data-kind="file">Archivo</button>
+          </div>
+          ${openKind === 'app' ? `
+            <div class="row-inline mt-4" style="gap:6px">
+              <button class="tool-btn small" data-act="seq-open-focus" data-index="${idx}" title="Usar la app en primer plano ahora mismo">
+                ${icon('fit', 14)} App en foco
+              </button>
+              <button class="tool-btn small" data-act="seq-open-browse" data-index="${idx}" data-kind="app" title="Examinar…">
+                ${icon('upload', 14)}
+              </button>
+            </div>
+            <input type="text" class="text-input compact mt-4" style="width:100%" list="installed-apps-list"
                    data-act="seq-open-target" data-index="${idx}" value="${escape(a.target || '')}"
-                   placeholder="Ruta de la app o el archivo" title="${escape(a.target || '')}">
-            <button class="tool-btn small" data-act="seq-open-browse" data-index="${idx}" title="Examinar…">
-              ${icon('upload', 14)}
-            </button>
-            ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
-            <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
-              ${icon('trash', 14)}
-            </button>
-          </span>
+                   placeholder="Escribe para buscar entre las instaladas" title="${escape(a.target || '')}">
+          ` : `
+            <div class="row-inline mt-4" style="gap:6px">
+              <input type="text" class="text-input compact" style="flex:1;min-width:120px"
+                     data-act="seq-open-target" data-index="${idx}" value="${escape(a.target || '')}"
+                     placeholder="Ruta del archivo" title="${escape(a.target || '')}">
+              <button class="tool-btn small" data-act="seq-open-browse" data-index="${idx}" data-kind="file" title="Examinar…">
+                ${icon('upload', 14)}
+              </button>
+            </div>
+          `}
         </li>`;
     }
 
@@ -2251,6 +2392,7 @@ function renderSequenceEditor(macroId) {
       <span class="field-label">Pasos de la secuencia</span>
       ${actions.length ? `<ul class="seq-list">${items}</ul>`
                         : `<p class="setting-desc">Todavía no tiene ningún paso.</p>`}
+      ${installedAppsDatalist()}
 
       <div class="row-inline mt-4">
         <button class="secondary-btn ${capturingPos ? 'is-capturing' : ''}" data-act="seq-add-position">

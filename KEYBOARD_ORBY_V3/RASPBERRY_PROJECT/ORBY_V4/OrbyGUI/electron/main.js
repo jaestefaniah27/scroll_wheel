@@ -6,6 +6,7 @@ const { OrbySerial } = require('./serial');
 const { ForegroundWatcher } = require('./foreground');
 const config = require('./config');
 const { executeMacro, getMousePosition, warmup } = require('./macros');
+const { listInstalledApps } = require('./apps');
 
 let mainWindow = null;
 let serial = null;
@@ -297,6 +298,9 @@ ipcMain.handle('dialog:pickAppOrFile', async (_e, kind) => {
   if (canceled || !filePaths?.length) return { ok: false, canceled: true };
   return { ok: true, path: filePaths[0] };
 });
+
+// --- IPC: apps instaladas (pestaña "App" del inspector de tecla) ---
+ipcMain.handle('apps:listInstalled', async () => listInstalledApps());
 
 // --- IPC: detector de aplicaciones ---
 ipcMain.handle('foreground:start', async () => foreground?.start() ?? false);

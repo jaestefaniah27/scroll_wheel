@@ -882,6 +882,7 @@ body {
 }
 .type-chip:hover { color: var(--text-main); background: rgba(255,255,255,0.06); }
 .type-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.type-chip.small { padding: 5px 8px; font-size: 10px; }
 
 .editor-inspector { padding: 24px; }
 .inspector-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
@@ -909,6 +910,10 @@ body {
   background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
   border-radius: var(--radius-sm);
 }
+/* Paso "Abrir" de una secuencia: además de la fila título+borrar, lleva
+   selector de tipo, botones y campo de búsqueda debajo, así que necesita
+   apilar en vertical en vez del layout de una sola fila del resto de pasos. */
+.seq-item-open { display: block; }
 .seq-item .select-input.compact { width: auto; min-width: 92px; padding: 6px 8px; font-size: 12px; }
 .seq-gap { background: transparent; border-style: dashed; color: var(--text-muted); }
 .seq-gap-input { min-width: 56px; text-align: right; }

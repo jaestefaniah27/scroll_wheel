@@ -45,9 +45,16 @@ while ($true) {
         [void][OrbyFg]::GetWindowThreadProcessId($handle, [ref]$procId)
 
         $name = ''
-        try { $name = (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { }
+        $path = ''
+        try {
+          $proc = Get-Process -Id $procId -ErrorAction Stop
+          $name = $proc.ProcessName
+          # .Path puede fallar (o venir vacío) en procesos protegidos/de otra
+          # sesión: se deja vacío y quien lo use (botón "App en foco") avisa.
+          try { $path = $proc.Path } catch { }
+        } catch { }
 
-        $payload = [ordered]@{ process = $name; title = $title }
+        $payload = [ordered]@{ process = $name; title = $title; path = $path }
         Write-Output ($payload | ConvertTo-Json -Compress)
       }
     }

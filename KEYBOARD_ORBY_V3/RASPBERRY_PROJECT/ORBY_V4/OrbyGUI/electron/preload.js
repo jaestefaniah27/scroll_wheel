@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('orby', {
   // Elegir una app o archivo (pestaña "App" y paso "Abrir…" de una secuencia)
   pickAppOrFile: (kind) => ipcRenderer.invoke('dialog:pickAppOrFile', kind),
 
+  // Apps instaladas (menú Inicio), para elegir una sin ir a buscar el .exe a mano
+  listInstalledApps: () => ipcRenderer.invoke('apps:listInstalled'),
+
   // Detección de la aplicación en primer plano
   foreground: {
     start: () => ipcRenderer.invoke('foreground:start'),
