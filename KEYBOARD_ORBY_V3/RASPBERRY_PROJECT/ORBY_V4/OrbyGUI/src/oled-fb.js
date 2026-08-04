@@ -222,11 +222,100 @@ export function measureSource(source) {
   return { width, height: lines.length * (source.fontSize + 2) };
 }
 
+// --- Caja de tinta ----------------------------------------------------------
+//
+// measureSource() devuelve la caja de MAQUETACIÓN: el ancho de avance del texto
+// (con sus espacios laterales) y el alto de línea completo (con el hueco de
+// ascendentes y descendentes aunque no haya ninguna). Eso es bastante más
+// grande que los trazos que acaban encendiéndose, así que el recuadro de la
+// capa sobraba por todos lados y centrar o encajar centraba el hueco en vez de
+// lo dibujado.
+//
+// sourceInkBox() devuelve el rectángulo que ocupan de verdad los píxeles, en
+// coordenadas naturales de la fuente (sin escala ni posición): (x, y) es el
+// desplazamiento desde el origen de la capa. Se calcula una vez por fuente y se
+// guarda en ella, porque no depende ni de la escala ni de la posición.
+export function sourceInkBox(source) {
+  if (!source._ink) {
+    source._ink = source.kind === 'text' ? textInkBox(source) : imageInkBox(source);
+  }
+  return source._ink;
+}
+
+function textInkBox(source) {
+  const ctx = offscreen();
+  ctx.font = fontSpec(source);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  const lineHeight = source.fontSize + 2;
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+
+  textLines(source).forEach((line, i) => {
+    if (!line.trim()) return; // una línea en blanco no enciende nada
+    const m = ctx.measureText(line);
+    const originY = i * lineHeight;
+    // Las métricas actualBoundingBox* van referidas al origen del texto, que
+    // aquí es la esquina superior izquierda por textAlign/textBaseline.
+    left   = Math.min(left,   -(m.actualBoundingBoxLeft || 0));
+    right  = Math.max(right,  m.actualBoundingBoxRight ?? m.width);
+    top    = Math.min(top,    originY - (m.actualBoundingBoxAscent || 0));
+    bottom = Math.max(bottom, originY + (m.actualBoundingBoxDescent || 0));
+  });
+
+  if (!(right > left) || !(bottom > top)) {
+    const { width, height } = measureSource(source);
+    return { x: 0, y: 0, width, height };
+  }
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+// La imagen se escanea a resolución reducida: el error que introduce queda muy
+// por debajo de un píxel de la pantalla una vez reescalada a 72x40, y evita
+// recorrer los millones de píxeles de una foto cada vez que se importa.
+const INK_SCAN_MAX = 512;
+
+function imageInkBox(source) {
+  const nw = source.naturalWidth, nh = source.naturalHeight;
+  const full = { x: 0, y: 0, width: nw, height: nh };
+
+  const s = Math.min(1, INK_SCAN_MAX / Math.max(nw, nh));
+  const w = Math.max(1, Math.round(nw * s)), h = Math.max(1, Math.round(nh * s));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(source.bitmap, 0, 0, w, h);
+
+  let data;
+  try { data = ctx.getImageData(0, 0, w, h).data; } catch { return full; }
+
+  let left = w, top = h, right = -1, bottom = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] < 8) continue; // transparente: no es tinta
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
+  }
+  if (right < 0) return full; // imagen entera transparente
+
+  const sx = nw / w, sy = nh / h;
+  return {
+    x: left * sx,
+    y: top * sy,
+    width: (right - left + 1) * sx,
+    height: (bottom - top + 1) * sy,
+  };
+}
+
 // Escala inicial: encajar dentro de la pantalla dejando un margen mínimo.
 export function fitScale(source) {
-  const { width, height } = measureSource(source);
-  if (!width || !height) return 1;
-  return Math.min((OLED_W - 2) / width, (OLED_H - 2) / height);
+  const ink = sourceInkBox(source);
+  if (!ink.width || !ink.height) return 1;
+  return Math.min((OLED_W - 2) / ink.width, (OLED_H - 2) / ink.height);
 }
 
 function drawSource(ctx, source, layer) {
@@ -256,9 +345,16 @@ function drawSource(ctx, source, layer) {
   return { x: layer.x, y: layer.y, width: w, height: h };
 }
 
+// Recuadro de la capa: se ciñe a la tinta, no a la caja de maquetación, para
+// que lo que marca el recuadro naranja sea exactamente lo que se va a dibujar.
 export function layerBounds(source, layer) {
-  const { width, height } = measureSource(source);
-  return { x: layer.x, y: layer.y, width: width * layer.scale, height: height * layer.scale };
+  const ink = sourceInkBox(source);
+  return {
+    x: layer.x + ink.x * layer.scale,
+    y: layer.y + ink.y * layer.scale,
+    width: ink.width * layer.scale,
+    height: ink.height * layer.scale,
+  };
 }
 
 // Rasteriza la capa a 1 bit. `layer` = { x, y, scale, threshold, blur, dither, invert }.
@@ -272,6 +368,26 @@ export function rasterizeLayer(source, layer) {
     invert: layer.invert,
     bounds: layerBounds(source, layer),
   });
+}
+
+// Rectángulo que ocupan los píxeles encendidos de un framebuffer, o null si no
+// hay ninguno. Es la medida exacta de lo que se va a ver: sourceInkBox() se
+// queda cerca pero no clava, porque el antialiasing y el ajuste de la fuente
+// hacen que el trazo rasterizado no sea el escalado lineal de las métricas.
+// Solo puede medir lo que cabe en la pantalla; lo que se salga queda recortado.
+export function framebufferInk(fb) {
+  let left = OLED_W, top = OLED_H, right = -1, bottom = -1;
+  for (let y = 0; y < OLED_H; y++) {
+    for (let x = 0; x < OLED_W; x++) {
+      if (!getPixel(fb, x, y)) continue;
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
+  }
+  if (right < 0) return null;
+  return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
 }
 
 // Une dos framebuffers. En modo "replace" la capa sustituye todo el lienzo; en

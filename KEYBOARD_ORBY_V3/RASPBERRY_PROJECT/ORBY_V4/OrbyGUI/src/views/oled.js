@@ -65,6 +65,7 @@ const view = {
   layerXf: null,   // { x, y, scale, threshold, blur, dither, invert, mode }
   dragging: null,  // { kind:'move'|'resize', ... }
   selecting: null, // { x0, y0, x1, y1 } mientras se arrastra un recuadro de selección
+  outline: null,   // último recuadro pintado sobre el lienzo (ver repaint)
 
   textDraft: '',
   textFont: 'Segoe UI',
@@ -305,9 +306,14 @@ function bindCanvas() {
     // Con una capa en colocación el lienzo sirve para moverla/escalarla, no
     // para pintar: pintar encima antes de fijarla no tendría sentido.
     if (view.layerXf) {
+      // El tirador se busca donde el usuario lo ve (el recuadro pintado, que se
+      // ciñe a los píxeles), pero el arrastre se calcula sobre la caja de la
+      // capa: es la única que escala de forma lineal y no se recorta al salirse
+      // de la pantalla, así que la capa no pega saltos al agarrarla.
       const box = fb.layerBounds(view.source, view.layerXf);
-      const nearRight  = Math.abs(p.x - (box.x + box.width)) <= HANDLE_TOLERANCE;
-      const nearBottom = Math.abs(p.y - (box.y + box.height)) <= HANDLE_TOLERANCE;
+      const shown = view.outline || box;
+      const nearRight  = Math.abs(p.x - (shown.x + shown.width)) <= HANDLE_TOLERANCE;
+      const nearBottom = Math.abs(p.y - (shown.y + shown.height)) <= HANDLE_TOLERANCE;
 
       view.dragging = (nearRight && nearBottom)
         ? { kind: 'resize', originX: box.x, originY: box.y, startH: box.height, startW: box.width }
@@ -386,10 +392,13 @@ function bindCanvas() {
 
 function defaultTransform(source) {
   const scale = fb.fitScale(source);
-  const { width, height } = fb.measureSource(source);
+  const ink = fb.sourceInkBox(source);
   return {
-    x: (fb.OLED_W - width * scale) / 2,
-    y: (fb.OLED_H - height * scale) / 2,
+    // El origen de la capa no coincide con el de la tinta (el texto reserva
+    // hueco para ascendentes y descendentes), así que centrar es centrar la
+    // caja de tinta y descontar después ese desfase.
+    x: (fb.OLED_W - ink.width * scale) / 2 - ink.x * scale,
+    y: (fb.OLED_H - ink.height * scale) / 2 - ink.y * scale,
     scale,
     threshold: 128,
     blur: source.kind === 'image' ? 1 : 0,
@@ -412,8 +421,11 @@ function defaultTransform(source) {
 const SIZE_MIN_PX = 2;
 const SIZE_MAX_PX = fb.OLED_H * 3;
 
+// El tamaño se mide sobre la tinta, no sobre la caja de maquetación: "20 px"
+// tiene que significar que lo dibujado mide 20 px de alto, que es lo que se ve
+// en el recuadro y lo que dice la etiqueta.
 function naturalHeight() {
-  return Math.max(1, fb.measureSource(view.source).height);
+  return Math.max(1, fb.sourceInkBox(view.source).height);
 }
 
 function layerHeightPx() {
@@ -423,7 +435,16 @@ function layerHeightPx() {
 function setLayerHeight(px, syncSlider = true) {
   if (!view.layerXf) return;
   const clamped = Math.max(SIZE_MIN_PX, Math.min(SIZE_MAX_PX, px));
+  const before = fb.layerBounds(view.source, view.layerXf);
+  const ink = fb.sourceInkBox(view.source);
+
   view.layerXf.scale = clamped / naturalHeight();
+  // El desfase entre el origen de la capa y el de la tinta también escala, así
+  // que hay que recolocar la capa o el contenido se iría de sitio al cambiar el
+  // tamaño. Se ancla la esquina superior izquierda de lo dibujado.
+  view.layerXf.x = before.x - ink.x * view.layerXf.scale;
+  view.layerXf.y = before.y - ink.y * view.layerXf.scale;
+
   if (syncSlider) syncSizeSlider();
   repaint();
   updateXfLabels();
@@ -442,25 +463,72 @@ function nudgeLayer(dx, dy) {
   updateXfLabels();
 }
 
+// Recuadro de lo que se va a dibujar: los píxeles que de verdad se encienden.
+// Si la capa se ha sacado entera de la pantalla no hay nada que medir y se cae
+// a la caja de la capa, que sigue estando donde toca.
+function inkBox(raster = null) {
+  return fb.framebufferInk(raster || fb.rasterizeLayer(view.source, view.layerXf))
+      || fb.layerBounds(view.source, view.layerXf);
+}
+
+// Centra la TINTA, no la caja de la capa. Van dos pasadas: la primera con las
+// métricas de la fuente, que funcionan aunque la capa esté fuera de la pantalla
+// pero se quedan a un par de píxeles; la segunda mide los píxeles ya
+// rasterizados y corrige. Desplazar un número entero de píxeles mueve el
+// resultado exactamente esa cantidad, así que con una corrección basta.
+function placeCentered() {
+  const ink = fb.sourceInkBox(view.source);
+  const s = view.layerXf.scale;
+  view.layerXf.x = Math.round((fb.OLED_W - ink.width * s) / 2) - ink.x * s;
+  view.layerXf.y = Math.round((fb.OLED_H - ink.height * s) / 2) - ink.y * s;
+
+  const box = inkBox();
+  view.layerXf.x += Math.round((fb.OLED_W - box.width) / 2 - box.x);
+  view.layerXf.y += Math.round((fb.OLED_H - box.height) / 2 - box.y);
+}
+
 function centerLayer() {
-  const box = fb.layerBounds(view.source, view.layerXf);
-  view.layerXf.x = Math.round((fb.OLED_W - box.width) / 2);
-  view.layerXf.y = Math.round((fb.OLED_H - box.height) / 2);
+  placeCentered();
   repaint();
   updateXfLabels();
 }
 
+const FIT_MARGIN = 1; // píxeles que se dejan libres a cada lado
+
+// Encajar = el contenido dibujado toca los bordes dejando FIT_MARGIN. La escala
+// que sale de las métricas se queda cerca, así que se afina midiendo la tinta
+// rasterizada; el bucle converge en dos o tres vueltas y si la capa se sale, lo
+// que se mide es la pantalla entera, que también hace encoger.
 function fitLayer() {
   view.layerXf.scale = fb.fitScale(view.source);
+
+  for (let i = 0; i < 6; i++) {
+    placeCentered();
+    const box = inkBox();
+    const ratio = Math.min((fb.OLED_W - 2 * FIT_MARGIN) / box.width,
+                           (fb.OLED_H - 2 * FIT_MARGIN) / box.height);
+    if (Math.abs(ratio - 1) < 0.02) break;
+    view.layerXf.scale *= Math.max(0.5, Math.min(2, ratio));
+  }
+
   syncSizeSlider();
   centerLayer();
 }
 
+// Toda capa nueva entra centrada por aquí, con la misma corrección sobre los
+// píxeles rasterizados que aplica el botón de centrar: si no, lo que se coloca
+// aparece un par de píxeles descuadrado y hay que pulsar "Centrar" para algo
+// que ya debería estar centrado.
+function beginLayer(source) {
+  view.source = source;
+  view.layerXf = defaultTransform(source);
+  placeCentered();
+  render();
+}
+
 async function importImage(file) {
   try {
-    view.source = await fb.loadImageSource(file);
-    view.layerXf = defaultTransform(view.source);
-    render();
+    beginLayer(await fb.loadImageSource(file));
   } catch (err) {
     toast(`No se pudo leer la imagen: ${err.message}`, 'error');
   }
@@ -468,11 +536,9 @@ async function importImage(file) {
 
 function makeTextLayer() {
   if (!view.textDraft.trim()) { toast('Escribe algo primero', 'error'); return; }
-  view.source = fb.makeTextSource(view.textDraft, {
+  beginLayer(fb.makeTextSource(view.textDraft, {
     fontSize: view.textSize, bold: view.textBold, font: view.textFont,
-  });
-  view.layerXf = defaultTransform(view.source);
-  render();
+  }));
 }
 
 // Rehace la fuente del texto conservando la posición ya elegida.
@@ -571,13 +637,6 @@ function undo() {
   repaint();
 }
 
-// Framebuffer que se muestra: base, o base + capa flotante si hay una.
-function displayBuffer() {
-  if (!view.layerXf) return view.buffer;
-  const raster = fb.rasterizeLayer(view.source, view.layerXf);
-  return fb.compose(view.buffer, raster, view.layerXf.mode);
-}
-
 function selectingBounds() {
   const { x0, y0, x1, y1 } = view.selecting;
   return {
@@ -587,10 +646,16 @@ function selectingBounds() {
 }
 
 function repaint() {
-  const shown = displayBuffer();
-  const outline = view.layerXf ? fb.layerBounds(view.source, view.layerXf)
-                : view.selecting ? selectingBounds()
-                : null;
+  let shown = view.buffer;
+
+  if (view.layerXf) {
+    const raster = fb.rasterizeLayer(view.source, view.layerXf);
+    shown = fb.compose(view.buffer, raster, view.layerXf.mode);
+    view.outline = inkBox(raster);
+  } else {
+    view.outline = view.selecting ? selectingBounds() : null;
+  }
+  const outline = view.outline;
 
   const canvas = document.getElementById('oled-canvas');
   if (canvas) fb.renderToCanvas(shown, canvas, { zoom: view.zoom, outline });
@@ -602,12 +667,16 @@ function repaint() {
 function updateXfLabels() {
   if (!view.layerXf) return;
   const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-  const box = fb.layerBounds(view.source, view.layerXf);
+  // Se enseña la medida real de lo dibujado, que es lo que marca el recuadro.
+  // La barra sigue moviéndose sobre la caja de la capa (ver setLayerHeight):
+  // necesita una escala lineal, y la tinta rasterizada da saltos de un píxel.
+  const box = view.outline || inkBox();
 
   set('xf-size-val', `${Math.round(box.width)} × ${Math.round(box.height)} px`);
   set('xf-threshold-val', view.layerXf.threshold);
   set('xf-blur-val', view.layerXf.blur);
-  set('xf-pos-val', `x ${Math.round(view.layerXf.x)} · y ${Math.round(view.layerXf.y)}`);
+  // La posición que interesa es la de lo dibujado, igual que el tamaño.
+  set('xf-pos-val', `x ${Math.round(box.x)} · y ${Math.round(box.y)}`);
 }
 
 // --- Envío al teclado -------------------------------------------------------

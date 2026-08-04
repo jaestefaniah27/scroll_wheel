@@ -1206,10 +1206,20 @@ body {
 
 .nudge-row { display: flex; align-items: center; gap: 12px; }
 /* Cruceta: fila superior con la flecha arriba centrada, y debajo ←, centrar, →,
-   con la flecha abajo cerrando. Cinco botones en una rejilla de 3 columnas. */
-.nudge-pad { display: grid; grid-template-columns: repeat(3, 30px); gap: 4px; }
-.nudge-pad > :nth-child(1) { grid-column: 2; }
-.nudge-pad > :nth-child(5) { grid-column: 2; }
+   con la flecha abajo cerrando. Los cinco botones van colocados a mano en la
+   rejilla 3x3: dejando que se autocoloquen, el hueco que abre la flecha de
+   arriba al saltar a la columna 2 desplaza a las otras cuatro una celda. */
+.nudge-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 28px);
+  grid-template-rows: repeat(3, 28px);
+  gap: 4px;
+}
+.nudge-pad > :nth-child(1) { grid-area: 1 / 2; } /* ↑ */
+.nudge-pad > :nth-child(2) { grid-area: 2 / 1; } /* ← */
+.nudge-pad > :nth-child(3) { grid-area: 2 / 2; } /* centrar */
+.nudge-pad > :nth-child(4) { grid-area: 2 / 3; } /* → */
+.nudge-pad > :nth-child(5) { grid-area: 3 / 2; } /* ↓ */
 .nudge-pad .tool-btn { font-size: 14px; line-height: 1; }
 .layer-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
 textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; }
