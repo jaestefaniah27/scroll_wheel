@@ -22,7 +22,7 @@
 // (`macros`, ver profiles.js), así que no hacía falta espejarlas: nunca han
 // dependido del teclado para guardarse.
 
-import { state, notify, subscribe } from './store.js';
+import { state, notify, subscribe, pageCountOf } from './store.js';
 import { blankPage, bindPageAliases } from './device.js';
 import { snapshotFromState, importAll } from './backup.js';
 import * as cache from './oled-cache.js';
@@ -35,6 +35,13 @@ let offlineEdits = false;
 let saveTimer = null;
 
 const SAVE_DELAY_MS = 400;
+
+// Los iconos guardados por una versión anterior a la 3.2.2 pueden estar
+// cruzados entre páginas: si se cambiaba de pestaña mientras se leían del
+// teclado, los que faltaban se guardaban con la clave de la página anterior
+// (arreglado en oled-cache.loadProfile). Se marca el volcado con esta versión
+// para descartar una sola vez los que pudieron salir mal.
+const ICONS_VERSION = 2;
 
 // --- Carga ------------------------------------------------------------------
 
@@ -76,6 +83,17 @@ function hydrate(stored) {
   state.maxPages = Math.max(...state.profiles.map((p) => p.maxPages || 1), 1);
 
   cache.restore(stored.icons);
+
+  // Volcado de una versión con el fallo de páginas cruzadas: se tiran los
+  // iconos de los perfiles con más de una página, que son los únicos que
+  // pudieron mezclarse. Los de una sola página nunca cambian de página, así
+  // que se conservan y la app sigue enseñándolos sin el teclado delante. Lo
+  // descartado se vuelve a leer en cuanto se conecte el Orby.
+  if ((stored.iconsVersion || 0) < ICONS_VERSION) {
+    for (const p of state.profiles) {
+      if (pageCountOf(p) > 1) cache.dropProfile(p.idx);
+    }
+  }
 }
 
 // Reconstruye un perfil con la misma forma que devuelve device.getProfile: las
@@ -148,6 +166,7 @@ export function save() {
         offlineEdits,
         snapshot: snapshotFromState(),
         icons: cache.dump(),
+        iconsVersion: ICONS_VERSION,
       },
     });
   } catch (err) {

@@ -84,6 +84,17 @@ export function invalidate() {
   emit();
 }
 
+// Tira lo leído de un perfil concreto, con todas sus páginas. Se usa para
+// limpiar el espejo del disco de las entradas que pudo envenenar el fallo de
+// carrera de loadProfile (ver mirror.js).
+export function dropProfile(profileIdx) {
+  const prefix = `${profileIdx}:`;
+  for (const key of [...cache.keys()]) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
+  emit();
+}
+
 export function isLoading() {
   return loadingProfile !== null;
 }
@@ -115,13 +126,25 @@ export async function loadProfile(profileIdx) {
     // GET_OLED, como el resto de comandos sin número de página, actúa sobre ella.
     const page = prof.pageIdx || 0;
 
+    // Leer los 20 huecos son 20 idas y vueltas por el CDC, y da tiempo de sobra
+    // a cambiar de pestaña por el medio. En cuanto eso pasa, lo que conteste el
+    // teclado ya es de la página nueva: guardarlo con la clave de la vieja la
+    // deja con los iconos de la otra para siempre, porque `cache.has` la da por
+    // leída y nadie vuelve a pedirla. Se corta y se encola la recarga, que ya
+    // leerá la página que toque.
+    const outOfDate = () => state.profiles[profileIdx] !== prof || (prof.pageIdx || 0) !== page;
+
     for (let slot = 0; slot < 20; slot++) {
+      if (outOfDate()) { queued = profileIdx; return; }
       if (cache.has(cacheKey(profileIdx, slot, page))) continue;
       if (!(prof.oledMask & (1 << slot))) {
         cache.set(cacheKey(profileIdx, slot, page), null);
         continue;
       }
-      cache.set(cacheKey(profileIdx, slot, page), await device.getOled(profileIdx, slot));
+      const bytes = await device.getOled(profileIdx, slot);
+      // Otra vez después de esperar: el cambio de página ocurre justo aquí.
+      if (outOfDate()) { queued = profileIdx; return; }
+      cache.set(cacheKey(profileIdx, slot, page), bytes);
       emit();
     }
   } finally {
