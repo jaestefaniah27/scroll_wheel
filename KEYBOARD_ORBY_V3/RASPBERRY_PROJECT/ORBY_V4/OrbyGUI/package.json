@@ -60,7 +60,8 @@
     "publish": {
       "provider": "github",
       "owner": "jaestefaniah27",
-      "repo": "scroll_wheel"
+      "repo": "scroll_wheel",
+      "releaseType": "release"
     }
   }
 }
