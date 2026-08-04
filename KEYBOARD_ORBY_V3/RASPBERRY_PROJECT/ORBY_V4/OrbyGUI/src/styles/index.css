@@ -33,6 +33,10 @@
   --radius-lg: 16px;
   
   --titlebar-height: 38px;
+  /* Barra lateral: ancho plegado (el que ocupa en el layout) y desplegado (el
+     que toma al pasar el ratón, superponiéndose al contenido). */
+  --sidebar-w: 64px;
+  --sidebar-w-open: 212px;
 }
 
 * {
@@ -217,33 +221,77 @@ body {
   height: calc(100vh - var(--titlebar-height));
 }
 
-/* Sidebar */
+/* Barra lateral desplegable.
+   `.sidebar` solo reserva el hueco de la versión plegada en el layout; quien
+   crece es `.sidebar-rail`, que va posicionado encima. Así al desplegarse se
+   superpone al contenido en vez de empujarlo, que es lo que obligaría a
+   recalcular y repintar la vista entera cada vez que el ratón pasa por encima.
+   La barra hace de título de cada vista, por eso ninguna tiene ya cabecera
+   propia: ese alto se lo queda el contenido. */
 .sidebar {
-  width: 64px;
-  background: rgba(10, 10, 15, 0.8);
-  border-right: 1px solid var(--border-light);
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 60; /* por debajo de la barra de título (100) y de los avisos (999) */
+}
+
+.sidebar-rail {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: var(--sidebar-w);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 20px 0;
+  padding: 20px 12px;
   gap: 16px;
+  /* Opaco a propósito: se superpone al contenido de la vista. */
+  background: var(--bg-dark);
+  border-right: 1px solid var(--border-light);
+  overflow: hidden; /* recorta las etiquetas mientras está plegada */
+  transition: width 0.16s ease, box-shadow 0.16s ease;
+}
+
+/* `focus-within` mantiene la barra abierta al recorrerla con el tabulador, que
+   si no deja el foco en un botón cuyo nombre no se ve. */
+.sidebar:hover .sidebar-rail,
+.sidebar-rail:focus-within {
+  width: var(--sidebar-w-open);
+  box-shadow: 8px 0 28px rgba(0, 0, 0, 0.45);
 }
 
 .sidebar-spacer { flex-grow: 1; }
 
+/* El icono no se mueve al desplegar: 12 de padding de la barra + 9 del botón
+   dejan sus 22 px centrados en los 64 de la barra plegada. Lo que cambia es
+   solo el ancho del botón, que pasa a tener sitio para la etiqueta. */
 .nav-item {
-  width: 40px; height: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  padding: 0 9px;
   border-radius: var(--radius-md);
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 22px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  overflow: hidden;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
+
+.nav-icon { flex-shrink: 0; display: flex; }
+
+.nav-label {
+  white-space: nowrap;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.sidebar:hover .nav-label,
+.sidebar-rail:focus-within .nav-label { opacity: 1; }
 
 .nav-item:hover {
   color: var(--text-main);
@@ -286,22 +334,6 @@ body {
 .view.active {
   opacity: 1;
   visibility: visible;
-}
-
-.view-header {
-  margin-bottom: 32px;
-}
-.view-header h1 {
-  font-size: 28px;
-  font-weight: 700;
-  margin-bottom: 6px;
-  background: linear-gradient(to right, #fff, #a78bfa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.view-header p {
-  color: var(--text-muted);
-  font-size: 14px;
 }
 
 /* ================= DASHBOARD VIEW ================= */
@@ -568,7 +600,9 @@ body {
 
 /* ================= CONSOLE VIEW ================= */
 .console-wrapper {
-  display: flex; flex-direction: column; height: calc(100% - 80px);
+  /* Antes `calc(100% - 80px)`: los 80 px eran el hueco de la cabecera de la
+     vista, que ya no existe (el título vive en la barra lateral). */
+  display: flex; flex-direction: column; height: 100%;
   background: #050508; border-color: rgba(255,255,255,0.1);
 }
 .console-output {
@@ -641,7 +675,10 @@ body {
 
 /* ================= ICONOS SVG EN LÍNEA ================= */
 .icn { display: block; flex-shrink: 0; }
-[data-icon], .window-btn, .nav-item, .tool-btn { display: flex; align-items: center; justify-content: center; }
+/* `.nav-item` ya no entra aquí: ahora es icono + etiqueta alineados a la
+   izquierda, y este `justify-content: center` le sacaba el icono del botón al
+   desbordar la etiqueta. */
+[data-icon], .window-btn, .tool-btn { display: flex; align-items: center; justify-content: center; }
 .card-header > span:first-child { color: var(--primary); display: flex; }
 
 /* ================= TITLEBAR: GUARDAR EN FLASH ================= */
@@ -845,8 +882,7 @@ body {
    columna flex de altura fija y ambos paneles se reparten esa altura con su
    propio overflow, en vez de compartir el scroll único de `.view`. */
 .view:has(.editor-layout) { display: flex; flex-direction: column; overflow: hidden; }
-.view:has(.editor-layout) > .view-header { flex-shrink: 0; }
-/* `#profiles-body` es un div sin estilo entre `.view-header` y `.editor-layout`
+/* `#profiles-body` es un div sin estilo entre `.view` y `.editor-layout`
    (lo rellena profiles.js con innerHTML). Sin hacerlo también columna flex con
    `flex:1; min-height:0`, el `flex:1` de `.editor-layout` no tiene contra qué
    resolverse -su padre no es flex- y vuelve a crecer al contenido. */
@@ -1088,10 +1124,6 @@ body {
 /* Esta vista no hace scroll de página: ocupa el alto completo y son el lienzo y
    el panel lateral los que se desplazan por su cuenta. */
 #view-oled { display: flex; flex-direction: column; overflow: hidden; padding: 24px 32px; }
-.view-header.compact { margin-bottom: 18px; }
-.view-header.compact h1 { font-size: 22px; }
-.view-header.compact p { font-size: 13px; }
-
 /* Barra fija del editor de iconos: qué tecla se está editando y las dos únicas
    salidas (guardar en la tecla / salir sin guardar). Se queda pegada arriba
    para que no la tape el desplazamiento del panel lateral. */

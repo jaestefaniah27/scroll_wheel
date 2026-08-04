@@ -342,10 +342,6 @@ export function render() {
 
   if (!view.available) {
     root.innerHTML = `
-      <header class="view-header">
-        <h1>Cambio automático</h1>
-        <p>Perfil según la aplicación en primer plano</p>
-      </header>
       <div class="empty-panel glass-panel">
         ${icon('info', 40)}
         <h3>Solo disponible en Windows</h3>
@@ -358,11 +354,6 @@ export function render() {
     ? null : (profileNames()[view.fallback] ?? '?');
 
   root.innerHTML = `
-    <header class="view-header">
-      <h1>Cambio automático</h1>
-      <p>El teclado cambia de perfil solo, según la aplicación que tengas delante</p>
-    </header>
-
     <div class="auto-grid">
       <div class="auto-main-col">
         <div class="glass-panel auto-main">

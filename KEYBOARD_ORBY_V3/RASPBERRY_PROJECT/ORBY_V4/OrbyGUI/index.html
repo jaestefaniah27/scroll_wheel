@@ -41,25 +41,47 @@
   </div>
 
   <div class="app-container">
+    <!-- La barra lateral es el título de cada vista: plegada enseña solo los
+         iconos y al pasar el ratón se despliega por encima del contenido (sin
+         desplazarlo) para leer el nombre. Así ninguna vista gasta alto en una
+         cabecera con su propio título.
+         El icono va en un `<span>` aparte porque hydrateIcons() sustituye el
+         innerHTML del elemento con data-icon, y se llevaría la etiqueta por
+         delante si estuvieran en el mismo nodo.
+         Sin `title=`: el globo del sistema taparía la etiqueta que se acaba de
+         desplegar, y esta ya dice lo mismo. -->
     <nav class="sidebar">
-      <button class="nav-item active" data-target="view-dashboard" title="Dashboard" data-icon="dashboard" data-icon-size="22"></button>
-      <button class="nav-item" data-target="view-profiles" title="Perfiles, macros y rueda" data-icon="profiles" data-icon-size="22"></button>
-      <!-- El editor de iconos no tiene entrada propia: se abre siempre desde la
-           tecla que se esté configurando en Perfiles, y edita solo ese icono. -->
-      <button class="nav-item" data-target="view-auto" title="Cambio automático de perfil" data-icon="bolt" data-icon-size="22"></button>
-      <button class="nav-item" data-target="view-settings" title="Ajustes" data-icon="settings" data-icon-size="22"></button>
-      <div class="sidebar-spacer"></div>
-      <button class="nav-item" data-target="view-console" title="Consola serie" data-icon="console" data-icon-size="22"></button>
+      <div class="sidebar-rail">
+        <button class="nav-item active" data-target="view-dashboard">
+          <span class="nav-icon" data-icon="dashboard" data-icon-size="22"></span>
+          <span class="nav-label">Dashboard</span>
+        </button>
+        <button class="nav-item" data-target="view-profiles">
+          <span class="nav-icon" data-icon="profiles" data-icon-size="22"></span>
+          <span class="nav-label">Perfiles y macros</span>
+        </button>
+        <!-- El editor de iconos no tiene entrada propia: se abre siempre desde la
+             tecla que se esté configurando en Perfiles, y edita solo ese icono. -->
+        <button class="nav-item" data-target="view-auto">
+          <span class="nav-icon" data-icon="bolt" data-icon-size="22"></span>
+          <span class="nav-label">Cambio automático</span>
+        </button>
+        <button class="nav-item" data-target="view-settings">
+          <span class="nav-icon" data-icon="settings" data-icon-size="22"></span>
+          <span class="nav-label">Ajustes</span>
+        </button>
+        <div class="sidebar-spacer"></div>
+        <button class="nav-item" data-target="view-console">
+          <span class="nav-icon" data-icon="console" data-icon-size="22"></span>
+          <span class="nav-label">Consola serie</span>
+        </button>
+      </div>
     </nav>
 
     <main class="content-area">
 
       <!-- Dashboard -->
       <section id="view-dashboard" class="view active">
-        <header class="view-header">
-          <h1>Dashboard</h1>
-          <p>Monitorización en tiempo real del Orby V4</p>
-        </header>
         <div class="dashboard-grid">
           <div class="hardware-preview-card glass-panel">
             <h2>Dispositivo</h2>
@@ -97,10 +119,6 @@
 
       <!-- Perfiles (renderizado por src/views/profiles.js) -->
       <section id="view-profiles" class="view">
-        <header class="view-header">
-          <h1>Perfiles y macros</h1>
-          <p>Teclas, mandos giratorios y rueda de scroll de cada perfil, con su capa SUPER</p>
-        </header>
         <div id="profiles-body"></div>
       </section>
 
@@ -112,10 +130,6 @@
 
       <!-- Ajustes -->
       <section id="view-settings" class="view">
-        <header class="view-header">
-          <h1>Ajustes</h1>
-          <p>Dispositivo, copias de seguridad y la propia aplicación</p>
-        </header>
         <div class="settings-grid">
           <div class="settings-card glass-panel">
             <div class="card-header">
@@ -231,10 +245,6 @@
 
       <!-- Consola -->
       <section id="view-console" class="view">
-        <header class="view-header">
-          <h1>Consola serie</h1>
-          <p>Telemetría bidireccional por USB CDC</p>
-        </header>
         <div class="console-wrapper glass-panel">
           <div class="console-toolbar">
             <input type="text" id="console-filter" class="text-input compact" placeholder="Filtrar (ej. WHEEL)" spellcheck="false">
