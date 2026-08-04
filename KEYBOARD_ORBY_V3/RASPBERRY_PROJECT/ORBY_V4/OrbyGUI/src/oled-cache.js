@@ -6,7 +6,7 @@
 // etiqueta de texto", que es distinto de "no lo hemos leído todavía".
 
 import * as device from './device.js';
-import { state } from './store.js';
+import { state, pageCountOf } from './store.js';
 import * as fb from './oled-fb.js';
 
 const cache = new Map();        // "perfil:pagina:hueco" -> Uint8Array | null
@@ -14,6 +14,7 @@ const listeners = new Set();
 
 let loadingProfile = null;      // perfil que se está descargando
 let queued = null;              // perfil pedido mientras había otro en curso
+let preloading = false;         // descarga completa en curso (ver preloadAll)
 
 // La clave lleva la página: con páginas, el mismo (perfil, hueco) es un icono
 // distinto en cada una, así que sin esto se enseñarían los de la página anterior.
@@ -95,8 +96,19 @@ export function dropProfile(profileIdx) {
   emit();
 }
 
+// Tira lo leído de los perfiles que ya no existen. El teclado puede tener menos
+// de los que traía la copia del PC (se borraron desde su menú, o se restauraron
+// los de fábrica), y sin esto sus iconos seguirían volcándose al espejo para
+// siempre.
+export function pruneBeyond(count) {
+  for (const key of [...cache.keys()]) {
+    if (parseInt(key, 10) >= count) cache.delete(key);
+  }
+  emit();
+}
+
 export function isLoading() {
-  return loadingProfile !== null;
+  return loadingProfile !== null || preloading;
 }
 
 export function onChange(fn) {
@@ -155,6 +167,59 @@ export async function loadProfile(profileIdx) {
       queued = null;
       loadProfile(next);
     }
+  }
+}
+
+// --- Descarga completa ------------------------------------------------------
+// Se trae los iconos de TODAS las páginas de TODOS los perfiles, no solo los de
+// la que está puesta. Se hace una vez al conectar, así que después cambiar de
+// perfil o de pestaña ya no espera a nada: antes cada salto disparaba veinte
+// idas y vueltas por el CDC y los huecos se iban rellenando a la vista.
+//
+// Solo funciona con un firmware que conozca GET_OLED_PG (capacidad HASH del
+// ACK): GET_OLED lee la página que el teclado tenga puesta, y recorrerlas todas
+// con él obligaría a ir cambiándola, moviendo las pantallas del teclado.
+//
+// Va sin bloquear a nadie: la app ya se puede usar mientras esto termina, y lo
+// que llegue va apareciendo. Si el teclado se va a medias, se deja lo que haya
+// y se reanuda en la siguiente conexión.
+const PAINT_EVERY = 10;   // repintar cada N iconos, no en cada uno
+
+export async function preloadAll(onProgress = () => {}) {
+  if (preloading) return;
+
+  // Primero se apunta lo que falta. Los huecos sin icono se marcan aquí mismo
+  // como vacíos: son la mayoría y no cuestan una petición.
+  const missing = [];
+  for (const prof of state.profiles) {
+    const pages = pageCountOf(prof);
+    for (let page = 0; page < pages; page++) {
+      const mask = prof.pages?.[page]?.oledMask || 0;
+      for (let slot = 0; slot < 20; slot++) {
+        const key = cacheKey(prof.idx, slot, page);
+        if (cache.has(key)) continue;
+        if (!(mask & (1 << slot))) { cache.set(key, null); continue; }
+        missing.push({ profile: prof.idx, page, slot, key });
+      }
+    }
+  }
+
+  emit();
+  if (!missing.length) return;
+
+  preloading = true;
+  let done = 0;
+  try {
+    for (const item of missing) {
+      if (!state.connected) return;   // se reanudará al reconectar
+      cache.set(item.key, await device.getOledPage(item.profile, item.page, item.slot));
+      done++;
+      if (done % PAINT_EVERY === 0) emit();
+      onProgress(done, missing.length);
+    }
+  } finally {
+    preloading = false;
+    emit();
   }
 }
 

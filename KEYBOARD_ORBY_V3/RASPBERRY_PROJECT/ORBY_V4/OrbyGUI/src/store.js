@@ -9,6 +9,7 @@
 // con un valor por capa.
 
 import * as device from './device.js';
+import { profileHash, toHex } from './hash.js';
 
 const subscribers = new Set();
 
@@ -141,10 +142,33 @@ export function scrollFor(prof, layer) {
   return prof?.scroll?.[layerIndex(layer)] || { detentsPerRev: 60, invert: false };
 }
 
-// Descarga estado y perfiles completos desde el dispositivo.
-export async function syncFromDevice() {
+// Un perfil que la app ya tiene y cuya huella coincide con la que dice el
+// teclado no hace falta volver a descargarlo. Devuelve el perfil reutilizable o
+// null si hay que pedirlo.
+//
+// profileHash devuelve null cuando falta algún icono por leer: sin ellos no se
+// puede afirmar que sean iguales, así que se descarga, que es lo seguro.
+function reusableProfile(prof, idx, expected, iconOf) {
+  if (!prof || !expected?.[idx] || !iconOf) return null;
+  const mine = profileHash(prof, (slot, page) => iconOf(idx, slot, page));
+  if (mine === null || toHex(mine) !== expected[idx]) return null;
+  prof.idx = idx;
+  return prof;
+}
+
+// Descarga estado y perfiles desde el dispositivo.
+//
+// `expected` son las huellas por perfil que ha dado GET_HASH e `iconOf` el
+// acceso a los bitmaps que la app ya tiene; con las dos cosas, los perfiles que
+// no han cambiado se reutilizan tal cual y no se piden. Sin ellas se descarga
+// todo, que es lo que hace falta después de editar algo.
+//
+// Devuelve los índices de los perfiles que sí se han releído: sus iconos en
+// caché ya no valen y quien llama tiene que tirarlos.
+export async function syncFromDevice({ expected = null, iconOf = null, onProgress = null } = {}) {
   state.syncing = true;
   notify();
+  const reloaded = [];
   try {
     const s = await device.getState();
     let count = state.profiles.length || 4;
@@ -162,8 +186,15 @@ export async function syncFromDevice() {
       if (Number.isInteger(s.maxPages))  state.maxPages  = s.maxPages;
     }
 
+    const previous = state.profiles;
     const profiles = [];
-    for (let i = 0; i < count; i++) profiles.push(await device.getProfile(i));
+    for (let i = 0; i < count; i++) {
+      const keep = reusableProfile(previous[i], i, expected, iconOf);
+      if (keep) { profiles.push(keep); continue; }
+      onProgress?.(i, count);
+      profiles.push(await device.getProfile(i));
+      reloaded.push(i);
+    }
     state.profiles = profiles;
     if (state.activeProfileIdx >= profiles.length) state.activeProfileIdx = 0;
 
@@ -179,6 +210,7 @@ export async function syncFromDevice() {
     state.syncing = false;
     notify();
   }
+  return reloaded;
 }
 
 // ---------- Páginas ----------
@@ -194,6 +226,10 @@ export async function selectPage(idx) {
   if (prof) prof.pageIdx = idx;
   state.pageIdx = idx;
   notify();
+
+  // Sin teclado esto es solo mirar: la app enseña la copia local y no deja
+  // editarla, así que no hay ninguna página que alinear con nadie.
+  if (!device.isConnected()) return;
 
   try {
     await device.setPage(idx);

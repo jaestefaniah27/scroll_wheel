@@ -3,7 +3,7 @@
 import * as device from '../device.js';
 import * as updater from '../updater.js';
 import { state, markDirty, syncFromDevice } from '../store.js';
-import { toast } from '../ui.js';
+import { toast, requireDevice } from '../ui.js';
 import { runExport, runImport } from '../backup.js';
 import * as cache from '../oled-cache.js';
 import * as wheelDial from '../wheel-dial.js';
@@ -33,6 +33,7 @@ export function init() {
   document.querySelectorAll('#timeout-selector .opt-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const val = Number(btn.dataset.val);
+      if (!requireDevice()) return;
       try {
         await device.setTimeout_(val);
         state.timeout = val;
@@ -61,6 +62,7 @@ export function init() {
   });
 
   document.getElementById('btn-factory-reset').addEventListener('click', async () => {
+    if (!requireDevice()) return;
     if (!confirm('Se restaurarán los perfiles, iconos y la calibración de fábrica en la memoria del teclado.\n\nEl cambio no será permanente hasta que pulses "Guardar en Flash".\n\n¿Continuar?')) return;
     try {
       await device.resetDefaults();

@@ -20,6 +20,20 @@ foreach ($t in @('test_hid_out', 'test_wheel')) {
     if ($LASTEXITCODE -ne 0) { $failed = $true }
 }
 
+# La huella con la que el teclado y la app deciden si hay que sincronizar esta
+# escrita dos veces, en C++ y en JavaScript. Si dejan de dar lo mismo, la app
+# vuelve a descargarlo todo en cada conexion sin que nadie se entere.
+Write-Host "`nComparando la huella de la app con la del firmware..." -ForegroundColor Gray
+& g++ -O1 -Wall -Wextra -Wno-unused-function -I"$here\..\..\include" `
+      -o "$here\test_config_hash.exe" "$here\test_config_hash.cpp"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "No compila." -ForegroundColor Red
+    $failed = $true
+} else {
+    & node "$here\test_config_hash.mjs"
+    if ($LASTEXITCODE -ne 0) { $failed = $true }
+}
+
 # El descriptor HID: si esta mal formado, Windows no reconoce el teclado.
 Write-Host "`nValidando el descriptor HID..." -ForegroundColor Gray
 & python "$here\check_descriptor.py"

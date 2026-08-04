@@ -42,16 +42,18 @@ function settlePending(line) {
   return false;
 }
 
+// Lo que se le dice al usuario cuando intenta cambiar algo sin el teclado
+// delante. Se exporta para que las vistas puedan reconocerlo y no tratarlo como
+// un error inesperado.
+export const ERR_OFFLINE = 'Conecta el Orby para poder editar la configuración';
+
 function request(command, { match, collect, result, timeout = 4000 } = {}) {
-  // Sin teclado no hay nada que esperar: la petición se da por hecha al momento
-  // en vez de agotar cuatro segundos y acabar en un aviso de error. Es lo que
-  // permite seguir editando perfiles y secuencias con el Orby desenchufado: el
-  // cambio se queda en el modelo de la app y en el espejo del PC (mirror.js), y
-  // se sube al reconectar.
-  if (!linkUp) {
-    emit('tx', command);
-    return Promise.resolve(null);
-  }
+  // Sin teclado no se manda nada. Antes la petición se daba por hecha y el
+  // cambio se quedaba solo en el PC para subirlo al reconectar, pero eso creaba
+  // dos versiones de la misma configuración y alguien tenía que perder: ahora
+  // la app enseña la copia local en modo lectura y no deja tocarla hasta que el
+  // Orby está conectado (ver mirror.js).
+  if (!linkUp) return Promise.reject(new Error(ERR_OFFLINE));
 
   window.orby.sendCommand(command);
   emit('tx', command);
@@ -59,7 +61,7 @@ function request(command, { match, collect, result, timeout = 4000 } = {}) {
   if (!match) return Promise.resolve(null);
 
   return new Promise((resolve, reject) => {
-    const req = { match, collect, resolve, result };
+    const req = { match, collect, resolve, reject, result };
     req.timer = setTimeout(() => {
       const i = pending.indexOf(req);
       if (i >= 0) pending.splice(i, 1);
@@ -159,10 +161,6 @@ function profileMutation(command) {
     timeout: 6000,
     match: (l) => l.startsWith('PROFILE:ADDED:') || l.startsWith('PROFILE:DELETED:') || l.startsWith('ERR:'),
   }).then((line) => {
-    // Sin teclado no se pueden crear ni borrar perfiles: cambian los índices de
-    // todo lo demás, así que hacerlo solo en el PC dejaría el espejo apuntando
-    // a perfiles que no existen. El resto de la edición sí funciona sin él.
-    if (line === null) throw new Error('Hace falta el teclado conectado para crear o borrar perfiles');
     if (line.startsWith('ERR:')) throw new Error(line.slice(4));
     return parseInt(line.slice(line.lastIndexOf(':') + 1), 10);
   });
@@ -207,6 +205,31 @@ export function getState() {
     match: (line) => line === 'STATE:END',
     result: state,
   });
+}
+
+// Huella de la configuración del teclado: una por perfil y una global. Sirve
+// para saber si la copia del PC sigue valiendo sin descargarla y compararla
+// entera (ver hash.js e include/config_hash.h).
+//
+// Devuelve null si el firmware no la conoce, para que quien llama vuelva al
+// camino de siempre —descargarlo todo— en vez de quedarse esperando.
+export function getHash() {
+  const out = { count: 0, per: [], all: null };
+  return request('GET_HASH', {
+    timeout: 8000,
+    collect: (line) => {
+      if (line.startsWith('HASH:PROFILES:')) { out.count = parseInt(line.slice(14), 10); return true; }
+      if (line.startsWith('HASH:P:')) {
+        const [idx, hex] = line.slice(7).split(':');
+        out.per[parseInt(idx, 10)] = hex;
+        return true;
+      }
+      if (line.startsWith('HASH:ALL:')) { out.all = line.slice(9); return true; }
+      return false;
+    },
+    match: (line) => line === 'HASH:END' || line.startsWith('ERR:'),
+    result: out,
+  }).catch(() => null);
 }
 
 // Una página en blanco: 20 etiquetas, 24 acciones de tecla, 16 de mando (8 por
@@ -362,6 +385,41 @@ export async function getOled(profile, slot) {
   }).then((line) => (found ? bytes : null), () => null);
 }
 
+// Igual que getOled pero pidiendo una página concreta, sin tocar la que el
+// teclado tenga puesta. GET_OLED solo sabe leer la activa, así que llenar la
+// caché de iconos obligaba a ir cambiando de página —moviendo las pantallas del
+// teclado bajo los dedos del usuario— y a leer solo un perfil cada vez. Con
+// esto se descargan todos de golpe al conectar y navegar ya no espera a nada.
+//
+// Devuelve null si el hueco usa etiqueta de texto, y también si el firmware no
+// conoce el comando: quien llama comprueba antes la capacidad HASH del ACK.
+export function getOledPage(profile, page, slot) {
+  const bytes = new Uint8Array(360);
+  let found = false;
+  const prefix = `OLEDDATA:${profile}:P${page}:${slot}:`;
+
+  return request(`GET_OLED_PG:${profile}:${page}:${slot}`, {
+    timeout: 6000,
+    collect: (line) => {
+      if (!line.startsWith(prefix)) return false;
+      const rest = line.slice(prefix.length);
+      if (rest === 'NONE' || rest === 'END') return false; // los resuelve `match`
+
+      const sep = rest.indexOf(':');
+      if (sep < 0) return false;
+      const offset = parseInt(rest.slice(0, sep), 10);
+      const hex = rest.slice(sep + 1);
+      for (let i = 0; i + 1 < hex.length; i += 2) {
+        bytes[offset + i / 2] = parseInt(hex.substr(i, 2), 16);
+      }
+      found = true;
+      return true;
+    },
+    match: (line) => line === `${prefix}END` || line === `${prefix}NONE` || line.startsWith('ERR:'),
+    result: null,
+  }).then(() => (found ? bytes : null), () => null);
+}
+
 // Envía un framebuffer de 360 bytes troceado en chunks que caben en el buffer
 // de comandos del firmware (512 bytes).
 const OLED_CHUNK_BYTES = 90;
@@ -387,11 +445,13 @@ export function init() {
   window.orby.onConnected((info) => { linkUp = true; emit('connected', info); });
   window.orby.onDisconnected(() => {
     linkUp = false;
-    // Rechazamos lo pendiente para que ninguna vista se quede colgada.
+    // Lo que estuviera a medias se corta con error, no con un resultado vacío:
+    // una descarga interrumpida devolvía null y quien la esperaba lo guardaba
+    // como si fuese un perfil de verdad.
     while (pending.length) {
       const req = pending.pop();
       clearTimeout(req.timer);
-      req.resolve(null);
+      req.reject(new Error(ERR_OFFLINE));
     }
     emit('disconnected');
   });

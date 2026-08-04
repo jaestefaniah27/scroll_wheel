@@ -1,22 +1,22 @@
 // Espejo local de lo que hay en el teclado.
 //
 // Hasta ahora los perfiles solo existían en la memoria del Orby: sin él
-// enchufado la app se abría vacía y no se podía tocar nada. Aquí se guarda en
-// el PC una copia completa —nombres, etiquetas, atajos, mandos, rueda, páginas
-// e iconos OLED— después de cada cambio, con el mismo formato que la copia de
-// seguridad manual (backup.js), para no tener dos maneras distintas de
-// representar lo mismo.
+// enchufado la app se abría vacía. Aquí se guarda en el PC una copia completa
+// —nombres, etiquetas, atajos, mandos, rueda, páginas e iconos OLED— después de
+// cada cambio, con el mismo formato que la copia de seguridad manual
+// (backup.js), para no tener dos maneras distintas de representar lo mismo.
 //
-// Con esa copia:
-//   - la app arranca enseñando los perfiles aunque no haya teclado,
-//   - se pueden editar teclas, etiquetas, iconos, mandos, rueda y secuencias
-//     sin él (los comandos que irían por el puerto serie se dan por hechos, ver
-//     el cortocircuito de device.js),
-//   - al reconectar se pregunta si volcar esos cambios al teclado.
+// Esa copia sirve para dos cosas:
 //
-// Lo que NO se puede hacer sin el teclado es crear o borrar perfiles y páginas:
-// eso desplaza los índices de todo lo demás y dejaría el espejo apuntando a
-// huecos que no existen. device.js lo rechaza con un aviso claro.
+//   - Abrir la app sin el teclado y ver la configuración entera. En modo
+//     LECTURA: sin el Orby delante no se deja cambiar nada, porque entonces
+//     habría dos versiones distintas de lo mismo y al reconectar alguien tendría
+//     que perder. device.js rechaza cualquier comando de edición sin conexión.
+//
+//   - Evitar descargarlo todo en cada conexión. El teclado resume su
+//     configuración con GET_HASH y la app calcula la misma huella sobre esta
+//     copia (hash.js): los perfiles cuya huella coincide no se piden. Antes se
+//     leían siempre los perfiles enteros y los veinte iconos de cada uno.
 //
 // Las secuencias/macros del PC ya vivían en esta misma configuración local
 // (`macros`, ver profiles.js), así que no hacía falta espejarlas: nunca han
@@ -24,14 +24,13 @@
 
 import { state, notify, subscribe, pageCountOf } from './store.js';
 import { blankPage, bindPageAliases } from './device.js';
-import { snapshotFromState, importAll } from './backup.js';
+import { snapshotFromState } from './backup.js';
 import * as cache from './oled-cache.js';
 
 // Hasta que no se haya leído (o descartado) el espejo del disco no se guarda
 // nada: si no, el primer notify() de una app aún vacía machacaría la copia
 // buena con cero perfiles.
 let ready = false;
-let offlineEdits = false;
 let saveTimer = null;
 
 const SAVE_DELAY_MS = 400;
@@ -45,8 +44,16 @@ const ICONS_VERSION = 2;
 
 // --- Carga ------------------------------------------------------------------
 
-// Lee el espejo y, si no hay teclado, lo vuelca en el estado de la app para
-// poder trabajar con él. Devuelve true si se ha usado para rellenar la app.
+// Lee el espejo del disco y lo vuelca en el estado de la app. Devuelve true si
+// había copia y se ha usado.
+//
+// Se carga SIEMPRE, haya teclado o no, y cuanto antes: con el Orby conectado es
+// justo lo que se compara contra las huellas de GET_HASH para no descargar los
+// perfiles que no han cambiado. Si algo no cuadra, syncFromDevice lo sustituye
+// por lo que diga el teclado, así que una copia vieja no puede hacer daño.
+//
+// Lo único que no se pisa es una configuración ya cargada: si el teclado se ha
+// adelantado, lo suyo manda.
 export async function init() {
   let stored = null;
   try {
@@ -57,12 +64,7 @@ export async function init() {
 
   ready = true;
   if (!stored?.snapshot?.profiles?.length) return false;
-
-  offlineEdits = Boolean(stored.offlineEdits);
-
-  // Con teclado conectado manda el teclado: syncFromDevice ya habrá traído (o
-  // estará trayendo) lo de verdad, y pisarlo con la copia sería ir hacia atrás.
-  if (state.connected) return false;
+  if (state.profiles.length) return false;
 
   hydrate(stored);
   notify();
@@ -144,9 +146,10 @@ function fill(dst, src, empty) {
 export function watch() {
   subscribe(() => {
     if (!ready || state.syncing || !state.profiles.length) return;
-    // Un cambio marcado como pendiente sin teclado delante es, por definición,
-    // una edición que el Orby todavía no conoce.
-    if (state.dirty && !state.connected) offlineEdits = true;
+    // Sin teclado no se guarda: lo que hay en pantalla es esta misma copia y no
+    // se puede editar, así que reescribirla no aporta nada y sí puede estropear
+    // una copia buena si el estado se quedó a medias.
+    if (!state.connected) return;
     schedule();
   });
 }
@@ -163,7 +166,6 @@ export function save() {
     window.orby.setConfig({
       deviceMirror: {
         savedAt: new Date().toISOString(),
-        offlineEdits,
         snapshot: snapshotFromState(),
         icons: cache.dump(),
         iconsVersion: ICONS_VERSION,
@@ -172,31 +174,4 @@ export function save() {
   } catch (err) {
     console.error('No se pudo guardar el espejo local:', err);
   }
-}
-
-// --- Cambios hechos sin el teclado ------------------------------------------
-
-// Devuelve si había ediciones sin subir y las da por atendidas de una vez: hay
-// que leerlo ANTES de que un notify() con el teclado ya conectado pase por
-// aquí, o el aviso se perdería.
-export function takeOfflineEdits() {
-  const had = offlineEdits;
-  offlineEdits = false;
-  return had;
-}
-
-export function hasOfflineEdits() {
-  return offlineEdits;
-}
-
-// Sube al teclado lo que se editó sin él. Reutiliza el restaurador de copias de
-// seguridad, que ya sabe crear las páginas que falten y escribir perfil a
-// perfil; los iconos que suba son los de la página activa de cada perfil, igual
-// que en una restauración normal.
-export async function push(onProgress = () => {}) {
-  const stored = (await window.orby.getConfig())?.deviceMirror;
-  if (!stored?.snapshot?.profiles?.length) return;
-  await importAll(stored.snapshot, onProgress);
-  offlineEdits = false;
-  save();
 }

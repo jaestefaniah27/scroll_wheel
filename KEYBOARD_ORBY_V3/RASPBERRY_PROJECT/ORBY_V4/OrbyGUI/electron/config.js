@@ -36,9 +36,10 @@ const DEFAULTS = {
 
   // Espejo de lo que hay en el teclado (perfiles, páginas, etiquetas, atajos,
   // mandos, rueda e iconos OLED), en el mismo formato que una copia de
-  // seguridad. Permite abrir la app y editar sin el Orby delante; al reconectar
-  // se ofrece volcarlo. Lo escribe src/mirror.js.
-  // { savedAt, offlineEdits, snapshot: {...}, icons: { "perfil:pagina:hueco": hex } }
+  // seguridad. Permite abrir la app sin el Orby delante (en modo lectura) y,
+  // con él conectado, evita descargar los perfiles que no han cambiado:
+  // GET_HASH dice cuáles son. Lo escribe src/mirror.js.
+  // { savedAt, snapshot: {...}, icons: { "perfil:pagina:hueco": hex } }
   deviceMirror: null,
 };
 

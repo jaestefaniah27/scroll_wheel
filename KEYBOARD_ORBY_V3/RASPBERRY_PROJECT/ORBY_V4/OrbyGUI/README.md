@@ -35,8 +35,38 @@ incrustados. Funciona sin conexión.
 
 Al arrancar busca cada 3 s un puerto serie cuyo `vendorId` sea `cafe` o cuyo
 `productId` sea `4005` / `4006`, y le manda `ACK`. Si el dispositivo contesta
-`ORBY_V4:...`, se conecta y descarga con `GET_PROFILE` tantos perfiles como diga
-el teclado (`STATE:PROFILES:<cuántos>:<máximo>`).
+`ORBY_V4:...`, se conecta y sincroniza tantos perfiles como diga el teclado
+(`STATE:PROFILES:<cuántos>:<máximo>`).
+
+### Copia local, huellas y modo lectura
+
+La app guarda en el PC una copia completa de la configuración del teclado
+(`deviceMirror` en el archivo de ajustes; lo escribe `src/mirror.js`). Sirve
+para dos cosas:
+
+- **Abrir la app sin el Orby enchufado** y ver perfiles, páginas, atajos e
+  iconos. En **modo lectura**: sin el teclado delante no se deja cambiar nada,
+  porque entonces habría dos versiones distintas de la misma configuración y al
+  reconectar alguien tendría que perder sus cambios. Se avisa con un cartel fijo
+  abajo a la izquierda, y cualquier intento de edición lo corta
+  `requireDevice()` (`src/ui.js`) antes de tocar el modelo.
+
+- **No descargarlo todo en cada conexión.** El teclado resume su configuración
+  con `GET_HASH` (un CRC32 por perfil y uno global) y la app calcula la misma
+  huella sobre su copia (`src/hash.js`). Solo se piden con `GET_PROFILE` los
+  perfiles cuya huella no coincide. Antes se leían siempre los perfiles enteros
+  y sus veinte iconos uno a uno.
+
+La serialización sobre la que se calcula el CRC está escrita dos veces, en
+`include/config_hash.h` (firmware) y en `src/hash.js` (app).
+`tools/test/test_config_hash.cpp` + `.mjs` comprueban que las dos dan lo mismo;
+si dejasen de coincidir, la app volvería a descargarlo todo sin que nadie se
+enterase.
+
+Nada más sincronizar, la app se trae **todos** los iconos de **todas** las
+páginas de **todos** los perfiles con `GET_OLED_PG`, en segundo plano. Así
+cambiar de perfil o de pestaña ya no dispara veinte idas y vueltas por el CDC ni
+deja los huecos en blanco un segundo.
 
 > El PID del firmware 2.0 es **0x4006**. Se cambió a propósito: Windows cachea el
 > descriptor de informe HID por VID/PID, y sin cambiarlo seguiría usando el
@@ -308,8 +338,9 @@ USB CDC, 115200 baudios, líneas terminadas en `\n`.
 
 | Comando | Efecto |
 |---|---|
-| `ACK` | Handshake. Responde `ORBY_V4:FW=3.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=<n>:MAXPROFILES=16:MODE=<modo>` |
+| `ACK` | Handshake. Responde `ORBY_V4:FW=4.1:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=<n>:MAXPROFILES=16:MAXPAGES=4:MACROS=1:HASH=1:MODE=<modo>` |
 | `GET_STATE` | Vuelca perfil, nº de perfiles, brillo, timeout, modo, SUPER y scroll. Termina en `STATE:END` |
+| `GET_HASH` | Huella CRC32 de la configuración: `HASH:PROFILES:<n>`, un `HASH:P:<idx>:<hex>` por perfil y `HASH:ALL:<hex>`. Termina en `HASH:END` |
 | `SET_PROFILE:<idx>` | Cambia el perfil activo |
 | `ADD_PROFILE` | Crea un perfil vacío. Responde `PROFILE:ADDED:<idx>` y `PROFILES:OK:<n>:<activo>` |
 | `DUP_PROFILE:<idx>` | Duplica un perfil con sus iconos |
@@ -328,7 +359,8 @@ USB CDC, 115200 baudios, líneas terminadas en `\n`.
 | `SET_KEYMAP:<perfil>:<0-23>:<mod>:<key>` | Acción. Huecos 0-11 normal, 12-23 SUPER |
 | `SET_ROTARY:<perfil>:<0-15>:<tipo>:<mod>:<key>` | Acción de encoder o rueda (ver abajo) |
 | `OLED_CHUNK:<perfil>:<0-19>:<offset>:<hex>` | Trozo del bitmap de 360 bytes |
-| `GET_OLED:<perfil>:<0-19>` | Vuelca el bitmap guardado en líneas `OLEDDATA:…`, o `NONE` si el hueco usa etiqueta de texto |
+| `GET_OLED:<perfil>:<0-19>` | Vuelca el bitmap guardado en líneas `OLEDDATA:…`, o `NONE` si el hueco usa etiqueta de texto. Lee la página que el teclado tenga puesta |
+| `GET_OLED_PG:<perfil>:<página>:<0-19>` | Igual, pero de una página concreta y sin cambiar la puesta. Responde `OLEDDATA:<perfil>:P<página>:<hueco>:…` |
 | `OLED_CLEAR:<perfil>:<hueco\|255>` | Borra un icono (255 = todos los del perfil) |
 | `SAVE_STATE` | Escribe todo en Flash |
 | `RESET_DEFAULTS` | Restaura fábrica en RAM (requiere `SAVE_STATE` para fijarlo) |

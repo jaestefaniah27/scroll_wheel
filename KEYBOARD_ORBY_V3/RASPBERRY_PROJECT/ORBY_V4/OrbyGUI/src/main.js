@@ -29,6 +29,11 @@ const VIEWS = {
 
 let activeView = 'view-dashboard';
 
+// Se resuelve cuando la copia local ya está en memoria. El teclado puede
+// conectarse antes de que termine de leerse del disco, y comparar huellas
+// contra una lista de perfiles vacía haría descargarlo todo sin motivo.
+let mirrorReady = Promise.resolve();
+
 function initChrome() {
   document.getElementById('btn-minimize').addEventListener('click', () => window.orby.minimize());
   document.getElementById('btn-maximize').addEventListener('click', () => window.orby.maximize());
@@ -154,6 +159,12 @@ function renderChrome() {
     text.textContent = 'Desconectado';
   }
 
+  // Sin teclado la app enseña la copia local, pero no deja tocarla (ver
+  // requireDevice en ui.js). Hay que decirlo, o parece que la app se ha quedado
+  // tonta cuando un clic no hace nada.
+  document.getElementById('readonly-banner').classList.toggle('hidden', state.connected);
+  document.body.classList.toggle('read-only', !state.connected);
+
   if (state.dirty && state.connected) scheduleAutoSave();
 
   const save = document.getElementById('btn-save-flash');
@@ -162,12 +173,33 @@ function renderChrome() {
   save.disabled = !state.connected;
 }
 
+// Todos los iconos de todas las páginas de todos los perfiles, de una vez y en
+// segundo plano. La app ya se puede usar mientras tanto; lo que llega se va
+// pintando. Así cambiar de perfil o de pestaña no dispara veinte peticiones ni
+// deja los huecos en blanco durante un segundo.
+//
+// Sin GET_OLED_PG (firmware anterior al 4.1) no se puede: hay que conformarse
+// con los del perfil activo, que es lo que había.
+function preloadIcons(canHash) {
+  if (!canHash) {
+    cache.loadProfile(state.activeProfileIdx);
+    return;
+  }
+
+  cache.preloadAll((done, total) => {
+    if (done === total) toast('Iconos descargados', 'info', 1500);
+  }).then(() => {
+    VIEWS[activeView]?.render?.();
+    // El espejo del disco se guarda con los iconos ya dentro: así la próxima
+    // apertura sin teclado los enseña, y la próxima conexión puede compararlos.
+    mirror.save();
+  }).catch((err) => {
+    console.error('No se pudieron precargar los iconos:', err);
+  });
+}
+
 function wireDevice() {
   device.on('connected', async (info) => {
-    // Antes de tocar el estado: en cuanto `connected` valga true, cualquier
-    // notify() daría por buenos los cambios hechos sin el teclado.
-    const offlineEdits = mirror.takeOfflineEdits();
-
     state.connected = true;
     state.deviceInfo = info;
     notify();
@@ -184,28 +216,44 @@ function wireDevice() {
           + 'Flashea la versión 3.0 para esas funciones', 'error', 9000);
     }
 
-    // Se editó algo con el teclado desenchufado: o se sube al Orby, o se
-    // descarta leyendo lo que él tenga. Preguntar es obligado, porque las dos
-    // opciones pisan datos reales del usuario.
-    if (offlineEdits && confirm(
-        'Editaste la configuración con el teclado desconectado.\n\n'
-      + '¿Quieres volcar esos cambios al Orby ahora?\n\n'
-      + 'Si dices que no, se descartan y se lee lo que tenga el teclado.')) {
-      try {
-        await mirror.push((msg) => toast(msg, 'info', 1200));
-        toast('Cambios volcados al teclado');
-      } catch (err) {
-        toast(`No se pudieron volcar los cambios: ${err.message}`, 'error', 9000);
-      }
-    }
+    // La copia del PC tiene que estar cargada antes de comparar huellas: es
+    // contra ella contra lo que se decide qué hace falta descargar.
+    await mirrorReady;
+
+    // GET_HASH y GET_OLED_PG los añadió el firmware 4.1. Con uno anterior se
+    // sigue haciendo lo de siempre: descargarlo todo y leer los iconos de la
+    // página activa según hagan falta.
+    const canHash = info?.hash === '1';
 
     try {
-      await syncFromDevice();
+      let expected = null;
+      if (canHash) {
+        const hashes = await device.getHash();
+        if (hashes?.all) expected = hashes.per;
+      }
+
+      const reloaded = await syncFromDevice({
+        expected,
+        iconOf: cache.get,
+        onProgress: (i, total) => toast(`Leyendo perfil ${i + 1} de ${total}…`, 'info', 900),
+      });
+
+      // Un perfil que se ha vuelto a leer es un perfil que había cambiado: sus
+      // iconos en caché son los de antes. Y los de los perfiles que la copia
+      // traía de más ya no valen para nada.
+      for (const idx of reloaded) cache.dropProfile(idx);
+      cache.pruneBeyond(state.profiles.length);
+
       VIEWS[activeView]?.render?.();
-      toast('Perfiles cargados desde el teclado');
+      toast(reloaded.length
+        ? 'Perfiles cargados desde el teclado'
+        : 'La copia del PC está al día: no ha hecho falta descargar nada');
     } catch (err) {
       toast(`No se pudo leer la configuración: ${err.message}`, 'error');
+      return;
     }
+
+    preloadIcons(canHash);
 
     // No bloquea el arranque: si el teclado lleva firmware con secuencias
     // propias, reenvía las que haya (cubre un teclado recién reflasheado, cuya
@@ -272,13 +320,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Espejo local de los perfiles: sin él, abrir la app sin el teclado enchufado
-  // no enseñaba nada y no había nada que editar. Se registra el guardado antes
-  // de cargarlo para que cualquier cambio posterior quede recogido.
+  // no enseñaba nada. Se registra el guardado antes de cargarlo para que
+  // cualquier cambio posterior quede recogido.
+  //
+  // La promesa se guarda porque el enganche de conexión la espera: hasta que la
+  // copia no está cargada no se puede comparar con las huellas del teclado, y
+  // sin eso volvería a descargarse todo en cada arranque.
   mirror.watch();
-  mirror.init().then((hydrated) => {
+  mirrorReady = mirror.init().then((hydrated) => {
     if (!hydrated) return;
     VIEWS[activeView]?.render?.();
-    toast('Perfiles cargados de la copia del PC (teclado no conectado)', 'info', 4000);
+    if (!state.connected) toast('Configuración cargada de la copia del PC; conecta el Orby para editarla', 'info', 5000);
   });
 
   dashboard.init();

@@ -15,7 +15,7 @@ import * as device from '../device.js';
 import { state, markDirty, subscribe, KEY_TO_SCREEN, hasPages, pageCountOf,
          ensureEditTarget } from '../store.js';
 import { icon } from '../icons.js';
-import { toast } from '../ui.js';
+import { toast, requireDevice } from '../ui.js';
 import { goTo } from '../nav.js';
 import * as fb from '../oled-fb.js';
 import * as cache from '../oled-cache.js';
@@ -692,7 +692,7 @@ function updateXfLabels() {
 // tecla, que es de donde se entró. Si falla el envío no se sale: si no, el
 // dibujo se perdería sin que la tecla se hubiera enterado.
 async function upload() {
-  if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
+  if (!requireDevice()) return;
   if (slot() < 0) { toast('Esa tecla no tiene pantalla', 'error'); return; }
 
   const btn = document.getElementById('btn-oled-upload');
@@ -716,6 +716,7 @@ async function upload() {
 }
 
 async function resetSlot() {
+  if (!requireDevice()) return;
   try {
     await ensureEditTarget(view.profile, view.page);
     await device.clearOled(view.profile, slot());
@@ -733,7 +734,7 @@ async function resetSlot() {
 }
 
 async function loadFromDevice() {
-  if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
+  if (!requireDevice()) return;
   await ensureEditTarget(view.profile, view.page);
   const bytes = await device.getOled(view.profile, slot());
   if (!bytes) { toast('Esa tecla no tiene icono guardado', 'info'); return; }

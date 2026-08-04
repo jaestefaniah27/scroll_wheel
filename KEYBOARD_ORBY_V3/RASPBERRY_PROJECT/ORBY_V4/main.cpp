@@ -11,6 +11,7 @@
 #include "tusb.h"
 #include "class/cdc/cdc_device.h"
 #include "pinout.h"
+#include "config_hash.h"
 #include "hardware_encoder.h"
 #include "hardware_oled.h"
 #include "oled_text.h"
@@ -756,6 +757,37 @@ static void load_oled_staging(uint8_t profile, uint8_t page) {
     staging_profile = profile;
     staging_page    = page;
     staging_dirty   = false;
+}
+
+// ==========================================
+// HUELLA DE LA CONFIGURACIÓN (CRC32)
+// ==========================================
+// La serialización canónica y el CRC viven en include/config_hash.h, compartidos
+// con la prueba del PC (tools/test/test_config_hash.cpp) y espejados en la app
+// (OrbyGUI/src/hash.js). Aquí solo se enganchan a los datos del firmware.
+//
+// Los iconos salen del búfer de preparación si su página es la que se está
+// editando, así que uno recién subido y todavía sin grabar ya cuenta: la app
+// también lo tiene en su modelo.
+static uint32_t crc32_profile(uint8_t idx) {
+    const Profile& p = profiles[idx];
+    uint8_t pages = p.page_count;
+    if (pages < 1) pages = 1;
+    if (pages > MAX_PAGES) pages = MAX_PAGES;
+
+    return crc32_profile_of(
+        p.name, pages, p.pages,
+        [idx](uint8_t pg) { return custom_oled_mask[idx][pg]; },
+        [idx](uint8_t pg, uint8_t slot) { return oled_slot_ptr(idx, pg, slot); },
+        // Un perfil lleno son 28 KB de bitmaps: se refresca el perro guardián
+        // por página para que un GET_HASH con todo ocupado no lo dispare.
+        []() { watchdog_update(); });
+}
+
+// Deja en `out` la huella de cada perfil y devuelve la global.
+static uint32_t crc32_snapshot(uint32_t* out) {
+    for (uint8_t i = 0; i < profile_count; i++) out[i] = crc32_profile(i);
+    return crc32_snapshot_of((uint8_t)profile_count, (uint8_t)reposo_timeout_min, out);
 }
 
 // Los perfiles de fábrica solo declaran teclas y etiquetas; las acciones
@@ -2126,6 +2158,31 @@ static void dump_profile(uint8_t idx) {
     cdc_printf("PROF:%d:END\n", idx);
 }
 
+// Vuelca un bitmap en hexadecimal, troceado para que cada línea quepa en el
+// búfer de cdc_printf. `head` es el prefijo que identifica la respuesta, que
+// cambia según el comando (GET_OLED no lleva página y GET_OLED_PG sí).
+static void dump_oled_slot(const char* head, uint8_t profile, uint8_t page, uint8_t slot) {
+    if (!oled_slot_used(profile, page, slot)) {
+        cdc_printf("%s:NONE\n", head);
+        return;
+    }
+
+    static const char HEXCHARS[] = "0123456789abcdef";
+    const uint8_t* src = oled_slot_ptr(profile, page, slot);
+    char hex[181];
+
+    for (int off = 0; off < OLED_FB_SIZE; off += 90) {
+        int n = (OLED_FB_SIZE - off < 90) ? (OLED_FB_SIZE - off) : 90;
+        for (int i = 0; i < n; i++) {
+            hex[i * 2]     = HEXCHARS[src[off + i] >> 4];
+            hex[i * 2 + 1] = HEXCHARS[src[off + i] & 0x0F];
+        }
+        hex[n * 2] = 0;
+        cdc_printf("%s:%d:%s\n", head, off, hex);
+    }
+    cdc_printf("%s:END\n", head);
+}
+
 void process_command(const char* cmd) {
     // ---------- Descubrimiento y estado ----------
     if (strncmp(cmd, "ACK", 3) == 0) {
@@ -2135,9 +2192,28 @@ void process_command(const char* cmd) {
         // comandos SET_MACRO_STEP/GET_MACRO/...); sin él, la app no debe
         // intentar subirlas o cada intento acabaría esperando una respuesta
         // que nunca llega.
-        cdc_printf("ORBY_V4:FW=4.0:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MODE=%s\n",
+        // HASH=1 dice que este firmware sabe resumir su configuración con
+        // GET_HASH y servir iconos de cualquier página con GET_OLED_PG. Sin él
+        // la app tiene que releerlo todo al conectar, como hasta ahora.
+        cdc_printf("ORBY_V4:FW=4.1:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:HASH=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
+        return;
+    }
+
+    // GET_HASH: resumen de toda la configuración, para que la app sepa si su
+    // copia local sigue valiendo sin tener que descargarla entera y compararla.
+    // Una huella por perfil y una global; ver crc32_snapshot.
+    if (strcmp(cmd, "GET_HASH") == 0) {
+        uint32_t per[MAX_PROFILES] = { 0 };
+        const uint32_t all = crc32_snapshot(per);
+
+        cdc_printf("HASH:PROFILES:%d\n", (int)profile_count);
+        for (uint8_t i = 0; i < profile_count; i++) {
+            cdc_printf("HASH:P:%d:%08lx\n", (int)i, (unsigned long)per[i]);
+        }
+        cdc_printf("HASH:ALL:%08lx\n", (unsigned long)all);
+        cdc_printf("HASH:END\n");
         return;
     }
 
@@ -2504,25 +2580,31 @@ void process_command(const char* cmd) {
         if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
         uint8_t page = cmd_page((uint8_t)idx);
-        if (!oled_slot_used((uint8_t)idx, page, (uint8_t)slot)) {
-            cdc_printf("OLEDDATA:%d:%d:NONE\n", idx, slot);
-            return;
-        }
+        char head[24];
+        snprintf(head, sizeof(head), "OLEDDATA:%d:%d", idx, slot);
+        dump_oled_slot(head, (uint8_t)idx, page, (uint8_t)slot);
+        return;
+    }
 
-        static const char HEXCHARS[] = "0123456789abcdef";
-        const uint8_t* src = oled_slot_ptr((uint8_t)idx, page, (uint8_t)slot);
-        char hex[181];
+    // GET_OLED_PG:<perfil>:<página>:<hueco 0-19>
+    // Igual que GET_OLED pero con la página escrita en el propio comando, así
+    // que no toca la que el teclado tenga puesta. GET_OLED solo sabe leer la
+    // activa, y por eso la app tenía que ir cambiándola —moviendo las pantallas
+    // del teclado bajo los dedos del usuario— para llenar su caché de iconos.
+    // Con esto puede descargarlos todos de una vez al conectar y navegar luego
+    // entre perfiles y páginas sin esperas.
+    if (strncmp(cmd, "GET_OLED_PG:", 12) == 0) {
+        int idx = 0, page = 0, slot = 0;
+        const char* p = next_field(cmd + 12, &idx);
+        p = next_field(p, &page);
+        p = next_field(p, &slot);
+        if (!p || idx < 0 || idx >= (int)profile_count
+            || page < 0 || page >= (int)profiles[idx].page_count
+            || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
-        for (int off = 0; off < OLED_FB_SIZE; off += 90) {
-            int n = (OLED_FB_SIZE - off < 90) ? (OLED_FB_SIZE - off) : 90;
-            for (int i = 0; i < n; i++) {
-                hex[i * 2]     = HEXCHARS[src[off + i] >> 4];
-                hex[i * 2 + 1] = HEXCHARS[src[off + i] & 0x0F];
-            }
-            hex[n * 2] = 0;
-            cdc_printf("OLEDDATA:%d:%d:%d:%s\n", idx, slot, off, hex);
-        }
-        cdc_printf("OLEDDATA:%d:%d:END\n", idx, slot);
+        char head[28];
+        snprintf(head, sizeof(head), "OLEDDATA:%d:P%d:%d", idx, page, slot);
+        dump_oled_slot(head, (uint8_t)idx, (uint8_t)page, (uint8_t)slot);
         return;
     }
 

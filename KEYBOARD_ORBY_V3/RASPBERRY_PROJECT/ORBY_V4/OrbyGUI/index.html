@@ -267,6 +267,17 @@
     </main>
   </div>
 
+  <!-- Sin el Orby delante la app enseña la copia local del PC, pero no deja
+       tocarla: si se pudiera editar sin él, al reconectar habría dos versiones
+       distintas de la misma configuración y alguien tendría que perder sus
+       cambios. Ver src/mirror.js.
+       Va fijo abajo a la izquierda para no pelearse con los avisos, que salen
+       por la derecha, ni robarle alto a la vista. -->
+  <div class="readonly-banner hidden" id="readonly-banner">
+    <span data-icon="lock" data-icon-size="15"></span>
+    <span>Solo lectura: conecta el Orby por USB para editar la configuración</span>
+  </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

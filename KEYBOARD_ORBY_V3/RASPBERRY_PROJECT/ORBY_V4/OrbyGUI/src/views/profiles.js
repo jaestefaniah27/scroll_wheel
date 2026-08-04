@@ -21,7 +21,7 @@ import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, GOTO_PAGE_MODIFIER, PAG
          MACRO_MODIFIER, KEY_GROUPS, describeAction, eventToAction,
          ROTARY_TYPES, ROTARY_SLOTS, isScrollType, describeRotary } from '../hid-keys.js';
 import { icon } from '../icons.js';
-import { toast } from '../ui.js';
+import { toast, requireDevice } from '../ui.js';
 import { goTo } from '../nav.js';
 import * as cache from '../oled-cache.js';
 import * as fb from '../oled-fb.js';
@@ -562,7 +562,7 @@ function onInput(e) {
     clearTimeout(labelDebounce);
     labelDebounce = setTimeout(async () => {
       const prof = currentProfile();
-      if (!prof) return;
+      if (!prof || !requireDevice()) return;
       prof.name = text;
       try {
         await device.setName(view.editingProfile, text);
@@ -831,7 +831,11 @@ function currentScroll() {
 
 // Escribe la etiqueta de un hueco, respetando variación (igual que applyKeymap):
 // se usa tanto al escribir en el campo de texto como al pegar una tecla copiada.
+// Los cambios se comprueban contra el teclado ANTES de tocar el modelo de la
+// app: sin él conectado no se edita nada (ver requireDevice), porque la copia
+// del PC y la del Orby tienen que seguir siendo la misma.
 async function writeLabel(slot, text) {
+  if (!requireDevice()) return;
   const prof = currentProfile();
   if (!prof) return;
   const variant = editingVariant();
@@ -858,6 +862,7 @@ async function writeLabel(slot, text) {
 }
 
 async function applyKeymap(modifier, keycode) {
+  if (!requireDevice()) return;
   const prof = currentProfile();
   const index = selectedKeyIndex();
   if (!prof || index === null) return;
@@ -922,6 +927,7 @@ const OLED_FRAME_BYTES = 360;
 // edición: esa distinción no existe para el OLED. La etiqueta sí, así que se
 // borra con writeLabel, que ya sabe si toca guardarla como diferencia.
 async function blankKeyScreen() {
+  if (!requireDevice()) return;
   const prof = currentProfile();
   const i = selectedKeyIndex();
   if (!prof || i === null) return;
@@ -980,7 +986,7 @@ async function copyKey() {
 }
 
 async function pasteKey() {
-  if (!keyClipboard) return;
+  if (!keyClipboard || !requireDevice()) return;
   const prof = currentProfile();
   const i = selectedKeyIndex();
   if (!prof || i === null) return;
@@ -1024,6 +1030,7 @@ async function pasteKey() {
 }
 
 async function applyRotary(action) {
+  if (!requireDevice()) return;
   const prof = currentProfile();
   const base = selectedRotarySlot();
   if (!prof || base === null) return;
@@ -1550,7 +1557,7 @@ function applyRotaryMacro() {
 // Sensibilidad e inversión de la rueda: un ajuste más del perfil y de la capa.
 async function applyScroll(patch) {
   const prof = currentProfile();
-  if (!prof) return;
+  if (!prof || !requireDevice()) return;
 
   const li = layerIndex(view.layer);
   const next = { ...scrollFor(prof, view.layer), ...patch };
@@ -1743,12 +1750,23 @@ async function choosePage(idx) {
   const prof = state.profiles[view.editingProfile];
   if (!prof || idx === (prof.pageIdx || 0)) return;
 
-  if (view.editingProfile !== state.activeProfileIdx) {
+  // La restricción es del firmware: de un perfil que no tiene puesto solo sabe
+  // llegar a su primera página. Sin teclado delante no pinta nada, porque
+  // entonces esto es solo mirar la copia local, que no se puede editar.
+  if (state.connected && view.editingProfile !== state.activeProfileIdx) {
     toast('Para editar otra página, activa antes este perfil en el teclado');
     return;
   }
+
   view.selected = null;
   view.variantId = null;   // las variaciones son de cada página
+
+  if (!state.connected) {
+    prof.pageIdx = idx;
+    render();
+    return;
+  }
+
   try {
     await selectPage(idx);
     cache.loadProfile(view.editingProfile);   // los iconos son de cada página
@@ -1761,7 +1779,7 @@ async function choosePage(idx) {
 
 async function createPage() {
   const prof = state.profiles[view.editingProfile];
-  if (!prof) return;
+  if (!prof || !requireDevice()) return;
   if (view.editingProfile !== state.activeProfileIdx) {
     toast('Activa este perfil en el teclado para añadirle páginas');
     return;
@@ -1783,7 +1801,7 @@ async function createPage() {
 
 async function deletePage(idx) {
   const prof = state.profiles[view.editingProfile];
-  if (!prof || pageCountOf(prof) <= 1) return;
+  if (!prof || pageCountOf(prof) <= 1 || !requireDevice()) return;
   if (view.editingProfile !== state.activeProfileIdx) {
     toast('Activa este perfil en el teclado para borrarle páginas');
     return;
