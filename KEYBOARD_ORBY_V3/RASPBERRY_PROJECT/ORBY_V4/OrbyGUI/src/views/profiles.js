@@ -92,10 +92,21 @@ const view = {
 // clic) antes del siguiente.
 const DEFAULT_STEP_DELAY_MS = 50;
 
+// Página del perfil que se está editando en esta vista.
+function currentPageIdx() {
+  const prof = state.profiles[view.editingProfile];
+  return prof ? (prof.pageIdx || 0) : 0;
+}
+
 // Variación que se está editando. Editar el perfil base es lo normal; al elegir
 // una variación, cada cambio se guarda como diferencia respecto a ese base.
+//
+// Una variación es de una página concreta: si se está mirando otra, no pinta
+// nada aquí (sus huecos son de la suya).
 function editingVariant() {
-  return view.variantId ? variants.get(view.variantId) : null;
+  const v = view.variantId ? variants.get(view.variantId) : null;
+  if (!v) return null;
+  return (v.profile === view.editingProfile && v.page === currentPageIdx()) ? v : null;
 }
 
 // --- Macros (secuencias ejecutadas en el PC) --------------------------------
@@ -289,10 +300,15 @@ export function init() {
   // porque cada escritura marca la configuración como pendiente de guardar.
   let lastCount = -1;
   let lastActive = -1;
+  let lastPage = -1;
   subscribe(() => {
-    if (state.profiles.length === lastCount && state.activeProfileIdx === lastActive) return;
+    // La página entra en la cuenta porque el teclado la cambia por su cuenta y
+    // aquí se está editando justamente esa: la rejilla tiene que seguirla.
+    if (state.profiles.length === lastCount && state.activeProfileIdx === lastActive
+        && state.pageIdx === lastPage) return;
     lastCount = state.profiles.length;
     lastActive = state.activeProfileIdx;
+    lastPage = state.pageIdx;
     if (isActiveView()) render();
   });
 }
@@ -450,6 +466,8 @@ function onClick(e) {
     toggleRecording();
   } else if (act === 'rec-mode') {
     setRecordMode(el.dataset.mode);
+  } else if (act === 'rec-speed') {
+    setRecordSpeed(el.dataset.speed);
   } else if (act === 'rec-clear') {
     clearRecording();
   } else if (act === 'rec-stop') {
@@ -635,7 +653,9 @@ async function createVariant() {
     match = (info?.process || '').toLowerCase();
   } catch { /* sin detector: se rellena a mano */ }
 
+  // Nace pegada a la página que se está editando: sus huecos son los de esta.
   const variant = variants.create(view.editingProfile, {
+    page: currentPageIdx(),
     name: match ? match.replace(/\.exe$/, '') : 'Variación',
     matches: match ? [match] : [],
   });
@@ -706,18 +726,17 @@ async function clearOverrideOfSelection() {
     variants.clearOverride(variant.id, 'labels', labelSlot(view.selected.index, view.layer));
   }
 
-  // Si la variación está puesta, el teclado tiene que volver al valor base.
+  // Si la variación está puesta, el teclado tiene que volver al valor base. Lo
+  // hace variants: sabe en qué página escribió, que no tiene por qué ser la que
+  // se está mirando aquí.
   if (variants.isApplied(variant.id)) {
-    const prof = currentProfile();
     try {
       if (kind === 'keys') {
-        const a = prof.keys[slot] || { modifier: 0, keycode: 0 };
-        await device.setKeymap(view.editingProfile, slot, a.modifier, a.keycode);
+        await variants.revertSlot(variant.id, 'keys', slot);
         const ls = labelSlot(view.selected.index, view.layer);
-        if (ls >= 0) await device.setLabel(view.editingProfile, ls, prof.labels[ls] || '');
+        if (ls >= 0) await variants.revertSlot(variant.id, 'labels', ls);
       } else {
-        const a = prof.rotary[slot] || { type: 0, modifier: 0, keycode: 0 };
-        await device.setRotary(view.editingProfile, slot, a.type, a.modifier, a.keycode);
+        await variants.revertSlot(variant.id, 'rotary', slot);
       }
     } catch {
       toast('El teclado no confirmó la vuelta al valor base', 'error');
@@ -821,7 +840,7 @@ async function writeLabel(slot, text) {
     variants.setOverride(variant.id, 'labels', slot, text);
     renderKeyGrid();
     if (variants.isApplied(variant.id)) {
-      try { await device.setLabel(view.editingProfile, slot, text); }
+      try { await variants.writeAppliedSlot(variant.id, 'labels', slot, text); }
       catch { toast('El teclado no confirmó la etiqueta', 'error'); }
     }
     return;
@@ -854,7 +873,7 @@ async function applyKeymap(modifier, keycode) {
     render();
     if (variants.isApplied(variant.id)) {
       try {
-        await device.setKeymap(view.editingProfile, slot, modifier, keycode);
+        await variants.writeAppliedSlot(variant.id, 'keys', slot, { modifier, keycode });
       } catch {
         toast('No se pudo escribir la asignación', 'error');
       }
@@ -1033,7 +1052,7 @@ async function applyRotary(action) {
     if (variants.isApplied(variant.id)) {
       try {
         for (const [s, a] of writes) {
-          await device.setRotary(view.editingProfile, s, a.type, a.modifier, a.keycode);
+          await variants.writeAppliedSlot(variant.id, 'rotary', s, a);
         }
       } catch {
         toast('No se pudo escribir la acción del mando', 'error');
@@ -1688,11 +1707,17 @@ function renderTabs() {
 // Variaciones del perfil: el mismo juego de atajos con un par de teclas
 // distintas para una aplicación concreta, sin duplicar el perfil entero.
 function renderVariantBar() {
-  const list = variants.forProfile(view.editingProfile);
+  // Solo las de esta página: la misma tecla en otra página es otro atajo, así
+  // que una variación de la 2 no tiene nada que decir mientras se edita la 1.
+  const list = variants.forProfile(view.editingProfile, currentPageIdx());
+
+  const prof = state.profiles[view.editingProfile];
+  const pageTxt = (hasPages() && prof && pageCountOf(prof) > 1)
+    ? ` · página ${currentPageIdx() + 1}` : '';
 
   return `
     <div class="variant-bar">
-      <span class="variant-bar-label">${icon('bolt', 14)} Según la app</span>
+      <span class="variant-bar-label">${icon('bolt', 14)} Según la app${pageTxt}</span>
       <div class="chip-row">
         <button class="chip ${!view.variantId ? 'on' : ''}" data-act="pick-variant" data-id="">
           Perfil base
@@ -1723,6 +1748,7 @@ async function choosePage(idx) {
     return;
   }
   view.selected = null;
+  view.variantId = null;   // las variaciones son de cada página
   try {
     await selectPage(idx);
     cache.loadProfile(view.editingProfile);   // los iconos son de cada página
@@ -1767,8 +1793,10 @@ async function deletePage(idx) {
              + 'se recolocan.')) return;
   try {
     await removePage(idx);
+    variants.shiftPages(view.editingProfile, idx);
     cache.loadProfile(view.editingProfile);
     view.selected = null;
+    view.variantId = null;
     toast(`Página ${idx + 1} eliminada`);
     render();
   } catch (e) {
@@ -2317,6 +2345,11 @@ const RECORD_MODES = [
   { id: 'hold', label: 'Mientras se pulsa', desc: 'Repite mientras mantengas la tecla, y para al soltarla.' },
 ];
 
+// Multiplicador de velocidad al reproducir. x3 por defecto: para repetir algo
+// varias veces, reproducirlo a la velocidad original de grabación sobra.
+const RECORD_SPEEDS = [1, 2, 3, 5];
+const RECORD_SPEED_DEFAULT = 3;
+
 // En qué punto está la grabación, según lo que avise el proceso principal.
 let recordPhase = { id: null, phase: 'idle' };
 
@@ -2589,6 +2622,14 @@ function setRecordMode(mode) {
   render();
 }
 
+function setRecordSpeed(speed) {
+  const m = recordMacro(currentMacroId());
+  if (!m) return;
+  m.speed = Number(speed) || RECORD_SPEED_DEFAULT;
+  savePCMacros(m.id);
+  render();
+}
+
 async function clearRecording() {
   const m = recordMacro(currentMacroId());
   if (!m || !m.events?.length) return;
@@ -2653,6 +2694,7 @@ function renderRecordTab(macroId) {
   const recording = phase === 'recording';
   const playing = phase === 'playing';
   const mode = m.mode || 'once';
+  const speed = m.speed || RECORD_SPEED_DEFAULT;
   const seconds = (recordDuration(m) / 1000).toFixed(1);
 
   return `
@@ -2700,6 +2742,15 @@ function renderRecordTab(macroId) {
           <button class="chip ${mode === r.id ? 'on' : ''}" data-act="rec-mode" data-mode="${r.id}">${r.label}</button>`).join('')}
       </div>
       <p class="setting-desc">${RECORD_MODES.find((r) => r.id === mode)?.desc || ''}</p>
+    </div>
+
+    <div class="field mt-4">
+      <span class="field-label">Velocidad de reproducción</span>
+      <div class="chip-row">
+        ${RECORD_SPEEDS.map((s) => `
+          <button class="chip ${speed === s ? 'on' : ''}" data-act="rec-speed" data-speed="${s}">${s}x</button>`).join('')}
+      </div>
+      <p class="setting-desc">Por defecto x3: reproduce tres veces más rápido que como se grabó.</p>
     </div>
 
     ${playing ? `

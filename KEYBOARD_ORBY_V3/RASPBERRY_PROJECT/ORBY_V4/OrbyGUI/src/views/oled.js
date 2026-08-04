@@ -12,7 +12,8 @@
 // vuelve) o salir sin guardar.
 
 import * as device from '../device.js';
-import { state, markDirty, subscribe, KEY_TO_SCREEN, hasPages, pageCountOf } from '../store.js';
+import { state, markDirty, subscribe, KEY_TO_SCREEN, hasPages, pageCountOf,
+         ensureEditTarget } from '../store.js';
 import { icon } from '../icons.js';
 import { toast } from '../ui.js';
 import { goTo } from '../nav.js';
@@ -48,6 +49,11 @@ const TOOLS = [
 
 const view = {
   profile: 0,
+  // Página del perfil que se estaba editando al entrar. Se guarda porque el
+  // teclado puede cambiar de página mientras se dibuja (su botón de menú, una
+  // tecla de salto), y el icono tiene que acabar en la que se abrió, no en la
+  // que el teclado tenga puesta al pulsar "Enviar".
+  page: 0,
   key: 0,          // índice de tecla 0..11
   layer: 'normal',
   tool: 'pencil',
@@ -103,8 +109,9 @@ export function openTarget({ profile, key, layer } = {}) {
   cancelLayer(false);
 
   if (Number.isInteger(key) && screenOf(key)) view.key = key;
+  view.page = state.profiles[view.profile]?.pageIdx || 0;
 
-  const cached = cache.get(view.profile, slot());
+  const cached = cache.get(view.profile, slot(), view.page);
   view.buffer = cached ? Uint8Array.from(cached) : fb.createFramebuffer();
   view.undoStack = [];
   view.dirty = false;
@@ -691,8 +698,11 @@ async function upload() {
   const btn = document.getElementById('btn-oled-upload');
   if (btn) btn.disabled = true;
   try {
+    // El teclado ha podido irse a otra página mientras se dibujaba: se vuelve a
+    // la que se abrió antes de mandar nada, o el icono caería en la otra.
+    await ensureEditTarget(view.profile, view.page);
     await device.uploadOled(view.profile, slot(), view.buffer);
-    cache.set(view.profile, slot(), Uint8Array.from(view.buffer));
+    cache.set(view.profile, slot(), Uint8Array.from(view.buffer), view.page);
     const prof = state.profiles[view.profile];
     if (prof) prof.oledMask |= (1 << slot());
     markDirty();
@@ -707,8 +717,9 @@ async function upload() {
 
 async function resetSlot() {
   try {
+    await ensureEditTarget(view.profile, view.page);
     await device.clearOled(view.profile, slot());
-    cache.set(view.profile, slot(), null);
+    cache.set(view.profile, slot(), null, view.page);
     const prof = state.profiles[view.profile];
     if (prof) prof.oledMask &= ~(1 << slot());
     fb.clear(view.buffer);
@@ -723,9 +734,10 @@ async function resetSlot() {
 
 async function loadFromDevice() {
   if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
+  await ensureEditTarget(view.profile, view.page);
   const bytes = await device.getOled(view.profile, slot());
   if (!bytes) { toast('Esa tecla no tiene icono guardado', 'info'); return; }
-  cache.set(view.profile, slot(), bytes);
+  cache.set(view.profile, slot(), bytes, view.page);
   pushUndo();
   view.buffer = Uint8Array.from(bytes);
   repaint();
@@ -766,8 +778,10 @@ export function render() {
 // puede quedar tapada por mucho que se baje en el panel lateral.
 function renderActionBar() {
   const prof = state.profiles[view.profile];
+  // La página es la que se abrió (view.page), no la que el teclado tenga puesta
+  // ahora: es a la que va el icono al pulsar "Enviar".
   const pageTxt = (hasPages() && prof && pageCountOf(prof) > 1)
-    ? ` · página ${(prof.pageIdx || 0) + 1} de ${pageCountOf(prof)}` : '';
+    ? ` · página ${view.page + 1} de ${pageCountOf(prof)}` : '';
   const where = `${escape(prof?.name || `Perfil ${view.profile + 1}`)} · tecla ${view.key + 1}`
     + ` · pantalla ${screenOf(view.key) || '—'}`
     + ` · capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'}${pageTxt}`;

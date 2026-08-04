@@ -244,7 +244,7 @@ function triggerMacro(id) {
 
   if (macro.events?.length) {
     notifyRecorder(id, 'playing');
-    recorder.startPlayback(id, macro.events, macro.mode || 'once',
+    recorder.startPlayback(id, macro.events, macro.mode || 'once', macro.speed || 3,
                            () => notifyRecorder(id, 'idle'));
     return;
   }

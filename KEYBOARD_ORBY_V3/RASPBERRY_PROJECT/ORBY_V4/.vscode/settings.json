@@ -48,5 +48,6 @@
     ],
     "python.analysis.extraPaths": [
         ".vscode\\Pico-W-Stub"
-    ]
+    ],
+    "idf.currentSetup": "C:\\Users\\jaest\\esp\\v5.4.1\\esp-idf"
 }

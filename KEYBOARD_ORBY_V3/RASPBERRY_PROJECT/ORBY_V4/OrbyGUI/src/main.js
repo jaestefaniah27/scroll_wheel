@@ -1,7 +1,8 @@
 import './styles/index.css';
 
 import * as device from './device.js';
-import { state, subscribe, notify, syncFromDevice } from './store.js';
+import { state, subscribe, notify, syncFromDevice, applyDeviceContext } from './store.js';
+import * as cache from './oled-cache.js';
 import { hydrateIcons } from './icons.js';
 import { toast } from './ui.js';
 import { setNavigator } from './nav.js';
@@ -216,6 +217,29 @@ function wireDevice() {
     state.connected = false;
     state.deviceInfo = null;
     notify();
+  });
+
+  // El teclado anuncia con EV:CTX el perfil y la página que tiene puestos. Los
+  // cambia él solo (su menú de perfiles, el gestor de páginas, la pulsación
+  // corta del botón de menú, una tecla de salto a página) y hasta que lo dijo,
+  // la app se quedaba enseñando lo anterior; peor todavía, seguía editando lo
+  // que ella creía activo y los iconos acababan en otra página.
+  device.on('telemetry', (line) => {
+    if (!line.startsWith('EV:CTX:')) return;
+    const [profileIdx, pageIdx, pageCount] = line.slice(7).split(':').map(Number);
+
+    if (applyDeviceContext(profileIdx, pageIdx, pageCount)) {
+      // Los iconos son de cada página, así que los de la nueva hay que leerlos.
+      cache.loadProfile(profileIdx);
+      VIEWS[activeView]?.render?.();
+    }
+
+    // Siempre, venga el cambio del teclado o de la propia app (en cuyo caso el
+    // estado ya estaba puesto y lo de arriba no hace nada): una variación
+    // aplicada solo existe en la RAM de la página en la que se escribió, y hay
+    // que quitarla de allí antes de que el guardado a Flash se la lleve como si
+    // fuese el perfil base.
+    variants.onContextChanged().catch(() => {});
   });
 
   device.on('searching', () => {

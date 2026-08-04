@@ -205,6 +205,97 @@ export async function selectPage(idx) {
   }
 }
 
+// El firmware escribe siempre en la página que tiene puesta (ver cmd_page en
+// main.cpp), así que antes de editar hay que asegurarse de que es la misma que
+// la app cree estar editando. Hace falta porque el teclado la cambia por su
+// cuenta: el botón de menú, el gestor de páginas o una tecla de salto.
+// `follow` dice si además se mueve la página que la app enseña. Las ediciones
+// del usuario sí la mueven (es la que está mirando); los apaños internos que
+// van a otra página y vuelven, no.
+export async function ensureEditTarget(profileIdx, pageIdx, follow = true) {
+  // Sin teclado no hay nada que alinear: el cambio se queda en el modelo y en
+  // el espejo del PC, y se sube al reconectar.
+  if (!device.isConnected()) return;
+
+  const prof = state.profiles[profileIdx];
+  if (!prof) return;
+  const want = Math.min(Math.max(pageIdx || 0, 0), pageCountOf(prof) - 1);
+
+  // De un perfil que no está puesto, el firmware solo sabe editar su primera
+  // página: para llegar a las demás hay que activarlo antes.
+  if (profileIdx !== state.activeProfileIdx) {
+    if (want !== 0) throw new Error('Activa este perfil en el teclado para editar esta página');
+    return;
+  }
+
+  if (state.pageIdx === want) return;
+  await device.setPage(want);
+  state.pageIdx = want;
+  if (follow) prof.pageIdx = want;
+}
+
+// Página fijada mientras algo escribe en una que no es la que se está editando.
+// La usan las variaciones: viven en la RAM de una página concreta y tienen que
+// escribirse y quitarse ahí, no en la que el usuario tenga abierta en la app.
+let pinnedPage = null;
+
+export async function withPinnedPage(profileIdx, page, fn) {
+  if (pinnedPage) return fn();      // ya hay una fijada: manda la de fuera
+
+  const back = state.pageIdx;
+  pinnedPage = { profile: profileIdx, page };
+  try {
+    await ensureEditTarget(profileIdx, page, false);
+    return await fn();
+  } finally {
+    pinnedPage = null;
+    // El teclado vuelve a donde estaba: esto es un apaño interno, el usuario no
+    // tiene por qué ver cómo le cambia la página bajo los dedos.
+    if (state.pageIdx !== back) {
+      try { await ensureEditTarget(profileIdx, back, false); } catch { /* ya se corregirá */ }
+    }
+  }
+}
+
+// La que se engancha en device.js: el destino es la página que tenga abierta el
+// perfil, que es la que enseñan las vistas, salvo que haya una fijada.
+export function ensureEditPage(profileIdx) {
+  if (pinnedPage && pinnedPage.profile === profileIdx) {
+    return ensureEditTarget(profileIdx, pinnedPage.page, false);
+  }
+  const prof = state.profiles[profileIdx];
+  return ensureEditTarget(profileIdx, prof ? (prof.pageIdx || 0) : 0);
+}
+
+device.setEditGuard(ensureEditPage);
+
+// Perfil y página que acaba de anunciar el teclado (EV:CTX). Devuelve true si
+// había algo que cambiar, para que quien llama recargue lo que dependa de ello.
+export function applyDeviceContext(profileIdx, pageIdx, pageCount) {
+  if (!Number.isInteger(profileIdx) || !Number.isInteger(pageIdx)) return false;
+  if (state.activeProfileIdx === profileIdx && state.pageIdx === pageIdx
+      && state.pageCount === pageCount) return false;
+
+  const prev = state.profiles[state.activeProfileIdx];
+  const prof = state.profiles[profileIdx];
+
+  state.activeProfileIdx = profileIdx;
+  state.pageIdx = pageIdx;
+  if (Number.isInteger(pageCount) && pageCount > 0) state.pageCount = pageCount;
+
+  // El perfil que deja de estar puesto vuelve a su primera página: es la única
+  // suya que el firmware deja editar mientras no sea el activo.
+  if (prev && prev !== prof) prev.pageIdx = 0;
+
+  if (prof) {
+    if (Number.isInteger(pageCount) && pageCount > 0) prof.pageCount = pageCount;
+    prof.pageIdx = Math.min(Math.max(pageIdx, 0), pageCountOf(prof) - 1);
+  }
+
+  notify();
+  return true;
+}
+
 export async function addPage() {
   const prof = profile();
   if (!prof || pageCountOf(prof) >= maxPages()) return false;

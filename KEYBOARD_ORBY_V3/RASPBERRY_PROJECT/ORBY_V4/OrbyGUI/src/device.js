@@ -69,6 +69,26 @@ function request(command, { match, collect, result, timeout = 4000 } = {}) {
   });
 }
 
+// --- Página de destino ------------------------------------------------------
+// Los comandos de edición del firmware no llevan número de página: escriben en
+// la que el teclado tenga puesta (ver cmd_page en main.cpp). Si el teclado se ha
+// ido a otra por su cuenta —el botón de menú, el gestor de páginas o una tecla
+// de salto—, lo que la app cree estar editando y lo que se escribe dejan de ser
+// lo mismo, y el icono o la etiqueta acaban en la página equivocada.
+//
+// Antes de cada comando de edición se pasa por este enganche, que store.js
+// rellena para poner el teclado en la página que toca. Va aquí y no en store.js
+// porque es store.js quien importa este módulo, no al revés.
+let editGuard = null;
+
+export function setEditGuard(fn) {
+  editGuard = fn;
+}
+
+function onEditPage(profile) {
+  return editGuard ? editGuard(profile) : Promise.resolve();
+}
+
 // --- API pública -----------------------------------------------------------
 
 export function send(command) {
@@ -84,25 +104,36 @@ export const resetDefaults = ()   => request('RESET_DEFAULTS',      { match: (l)
 // Sensibilidad e inversión de la rueda para un perfil y una capa concretos
 // (capa 0 = normal, 1 = SUPER). Desde el firmware 3.0 la rueda es un ajuste más
 // del perfil, no un valor global del teclado.
-export const setProfileScroll = (profile, layer, detents, invert) =>
-  request(`SET_PSCROLL:${profile}:${layer}:${detents}:${invert ? 1 : 0}`,
-          { match: (l) => l.startsWith(`PSCROLL:OK:${profile}:${layer}:`) });
+export const setProfileScroll = async (profile, layer, detents, invert) => {
+  await onEditPage(profile);
+  return request(`SET_PSCROLL:${profile}:${layer}:${detents}:${invert ? 1 : 0}`,
+                 { match: (l) => l.startsWith(`PSCROLL:OK:${profile}:${layer}:`) });
+};
 
-export const setLabel = (profile, slot, text) =>
-  request(`SET_LABEL:${profile}:${slot}:${text}`, { match: (l) => l === `LABEL:OK:${profile}:${slot}` });
+export const setLabel = async (profile, slot, text) => {
+  await onEditPage(profile);
+  return request(`SET_LABEL:${profile}:${slot}:${text}`, { match: (l) => l === `LABEL:OK:${profile}:${slot}` });
+};
 
-export const setKeymap = (profile, slot, modifier, keycode) =>
-  request(`SET_KEYMAP:${profile}:${slot}:${modifier}:${keycode}`, { match: (l) => l === `KEYMAP:OK:${profile}:${slot}` });
+export const setKeymap = async (profile, slot, modifier, keycode) => {
+  await onEditPage(profile);
+  return request(`SET_KEYMAP:${profile}:${slot}:${modifier}:${keycode}`, { match: (l) => l === `KEYMAP:OK:${profile}:${slot}` });
+};
 
-export const setRotary = (profile, slot, type, modifier, keycode) =>
-  request(`SET_ROTARY:${profile}:${slot}:${type}:${modifier}:${keycode}`,
-          { match: (l) => l === `ROTARY:OK:${profile}:${slot}` });
+export const setRotary = async (profile, slot, type, modifier, keycode) => {
+  await onEditPage(profile);
+  return request(`SET_ROTARY:${profile}:${slot}:${type}:${modifier}:${keycode}`,
+                 { match: (l) => l === `ROTARY:OK:${profile}:${slot}` });
+};
 
+// El nombre es del perfil entero, no de una página: no pasa por el enganche.
 export const setName = (profile, text) =>
   request(`SET_NAME:${profile}:${text}`, { match: (l) => l === `NAME:OK:${profile}` });
 
-export const clearOled = (profile, slot) =>
-  request(`OLED_CLEAR:${profile}:${slot}`, { match: (l) => l.startsWith(`OLED:CLEARED:${profile}:`) });
+export const clearOled = async (profile, slot) => {
+  await onEditPage(profile);
+  return request(`OLED_CLEAR:${profile}:${slot}`, { match: (l) => l.startsWith(`OLED:CLEARED:${profile}:`) });
+};
 
 // Secuencias que puede tocar el propio teclado (espera, tecla, clic, mover el
 // ratón un delta): se suben paso a paso, con el mismo id que guarda la tecla
@@ -300,10 +331,14 @@ export function delPage(profileIdx, pageIdx) {
 
 // Lee el bitmap guardado en el teclado. Devuelve null si el hueco usa la
 // etiqueta de texto en vez de un icono.
-export function getOled(profile, slot) {
+export async function getOled(profile, slot) {
   const bytes = new Uint8Array(360);
   let found = false;
   const prefix = `OLEDDATA:${profile}:${slot}:`;
+
+  // Leer también va por página: sin esto la caché de iconos se llenaría con los
+  // de la página que el teclado tenga puesta, no con los de la que se edita.
+  await onEditPage(profile);
 
   return request(`GET_OLED:${profile}:${slot}`, {
     timeout: 6000,
@@ -332,6 +367,10 @@ export function getOled(profile, slot) {
 const OLED_CHUNK_BYTES = 90;
 
 export async function uploadOled(profile, slot, bytes) {
+  // Una sola vez para todo el icono: los trozos tienen que caer en la misma
+  // página, y cambiarla entre uno y otro dejaría el bitmap partido en dos.
+  await onEditPage(profile);
+
   for (let offset = 0; offset < bytes.length; offset += OLED_CHUNK_BYTES) {
     const slice = bytes.subarray(offset, Math.min(offset + OLED_CHUNK_BYTES, bytes.length));
     let hex = '';

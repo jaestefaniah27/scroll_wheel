@@ -119,13 +119,17 @@ function startRecording() {
   recording = { events: [], t0: now, lastMoveAt: 0, lastX: -9999, lastY: -9999 };
 }
 
-// Devuelve lo grabado. Se recorta el hueco muerto del final (desde el último
-// evento hasta que se pulsa la tecla para parar): si no, cada repetición en
-// bucle arrastraría esa pausa.
+// Devuelve lo grabado, recortando el hueco muerto inicial (desde que se pulsa
+// grabar hasta la primera acción real): sin esto, cada reproducción -y cada
+// vuelta del bucle- arrastraría esa espera inicial.
 function stopRecording() {
   if (!recording) return [];
   const events = recording.events;
   recording = null;
+  if (events.length) {
+    const head = events[0].t;
+    if (head > 0) for (const ev of events) ev.t -= head;
+  }
   return events;
 }
 
@@ -184,11 +188,11 @@ async function releaseHeld(held) {
   }
 }
 
-async function runPass(events, session, held) {
+async function runPass(events, session, held, speed) {
   const start = Date.now();
   for (const ev of events) {
     if (session.stopped) return;
-    const wait = ev.t - (Date.now() - start);
+    const wait = (ev.t / speed) - (Date.now() - start);
     if (wait > 0) await sleep(wait);
     if (session.stopped) return;
 
@@ -206,17 +210,19 @@ async function runPass(events, session, held) {
 }
 
 // `mode`: 'once' (una vez), 'loop' (hasta que se vuelva a pulsar) o 'hold'
-// (mientras la tecla siga pulsada). `onEnd` avisa para poder devolver la
-// pantalla de la tecla a su estado normal.
-async function startPlayback(id, events, mode, onEnd) {
+// (mientras la tecla siga pulsada). `speed` multiplica el ritmo (2 = el doble
+// de rápido). `onEnd` avisa para poder devolver la pantalla de la tecla a su
+// estado normal.
+async function startPlayback(id, events, mode, speed, onEnd) {
   if (!events?.length) return;
   const session = { id, mode, stopped: false };
   playback = session;
 
+  const rate = speed > 0 ? speed : 1;
   const held = { keys: new Set(), buttons: new Set() };
   try {
     do {
-      await runPass(events, session, held);
+      await runPass(events, session, held, rate);
     } while (!session.stopped && mode !== 'once');
   } finally {
     await releaseHeld(held);

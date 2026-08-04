@@ -2041,6 +2041,39 @@ static void send_profile_count() {
     cdc_printf("PROFILES:OK:%d:%d\n", (int)profile_count, (int)active_profile_idx);
 }
 
+// Aviso a la app de qué perfil y qué página están puestos.
+//
+// El teclado los cambia por su cuenta (menú de perfiles, gestor de páginas,
+// pulsación corta del botón de menú, tecla de salto a página) y hasta ahora no
+// lo decía por el CDC: la app se quedaba enseñando el perfil y la página
+// anteriores. Y como los comandos de edición que no llevan número de página
+// actúan sobre la que esté puesta (ver cmd_page), lo que la app creía estar
+// editando y lo que se escribía dejaban de ser lo mismo: los iconos acababan en
+// otra página.
+//
+// Se manda solo cuando cambia algo, así que sale gratis llamarla cada vuelta del
+// bucle principal y no hace falta acordarse de hacerlo en cada sitio que lo toca.
+static uint8_t reported_profile = 0xFF;
+static uint8_t reported_page    = 0xFF;
+static uint8_t reported_pages   = 0xFF;
+
+static void report_active_context() {
+    uint8_t count = profiles[active_profile_idx].page_count;
+    if (count < 1) count = 1;
+    if (active_profile_idx == reported_profile && active_page == reported_page
+        && count == reported_pages) return;
+
+    reported_profile = active_profile_idx;
+    reported_page    = active_page;
+    reported_pages   = count;
+
+    char tel[32];
+    int len = snprintf(tel, sizeof(tel), "EV:CTX:%d:%d:%d\n",
+                       (int)active_profile_idx, (int)active_page, (int)count);
+    tud_cdc_n_write(0, tel, len);
+    tud_cdc_n_write_flush(0);
+}
+
 // Página sobre la que actúan los comandos que no la especifican. La app antigua
 // no sabe de páginas, así que edita la que está puesta si habla del perfil
 // activo, y la primera de cualquier otro: es lo que ella cree que está editando.
@@ -3223,6 +3256,10 @@ int main() {
                 display_power_req = true;
             }
         }
+
+        // Perfil y página en curso. Va al final de la vuelta para recoger todo
+        // lo que haya podido cambiarlos: comandos del CDC, menús y teclas.
+        report_active_context();
 
         // 250 us: el AS5600 se muestrea a 1 kHz y el endpoint HID sondea cada
         // 1 ms, así que un ciclo de 1 ms dejaba el scroll con granularidad

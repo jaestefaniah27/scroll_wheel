@@ -6,7 +6,7 @@
 
 import * as device from '../device.js';
 import { state, notify, labelForKey, profile, liveScroll, KEY_TO_SCREEN,
-         KEY_SUPER } from '../store.js';
+         KEY_SUPER, hasPages, pageCountOf } from '../store.js';
 import * as wheelDial from '../wheel-dial.js';
 
 let wheelDecay = null;
@@ -162,6 +162,16 @@ export function render() {
 
   document.getElementById('lbl-active-profile').textContent = prof ? prof.name : '--';
   document.getElementById('lbl-active-mode').textContent = state.deviceMode;
+
+  // La página la cambia también el propio teclado (botón de menú, gestor de
+  // páginas, tecla de salto), así que se enseña aquí para saber en cuál está.
+  const pageRow = document.getElementById('row-active-page');
+  if (pageRow) {
+    const count = prof ? pageCountOf(prof) : 1;
+    pageRow.hidden = !hasPages();
+    document.getElementById('lbl-active-page').textContent =
+      `${Math.min(state.pageIdx, count - 1) + 1} de ${count}`;
+  }
 
   const superEl = document.getElementById('lbl-super-state');
   superEl.textContent = state.superActive ? 'Activa' : 'Inactiva';
