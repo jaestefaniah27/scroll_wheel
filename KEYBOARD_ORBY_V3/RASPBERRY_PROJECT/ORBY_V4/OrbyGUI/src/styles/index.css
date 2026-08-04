@@ -263,10 +263,20 @@ body {
   overflow: hidden;
 }
 
+/* El fondo explícito no cambia nada a la vista -detrás solo estaba el mismo
+   --bg-dark del body-, pero sí cambia cómo lo trata Chromium. La capa de
+   contenido de un contenedor con scroll solo entra en la ruta rápida si es
+   OPACA: con fondo transparente hay que limpiar y mezclar cada tesela al
+   rasterizarla y el texto pierde el suavizado subpíxel. Al girar la rueda en
+   alta resolución se generan teselas nuevas en cada fotograma, así que la
+   diferencia se ve como tirones y texto que "baila".
+   Regla general en este archivo: TODO elemento con overflow scrollable lleva
+   fondo opaco. */
 .view {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   padding: 32px;
+  background: var(--bg-dark);
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -563,6 +573,7 @@ body {
 }
 .console-output {
   flex-grow: 1; overflow-y: auto; padding: 16px;
+  background: #050508; /* el mismo de `.console-wrapper`; opaco por ser scroller */
   font-family: 'Consolas', 'Courier New', monospace; font-size: 13px;
   display: flex; flex-direction: column; gap: 4px;
 }
@@ -858,7 +869,14 @@ body {
    resto de `.editor-main` se sale sin contenedor que lo recorte ni lo deje
    escrollar. */
 .editor-main, .editor-inspector { height: 100%; overflow-y: auto; }
-.editor-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; }
+/* `.editor-inspector` es a la vez `.glass-panel`, así que ya scrolleaba sobre
+   una capa opaca y por eso iba suave. `.editor-main` no es un panel, es un
+   contenedor pelado con los paneles dentro: sin fondo propio su capa de
+   contenido no era opaca y scrolleaba a tirones. */
+.editor-main {
+  display: flex; flex-direction: column; gap: 20px; min-width: 0; min-height: 0;
+  background: var(--bg-dark);
+}
 .editor-board { padding: 24px; }
 .editor-board-head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
 .editor-board-head .head-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -1100,6 +1118,7 @@ body {
 .oled-canvas-card { display: flex; flex-direction: column; min-height: 0; padding: 16px; }
 .oled-side {
   min-height: 0; overflow-y: auto; padding-right: 4px;
+  background: var(--bg-dark); /* opaco: es un scroller, ver `.view` */
   display: flex; flex-direction: column; gap: 16px;
 }
 .oled-card { padding: 20px; }
@@ -1181,7 +1200,9 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
    Los márgenes automáticos, en cambio, se resuelven a cero al faltar espacio. */
 .oled-canvas-wrap {
   display: flex; flex: 1; min-height: 0;
-  padding: 16px; background: rgba(0,0,0,0.4); border-radius: var(--radius-sm);
+  /* Opaco por ser scroller (ver `.view`): #0b0b11 es rgba(0,0,0,.4) ya
+     compuesto sobre el --bg-panel-solid de la tarjeta que lo contiene. */
+  padding: 16px; background: #0b0b11; border-radius: var(--radius-sm);
   overflow: auto; overscroll-behavior: contain;
 }
 #oled-canvas {
