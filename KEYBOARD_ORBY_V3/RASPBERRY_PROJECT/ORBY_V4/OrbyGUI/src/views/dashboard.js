@@ -5,9 +5,10 @@
 // disco grande, debajo de ellos.
 
 import * as device from '../device.js';
-import { state, notify, labelForKey, profile, liveScroll, KEY_TO_SCREEN,
+import { state, notify, labelForKey, labelSlot, profile, liveScroll, KEY_TO_SCREEN,
          KEY_SUPER, hasPages, pageCountOf } from '../store.js';
 import * as wheelDial from '../wheel-dial.js';
+import * as cache from '../oled-cache.js';
 
 let wheelDecay = null;
 let wheelTotal = 0;
@@ -51,6 +52,10 @@ export function init() {
   // El marcador sigue el ángulo absoluto que manda el teclado, así que se queda
   // donde esté la rueda de verdad en vez de volver a cero al soltarla.
   wheelDial.onUpdate(paintMarker);
+  // Los iconos llegan por su cuenta (preloadAll, cambio de perfil…), así que el
+  // dashboard tiene que repintarse cuando la caché cambia, no solo cuando lo
+  // hace el estado del store.
+  cache.onChange(render);
   render();
 }
 
@@ -188,6 +193,15 @@ export function render() {
 
   for (let i = 1; i <= 12; i++) {
     const oled = document.getElementById(`hw-oled-${i}`);
-    if (oled) oled.textContent = (prof && labelForKey(prof, i - 1, layer)) || '--';
+    if (!oled) continue;
+
+    const lslot = labelSlot(i - 1, layer);
+    const bmp = prof && lslot >= 0 ? cache.get(state.activeProfileIdx, lslot) : null;
+    if (bmp) {
+      oled.innerHTML = `<canvas class="okey-canvas" data-bmp="${cache.cacheKey(state.activeProfileIdx, lslot)}"></canvas>`;
+    } else {
+      oled.textContent = (prof && labelForKey(prof, i - 1, layer)) || '--';
+    }
   }
+  cache.paintThumbs(document.getElementById('keyboard-visualizer'));
 }

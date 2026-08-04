@@ -473,6 +473,8 @@ body {
   box-shadow: inset 0 0 4px rgba(139, 92, 246, 0.2);
 }
 
+.hw-key .oled-screen .okey-canvas { width: 100%; height: 100%; }
+
 .hw-key.no-screen { background: #22222e; }
 
 .hw-key.active {
