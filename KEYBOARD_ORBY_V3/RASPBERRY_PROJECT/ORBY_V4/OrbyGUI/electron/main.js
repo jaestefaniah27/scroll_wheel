@@ -40,6 +40,28 @@ const DEV_URL = 'http://localhost:5173';
 // si quiere. Sin esto, ready-to-show la enseña siempre.
 const startHidden = process.argv.includes('--hidden');
 
+// La ventana se abre maximizada. No se puede maximizar al crearla porque
+// `maximize()` también la muestra, y con --hidden tiene que quedarse en la
+// bandeja; así que queda pendiente hasta la primera vez que se enseñe.
+// Es de una sola vez a propósito: si luego se restaura a tamaño ventana y se
+// esconde en la bandeja, al volver a sacarla se respeta como estaba. El
+// 1280x820 de createWindow() sigue siendo el tamaño al que restaura.
+let pendingMaximize = true;
+
+// Único punto por el que se saca la ventana (bandeja, aviso de conexión,
+// segunda instancia, ready-to-show): así el maximizado inicial no depende de
+// por dónde se haya abierto.
+function revealWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (pendingMaximize) {
+    pendingMaximize = false;
+    mainWindow.maximize();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
 // En desarrollo Electron y Vite arrancan a la vez, así que la primera carga
 // puede llegar antes de que el servidor escuche. Reintentamos en vez de
 // depender de wait-on.
@@ -77,7 +99,7 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
-    if (!startHidden) mainWindow.show();
+    if (!startHidden) revealWindow();
   });
   loadRenderer(mainWindow);
 
@@ -107,10 +129,7 @@ function createWindow() {
       body: 'Se detectó el teclado. Haz clic para abrir OrbyGUI.',
       icon: path.join(__dirname, '..', 'assets', 'orby-icon.png'),
     });
-    notif.on('click', () => {
-      mainWindow?.show();
-      mainWindow?.focus();
-    });
+    notif.on('click', revealWindow);
     notif.show();
   });
 
@@ -242,10 +261,8 @@ function createTray() {
   tray = new Tray(trayIcon);
   tray.setToolTip('OrbyGUI');
 
-  const showWindow = () => { mainWindow?.show(); mainWindow?.focus(); };
-
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Abrir OrbyGUI', click: showWindow },
+    { label: 'Abrir OrbyGUI', click: revealWindow },
     { type: 'separator' },
     { label: 'Salir', click: () => { quitting = true; app.quit(); } },
   ]));
@@ -253,9 +270,9 @@ function createTray() {
   tray.on('click', () => {
     if (!mainWindow) return;
     if (mainWindow.isVisible()) mainWindow.hide();
-    else showWindow();
+    else revealWindow();
   });
-  tray.on('double-click', showWindow);
+  tray.on('double-click', revealWindow);
 }
 
 // --- Actualizaciones automáticas ---
@@ -466,12 +483,7 @@ if (gotSingleInstanceLock) {
   // Lanzar la app de nuevo (autostart ya corriendo + doble clic manual, o
   // el propio instalador) llega aquí en vez de abrir una segunda instancia:
   // simplemente se muestra la ventana que ya existe.
-  app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  app.on('second-instance', revealWindow);
 
   app.whenReady().then(() => {
     createWindow();
@@ -500,6 +512,6 @@ if (gotSingleInstanceLock) {
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    else mainWindow?.show();
+    else revealWindow();
   });
 }

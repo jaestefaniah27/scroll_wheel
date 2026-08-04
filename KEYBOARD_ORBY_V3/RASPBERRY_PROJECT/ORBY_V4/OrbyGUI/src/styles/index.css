@@ -250,10 +250,14 @@ body {
   transition: width 0.16s ease, box-shadow 0.16s ease;
 }
 
-/* `focus-within` mantiene la barra abierta al recorrerla con el tabulador, que
-   si no deja el foco en un botón cuyo nombre no se ve. */
+/* `:has(:focus-visible)` y no `:focus-within`: al pulsar un botón el foco se
+   queda en él, y con `:focus-within` la barra seguía desplegada después de
+   apartar el ratón hasta que se hacía clic en cualquier otro sitio.
+   `:focus-visible` solo casa con el foco por teclado -Chromium no lo aplica a
+   los clics de ratón-, así que sigue quedándose abierta al recorrerla con el
+   tabulador, que si no deja el foco en un botón cuyo nombre no se ve. */
 .sidebar:hover .sidebar-rail,
-.sidebar-rail:focus-within {
+.sidebar-rail:has(:focus-visible) {
   width: var(--sidebar-w-open);
   box-shadow: 8px 0 28px rgba(0, 0, 0, 0.45);
 }
@@ -291,7 +295,7 @@ body {
 }
 
 .sidebar:hover .nav-label,
-.sidebar-rail:focus-within .nav-label { opacity: 1; }
+.sidebar-rail:has(:focus-visible) .nav-label { opacity: 1; }
 
 .nav-item:hover {
   color: var(--text-main);
