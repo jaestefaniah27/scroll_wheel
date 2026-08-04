@@ -3,6 +3,12 @@
   --bg-dark: #0a0a0f;
   --bg-panel: rgba(22, 22, 33, 0.7);
   --bg-panel-hover: rgba(32, 32, 48, 0.8);
+  /* `--bg-panel` ya compuesto sobre --bg-dark. Es el fondo de los paneles
+     grandes que viven dentro de un scroller: una capa opaca se rasteriza más
+     barata que una translúcida y no obliga a leer lo que hay debajo. Los
+     elementos pequeños (pestañas, botones) siguen usando la versión con alfa,
+     donde el coste es irrelevante. */
+  --bg-panel-solid: #12121c;
   --border-light: rgba(255, 255, 255, 0.08);
   --border-active: rgba(139, 92, 246, 0.4);
   
@@ -46,11 +52,20 @@ body {
   user-select: none;
 }
 
-/* Glassmorphism utility */
+/* Panel base.
+   Antes llevaba `backdrop-filter: blur(12px)`. Un backdrop-filter dentro de un
+   contenedor con scroll descalifica el scroll compuesto en Chromium: cada
+   fotograma hay que releer el fondo y rehacer el desenfoque en el hilo
+   principal en vez de mover una capa ya rasterizada. Como todas las vistas van
+   llenas de `.glass-panel` y `.view` es el que scrollea, la rueda de alta
+   resolución —que mueve la página en CADA fotograma, no una vez por detent— se
+   veía a tirones.
+   El desenfoque tampoco pintaba nada: el fondo de detrás es el color plano
+   --bg-dark, y desenfocar un color liso da el mismo color liso. Se sustituye
+   por el resultado ya compuesto (rgba(22,22,33,.7) sobre #0a0a0f), que además
+   deja la capa opaca y más barata de rasterizar. */
 .glass-panel {
-  background: var(--bg-panel);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--bg-panel-solid);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
@@ -1203,7 +1218,9 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
   display: flex; align-items: center; gap: 10px;
   padding: 12px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;
   background: rgba(22,22,33,0.96); border: 1px solid var(--border-light);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(12px);
+  /* Sin backdrop-filter: a 0.96 de opacidad no se veía nada detrás, así que
+     solo costaba una pasada extra de GPU. */
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   animation: toastIn 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 .toast-success { border-color: rgba(16,185,129,0.4); color: var(--success); }
