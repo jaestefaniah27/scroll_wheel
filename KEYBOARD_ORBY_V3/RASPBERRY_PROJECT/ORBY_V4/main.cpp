@@ -376,7 +376,11 @@ volatile uint8_t reposo_timeout_min = 5;    // 5 minutos por defecto (0=OFF)
 volatile uint8_t selected_menu_idx = 0;     // Opción de menú activa (0 a 4)
 volatile bool super_active = false;         // Estado de la tecla modificadora SUPER
 volatile bool system_refresh_req = false;   // Flag para actualizar pantallas
-volatile uint16_t active_inversions = 0;    // Bitmask para inversiones en tiempo real
+// Qué pantallas van en negativo ahora mismo (bit 0 = pantalla 1). Core 0 la
+// reconstruye entera en cada vuelta del bucle a partir de las teclas pulsadas,
+// nunca por flancos sueltos: así no puede quedarse un bit encendido si un
+// flanco se pierde. Core 1 la copia al SSD1306.
+volatile uint16_t active_inversions = 0;
 
 // --- Encendido de las pantallas (reposo) ---
 // Core 0 detecta la inactividad, pero quien manda al SSD1306 es Core 1: las
@@ -3036,15 +3040,9 @@ int main() {
                 activity_detected = true;
 
                 if (current_mode == MODE_NORMAL) {
-                    // OLED Core 1 (solo si la tecla tiene pantalla asociada)
-                    uint8_t oled = key_to_oled[i];
-                    if (oled > 0) {
-                        if (is_pressed) {
-                            active_inversions |= (1 << (oled - 1));
-                        } else {
-                            active_inversions &= ~(1 << (oled - 1));
-                        }
-                    }
+                    // El realce de la pantalla ya no se toca aquí: se recalcula
+                    // entero más abajo, una vez por vuelta (ver "REALCE DE LAS
+                    // TECLAS PULSADAS").
 
                     // Telemetría serial PC
                     char tel[24];
@@ -3185,6 +3183,27 @@ int main() {
                     }
                 }
             }
+        }
+
+        // --- REALCE DE LAS TECLAS PULSADAS ---
+        // La máscara se reconstruye entera en cada vuelta a partir del estado
+        // antirrebote, en vez de encender un bit al pulsar y apagarlo al
+        // soltar. Con el sistema de flancos, cualquier flanco que no llegara a
+        // procesarse por este camino —una tecla soltada mientras el modo no era
+        // MODE_NORMAL, o mientras el bucle estaba ocupado— dejaba el bit puesto
+        // para siempre, y la pantalla de esa tecla se quedaba en negativo: es
+        // justo lo que se veía al lanzar una secuencia, que seguía invertida
+        // hasta que la secuencia terminaba. Recalcularla es idempotente, así
+        // que el realce sigue al estado real de la tecla pase lo que pase.
+        {
+            uint16_t inversions = 0;
+            if (current_mode == MODE_NORMAL) {
+                for (int i = 0; i < 12; i++) {
+                    uint8_t oled = key_to_oled[i];
+                    if (oled > 0 && key_stable[i]) inversions |= (uint16_t)(1u << (oled - 1));
+                }
+            }
+            active_inversions = inversions;
         }
 
         // --- MANEJO DE INACTIVIDAD / REPOSO AUTOMÁTICO ---

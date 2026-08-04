@@ -15,6 +15,14 @@ function emit(event, payload) {
   if (set) for (const fn of set) fn(payload);
 }
 
+// Si hay teclado al otro lado. Se lleva aquí, y no en store.js, para no crear
+// una dependencia circular: store.js ya importa este módulo.
+let linkUp = false;
+
+export function isConnected() {
+  return linkUp;
+}
+
 // --- Peticiones pendientes -------------------------------------------------
 // Cada entrada declara qué línea la resuelve y, opcionalmente, un acumulador
 // para respuestas multilínea (GET_PROFILE, GET_STATE).
@@ -35,6 +43,16 @@ function settlePending(line) {
 }
 
 function request(command, { match, collect, result, timeout = 4000 } = {}) {
+  // Sin teclado no hay nada que esperar: la petición se da por hecha al momento
+  // en vez de agotar cuatro segundos y acabar en un aviso de error. Es lo que
+  // permite seguir editando perfiles y secuencias con el Orby desenchufado: el
+  // cambio se queda en el modelo de la app y en el espejo del PC (mirror.js), y
+  // se sube al reconectar.
+  if (!linkUp) {
+    emit('tx', command);
+    return Promise.resolve(null);
+  }
+
   window.orby.sendCommand(command);
   emit('tx', command);
 
@@ -110,6 +128,10 @@ function profileMutation(command) {
     timeout: 6000,
     match: (l) => l.startsWith('PROFILE:ADDED:') || l.startsWith('PROFILE:DELETED:') || l.startsWith('ERR:'),
   }).then((line) => {
+    // Sin teclado no se pueden crear ni borrar perfiles: cambian los índices de
+    // todo lo demás, así que hacerlo solo en el PC dejaría el espejo apuntando
+    // a perfiles que no existen. El resto de la edición sí funciona sin él.
+    if (line === null) throw new Error('Hace falta el teclado conectado para crear o borrar perfiles');
     if (line.startsWith('ERR:')) throw new Error(line.slice(4));
     return parseInt(line.slice(line.lastIndexOf(':') + 1), 10);
   });
@@ -323,8 +345,9 @@ export async function uploadOled(profile, slot, bytes) {
 // --- Enganche con el proceso principal -------------------------------------
 
 export function init() {
-  window.orby.onConnected((info) => emit('connected', info));
+  window.orby.onConnected((info) => { linkUp = true; emit('connected', info); });
   window.orby.onDisconnected(() => {
+    linkUp = false;
     // Rechazamos lo pendiente para que ninguna vista se quede colgada.
     while (pending.length) {
       const req = pending.pop();

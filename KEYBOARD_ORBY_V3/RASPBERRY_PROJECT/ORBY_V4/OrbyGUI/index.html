@@ -37,7 +37,8 @@
     <nav class="sidebar">
       <button class="nav-item active" data-target="view-dashboard" title="Dashboard" data-icon="dashboard" data-icon-size="22"></button>
       <button class="nav-item" data-target="view-profiles" title="Perfiles, macros y rueda" data-icon="profiles" data-icon-size="22"></button>
-      <button class="nav-item" data-target="view-oled" title="Iconos OLED" data-icon="oled" data-icon-size="22"></button>
+      <!-- El editor de iconos no tiene entrada propia: se abre siempre desde la
+           tecla que se esté configurando en Perfiles, y edita solo ese icono. -->
       <button class="nav-item" data-target="view-auto" title="Cambio automático de perfil" data-icon="bolt" data-icon-size="22"></button>
       <button class="nav-item" data-target="view-settings" title="Ajustes" data-icon="settings" data-icon-size="22"></button>
       <div class="sidebar-spacer"></div>
@@ -135,7 +136,7 @@
                 <button class="switch" id="btn-autostart" data-act="toggle" title="Activar o desactivar">
                   <span class="switch-knob"></span>
                 </button>
-                <span>Abrir OrbyGUI al iniciar sesión en Windows</span>
+                <span class="switch-label">Abrir OrbyGUI al iniciar sesión en Windows</span>
               </div>
               <p class="setting-desc">
                 Arranca minimizado en la bandeja del sistema, listo para ejecutar secuencias sin

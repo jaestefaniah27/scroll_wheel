@@ -45,6 +45,36 @@ export function clearAll() {
   emit();
 }
 
+// --- Volcado para el espejo local ------------------------------------------
+// Los iconos son lo único del teclado que no cabe en GET_PROFILE, así que sin
+// guardarlos aparte la copia del PC no serviría para trabajar sin el Orby
+// delante. Solo se vuelcan los huecos con bitmap: los que están a null son
+// "ese hueco usa su etiqueta de texto", que es el estado por defecto.
+function bytesToHex(bytes) {
+  let hex = '';
+  for (const b of bytes) hex += b.toString(16).padStart(2, '0');
+  return hex;
+}
+
+function hexToBytes(hex) {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+}
+
+export function dump() {
+  const out = {};
+  for (const [key, bytes] of cache) if (bytes) out[key] = bytesToHex(bytes);
+  return out;
+}
+
+export function restore(dumped) {
+  for (const [key, hex] of Object.entries(dumped || {})) {
+    if (typeof hex === 'string' && hex.length) cache.set(key, hexToBytes(hex));
+  }
+  emit();
+}
+
 // Tras crear, duplicar o borrar un perfil los índices se desplazan, así que lo
 // leído deja de ser válido.
 export function invalidate() {

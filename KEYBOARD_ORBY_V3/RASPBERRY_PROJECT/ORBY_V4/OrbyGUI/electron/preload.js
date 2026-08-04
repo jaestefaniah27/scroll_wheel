@@ -36,6 +36,14 @@ contextBridge.exposeInMainWorld('orby', {
   // Apps instaladas (menú Inicio), para elegir una sin ir a buscar el .exe a mano
   listInstalledApps: () => ipcRenderer.invoke('apps:listInstalled'),
 
+  // Grabar operación: capturar ratón y teclado del PC y repetirlo
+  recorder: {
+    toggle: (id) => ipcRenderer.invoke('recorder:toggle', id),
+    stop: () => ipcRenderer.invoke('recorder:stop'),
+    status: () => ipcRenderer.invoke('recorder:status'),
+    onState: (cb) => ipcRenderer.on('recorder:state', (_e, info) => cb(info)),
+  },
+
   // Detección de la aplicación en primer plano
   foreground: {
     start: () => ipcRenderer.invoke('foreground:start'),

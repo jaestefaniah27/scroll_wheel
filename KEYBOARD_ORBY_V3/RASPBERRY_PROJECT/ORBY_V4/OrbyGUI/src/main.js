@@ -7,6 +7,7 @@ import { toast } from './ui.js';
 import { setNavigator } from './nav.js';
 import * as wheelDial from './wheel-dial.js';
 import * as variants from './variants.js';
+import * as mirror from './mirror.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
@@ -40,9 +41,16 @@ function initChrome() {
 
 // `params` permite abrir una vista apuntando a algo concreto: es lo que usa el
 // botón "Editar icono" del editor de perfiles para caer en la tecla correcta.
+//
+// El editor de iconos no tiene botón en la barra lateral (solo se entra desde
+// una tecla concreta), así que mientras esté abierto se deja encendido el de
+// Perfiles: es de donde se viene y a donde se vuelve al guardar o salir.
+const NAV_FOR_VIEW = { 'view-oled': 'view-profiles' };
+
 function switchView(target, params) {
   activeView = target;
-  document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.target === target));
+  const navTarget = NAV_FOR_VIEW[target] || target;
+  document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.target === navTarget));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === target));
 
   if (params && target === 'view-oled') oled.openTarget(params);
@@ -116,6 +124,10 @@ function renderChrome() {
 
 function wireDevice() {
   device.on('connected', async (info) => {
+    // Antes de tocar el estado: en cuanto `connected` valga true, cualquier
+    // notify() daría por buenos los cambios hechos sin el teclado.
+    const offlineEdits = mirror.takeOfflineEdits();
+
     state.connected = true;
     state.deviceInfo = info;
     notify();
@@ -130,6 +142,21 @@ function wireDevice() {
     if (fw < 3) {
       toast('Firmware 2.x: no admite crear perfiles, mandos en capa SUPER ni rueda por perfil. '
           + 'Flashea la versión 3.0 para esas funciones', 'error', 9000);
+    }
+
+    // Se editó algo con el teclado desenchufado: o se sube al Orby, o se
+    // descarta leyendo lo que él tenga. Preguntar es obligado, porque las dos
+    // opciones pisan datos reales del usuario.
+    if (offlineEdits && confirm(
+        'Editaste la configuración con el teclado desconectado.\n\n'
+      + '¿Quieres volcar esos cambios al Orby ahora?\n\n'
+      + 'Si dices que no, se descartan y se lee lo que tenga el teclado.')) {
+      try {
+        await mirror.push((msg) => toast(msg, 'info', 1200));
+        toast('Cambios volcados al teclado');
+      } catch (err) {
+        toast(`No se pudieron volcar los cambios: ${err.message}`, 'error', 9000);
+      }
     }
 
     try {
@@ -179,6 +206,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // detector de ventanas empiece a pedir evaluaciones.
   variants.init().then(() => {
     if (activeView === 'view-profiles') profiles.render();
+  });
+
+  // Espejo local de los perfiles: sin él, abrir la app sin el teclado enchufado
+  // no enseñaba nada y no había nada que editar. Se registra el guardado antes
+  // de cargarlo para que cualquier cambio posterior quede recogido.
+  mirror.watch();
+  mirror.init().then((hydrated) => {
+    if (!hydrated) return;
+    VIEWS[activeView]?.render?.();
+    toast('Perfiles cargados de la copia del PC (teclado no conectado)', 'info', 4000);
   });
 
   dashboard.init();

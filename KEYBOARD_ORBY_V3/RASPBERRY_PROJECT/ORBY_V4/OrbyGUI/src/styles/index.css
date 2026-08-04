@@ -465,16 +465,30 @@ body {
 @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
 /* ================= SETTINGS VIEW ================= */
+/* Columnas, no rejilla: las tarjetas de ajustes tienen alturas muy distintas
+   (la de información del dispositivo triplica a la de reposo), y con
+   `grid-template-columns` la altura de cada fila la marcaba la tarjeta más
+   alta, dejando medio panel en blanco y empujando la calibración de la rueda
+   fuera de la pantalla. Fluyendo por columnas se empaquetan sin huecos. */
 .settings-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  grid-auto-rows: min-content; align-items: start; gap: 20px;
+  max-width: 1360px;
+  column-width: 330px; column-gap: 20px;
 }
-.settings-card { padding: 20px; }
+.settings-card {
+  padding: 20px;
+  break-inside: avoid; /* una tarjeta nunca se parte entre dos columnas */
+  margin-bottom: 20px;
+}
 .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .card-header i { font-size: 24px; color: var(--primary); }
 .card-header h2 { font-size: 18px; font-weight: 600; }
 .setting-body { display: flex; flex-direction: column; gap: 12px; }
 .setting-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+/* Texto al lado de un interruptor. Sin tamaño propio heredaba los 16px del
+   cuerpo y no cabía junto al interruptor, así que la fila se partía en dos y
+   la etiqueta acababa pareciendo un título. */
+.switch-label { font-size: 13px; line-height: 1.45; flex: 1; min-width: 0; }
 
 /* Sliders */
 .slider-container { display: flex; align-items: center; gap: 16px; }
@@ -934,6 +948,20 @@ body {
 .consumer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .consumer-chip { padding: 8px; font-size: 11px; text-align: left; }
 .inspector-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+
+/* Estado de la pestaña "Grabar": si hay algo grabado, si se está grabando o si
+   la tecla sigue vacía. */
+.rec-state {
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  font-size: 12px; line-height: 1.5;
+  border: 1px solid var(--border-light); background: rgba(0,0,0,0.28); color: var(--text-muted);
+}
+.rec-state.ok { border-color: rgba(16,185,129,0.35); background: rgba(16,185,129,0.1); color: var(--success); }
+.rec-state.is-rec {
+  border-color: rgba(239,68,68,0.45); background: rgba(239,68,68,0.12); color: var(--danger);
+  animation: recPulse 1.2s ease-in-out infinite;
+}
+@keyframes recPulse { 50% { border-color: rgba(239,68,68,0.9); } }
 .inspector-summary { padding-top: 14px; border-top: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 6px; }
 .inspector-summary code {
   font-family: 'Consolas', monospace; font-size: 14px; color: var(--primary);
@@ -1012,6 +1040,25 @@ body {
 .view-header.compact { margin-bottom: 18px; }
 .view-header.compact h1 { font-size: 22px; }
 .view-header.compact p { font-size: 13px; }
+
+/* Barra fija del editor de iconos: qué tecla se está editando y las dos únicas
+   salidas (guardar en la tecla / salir sin guardar). Se queda pegada arriba
+   para que no la tape el desplazamiento del panel lateral. */
+.oled-actionbar {
+  position: sticky; top: 0; z-index: 5;
+  flex-shrink: 0; margin-bottom: 18px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  padding: 14px 18px; border-radius: var(--radius-md);
+  /* Opaco a propósito, no `--bg-panel`: al quedarse pegada arriba tiene que
+     tapar de verdad lo que pase por debajo. */
+  background: #14141f; border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-md);
+}
+.oled-actionbar-info { min-width: 0; }
+.oled-actionbar-info h1 { font-size: 20px; font-weight: 600; }
+.oled-actionbar-info p { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.oled-actionbar-btns { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
 .oled-grid {
   flex: 1; min-height: 0;
@@ -1157,6 +1204,7 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
   width: 46px; height: 26px; border-radius: 13px; padding: 3px; cursor: pointer;
   background: rgba(0,0,0,0.4); border: 1px solid var(--border-light);
   display: flex; align-items: center; transition: all 0.2s;
+  flex-shrink: 0;
 }
 .switch-knob { width: 18px; height: 18px; border-radius: 50%; background: var(--text-muted); transition: all 0.2s; }
 .switch.on { background: var(--primary); border-color: var(--primary); }

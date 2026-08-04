@@ -33,7 +33,19 @@ const DEFAULTS = {
     offsetDeg: 62,
     marker: 'dot',  // 'dot' | 'line'
   },
+
+  // Espejo de lo que hay en el teclado (perfiles, páginas, etiquetas, atajos,
+  // mandos, rueda e iconos OLED), en el mismo formato que una copia de
+  // seguridad. Permite abrir la app y editar sin el Orby delante; al reconectar
+  // se ofrece volcarlo. Lo escribe src/mirror.js.
+  // { savedAt, offlineEdits, snapshot: {...}, icons: { "perfil:pagina:hueco": hex } }
+  deviceMirror: null,
 };
+
+// Claves que se sustituyen enteras en vez de fusionarse. El espejo describe un
+// estado completo: fusionándolo, un icono borrado o un perfil que ya no está
+// seguirían apareciendo en el archivo para siempre.
+const REPLACE_WHOLE = new Set(['deviceMirror']);
 
 let cache = null;
 
@@ -44,7 +56,7 @@ function file() {
 function merge(base, patch) {
   const out = { ...base };
   for (const [key, value] of Object.entries(patch || {})) {
-    out[key] = (value && typeof value === 'object' && !Array.isArray(value))
+    out[key] = (value && typeof value === 'object' && !Array.isArray(value) && !REPLACE_WHOLE.has(key))
       ? merge(base[key] || {}, value)
       : value;
   }

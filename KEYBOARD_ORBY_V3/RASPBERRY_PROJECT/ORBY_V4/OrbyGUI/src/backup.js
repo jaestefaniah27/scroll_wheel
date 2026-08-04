@@ -79,6 +79,47 @@ export async function exportAll(onProgress = () => {}) {
   return payload;
 }
 
+// Igual que exportAll pero sin hablar con el teclado: monta la copia con lo que
+// la app ya tiene en memoria. Es lo que usa el espejo local (mirror.js) para
+// guardarse en disco después de cada cambio, incluso con el Orby desenchufado,
+// donde exportAll no puede leer nada.
+export function snapshotFromState() {
+  return {
+    format: FORMAT,
+    version: VERSION,
+    savedAt: new Date().toISOString(),
+    firmware: state.deviceInfo?.fw || null,
+    timeout: state.timeout,
+    activeProfile: state.activeProfileIdx,
+    maxProfiles: state.maxProfiles,
+    profiles: state.profiles.map((prof) => ({
+      name: prof.name,
+      labels: prof.labels,
+      keys: prof.keys,
+      rotary: prof.rotary,
+      scroll: prof.scroll,
+      pageCount: prof.pageCount || 1,
+      maxPages: prof.maxPages || 1,
+      pages: (prof.pages || []).map((pg) => ({
+        labels: pg.labels, keys: pg.keys, rotary: pg.rotary, scroll: pg.scroll,
+        oledMask: pg.oledMask,
+      })),
+      iconsPage: prof.pageIdx || 0,
+      icons: iconsForPage(prof.idx, prof.pageIdx || 0),
+    })),
+  };
+}
+
+// Los bitmaps de un perfil y una página, tal y como los tiene la caché.
+function iconsForPage(profileIdx, page) {
+  const icons = {};
+  for (let slot = 0; slot < 20; slot++) {
+    const bytes = cache.get(profileIdx, slot, page);
+    if (bytes) icons[slot] = bytesToHex(bytes);
+  }
+  return icons;
+}
+
 // Vuelca una copia al teclado. Como cualquier otro cambio, queda marcada como
 // pendiente y el guardado automático la escribe en Flash sola.
 export async function importAll(data, onProgress = () => {}) {

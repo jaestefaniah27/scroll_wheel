@@ -24,6 +24,7 @@ import { icon } from '../icons.js';
 import { toast } from '../ui.js';
 import { goTo } from '../nav.js';
 import * as cache from '../oled-cache.js';
+import * as fb from '../oled-fb.js';
 import * as variants from '../variants.js';
 
 // Mandos giratorios agrupados como se ven en el teclado.
@@ -277,6 +278,12 @@ export function init() {
     if (reason === 'applied' && isActiveView()) render();
   });
 
+  // Grabar operación: el proceso principal es quien engancha el ratón y el
+  // teclado, así que avisa desde allí de en qué punto está.
+  window.orby.recorder.onState((info) => {
+    onRecorderState(info).catch((err) => console.error('Grabación:', err));
+  });
+
   // Repintado solo cuando cambia algo que se ve aquí: si repintásemos con cada
   // notificación, escribir un nombre o una etiqueta perdería el foco al vuelo,
   // porque cada escritura marca la configuración como pendiente de guardar.
@@ -364,8 +371,7 @@ function onClick(e) {
     view.capturing = !view.capturing;
     render();
   } else if (act === 'clear-action') {
-    applyKeymap(0, 0);
-    clearKeyIcon();
+    clearKeyAction();
   } else if (act === 'set-goto-page') {
     applyKeymap(GOTO_PAGE_MODIFIER, Number(el.dataset.page));
   } else if (act === 'set-page-state') {
@@ -440,6 +446,14 @@ function onClick(e) {
     applyKeymap(0, 0);
   } else if (act === 'rotary-macro') {
     applyRotaryMacro();
+  } else if (act === 'rec-toggle') {
+    toggleRecording();
+  } else if (act === 'rec-mode') {
+    setRecordMode(el.dataset.mode);
+  } else if (act === 'rec-clear') {
+    clearRecording();
+  } else if (act === 'rec-stop') {
+    window.orby.recorder.stop();
   }
 }
 
@@ -861,24 +875,53 @@ async function applyKeymap(modifier, keycode) {
   }
 }
 
-// Borra el icono propio de la tecla seleccionada (capa actual), si tiene uno.
-// El icono es del hueco (perfil, capa, tecla), no de la variación en edición
-// -esa distinción no existe para el OLED-, así que se limpia igual que hace
-// pasteKey al pegar sobre un destino con icono.
-async function clearKeyIcon() {
+// Quitar una tecla: se va el atajo (o la macro) y su pantalla se queda en negro.
+// Si era una grabación, se lleva también su tecla de borrado en SUPER: sin ella
+// la capa SUPER se quedaría con un RESET que ya no borra nada.
+async function clearKeyAction() {
+  const before = currentAction();
+  if (before.modifier === MACRO_MODIFIER && isRecordOrResetMacro(before.keycode)) {
+    const rec = recordMacro(before.keycode);
+    if (rec) await detachResetKey(rec.id);
+  }
+  await applyKeymap(0, 0);
+  await blankKeyScreen();
+}
+
+// Bytes de un framebuffer de pantalla (72x40 monocromo).
+const OLED_FRAME_BYTES = 360;
+
+// Deja en negro la pantalla de la tecla seleccionada (capa actual).
+//
+// OLED_CLEAR no sirve para esto: solo suelta el icono propio del hueco, y
+// entonces el firmware vuelve a pintar la etiqueta de texto con su marco —y en
+// el perfil 0, página 1 y capa normal, directamente el mapa de bits horneado de
+// fábrica (ver refresh_single_screen en main.cpp)—, así que la tecla nunca se
+// apagaba. Subir un icono todo a ceros sí lo respeta en todos los casos.
+//
+// El icono es del hueco (perfil, página, capa, tecla), no de la variación en
+// edición: esa distinción no existe para el OLED. La etiqueta sí, así que se
+// borra con writeLabel, que ya sabe si toca guardarla como diferencia.
+async function blankKeyScreen() {
+  const prof = currentProfile();
   const i = selectedKeyIndex();
-  if (i === null) return;
+  if (!prof || i === null) return;
   const lslot = labelSlot(i, view.layer);
-  if (lslot < 0 || !cache.get(view.editingProfile, lslot)) return;
+  if (lslot < 0) return;
+
+  // Sin esto, quitar el icono más adelante desde el editor descubriría el texto
+  // de la tecla que había antes.
+  await writeLabel(lslot, '');
 
   try {
-    await device.clearOled(view.editingProfile, lslot);
-    cache.set(view.editingProfile, lslot, null);
-    currentProfile().oledMask &= ~(1 << lslot);
+    const blank = new Uint8Array(OLED_FRAME_BYTES);
+    await device.uploadOled(view.editingProfile, lslot, blank);
+    cache.set(view.editingProfile, lslot, blank);
+    prof.oledMask |= (1 << lslot);
     markDirty();
     render();
   } catch {
-    toast('No se pudo quitar el icono', 'error');
+    toast('No se pudo apagar la pantalla de la tecla', 'error');
   }
 }
 
@@ -1021,27 +1064,65 @@ function isAppMacro(id) {
   return acts.length === 1 && acts[0].type === 'open_app';
 }
 
+// Una grabación no es una lista de pasos montada a mano, sino la captura de lo
+// que hizo el usuario con el ratón y el teclado. Se marca con `kind` para
+// distinguirla de una secuencia (ver la pestaña "Grabar").
+function isRecordingMacro(id) {
+  return macroById(id)?.kind === 'recording';
+}
+
+// describeAction solo ve lo que guarda el firmware (modificador + código), y
+// ahí todas las macros son iguales. Las tres formas que sabe editar la app
+// —secuencia, abrir algo y grabación— se distinguen mirando la macro.
+function describeKey(action) {
+  if (action.modifier !== MACRO_MODIFIER) return describeAction(action.modifier, action.keycode);
+  if (isResetMacro(action.keycode)) return 'Borrar grabación';
+  if (isRecordingMacro(action.keycode)) {
+    return macroById(action.keycode).events?.length ? 'Reproducir grabación' : 'Grabar operación';
+  }
+  if (isAppMacro(action.keycode)) {
+    const target = macroById(action.keycode).actions[0].target || '';
+    return target ? `Abrir ${target.split(/[\\/]/).pop()}` : 'Abrir…';
+  }
+  return describeAction(action.modifier, action.keycode);
+}
+
 // Pestaña que abre el inspector de tecla por defecto, según lo que ya tenga
 // asignado el hueco elegido.
 function tabForAction(action) {
   if (action.modifier === CONSUMER_MODIFIER) return 'media';
   if (action.modifier === GOTO_PAGE_MODIFIER || action.modifier === PAGE_STATE_MODIFIER) return 'pages';
-  if (action.modifier === MACRO_MODIFIER) return isAppMacro(action.keycode) ? 'app' : 'sequence';
+  if (action.modifier === MACRO_MODIFIER) {
+    if (isRecordOrResetMacro(action.keycode)) return 'record';
+    return isAppMacro(action.keycode) ? 'app' : 'sequence';
+  }
   return 'shortcut';
 }
 
 // Cambia de pestaña en el inspector de tecla. La primera vez que se entra en
-// "Secuencia" o en "App" sin que el hueco ya tenga una macro de esa forma, se
-// crea una macro nueva (vacía, o con un paso "abrir" en blanco) y se asigna
-// al vuelo. Si ya había una macro de la forma correcta (se venía de la misma
-// pestaña, o se vuelve a ella), se reutiliza tal cual, sin perder su contenido.
+// "Secuencia", "App" o "Grabar" sin que el hueco ya tenga una macro de esa
+// forma, se crea una macro nueva (vacía, con un paso "abrir" en blanco, o de
+// tipo grabación) y se asigna al vuelo. Si ya había una macro de la forma
+// correcta (se venía de la misma pestaña, o se vuelve a ella), se reutiliza tal
+// cual, sin perder su contenido.
 function setTab(tab) {
   const prevTab = view.tab;
   view.tab = tab;
 
+  // Se abandona una grabación: su tecla de borrado en SUPER deja de tener
+  // sentido, así que se va con ella.
+  if (prevTab === 'record' && tab !== 'record') {
+    const leaving = currentAction();
+    if (leaving.modifier === MACRO_MODIFIER && isRecordOrResetMacro(leaving.keycode)) {
+      const rec = recordMacro(leaving.keycode);
+      if (rec) detachResetKey(rec.id);
+    }
+  }
+
   if (tab === 'sequence' && prevTab !== 'sequence') {
     const action = currentAction();
-    if (action.modifier !== MACRO_MODIFIER || isAppMacro(action.keycode)) {
+    if (action.modifier !== MACRO_MODIFIER || isAppMacro(action.keycode)
+        || isRecordOrResetMacro(action.keycode)) {
       const id = nextMacroId();
       ensureMacro(id);
       applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
@@ -1061,6 +1142,34 @@ function setTab(tab) {
     }
   }
 
+  if (tab === 'record' && prevTab !== 'record') {
+    const action = currentAction();
+    if (action.modifier !== MACRO_MODIFIER || !isRecordOrResetMacro(action.keycode)) {
+      startRecordingKey();
+      return;
+    }
+  }
+
+  render();
+}
+
+// Convierte la tecla seleccionada en una tecla de grabación: la macro, la
+// tecla de borrado en la capa SUPER y los iconos que explican qué hace cada
+// una (RECORD / RESET, y PLAY en cuanto haya algo grabado).
+async function startRecordingKey() {
+  const id = nextMacroId();
+  const m = ensureMacro(id);
+  m.kind = 'recording';
+  m.mode = 'once';
+  m.events = [];
+  // Sin pasos: así macroDeviceEligible la descarta y el teclado avisa siempre
+  // por CDC en vez de intentar tocarla él, que no puede.
+  m.actions = [];
+  savePCMacros(id);
+
+  await applyKeymap(MACRO_MODIFIER, id);
+  await attachResetKey(id);
+  await refreshRecordIcons(id);
   render();
 }
 
@@ -1467,7 +1576,8 @@ export function render() {
     body.innerHTML = `<div class="empty-panel glass-panel">
       ${icon('plug', 40)}
       <h3>Sin perfiles cargados</h3>
-      <p>Conecta el Orby: los perfiles se leen directamente del firmware.</p>
+      <p>Conecta el Orby una vez: a partir de ahí queda una copia en el PC y podrás
+         editarlos aunque no lo tengas enchufado.</p>
     </div>`;
     return;
   }
@@ -1799,7 +1909,7 @@ function renderKeyGridInner() {
                    : `<span class="okey-text">${escape(label || '—')}</span>`)
             : `<span class="okey-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`}
         </span>
-        <span class="okey-action ${assigned ? 'assigned' : ''}">${escape(describeAction(action.modifier, action.keycode))}</span>
+        <span class="okey-action ${assigned ? 'assigned' : ''}">${escape(describeKey(action))}</span>
       </button>`;
   }
   return html;
@@ -2143,6 +2253,7 @@ function renderKeyInspector() {
       <div class="inspector-tabs">
         <button class="inspector-tab ${tab === 'shortcut' ? 'active' : ''}" data-act="set-tab" data-tab="shortcut">Atajo</button>
         <button class="inspector-tab ${tab === 'sequence' ? 'active' : ''}" data-act="set-tab" data-tab="sequence">Secuencia</button>
+        <button class="inspector-tab ${tab === 'record' ? 'active' : ''}" data-act="set-tab" data-tab="record">Grabar</button>
         <button class="inspector-tab ${tab === 'app' ? 'active' : ''}" data-act="set-tab" data-tab="app">App</button>
         <button class="inspector-tab ${tab === 'media' ? 'active' : ''}" data-act="set-tab" data-tab="media">Multimedia</button>
         ${hasPages() ? `<button class="inspector-tab ${tab === 'pages' ? 'active' : ''}" data-act="set-tab" data-tab="pages">Páginas</button>` : ''}
@@ -2170,10 +2281,12 @@ function renderKeyInspector() {
           <button class="primary-btn ${view.capturing === true ? 'is-capturing' : ''}" data-act="capture">
             ${icon('key', 16)} ${view.capturing === true ? 'Pulsa el atajo… (Esc cancela)' : 'Capturar atajo del teclado'}
           </button>
-          <button class="secondary-btn" data-act="clear-action" title="Quita el atajo/macro y el icono de esta tecla">${icon('trash', 16)} Quitar</button>
+          <button class="secondary-btn" data-act="clear-action" title="Quita el atajo o la macro y deja la pantalla de la tecla en negro">${icon('trash', 16)} Quitar</button>
         </div>` : ''}
 
       ${tab === 'sequence' ? renderSequenceEditor(isMacro ? action.keycode : null) : ''}
+
+      ${tab === 'record' ? renderRecordTab(isMacro ? action.keycode : null) : ''}
 
       ${tab === 'app' ? renderAppTab(isMacro ? action.keycode : null) : ''}
 
@@ -2189,6 +2302,415 @@ function renderKeyInspector() {
 
       ${tab === 'pages' ? renderPageActions(action) : ''}
     </div>`;
+}
+
+// --- Pestaña "Grabar": capturar una operación y repetirla -------------------
+// A diferencia de una secuencia, aquí no se monta nada paso a paso: el proceso
+// principal engancha el ratón y el teclado del PC (electron/recorder.js) y
+// guarda lo que el usuario haga, con sus tiempos. La tecla hace de interruptor:
+// pulsar empieza a grabar, pulsar otra vez para y guarda, y a partir de ahí
+// cada pulsación reproduce lo grabado.
+
+const RECORD_MODES = [
+  { id: 'once', label: 'Una vez',           desc: 'Reproduce la operación de principio a fin y para.' },
+  { id: 'loop', label: 'En bucle',          desc: 'Repite sin parar hasta que vuelvas a pulsar la tecla.' },
+  { id: 'hold', label: 'Mientras se pulsa', desc: 'Repite mientras mantengas la tecla, y para al soltarla.' },
+];
+
+// En qué punto está la grabación, según lo que avise el proceso principal.
+let recordPhase = { id: null, phase: 'idle' };
+
+// Lo que la pantalla de la tecla enseñaba antes de ponerle el aviso, para poder
+// devolvérselo. `bytes` a null = ese hueco no tenía icono propio.
+let screenBackup = null;
+let restoreTimer = null;
+
+// Texto que enseña la pantalla de la tecla en cada situación. La tecla se
+// explica sola: qué hace ahora mismo y qué hace con SUPER.
+const RECORD_ICON_EMPTY = 'RECORD';
+const RECORD_ICON_READY = 'PLAY';
+const RECORD_ICON_RESET = 'RESET';
+
+// La macro de grabación de un hueco. La tecla de borrado (capa SUPER) apunta a
+// la suya con `target`, así que desde ella también se llega a la grabación.
+function recordMacro(id) {
+  const m = id === null ? null : macroById(id);
+  if (m?.kind === 'recording') return m;
+  if (m?.kind === 'recording-reset') return macroById(m.target) || null;
+  return null;
+}
+
+function isResetMacro(id) {
+  return macroById(id)?.kind === 'recording-reset';
+}
+
+// ¿Tiene esta grabación su tecla de borrado montada en la otra capa?
+function hasResetKey(recId) {
+  const pos = keyPosForMacro(recId);
+  if (!pos) return false;
+  const other = pos.layer === 'normal' ? 'super' : 'normal';
+  const pair = state.profiles[pos.profile]?.keys[keymapSlot(pos.key, other)];
+  return pair?.modifier === MACRO_MODIFIER && macroById(pair.keycode)?.target === recId;
+}
+
+// Grabación o su tecla de borrado: las dos pertenecen a la pestaña "Grabar".
+function isRecordOrResetMacro(id) {
+  return isRecordingMacro(id) || isResetMacro(id);
+}
+
+function recordDuration(m) {
+  const events = m?.events || [];
+  return events.length ? events[events.length - 1].t : 0;
+}
+
+// Dónde está la tecla que dispara una macro: perfil, número de tecla y capa.
+// Hace falta para pintar su pantalla y la de su pareja en la otra capa.
+function keyPosForMacro(id) {
+  for (let p = 0; p < state.profiles.length; p++) {
+    const prof = state.profiles[p];
+    for (const layer of ['normal', 'super']) {
+      for (let i = 0; i < 12; i++) {
+        const a = prof.keys[keymapSlot(i, layer)];
+        if (a?.modifier === MACRO_MODIFIER && a.keycode === id && labelSlot(i, layer) >= 0) {
+          return { profile: p, key: i, layer };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function keyScreenForMacro(id) {
+  const pos = keyPosForMacro(id);
+  return pos ? { profile: pos.profile, slot: labelSlot(pos.key, pos.layer) } : null;
+}
+
+// Escribe un icono definitivo (a diferencia de los avisos pasajeros de
+// showKeyStatus): va a la caché y al mapa de iconos del perfil, y cuenta como
+// cambio pendiente para que el guardado automático lo lleve a la Flash.
+async function writeKeyIcon(profileIdx, lslot, text) {
+  if (lslot < 0) return;
+  const bytes = statusFrame(text);
+  await queueIconWrite(async () => {
+    try {
+      await device.uploadOled(profileIdx, lslot, bytes);
+      cache.set(profileIdx, lslot, Uint8Array.from(bytes));
+      const prof = state.profiles[profileIdx];
+      if (prof) prof.oledMask |= (1 << lslot);
+      markDirty();
+    } catch {
+      toast('No se pudo escribir el icono de la tecla', 'error');
+    }
+  });
+}
+
+// Deja las dos pantallas de la pareja como toca: RECORD o PLAY en la capa
+// normal según haya algo grabado, y RESET en la de SUPER si esa tecla lleva el
+// borrado. Se llama cada vez que la grabación cambia de estado.
+async function refreshRecordIcons(recId) {
+  const m = macroById(recId);
+  const pos = keyPosForMacro(recId);
+  if (!m || !pos) return;
+
+  await writeKeyIcon(pos.profile, labelSlot(pos.key, pos.layer),
+                     m.events?.length ? RECORD_ICON_READY : RECORD_ICON_EMPTY);
+
+  // La pareja de borrado solo existe si se creó (ver attachResetKey): con la
+  // grabación puesta en la capa SUPER no hay otra capa donde ponerla.
+  const other = pos.layer === 'normal' ? 'super' : 'normal';
+  const prof = state.profiles[pos.profile];
+  const pair = prof?.keys[keymapSlot(pos.key, other)];
+  if (pair?.modifier === MACRO_MODIFIER && macroById(pair.keycode)?.target === recId) {
+    await writeKeyIcon(pos.profile, labelSlot(pos.key, other), RECORD_ICON_RESET);
+  }
+}
+
+// Monta la tecla de borrado en la capa SUPER de la misma tecla: pulsar
+// SUPER + esa tecla tira lo grabado y la deja lista para grabar otra vez.
+// Solo tiene sentido creando la grabación en la capa normal; si se crea ya en
+// SUPER no hay otra capa libre donde ponerla y se avisa en el editor.
+async function attachResetKey(recId) {
+  const prof = currentProfile();
+  const i = selectedKeyIndex();
+  if (!prof || i === null || view.layer !== 'normal') return;
+
+  const slot = keymapSlot(i, 'super');
+  const resetId = nextMacroId();
+  const reset = ensureMacro(resetId);
+  reset.kind = 'recording-reset';
+  reset.target = recId;
+  reset.actions = [];   // sin pasos: el teclado avisa por CDC en vez de tocarla
+
+  const m = macroById(recId);
+  if (m) m.resetId = resetId;
+  savePCMacros(resetId);
+
+  prof.keys[slot] = { modifier: MACRO_MODIFIER, keycode: resetId };
+  try {
+    await device.setKeymap(view.editingProfile, slot, MACRO_MODIFIER, resetId);
+    markDirty();
+    await variants.reassertSlot('keys', slot);
+  } catch {
+    toast('No se pudo asignar la tecla de borrado en SUPER', 'error');
+  }
+}
+
+// Al dejar de ser una grabación (se cambia de pestaña, o se quita la tecla) hay
+// que llevarse por delante también su tecla de borrado: si no, la capa SUPER
+// se queda con un RESET que ya no borra nada.
+async function detachResetKey(recId) {
+  const m = macroById(recId);
+  const pos = keyPosForMacro(recId);
+  if (!m || !pos) return;
+
+  const other = pos.layer === 'normal' ? 'super' : 'normal';
+  const slot = keymapSlot(pos.key, other);
+  const prof = state.profiles[pos.profile];
+  const pair = prof?.keys[slot];
+  if (pair?.modifier !== MACRO_MODIFIER || macroById(pair.keycode)?.target !== recId) return;
+
+  pcMacros = pcMacros.filter((x) => x.id !== pair.keycode);
+  savePCMacros(pair.keycode);
+
+  prof.keys[slot] = { modifier: 0, keycode: 0 };
+  try {
+    await device.setKeymap(pos.profile, slot, 0, 0);
+    await device.clearOled(pos.profile, labelSlot(pos.key, other));
+    cache.set(pos.profile, labelSlot(pos.key, other), null);
+    prof.oledMask &= ~(1 << labelSlot(pos.key, other));
+    markDirty();
+  } catch {
+    toast('No se pudo quitar la tecla de borrado de SUPER', 'error');
+  }
+}
+
+// Un cartel a pantalla completa con el texto centrado y el marco de siempre.
+function statusFrame(text) {
+  const source = fb.makeTextSource(text, { fontSize: 20, bold: true, font: 'Segoe UI Black' });
+  const scale = fb.fitScale(source);
+  const size = fb.measureSource(source);
+  const raster = fb.rasterizeLayer(source, {
+    x: Math.round((fb.OLED_W - size.width * scale) / 2),
+    y: Math.round((fb.OLED_H - size.height * scale) / 2),
+    scale, threshold: 128, blur: 0, dither: false, invert: 'none',
+  });
+  fb.drawFrame(raster);
+  return raster;
+}
+
+// Subir un icono son cuatro OLED_CHUNK seguidos contra el mismo hueco. Si dos
+// escrituras se solapan, sus trozos se entrelazan y el teclado acaba pintando
+// una mezcla de los dos dibujos: es lo que pasaba al reiniciar una grabación
+// mientras se estaba reproduciendo (llega "reset" y, en mitad de su escritura,
+// el "idle" de la reproducción cortada empieza otra). Se encolan para que cada
+// una termine antes de que empiece la siguiente.
+let iconQueue = Promise.resolve();
+
+function queueIconWrite(run) {
+  const next = iconQueue.then(run, run);
+  iconQueue = next.catch(() => {});
+  return next;
+}
+
+// El aviso se manda a la RAM del teclado y NO se marca como cambio pendiente:
+// así el guardado automático no se lleva un "REC" a la Flash y el icono de
+// verdad sigue siendo el que estaba.
+async function showKeyStatus(id, text) {
+  clearTimeout(restoreTimer);
+  if (!state.connected) return;
+  const target = keyScreenForMacro(id);
+  if (!target) return;
+
+  if (!screenBackup) {
+    const existing = cache.get(target.profile, target.slot);
+    screenBackup = { ...target, bytes: existing ? Uint8Array.from(existing) : null };
+  }
+  const bytes = statusFrame(text);
+  await queueIconWrite(async () => {
+    try {
+      await device.uploadOled(target.profile, target.slot, bytes);
+    } catch { /* si no llega, el aviso se queda solo en la app */ }
+  });
+}
+
+async function restoreKeyStatus() {
+  clearTimeout(restoreTimer);
+  const saved = screenBackup;
+  screenBackup = null;
+  if (!saved || !state.connected) return;
+  await queueIconWrite(async () => {
+    try {
+      if (saved.bytes) await device.uploadOled(saved.profile, saved.slot, saved.bytes);
+      else await device.clearOled(saved.profile, saved.slot);
+    } catch { /* al reconectar se relee todo de todas formas */ }
+  });
+}
+
+// Avisos del proceso principal: grabando / guardada / reproduciendo / parada.
+async function onRecorderState({ id, phase }) {
+  recordPhase = { id, phase };
+
+  if (phase === 'recording') {
+    await showKeyStatus(id, 'REC');
+  } else if (phase === 'playing') {
+    await showKeyStatus(id, 'RUN');
+  } else if (phase === 'saved' || phase === 'empty') {
+    // El proceso principal ha escrito los eventos en la configuración: hay que
+    // releerla antes de volver a guardarla desde aquí, o se perdería.
+    await loadPCMacros();
+    await showKeyStatus(id, phase === 'saved' ? 'OK' : 'VACIO');
+    restoreTimer = setTimeout(async () => {
+      recordPhase = { id: null, phase: 'idle' };
+      // No se devuelve el icono anterior: ahora hay algo grabado, así que la
+      // tecla pasa a poner PLAY. De eso se encarga refreshRecordIcons.
+      screenBackup = null;
+      await refreshRecordIcons(id);
+      if (isActiveView()) render();
+    }, 1200);
+  } else if (phase === 'reset') {
+    // Se ha pulsado SUPER + la tecla: lo grabado se ha ido y vuelve a RECORD.
+    await loadPCMacros();
+    recordPhase = { id: null, phase: 'idle' };
+    screenBackup = null;
+    await refreshRecordIcons(id);
+    toast('Grabación borrada: la tecla vuelve a estar lista para grabar');
+  } else {
+    await restoreKeyStatus();
+  }
+
+  if (isActiveView()) render();
+}
+
+function setRecordMode(mode) {
+  const m = recordMacro(currentMacroId());
+  if (!m) return;
+  m.mode = mode;
+  savePCMacros(m.id);
+  render();
+}
+
+async function clearRecording() {
+  const m = recordMacro(currentMacroId());
+  if (!m || !m.events?.length) return;
+  if (!confirm('Se borrará la operación grabada en esta tecla.\n\n¿Continuar?')) return;
+  m.events = [];
+  savePCMacros(m.id);
+  await refreshRecordIcons(m.id);  // vuelve a RECORD
+  render();
+}
+
+async function toggleRecording() {
+  const m = recordMacro(currentMacroId());
+  if (!m) return;
+
+  // Con algo grabado, la tecla reproduce en vez de grabar (es lo que se espera
+  // de ella el 99% de las veces), así que "grabar de nuevo" tiene que vaciarla
+  // antes: es lo mismo que hace SUPER + la tecla. Los eventos los lee el
+  // proceso principal de la configuración del PC, así que hay que esperar a que
+  // quede escrita o leería todavía los viejos y se pondría a reproducir.
+  if (recordPhase.phase !== 'recording' && m.events?.length) {
+    if (!confirm('Se sustituirá la operación grabada en esta tecla.\n\n¿Grabar de nuevo?')) return;
+    m.events = [];
+    await window.orby.setConfig({ macros: pcMacros });
+    await refreshRecordIcons(m.id);
+    render();
+  }
+
+  window.orby.recorder.toggle(m.id);
+}
+
+function renderRecordTab(macroId) {
+  const m = recordMacro(macroId);
+  if (!m) {
+    return '<p class="setting-desc">Preparando la grabación de esta tecla…</p>';
+  }
+
+  // Este hueco es la pareja de borrado, no la grabación en sí.
+  if (isResetMacro(macroId)) {
+    const pos = keyPosForMacro(m.id);
+    const events = m.events || [];
+    return `
+      <div class="field">
+        <span class="field-label">Borrar la grabación</span>
+        <div class="rec-state ${events.length ? 'ok' : 'off'}">
+          ${pos ? `Esta tecla borra lo grabado en la tecla ${pos.key + 1} de la capa normal.` : 'Tecla de borrado.'}
+          ${events.length ? ` Ahora mismo hay ${events.length} eventos guardados.` : ' Ahora mismo no hay nada que borrar.'}
+        </div>
+      </div>
+      <div class="inspector-actions">
+        <button class="secondary-btn danger" data-act="rec-clear" ${events.length ? '' : 'disabled'}>
+          ${icon('trash', 16)} Borrar ahora
+        </button>
+      </div>
+      <p class="setting-desc">
+        Se creó sola al convertir la otra tecla en grabación. Para quitarla, cambia esa tecla a
+        cualquier otra pestaña que no sea "Grabar".
+      </p>`;
+  }
+
+  const events = m.events || [];
+  const phase = recordPhase.id === m.id ? recordPhase.phase : 'idle';
+  const recording = phase === 'recording';
+  const playing = phase === 'playing';
+  const mode = m.mode || 'once';
+  const seconds = (recordDuration(m) / 1000).toFixed(1);
+
+  return `
+    <div class="field">
+      <span class="field-label">Operación grabada</span>
+      <div class="rec-state ${recording ? 'is-rec' : (events.length ? 'ok' : 'off')}">
+        ${recording
+          ? 'Grabando… haz la operación y vuelve a pulsar la tecla (o el botón de abajo) para terminar.'
+          : events.length
+            ? `${events.length} eventos · ${seconds} s de ratón y teclado`
+            : 'Todavía no hay nada grabado en esta tecla.'}
+      </div>
+    </div>
+
+    <div class="inspector-actions">
+      <button class="primary-btn ${recording ? 'is-capturing' : ''}" data-act="rec-toggle">
+        ${icon(recording ? 'square' : 'oled', 16)}
+        ${recording ? 'Terminar grabación' : (events.length ? 'Grabar de nuevo' : 'Empezar a grabar')}
+      </button>
+      <button class="secondary-btn danger" data-act="rec-clear" ${events.length ? '' : 'disabled'}>
+        ${icon('trash', 16)} Borrar grabación
+      </button>
+    </div>
+
+    <p class="setting-desc">
+      Se captura lo que hagas con el ratón y el teclado del PC, con sus tiempos. Mientras grabas, la
+      pantalla de la tecla pone <strong>REC</strong>; al terminar, <strong>OK</strong>. Para parar de
+      grabar vale tanto la propia tecla como el botón de aquí arriba.
+      ${events.length ? 'Con algo grabado, pulsar la tecla lo reproduce; para cambiarlo, usa "Grabar de nuevo".' : ''}
+    </p>
+
+    <div class="rec-state off">
+      La pantalla de esta tecla pone <strong>${events.length ? RECORD_ICON_READY : RECORD_ICON_EMPTY}</strong>
+      ${hasResetKey(m.id)
+        ? `, y con SUPER pone <strong>${RECORD_ICON_RESET}</strong>: <strong>SUPER + esta tecla</strong>
+           borra lo grabado y la deja lista para grabar otra vez.`
+        : `. La tecla de borrado automática solo se monta al crear la grabación en la capa NORMAL:
+           en SUPER no queda otra capa donde ponerla.`}
+    </div>
+
+    <div class="field mt-4">
+      <span class="field-label">Al reproducir</span>
+      <div class="chip-row">
+        ${RECORD_MODES.map((r) => `
+          <button class="chip ${mode === r.id ? 'on' : ''}" data-act="rec-mode" data-mode="${r.id}">${r.label}</button>`).join('')}
+      </div>
+      <p class="setting-desc">${RECORD_MODES.find((r) => r.id === mode)?.desc || ''}</p>
+    </div>
+
+    ${playing ? `
+      <div class="inspector-actions">
+        <button class="secondary-btn danger" data-act="rec-stop">${icon('square', 16)} Parar reproducción</button>
+      </div>` : ''}
+
+    <p class="setting-desc">
+      Esta acción la ejecuta siempre el PC (el teclado no puede saber dónde está el ratón), así que
+      OrbyGUI tiene que estar abierto —vale con el icono de la bandeja— para que funcione.
+    </p>`;
 }
 
 // Editor de una macro (secuencia ejecutada en el PC): lista de acciones con

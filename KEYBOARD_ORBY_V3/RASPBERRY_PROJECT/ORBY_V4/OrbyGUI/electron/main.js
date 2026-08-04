@@ -7,6 +7,7 @@ const { ForegroundWatcher } = require('./foreground');
 const config = require('./config');
 const { executeMacro, getMousePosition, warmup } = require('./macros');
 const { listInstalledApps } = require('./apps');
+const recorder = require('./recorder');
 
 let mainWindow = null;
 let serial = null;
@@ -119,7 +120,12 @@ function createWindow() {
   serial.on('data', (line) => {
     if (line.startsWith('MACRO:')) {
       const id = parseInt(line.slice(6), 10);
-      if (Number.isInteger(id)) executeMacro(id).catch((err) => console.error('Macro:', err.message));
+      if (Number.isInteger(id)) triggerMacro(id);
+    } else if (line.startsWith('KEY_EV:') && line.endsWith(':0')) {
+      // Reproducción "mientras se mantenga pulsada": el firmware solo avisa de
+      // la macro al pulsar, así que la suelta se saca de la telemetría de
+      // teclas. Cualquier tecla vale para cortar: soltar es soltar.
+      if (recorder.playingMode() === 'hold') recorder.stopPlayback();
     }
     mainWindow?.webContents.send('serial:data', line);
   });
@@ -155,6 +161,77 @@ function createWindow() {
     serial?.disconnect();
     foreground?.stop();
   });
+}
+
+// --- Grabar operación -------------------------------------------------------
+// Una tecla de tipo "grabación" hace tres cosas distintas según en qué punto
+// esté, y siempre con la misma pulsación:
+//   sin nada grabado  -> empieza a grabar
+//   grabando          -> para y guarda
+//   con algo grabado  -> lo reproduce (y, en bucle, la siguiente pulsación lo para)
+// El resto de macros siguen yendo al reproductor de secuencias de siempre.
+
+function macroById(id) {
+  return (config.load().macros || []).find((m) => m.id === id) || null;
+}
+
+function notifyRecorder(id, phase = {}) {
+  mainWindow?.webContents.send('recorder:state', { id, phase });
+}
+
+function saveRecording(id, events) {
+  const macros = (config.load().macros || []).map(
+    (m) => (m.id === id ? { ...m, events } : m));
+  config.save({ macros });
+}
+
+function triggerMacro(id) {
+  const macro = macroById(id);
+
+  // Una tecla que manda un id que la configuración no conoce no hace nada y no
+  // se queja: es el síntoma de una tecla que quedó apuntando a una macro
+  // borrada, y sin esta línea no hay forma de verlo.
+  if (!macro) {
+    console.warn(`MACRO:${id} llegó del teclado pero no hay ninguna macro con ese id`);
+    return;
+  }
+
+  // SUPER + la tecla de una grabación: tira lo grabado y la deja lista para
+  // volver a grabar. Es la pareja que monta sola la pestaña "Grabar".
+  if (macro?.kind === 'recording-reset') {
+    if (recorder.isRecording()) recorder.stopRecording();
+    recorder.stopPlayback(true);   // sin aviso de final: el reset ya repinta la tecla
+    saveRecording(macro.target, []);
+    notifyRecorder(macro.target, 'reset');
+    return;
+  }
+
+  if (macro?.kind !== 'recording') {
+    executeMacro(id).catch((err) => console.error('Macro:', err.message));
+    return;
+  }
+
+  if (recorder.isRecording()) {
+    const events = recorder.stopRecording();
+    saveRecording(id, events);
+    notifyRecorder(id, events.length ? 'saved' : 'empty');
+    return;
+  }
+
+  if (recorder.playingId() === id) {
+    recorder.stopPlayback();
+    return;
+  }
+
+  if (macro.events?.length) {
+    notifyRecorder(id, 'playing');
+    recorder.startPlayback(id, macro.events, macro.mode || 'once',
+                           () => notifyRecorder(id, 'idle'));
+    return;
+  }
+
+  recorder.startRecording();
+  notifyRecorder(id, 'recording');
 }
 
 // Icono en la bandeja del sistema: es lo que permite que la app siga viva
@@ -302,6 +379,19 @@ ipcMain.handle('dialog:pickAppOrFile', async (_e, kind) => {
 // --- IPC: apps instaladas (pestaña "App" del inspector de tecla) ---
 ipcMain.handle('apps:listInstalled', async () => listInstalledApps());
 
+// --- IPC: grabar operación ---
+// Los mismos tres estados que la pulsación de la tecla, para poder empezar y
+// parar la grabación desde el editor sin tener el Orby delante.
+ipcMain.handle('recorder:toggle', async (_e, id) => {
+  triggerMacro(id);
+  return { recording: recorder.isRecording(), playing: recorder.playingId() === id };
+});
+ipcMain.handle('recorder:stop', async () => { recorder.stopPlayback(); return true; });
+ipcMain.handle('recorder:status', async () => ({
+  recording: recorder.isRecording(),
+  playingId: recorder.playingId(),
+}));
+
 // --- IPC: detector de aplicaciones ---
 ipcMain.handle('foreground:start', async () => foreground?.start() ?? false);
 ipcMain.handle('foreground:stop', async () => { foreground?.stop(); return true; });
@@ -347,6 +437,9 @@ if (gotSingleInstanceLock) {
   app.on('before-quit', () => {
     quitting = true;
     foreground?.stop();
+    // El hook global de entrada corre en un hilo nativo: sin pararlo, el
+    // proceso no llega a terminar nunca.
+    recorder.shutdown();
   });
 
   app.on('activate', () => {

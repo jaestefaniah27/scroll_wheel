@@ -8,3 +8,7 @@ node_modules/
 **/node_modules/
 build/
 .vscode/
+
+# Worktrees temporales de Claude Code
+.claude/worktrees/
+**/.claude/worktrees/

@@ -4,16 +4,18 @@
 // y lo sube troceado con OLED_CHUNK. El hueco es (pantalla-1) + 10 si la capa
 // es SUPER, exactamente el índice que consulta refresh_single_screen().
 //
-// La selección de destino se hace sobre una réplica del teclado en lugar de una
-// lista de números: así se ve de un vistazo qué icono y qué atajo tiene cada
-// tecla antes de tocarla.
+// No es una vista a la que se pueda entrar por la barra lateral: se abre
+// siempre desde la tecla que se esté configurando en Perfiles (o en una macro)
+// y edita ESE icono y ninguno más. Por eso no hay selector de perfil, de capa
+// ni réplica del teclado; el destino ya viene decidido en openTarget(). Se sale
+// por los dos botones fijos de arriba: guardar (manda el icono a la tecla y
+// vuelve) o salir sin guardar.
 
 import * as device from '../device.js';
-import { state, markDirty, subscribe, labelSlot, keymapSlot, KEY_TO_SCREEN, hasPages, pageCountOf,
-         KEY_SUPER } from '../store.js';
-import { describeAction } from '../hid-keys.js';
+import { state, markDirty, subscribe, KEY_TO_SCREEN, hasPages, pageCountOf } from '../store.js';
 import { icon } from '../icons.js';
 import { toast } from '../ui.js';
+import { goTo } from '../nav.js';
 import * as fb from '../oled-fb.js';
 import * as cache from '../oled-cache.js';
 
@@ -55,6 +57,7 @@ const view = {
   drawValue: 1,
   lastPos: null,
   undoStack: [],
+  dirty: false,    // se ha tocado el lienzo desde que se abrió esta tecla
 
   // Capa flotante en colocación (imagen importada, texto generado, o una
   // selección recortada del propio lienzo con la herramienta "select")
@@ -78,7 +81,6 @@ export function init() {
   window.addEventListener('keydown', onKeyDown);
 
   device.on('connected', () => { cache.clearAll(); loadPreviews(); });
-  cache.onChange(() => { if (document.getElementById('oled-key-grid')) renderKeyGrid(); });
 
   let lastProfileCount = 0;
   subscribe(() => {
@@ -91,8 +93,9 @@ export function init() {
   });
 }
 
-// Abre el editor sobre una tecla concreta. Lo usa el editor de perfiles para
-// que "Editar icono" caiga justo en el icono que se estaba configurando.
+// Abre el editor sobre una tecla concreta. Es la ÚNICA forma de entrar aquí:
+// lo llama el botón "Editar icono" del editor de perfiles con el perfil, la
+// tecla y la capa que se estaban configurando.
 export function openTarget({ profile, key, layer } = {}) {
   if (Number.isInteger(profile) && profile < state.profiles.length) view.profile = profile;
   if (layer === 'normal' || layer === 'super') view.layer = layer;
@@ -103,8 +106,23 @@ export function openTarget({ profile, key, layer } = {}) {
   const cached = cache.get(view.profile, slot());
   view.buffer = cached ? Uint8Array.from(cached) : fb.createFramebuffer();
   view.undoStack = [];
+  view.dirty = false;
   render();
   loadPreviews();
+}
+
+// Vuelve al editor de perfiles, que es de donde siempre se viene. La tecla
+// sigue seleccionada allí, así que se cae justo en el mismo inspector.
+function backToProfiles() {
+  cancelLayer(false);
+  goTo('view-profiles');
+}
+
+// Salir sin guardar: lo dibujado se descarta y la tecla se queda con el icono
+// que ya tuviera el teclado. Se pregunta solo si de verdad hay algo que perder.
+function exitWithoutSaving() {
+  if (view.dirty && !confirm('Se perderá lo que hayas dibujado en este icono.\n\n¿Salir sin guardar?')) return;
+  backToProfiles();
 }
 
 // --- Destino ----------------------------------------------------------------
@@ -139,9 +157,7 @@ function onClick(e) {
   else if (act === 'zoom-in')  { setZoom(view.zoom + zoomStep(view.zoom)); }
   else if (act === 'zoom-out') { setZoom(view.zoom - zoomStep(view.zoom - 1)); }
   else if (act === 'zoom-fit') { setZoom(fitZoom()); }
-  else if (act === 'key')      { pickKey(Number(el.dataset.key)); }
-  else if (act === 'layer')    { view.layer = el.dataset.layer; cancelLayer(false); render(); }
-  else if (act === 'profile')  { view.profile = Number(el.dataset.idx); cancelLayer(false); loadPreviews(); render(); }
+  else if (act === 'exit')     { exitWithoutSaving(); }
   else if (act === 'clear')    { pushUndo(); fb.clear(view.buffer); repaint(); }
   else if (act === 'invert')   { pushUndo(); fb.invert(view.buffer); repaint(); }
   else if (act === 'frame')    { pushUndo(); fb.drawFrame(view.buffer); repaint(); }
@@ -208,18 +224,6 @@ function onKeyDown(e) {
   view.layerXf.y += nudge[1];
   repaint();
   updateXfLabels();
-}
-
-function pickKey(index) {
-  if (!screenOf(index)) return; // teclas 10 y 12 no tienen pantalla
-  cancelLayer(false);
-  view.key = index;
-
-  // Cargamos lo que el teclado tenga en ese hueco para poder editarlo encima.
-  const cached = cache.get(view.profile, slot());
-  view.buffer = cached ? Uint8Array.from(cached) : fb.createFramebuffer();
-  view.undoStack = [];
-  render();
 }
 
 // --- Lienzo -----------------------------------------------------------------
@@ -552,9 +556,12 @@ function cancelLayer(rerender = true) {
 
 // --- Historial y pintado ----------------------------------------------------
 
+// Todo lo que modifica el lienzo pasa por aquí antes de tocarlo, así que es el
+// sitio natural para marcar que hay algo que se perdería al salir sin guardar.
 function pushUndo() {
   view.undoStack.push(view.buffer.slice());
   if (view.undoStack.length > 30) view.undoStack.shift();
+  view.dirty = true;
 }
 
 function undo() {
@@ -605,24 +612,27 @@ function updateXfLabels() {
 
 // --- Envío al teclado -------------------------------------------------------
 
+// Guardar = mandar el icono a la tecla y volver a la configuración de esa
+// tecla, que es de donde se entró. Si falla el envío no se sale: si no, el
+// dibujo se perdería sin que la tecla se hubiera enterado.
 async function upload() {
   if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
   if (slot() < 0) { toast('Esa tecla no tiene pantalla', 'error'); return; }
 
   const btn = document.getElementById('btn-oled-upload');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   try {
     await device.uploadOled(view.profile, slot(), view.buffer);
     cache.set(view.profile, slot(), Uint8Array.from(view.buffer));
     const prof = state.profiles[view.profile];
     if (prof) prof.oledMask |= (1 << slot());
     markDirty();
-    renderKeyGrid();
+    view.dirty = false;
     toast(`Icono enviado a la tecla ${view.key + 1}`);
+    backToProfiles();
   } catch (err) {
     toast(`Error al enviar: ${err.message}`, 'error');
-  } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -634,6 +644,7 @@ async function resetSlot() {
     if (prof) prof.oledMask &= ~(1 << slot());
     fb.clear(view.buffer);
     markDirty();
+    view.dirty = false;
     render();
     toast('Icono eliminado; vuelve la etiqueta de texto');
   } catch (err) {
@@ -659,10 +670,7 @@ export function render() {
   if (!root) return;
 
   root.innerHTML = `
-    <header class="view-header compact">
-      <h1>Iconos OLED</h1>
-      <p>Elige una tecla y dibuja, importa una imagen o genera texto para su pantalla de 72×40</p>
-    </header>
+    ${renderActionBar()}
 
     <div class="oled-grid">
       <div class="glass-panel oled-canvas-card">
@@ -674,7 +682,6 @@ export function render() {
       </div>
 
       <div class="oled-side">
-        ${renderTargetPanel()}
         ${view.layerXf ? renderLayerPanel() : renderSourcePanel()}
         ${renderSendPanel()}
       </div>
@@ -683,10 +690,32 @@ export function render() {
   bindCanvas();
   repaint();
   updateXfLabels();
-  // Las miniaturas de las teclas son <canvas>: hay que pintarlas después de
-  // insertar el HTML, no se pueden serializar dentro de la plantilla.
-  paintKeyThumbs();
-  updateGridStatus();
+}
+
+// Barra fija de arriba: qué se está editando y las dos únicas salidas del
+// editor. Va fuera del contenedor que hace scroll (`.oled-side`), así que no
+// puede quedar tapada por mucho que se baje en el panel lateral.
+function renderActionBar() {
+  const prof = state.profiles[view.profile];
+  const pageTxt = (hasPages() && prof && pageCountOf(prof) > 1)
+    ? ` · página ${(prof.pageIdx || 0) + 1} de ${pageCountOf(prof)}` : '';
+  const where = `${escape(prof?.name || `Perfil ${view.profile + 1}`)} · tecla ${view.key + 1}`
+    + ` · pantalla ${screenOf(view.key) || '—'}`
+    + ` · capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'}${pageTxt}`;
+
+  return `
+    <header class="oled-actionbar">
+      <div class="oled-actionbar-info">
+        <h1>Icono de la tecla ${view.key + 1}</h1>
+        <p>${where}</p>
+      </div>
+      <div class="oled-actionbar-btns">
+        <button class="secondary-btn" data-act="exit">${icon('close', 16)} Salir sin guardar</button>
+        <button class="primary-btn" id="btn-oled-upload" data-act="upload" ${slot() >= 0 ? '' : 'disabled'}>
+          ${icon('check', 16)} Enviar a la tecla
+        </button>
+      </div>
+    </header>`;
 }
 
 function renderToolbarInner() {
@@ -723,91 +752,6 @@ function renderHint() {
   }
   return `Clic izquierdo pinta, clic derecho borra. <strong>Ctrl + rueda</strong> hace zoom sobre el punto
           del cursor. Las líneas violetas marcan las páginas de 8 px en las que el SSD1306 direcciona la memoria.`;
-}
-
-// Réplica del teclado: misma disposición que el dashboard, pero cada tecla
-// muestra su icono real y el atajo que ejecuta.
-function renderKeyGridInner() {
-  const prof = state.profiles[view.profile];
-  let html = '';
-
-  for (let i = 0; i < 12; i++) {
-    const screen = screenOf(i);
-    const s = slotOf(i);
-    const action = prof ? (prof.keys[keymapSlot(i, view.layer)] || { modifier: 0, keycode: 0 }) : null;
-    const label = prof && s >= 0 ? (prof.labels[labelSlot(i, view.layer)] || '') : '';
-    const bmp = s >= 0 ? cache.get(view.profile, s) : null;
-
-    if (!screen) {
-      html += `
-        <div class="okey no-screen">
-          <span class="okey-num">T${i + 1}</span>
-          <span class="okey-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>
-        </div>`;
-      continue;
-    }
-
-    html += `
-      <button class="okey ${view.key === i ? 'selected' : ''} ${bmp ? 'has-icon' : ''}" data-act="key" data-key="${i}">
-        <span class="okey-num">T${i + 1}<em>P${screen}</em></span>
-        <span class="okey-screen">
-          ${bmp ? `<canvas class="okey-canvas" data-bmp="${cache.cacheKey(view.profile, s)}"></canvas>`
-                : `<span class="okey-text">${escape(label || '—')}</span>`}
-        </span>
-        <span class="okey-action">${escape(action ? describeAction(action.modifier, action.keycode) : '')}</span>
-      </button>`;
-  }
-  return html;
-}
-
-// Los canvas se pintan tras insertar el HTML: no se pueden serializar.
-function paintKeyThumbs() {
-  cache.paintThumbs(document.getElementById('view-oled') || document);
-}
-
-function updateGridStatus() {
-  const status = document.getElementById('oled-grid-status');
-  if (!status) return;
-  if (cache.isLoading()) { status.textContent = 'Leyendo iconos del teclado…'; return; }
-
-  // Con páginas hay que decir en cuál estamos: el mismo hueco es un icono
-  // distinto en cada página, y la que se edita es la que el teclado tiene puesta.
-  const prof = state.profiles[view.profile];
-  const pageTxt = (hasPages() && prof && pageCountOf(prof) > 1)
-    ? ` · página ${(prof.pageIdx || 0) + 1} de ${pageCountOf(prof)}` : '';
-  status.textContent = `Editando la tecla ${view.key + 1} · pantalla ${screenOf(view.key)}`
-    + ` · capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'}${pageTxt}`;
-}
-
-function renderKeyGrid() {
-  const host = document.getElementById('oled-key-grid');
-  if (!host) return;
-  host.innerHTML = renderKeyGridInner();
-  paintKeyThumbs();
-  updateGridStatus();
-}
-
-function renderTargetPanel() {
-  const names = state.profiles.length ? state.profiles.map((p) => p.name) : ['P1', 'P2', 'P3', 'P4'];
-
-  return `
-    <div class="glass-panel oled-card">
-      <div class="card-header">${icon('profiles', 20)}<h2>Destino</h2></div>
-
-      <div class="target-row">
-        <div class="chip-row">
-          ${names.map((n, i) => `
-            <button class="chip ${view.profile === i ? 'on' : ''}" data-act="profile" data-idx="${i}">${escape(n)}</button>`).join('')}
-        </div>
-        <div class="layer-toggle">
-          <button class="toggle-btn ${view.layer === 'normal' ? 'active' : ''}" data-act="layer" data-layer="normal">NORMAL</button>
-          <button class="toggle-btn ${view.layer === 'super' ? 'active' : ''}" data-act="layer" data-layer="super">SUPER</button>
-        </div>
-      </div>
-
-      <div class="okey-grid" id="oled-key-grid">${renderKeyGridInner()}</div>
-      <p class="grid-status" id="oled-grid-status"></p>
-    </div>`;
 }
 
 function renderSourcePanel() {
@@ -937,8 +881,10 @@ function renderLayerPanel() {
     </div>`;
 }
 
+// El botón de enviar vive en la barra fija de arriba; aquí queda la
+// previsualización a tamaño real y las dos acciones que tocan el hueco del
+// teclado sin salir del editor.
 function renderSendPanel() {
-  const has = slot() >= 0;
   return `
     <div class="glass-panel oled-card">
       <div class="card-header">${icon('oled', 20)}<h2>Pantalla</h2></div>
@@ -946,10 +892,7 @@ function renderSendPanel() {
         <span class="field-label">Tamaño real</span>
         <canvas id="oled-preview" width="${fb.OLED_W * 2}" height="${fb.OLED_H * 2}"></canvas>
       </div>
-      <button class="primary-btn full" id="btn-oled-upload" data-act="upload" ${has ? '' : 'disabled'}>
-        ${icon('download', 16)} Enviar a la tecla ${view.key + 1}
-      </button>
-      <div class="row-inline mt-4">
+      <div class="row-inline">
         <button class="secondary-btn" data-act="load-current">${icon('refresh', 16)} Releer del teclado</button>
         <button class="secondary-btn danger" data-act="reset-slot">${icon('trash', 16)} Quitar icono</button>
       </div>
