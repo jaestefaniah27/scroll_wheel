@@ -3058,16 +3058,26 @@ int main() {
         }
 
         if (wheel_tel_accum != 0 && (uint32_t)(now - last_wheel_tel) >= 50) {
-            last_wheel_tel = now;
             // Además del incremento va el ángulo absoluto (0-4095): es lo que
             // permite a la app dibujar la rueda en su posición real. El campo
             // se añade al final para no romper a quien solo lea el incremento.
             char tel[40];
             int len = snprintf(tel, sizeof(tel), "WHEEL:%ld:%u\n",
                                (long)wheel_tel_accum, (unsigned)wheel.rawAngle());
-            wheel_tel_accum = 0;
-            tud_cdc_n_write(0, tel, len);
-            tud_cdc_n_write_flush(0);
+            // Escribir sin sitio en el FIFO de TX no falla: escribe lo que cabe
+            // y tira el resto. La app recibía entonces media línea pegada a la
+            // siguiente ("WHEEL:5:WHEEL:-3:2100") y leía el ángulo como NaN, lo
+            // que dejaba el dibujo de la rueda congelado hasta reiniciar. Si no
+            // cabe entera se deja para la vuelta siguiente: el incremento sigue
+            // acumulado y el ángulo que se manda luego es el de verdad.
+            if (tud_cdc_n_write_available(0) >= (uint32_t)len) {
+                last_wheel_tel  = now;
+                wheel_tel_accum = 0;
+                tud_cdc_n_write(0, tel, len);
+                tud_cdc_n_write_flush(0);
+            } else {
+                tud_cdc_n_write_flush(0); // empuja lo pendiente para hacer sitio
+            }
         }
 
         // --- LECTURA ANTIRREBOTE DE LAS DOCE TECLAS ---

@@ -51,16 +51,27 @@ export function setDial(patch) {
   recompute();
 }
 
+// El CDC puede entregar una línea partida pegada a la siguiente
+// ("WHEEL:5:WHEEL:-3:2100"), y entonces el ángulo no se puede leer. La línea se
+// descarta entera en vez de dejar pasar un NaN; la próxima llega a los 50 ms.
 function onTelemetry(line) {
   const [deltaStr, angleStr] = line.slice(6).split(':');
   const delta = parseInt(deltaStr, 10);
 
   if (angleStr !== undefined) {
-    rawDeg = (parseInt(angleStr, 10) / COUNTS_PER_REV) * 360;
+    const counts = parseInt(angleStr, 10);
+    if (!Number.isFinite(counts)) return;
+    rawDeg = (normalizeCounts(counts) / COUNTS_PER_REV) * 360;
   } else if (Number.isFinite(delta)) {
     fallbackDeg += (delta / COUNTS_PER_REV) * 360;
+  } else {
+    return;
   }
   recompute();
+}
+
+function normalizeCounts(counts) {
+  return ((counts % COUNTS_PER_REV) + COUNTS_PER_REV) % COUNTS_PER_REV;
 }
 
 // El AS5600 cuenta en el sentido contrario al que se ve girar la rueda, así que
@@ -74,6 +85,10 @@ function targetDeg() {
 // una vuelta entera hacia atrás en la animación.
 function recompute() {
   let diff = (targetDeg() - shownDeg) % 360;
+  // `shownDeg` se realimenta de sí mismo: si una sola vez suma NaN se queda en
+  // NaN para siempre y el marcador no se mueve más, aunque todo lo que llegue
+  // después esté bien. Mejor no moverse esta vez que no moverse nunca más.
+  if (!Number.isFinite(diff)) return;
   if (diff > 180) diff -= 360;
   if (diff < -180) diff += 360;
   shownDeg += diff;

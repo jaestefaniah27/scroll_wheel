@@ -1,4 +1,5 @@
 const { shell } = require('electron');
+const { exec } = require('child_process');
 const config = require('./config');
 
 // Ejecuta en el PC las macros que el propio teclado NO puede reproducir solo
@@ -46,6 +47,29 @@ function mapCodeToNutKey(code, Key) {
 }
 
 const CLICK_BUTTONS = { left: 'LEFT', middle: 'MIDDLE', right: 'RIGHT' };
+
+// Acciones de energía: no hay opcode de firmware para esto (igual que
+// open_app), siempre corren por el camino del PC. Solo Windows por ahora,
+// que es la única plataforma que soporta esta app (ver foreground.js).
+const POWER_COMMANDS = {
+  sleep:     { win32: 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0' },
+  hibernate: { win32: 'shutdown /h' },
+  restart:   { win32: 'shutdown /r /t 0' },
+  shutdown:  { win32: 'shutdown /s /t 0' },
+  lock:      { win32: 'rundll32.exe user32.dll,LockWorkStation' },
+  logoff:    { win32: 'shutdown /l' },
+};
+
+function runPowerAction(mode) {
+  const cmd = POWER_COMMANDS[mode]?.[process.platform];
+  if (!cmd) {
+    console.error(`Acción de energía "${mode}" no soportada en ${process.platform}`);
+    return;
+  }
+  exec(cmd, (err) => {
+    if (err) console.error(`Acción de energía "${mode}":`, err.message);
+  });
+}
 
 // Traduce el mismo usage HID (Usage Page 0x07) que usa el editor de atajos
 // (ver src/hid-keys.js, KEY_GROUPS) al nombre de tecla de nut.js. Cubre
@@ -125,6 +149,8 @@ async function runAction(action) {
     if (!action.target) return;
     const err = await shell.openPath(action.target);
     if (err) console.error(`No se pudo abrir "${action.target}":`, err);
+  } else if (action.type === 'system_power') {
+    runPowerAction(action.mode);
   } else if (action.type === 'hotkey') {
     // Cualquier tecla (con o sin modificadores) del mismo selector que usa la
     // pestaña Atajo: { modifier, keycode } en usage HID.

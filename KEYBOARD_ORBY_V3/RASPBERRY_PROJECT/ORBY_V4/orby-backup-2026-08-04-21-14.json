@@ -1,7 +1,7 @@
 {
   "format": "orby-backup",
   "version": 3,
-  "savedAt": "2026-08-04T19:13:54.706Z",
+  "savedAt": "2026-08-04T20:50:51.693Z",
   "firmware": "4.1",
   "timeout": 10,
   "activeProfile": 0,
@@ -109,7 +109,7 @@
         },
         {
           "modifier": 251,
-          "keycode": 31
+          "keycode": 73
         },
         {
           "modifier": 8,
@@ -324,7 +324,7 @@
             },
             {
               "modifier": 251,
-              "keycode": 31
+              "keycode": 73
             },
             {
               "modifier": 8,
@@ -681,8 +681,8 @@
               "keycode": 0
             },
             {
-              "modifier": 0,
-              "keycode": 0
+              "modifier": 251,
+              "keycode": 60
             },
             {
               "modifier": 0,
@@ -717,8 +717,8 @@
               "keycode": 0
             },
             {
-              "modifier": 10,
-              "keycode": 22
+              "modifier": 251,
+              "keycode": 75
             },
             {
               "modifier": 0,

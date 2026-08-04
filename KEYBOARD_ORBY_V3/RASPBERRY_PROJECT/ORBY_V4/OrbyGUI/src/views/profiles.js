@@ -170,6 +170,12 @@ function nextMacroId() {
 const DEVICE_STEP_TYPE = { delay: 1, hotkey: 2, mouse_move: 3, mouse_click: 4 };
 const MACRO_MAX_STEPS_DEVICE = 48; // == MACRO_MAX_STEPS en main.cpp
 const CLICK_BUTTON_CODE = { left: 0, middle: 1, right: 2 };
+// Acciones de energía del PC, elegibles desde la pestaña Multimedia (macro de
+// un único paso "system_power", ver electron/macros.js).
+const POWER_MODE_LABELS = {
+  sleep: 'Suspender', hibernate: 'Hibernar', restart: 'Reiniciar',
+  shutdown: 'Apagar', lock: 'Bloquear pantalla', logoff: 'Cerrar sesión',
+};
 // Hueco por defecto entre cada repetición de un mismo paso (tecla o clic
 // repetido, ver sameStep): se usa mientras el paso no traiga uno propio (el
 // campo `gap`, editable en el inspector a partir de 2 repeticiones). Debe
@@ -394,6 +400,8 @@ function onClick(e) {
     applyKeymap(PAGE_STATE_MODIFIER, 0);
   } else if (act === 'set-consumer') {
     applyKeymap(CONSUMER_MODIFIER, Number(el.dataset.index));
+  } else if (act === 'set-power') {
+    setPowerAction(el.dataset.mode);
   } else if (act === 'toggle-mod') {
     const bit = Number(el.dataset.bit);
     const current = currentAction();
@@ -551,13 +559,7 @@ let labelDebounce = null;
 function onInput(e) {
   const act = e.target.dataset.act;
 
-  if (act === 'edit-label') {
-    const slot = Number(e.target.dataset.slot);
-    const text = e.target.value.slice(0, 7);
-    clearTimeout(labelDebounce);
-    labelDebounce = setTimeout(() => writeLabel(slot, text), 250);
-
-  } else if (act === 'edit-name') {
+  if (act === 'edit-name') {
     const text = e.target.value.slice(0, 7);
     clearTimeout(labelDebounce);
     labelDebounce = setTimeout(async () => {
@@ -1090,6 +1092,15 @@ function isAppMacro(id) {
   return acts.length === 1 && acts[0].type === 'open_app';
 }
 
+// Igual que isAppMacro, pero para una acción de energía del PC (Suspender,
+// Apagar…). Vive en la pestaña Multimedia por ser también una sola pulsación
+// sin más ajustes que elegir cuál, aunque por dentro sea una macro de un paso
+// (el firmware no puede tocar esto: ver electron/macros.js).
+function isPowerMacro(id) {
+  const acts = macroById(id)?.actions || [];
+  return acts.length === 1 && acts[0].type === 'system_power';
+}
+
 // Una grabación no es una lista de pasos montada a mano, sino la captura de lo
 // que hizo el usuario con el ratón y el teclado. Se marca con `kind` para
 // distinguirla de una secuencia (ver la pestaña "Grabar").
@@ -1110,6 +1121,9 @@ function describeKey(action) {
     const target = macroById(action.keycode).actions[0].target || '';
     return target ? `Abrir ${target.split(/[\\/]/).pop()}` : 'Abrir…';
   }
+  if (isPowerMacro(action.keycode)) {
+    return POWER_MODE_LABELS[macroById(action.keycode).actions[0].mode] || 'Energía';
+  }
   return describeAction(action.modifier, action.keycode);
 }
 
@@ -1120,6 +1134,7 @@ function tabForAction(action) {
   if (action.modifier === GOTO_PAGE_MODIFIER || action.modifier === PAGE_STATE_MODIFIER) return 'pages';
   if (action.modifier === MACRO_MODIFIER) {
     if (isRecordOrResetMacro(action.keycode)) return 'record';
+    if (isPowerMacro(action.keycode)) return 'media';
     return isAppMacro(action.keycode) ? 'app' : 'sequence';
   }
   return 'shortcut';
@@ -1148,7 +1163,7 @@ function setTab(tab) {
   if (tab === 'sequence' && prevTab !== 'sequence') {
     const action = currentAction();
     if (action.modifier !== MACRO_MODIFIER || isAppMacro(action.keycode)
-        || isRecordOrResetMacro(action.keycode)) {
+        || isPowerMacro(action.keycode) || isRecordOrResetMacro(action.keycode)) {
       const id = nextMacroId();
       ensureMacro(id);
       applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
@@ -1263,6 +1278,21 @@ function setAppKind(kind) {
   step.kind = kind;
   savePCMacros(currentMacroId());
   render();
+}
+
+// --- Pestaña "Multimedia", sección de energía ------------------------------
+// Mismo mecanismo que "App" (macro de un único paso, ver isPowerMacro), pero
+// sin pestaña propia: se asigna al vuelo con un solo clic, igual que una
+// acción multimedia normal. Si la tecla ya era una acción de energía se
+// reutiliza la misma macro (solo cambia el modo); si no, se crea una nueva.
+function setPowerAction(mode) {
+  const action = currentAction();
+  const id = (action.modifier === MACRO_MODIFIER && isPowerMacro(action.keycode))
+    ? action.keycode : nextMacroId();
+  const m = ensureMacro(id);
+  m.actions = [{ type: 'system_power', mode }];
+  savePCMacros(id);
+  applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
 }
 
 async function pickAppTarget(kind) {
@@ -2255,6 +2285,9 @@ function renderKeyInspector() {
                   ${keyClipboard ? '' : 'disabled'}>
             ${icon('paste', 15)}
           </button>
+          <button class="tool-btn small" data-act="clear-action" title="Quita el atajo o la macro y deja la pantalla de la tecla en negro">
+            ${icon('trash', 15)}
+          </button>
           <span class="pill">${view.layer === 'super' ? 'Capa SUPER' : 'Capa normal'}</span>
         </div>
       </div>
@@ -2283,14 +2316,7 @@ function renderKeyInspector() {
               ${icon('pencil', 16)} ${hasIcon ? 'Editar icono' : 'Dibujar icono'}
             </button>
           </div>
-        </div>
-
-        <label class="field">
-          <span class="field-label">Etiqueta OLED (máx. 7 caracteres)</span>
-          <input type="text" class="text-input" maxlength="7"
-                 value="${escape(variants.effectiveLabel(prof, variant, i, view.layer))}"
-                 data-act="edit-label" data-slot="${lslot}">
-        </label>` : `
+        </div>` : `
         <p class="setting-desc">
           Esta tecla no tiene pantalla: la ${KEY_SUPER} es el modificador SUPER y la ${KEY_MENU}
           abre el menú del teclado al mantenerla, así que el firmware no ejecuta su atajo.
@@ -2324,10 +2350,9 @@ function renderKeyInspector() {
         </label>
 
         <div class="inspector-actions">
-          <button class="primary-btn ${view.capturing === true ? 'is-capturing' : ''}" data-act="capture">
+          <button class="primary-btn full ${view.capturing === true ? 'is-capturing' : ''}" data-act="capture">
             ${icon('key', 16)} ${view.capturing === true ? 'Pulsa el atajo… (Esc cancela)' : 'Capturar atajo del teclado'}
           </button>
-          <button class="secondary-btn" data-act="clear-action" title="Quita el atajo o la macro y deja la pantalla de la tecla en negro">${icon('trash', 16)} Quitar</button>
         </div>` : ''}
 
       ${tab === 'sequence' ? renderSequenceEditor(isMacro ? action.keycode : null) : ''}
@@ -2339,11 +2364,23 @@ function renderKeyInspector() {
       ${tab === 'media' ? `
         <div class="field">
           <span class="field-label">Acción multimedia</span>
-          <div class="consumer-grid">
+          <div class="consumer-grid consumer-grid-3col">
             ${CONSUMER_ACTIONS.map((c) => `
               <button class="consumer-chip ${isConsumer && action.keycode === c.index ? 'on' : ''}"
                       data-act="set-consumer" data-index="${c.index}">${c.label}</button>`).join('')}
           </div>
+        </div>
+        <div class="field">
+          <span class="field-label">Energía del PC</span>
+          <div class="consumer-grid">
+            ${Object.entries(POWER_MODE_LABELS).map(([mode, label]) => `
+              <button class="consumer-chip ${isMacro && isPowerMacro(action.keycode) && macroById(action.keycode).actions[0].mode === mode ? 'on' : ''}"
+                      data-act="set-power" data-mode="${mode}">${label}</button>`).join('')}
+          </div>
+          <p class="setting-desc">
+            Esta acción la ejecuta el PC, no el teclado, así que OrbyGUI tiene que estar abierto
+            —vale con el icono de la bandeja— para que funcione.
+          </p>
         </div>` : ''}
 
       ${tab === 'pages' ? renderPageActions(action) : ''}

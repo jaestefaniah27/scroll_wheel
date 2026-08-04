@@ -1035,6 +1035,7 @@ body {
   background: var(--primary); border-color: var(--primary); color: #fff;
 }
 .consumer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.consumer-grid-3col { grid-template-columns: 1fr 1fr 1fr; }
 .consumer-chip { padding: 8px; font-size: 11px; text-align: left; }
 .inspector-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 
