@@ -296,6 +296,16 @@ let updateState = {
   error: null,
 };
 
+// electron-updater mete el cuerpo entero de la respuesta HTTP en el mensaje
+// cuando no puede leer el feed de releases: cabeceras, cookies y el XML de
+// GitHub. Eso no cabe en una tarjeta, así que solo viaja la primera línea
+// recortada; el detalle completo queda en la consola del proceso principal.
+function shortUpdateError(err) {
+  const raw = String(err?.message ?? err ?? 'desconocido');
+  const firstLine = raw.split('\n', 1)[0].trim();
+  return firstLine.length > 140 ? `${firstLine.slice(0, 140)}…` : firstLine;
+}
+
 function setUpdateState(patch) {
   updateState = { ...updateState, ...patch };
   mainWindow?.webContents.send('updater:state', updateState);
@@ -304,7 +314,8 @@ function setUpdateState(patch) {
 function checkForUpdates() {
   if (!app.isPackaged) return;
   autoUpdater.checkForUpdates().catch((err) => {
-    setUpdateState({ status: 'error', error: err.message });
+    console.error('AutoUpdater:', err);
+    setUpdateState({ status: 'error', error: shortUpdateError(err) });
   });
 }
 
@@ -325,8 +336,8 @@ function setupAutoUpdater() {
     setUpdateState({ status: 'downloading', percent: Math.round(p.percent) }));
 
   autoUpdater.on('error', (err) => {
-    console.error('AutoUpdater:', err.message);
-    setUpdateState({ status: 'error', error: err.message });
+    console.error('AutoUpdater:', err);
+    setUpdateState({ status: 'error', error: shortUpdateError(err) });
   });
 
   autoUpdater.on('update-downloaded', (info) => {

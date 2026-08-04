@@ -580,7 +580,12 @@ body {
 .info-list { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .info-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .info-list .lbl { color: var(--text-muted); }
-.info-list .val { font-family: monospace; color: var(--info); }
+/* El valor se ajusta y corta: los mensajes de error del actualizador son
+   largos y sin espacios, y sin esto se salen de la tarjeta. */
+.info-list .val {
+  font-family: monospace; color: var(--info);
+  min-width: 0; text-align: right; overflow-wrap: anywhere;
+}
 
 /* Buttons */
 .secondary-btn {
