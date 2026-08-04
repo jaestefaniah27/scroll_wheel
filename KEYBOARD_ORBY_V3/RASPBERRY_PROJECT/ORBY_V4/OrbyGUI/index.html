@@ -25,6 +25,13 @@
         <span data-icon="save" data-icon-size="15"></span>
         <span class="save-label">Guardado</span>
       </button>
+      <!-- Solo aparece cuando hay una versión nueva: la app vive en la bandeja
+           y puede pasar semanas sin cerrarse, así que la actualización tiene
+           que poder instalarse desde aquí (ver src/updater.js). -->
+      <button class="update-badge hidden" id="btn-update">
+        <span data-icon="download" data-icon-size="14"></span>
+        <span class="update-label">Actualizar</span>
+      </button>
     </div>
     <div class="titlebar-controls">
       <button class="window-btn" id="btn-minimize" data-icon="minus"></button>
@@ -106,8 +113,8 @@
       <!-- Ajustes -->
       <section id="view-settings" class="view">
         <header class="view-header">
-          <h1>Ajustes de hardware</h1>
-          <p>Configuración del dispositivo y persistencia en memoria Flash</p>
+          <h1>Ajustes</h1>
+          <p>Dispositivo, copias de seguridad y la propia aplicación</p>
         </header>
         <div class="settings-grid">
           <div class="settings-card glass-panel">
@@ -165,6 +172,31 @@
                 </button>
               </div>
               <p class="setting-desc" id="backup-status"></p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel" id="settings-app">
+            <div class="card-header">
+              <span data-icon="info" data-icon-size="22"></span>
+              <h2>Aplicación</h2>
+            </div>
+            <div class="setting-body">
+              <ul class="info-list">
+                <li><span class="lbl">Versión instalada</span><span class="val" id="app-version">—</span></li>
+                <li><span class="lbl">Actualizaciones</span><span class="val" id="app-update-status">—</span></li>
+              </ul>
+              <div class="row-inline mt-4">
+                <button class="secondary-btn" id="btn-check-update">
+                  <span data-icon="refresh" data-icon-size="16"></span> Buscar actualizaciones
+                </button>
+                <button class="primary-btn hidden" id="btn-install-update">
+                  <span data-icon="download" data-icon-size="16"></span> Instalar y reiniciar
+                </button>
+              </div>
+              <p class="setting-desc">
+                Se comprueba al arrancar y cada seis horas. La descarga es automática; instalarla
+                cierra OrbyGUI un momento.
+              </p>
             </div>
           </div>
 

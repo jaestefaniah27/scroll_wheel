@@ -12,3 +12,10 @@ build/
 # Worktrees temporales de Claude Code
 .claude/worktrees/
 **/.claude/worktrees/
+
+# Salida de electron-builder: instaladores de ~100 MB, se regeneran con
+# "npm run dist" y se publican en GitHub Releases, no en el repo.
+OrbyGUI/release/
+OrbyGUI/win-unpacked/
+**/OrbyGUI/release/
+**/OrbyGUI/win-unpacked/

@@ -54,6 +54,14 @@ contextBridge.exposeInMainWorld('orby', {
     onError: (cb) => ipcRenderer.on('foreground:error', (_e, err) => cb(err)),
   },
 
+  // Actualizaciones de la propia app (GitHub Releases)
+  updater: {
+    get: () => ipcRenderer.invoke('updater:get'),
+    check: () => ipcRenderer.invoke('updater:check'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    onState: (cb) => ipcRenderer.on('updater:state', (_e, st) => cb(st)),
+  },
+
   // Controles de ventana
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),

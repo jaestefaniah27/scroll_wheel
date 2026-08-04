@@ -539,6 +539,7 @@ body {
 }
 .secondary-btn:hover { background: rgba(255,255,255,0.1); }
 .mt-4 { margin-top: 16px; }
+.hidden { display: none !important; }
 
 /* ================= CONSOLE VIEW ================= */
 .console-wrapper {
@@ -635,6 +636,23 @@ body {
 }
 .save-flash-btn.has-changes:hover { background: var(--warning); color: #1a1205; }
 @keyframes nudge { 0%,92%,100% { transform: none; } 96% { transform: translateY(-2px); } }
+
+/* Aviso de versión nueva, al lado del estado de conexión y del guardado. */
+.update-badge {
+  pointer-events: auto; -webkit-app-region: no-drag;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 20px; cursor: default;
+  font-size: 11px; font-weight: 600;
+  background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.35);
+  color: var(--info); transition: all 0.2s;
+}
+/* Descargando todavía no se puede pulsar; lista, sí. */
+.update-badge.ready {
+  cursor: pointer;
+  background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.5);
+  color: var(--primary); animation: nudge 2.4s ease-in-out infinite;
+}
+.update-badge.ready:hover { background: var(--primary); color: #0f0a1a; }
 
 /* ================= CONTROLES DE FORMULARIO ================= */
 .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }

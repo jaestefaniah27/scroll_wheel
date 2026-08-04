@@ -8,6 +8,7 @@ import { setNavigator } from './nav.js';
 import * as wheelDial from './wheel-dial.js';
 import * as variants from './variants.js';
 import * as mirror from './mirror.js';
+import * as updater from './updater.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
@@ -37,6 +38,44 @@ function initChrome() {
   });
 
   document.getElementById('btn-save-flash').addEventListener('click', saveToFlash);
+  initUpdateBadge();
+}
+
+// El aviso de actualización vive al lado del estado de conexión y del guardado:
+// es lo que el usuario ya mira, y sin él la versión descargada se quedaría
+// esperando a un cierre real de la app que puede no llegar nunca.
+function initUpdateBadge() {
+  const btn = document.getElementById('btn-update');
+
+  btn.addEventListener('click', async () => {
+    if (updater.update.status !== 'downloaded') return;
+    if (!confirm(`Se instalará OrbyGUI ${updater.update.newVersion}.\n\n`
+               + 'La app se cerrará y volverá a abrirse sola. ¿Continuar?')) return;
+    await updater.install();
+  });
+
+  updater.onChange(renderUpdateBadge);
+  updater.init();
+  renderUpdateBadge();
+}
+
+function renderUpdateBadge() {
+  const btn = document.getElementById('btn-update');
+  const label = btn.querySelector('.update-label');
+  const { status, newVersion, percent } = updater.update;
+
+  // 'checking' e 'idle' no se enseñan: comprobar sola cada seis horas no es
+  // algo que el usuario tenga que ver, solo el resultado cuando hay versión.
+  btn.classList.toggle('hidden', status !== 'downloading' && status !== 'downloaded');
+  btn.classList.toggle('ready', status === 'downloaded');
+
+  if (status === 'downloading') {
+    label.textContent = `Descargando ${percent}%`;
+    btn.title = `Bajando OrbyGUI ${newVersion}`;
+  } else if (status === 'downloaded') {
+    label.textContent = `Actualizar a ${newVersion}`;
+    btn.title = `OrbyGUI ${newVersion} lista: haz clic para instalarla`;
+  }
 }
 
 // `params` permite abrir una vista apuntando a algo concreto: es lo que usa el

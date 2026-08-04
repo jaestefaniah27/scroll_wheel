@@ -1,6 +1,7 @@
-// Ajustes de hardware y persistencia.
+// Ajustes: dispositivo, persistencia y la propia aplicación.
 
 import * as device from '../device.js';
+import * as updater from '../updater.js';
 import { state, markDirty, syncFromDevice } from '../store.js';
 import { toast } from '../ui.js';
 import { runExport, runImport } from '../backup.js';
@@ -75,6 +76,41 @@ export function init() {
   });
 
   initWheelCalib();
+  initAppCard();
+}
+
+// ================= Aplicación (versión y actualizaciones) =================
+function initAppCard() {
+  const check = document.getElementById('btn-check-update');
+  const install = document.getElementById('btn-install-update');
+  if (!check || !install) return;
+
+  check.addEventListener('click', async () => {
+    if (updater.update.status === 'dev') {
+      toast('En modo desarrollo no hay actualizaciones que buscar', 'info');
+      return;
+    }
+    await updater.check();
+    // El resultado llega por el canal de estado; esto solo confirma el clic.
+    toast('Buscando actualizaciones…', 'info');
+  });
+
+  install.addEventListener('click', () => updater.install());
+
+  updater.onChange(renderAppCard);
+  renderAppCard();
+}
+
+function renderAppCard() {
+  const version = document.getElementById('app-version');
+  const status = document.getElementById('app-update-status');
+  const install = document.getElementById('btn-install-update');
+  if (!version || !status || !install) return;
+
+  version.textContent = updater.update.version || '—';
+  status.textContent = updater.describe();
+  status.style.color = updater.update.status === 'error' ? 'var(--danger)' : '';
+  install.classList.toggle('hidden', updater.update.status !== 'downloaded');
 }
 
 // ================= Autoarranque con Windows =================
@@ -219,6 +255,8 @@ function renderWheelCalib() {
 }
 
 export function render() {
+  renderAppCard();
+
   document.querySelectorAll('#timeout-selector .opt-btn').forEach((btn) => {
     btn.classList.toggle('active', Number(btn.dataset.val) === state.timeout);
   });

@@ -262,30 +262,86 @@ function createTray() {
 // Se comprueba contra las Releases de GitHub (ver "publish" en package.json).
 // Solo tiene sentido con la app empaquetada e instalada: en dev no hay
 // instalador que sustituir ni feed de actualizaciones que consultar.
-function setupAutoUpdater() {
+//
+// El estado se replica al renderer (canal 'updater:state') porque
+// `autoInstallOnAppQuit` no basta en esta app: la X esconde la ventana en vez
+// de cerrar, así que el proceso puede pasar semanas vivo con la actualización
+// descargada y sin instalar. La forma de instalarla es el aviso de la barra
+// de título, que sí se ve.
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+// status: 'dev' | 'idle' | 'checking' | 'downloading' | 'downloaded' | 'error'
+let updateState = {
+  status: 'idle',
+  version: app.getVersion(),
+  newVersion: null,
+  percent: 0,
+  error: null,
+};
+
+function setUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  mainWindow?.webContents.send('updater:state', updateState);
+}
+
+function checkForUpdates() {
   if (!app.isPackaged) return;
+  autoUpdater.checkForUpdates().catch((err) => {
+    setUpdateState({ status: 'error', error: err.message });
+  });
+}
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) {
+    updateState = { ...updateState, status: 'dev' };
+    return;
+  }
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('error', (err) => console.error('AutoUpdater:', err.message));
+  autoUpdater.on('checking-for-update', () => setUpdateState({ status: 'checking', error: null }));
+  autoUpdater.on('update-not-available', () => setUpdateState({ status: 'idle', newVersion: null }));
+  autoUpdater.on('update-available', (info) =>
+    setUpdateState({ status: 'downloading', newVersion: info.version, percent: 0, error: null }));
+  autoUpdater.on('download-progress', (p) =>
+    setUpdateState({ status: 'downloading', percent: Math.round(p.percent) }));
+
+  autoUpdater.on('error', (err) => {
+    console.error('AutoUpdater:', err.message);
+    setUpdateState({ status: 'error', error: err.message });
+  });
 
   autoUpdater.on('update-downloaded', (info) => {
+    setUpdateState({ status: 'downloaded', newVersion: info.version, percent: 100 });
     if (!Notification.isSupported()) return;
     const notif = new Notification({
       title: `OrbyGUI ${info.version} disponible`,
-      body: 'Se instalará al cerrar la app. Haz clic para instalar ahora.',
+      body: 'Haz clic para instalarla ahora, o usa el aviso de la barra superior.',
       icon: path.join(__dirname, '..', 'assets', 'orby-icon.png'),
     });
-    notif.on('click', () => {
-      quitting = true;
-      autoUpdater.quitAndInstall();
-    });
+    notif.on('click', installUpdate);
     notif.show();
   });
 
-  autoUpdater.checkForUpdates().catch((err) => console.error('AutoUpdater:', err.message));
+  checkForUpdates();
+  // Un proceso que vive en la bandeja puede no reiniciarse en semanas: sin este
+  // repaso solo se enteraría de una versión nueva al arrancar.
+  setInterval(checkForUpdates, UPDATE_CHECK_INTERVAL_MS);
 }
+
+function installUpdate() {
+  if (updateState.status !== 'downloaded') return false;
+  quitting = true;
+  // Fuera del manejador que lo pidió: quitAndInstall cierra las ventanas al
+  // vuelo y dejaría colgada la respuesta del IPC (o el clic de la notificación).
+  setImmediate(() => autoUpdater.quitAndInstall(false, true));
+  return true;
+}
+
+ipcMain.handle('updater:get', () => updateState);
+ipcMain.handle('updater:check', () => { checkForUpdates(); return updateState; });
+ipcMain.handle('updater:install', () => installUpdate());
 
 // --- IPC: serie ---
 ipcMain.handle('serial:send', async (_e, cmd) => (serial ? serial.sendCommand(cmd) : false));
