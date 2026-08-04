@@ -198,6 +198,29 @@ export async function loadImageSource(file) {
   return { kind: 'image', bitmap, naturalWidth: bitmap.width, naturalHeight: bitmap.height };
 }
 
+// Capa a partir de un SVG en texto (la biblioteca de iconos). No pasa por
+// createImageBitmap: con SVG depende de que el marcado traiga tamaño propio y
+// de la versión de Chromium, mientras que <img> + data URI lo dibuja siempre.
+// El SVG se rasteriza a RASTER_PX y no a 72x40 porque drawSource lo reescala
+// después: partir de una copia grande deja los bordes limpios al encogerla.
+const SVG_RASTER_PX = 256;
+
+export function makeSvgSource(markup, { size = SVG_RASTER_PX } = {}) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.width = size;
+    img.height = size;
+    img.onload = () => resolve({
+      kind: 'image', bitmap: img, naturalWidth: size, naturalHeight: size,
+      // Trazo vectorial ya limpio: no necesita el desenfoque previo que se le
+      // aplica a las fotos importadas (ver defaultTransform en views/oled.js).
+      crisp: true,
+    });
+    img.onerror = () => reject(new Error('SVG no válido'));
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
+  });
+}
+
 export function makeTextSource(text, { fontSize = 16, bold = true, font = 'Segoe UI' } = {}) {
   return { kind: 'text', text: String(text), fontSize, bold, font };
 }

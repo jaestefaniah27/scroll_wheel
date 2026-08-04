@@ -15,6 +15,7 @@ import * as device from '../device.js';
 import { state, markDirty, subscribe, KEY_TO_SCREEN, hasPages, pageCountOf,
          ensureEditTarget } from '../store.js';
 import { icon } from '../icons.js';
+import * as lib from '../icon-library.js';
 import { toast, requireDevice } from '../ui.js';
 import { goTo } from '../nav.js';
 import * as fb from '../oled-fb.js';
@@ -77,6 +78,11 @@ const view = {
   textFont: 'Segoe UI',
   textSize: 16,
   textBold: true,
+
+  // Biblioteca de iconos: filtros del buscador. Se guardan en la vista para que
+  // volver del panel de colocación no obligue a rebuscar lo mismo.
+  libQuery: '',
+  libCat: 'all',
 };
 
 export function init() {
@@ -184,6 +190,8 @@ function onClick(e) {
       .forEach((b) => b.classList.toggle('on', b.dataset.mode === el.dataset.mode));
     repaint();
   }
+  else if (act === 'lib-cat')  { setLibCat(el.dataset.cat); }
+  else if (act === 'lib-pick') { pickLibraryIcon(el.dataset.id); }
   else if (act === 'upload')   { upload(); }
   else if (act === 'reset-slot') { resetSlot(); }
   else if (act === 'load-current') { loadFromDevice(); }
@@ -206,7 +214,8 @@ function onInput(e) {
   const act = e.target.dataset.act;
   if (!act) return;
 
-  if (act === 'text-draft')      { view.textDraft = e.target.value; }
+  if (act === 'lib-search')      { view.libQuery = e.target.value; refreshLibraryGrid(); }
+  else if (act === 'text-draft') { view.textDraft = e.target.value; }
   else if (act === 'text-size')  { view.textSize = Number(e.target.value); if (view.source?.kind === 'text') refreshTextSource(); }
   else if (act === 'text-bold')  { view.textBold = e.target.checked; if (view.source?.kind === 'text') refreshTextSource(); }
   else if (!view.layerXf) return;
@@ -408,7 +417,9 @@ function defaultTransform(source) {
     y: (fb.OLED_H - ink.height * scale) / 2 - ink.y * scale,
     scale,
     threshold: 128,
-    blur: source.kind === 'image' ? 1 : 0,
+    // Los iconos de la biblioteca llegan marcados como `crisp`: son trazos
+    // vectoriales limpios y el desenfoque solo les comería las puntas.
+    blur: (source.kind === 'image' && !source.crisp) ? 1 : 0,
     // El difuminado solo tiene sentido en fotos; en iconos de línea es lo que
     // produce esos bordes mordidos, así que arranca desactivado.
     dither: false,
@@ -538,6 +549,39 @@ async function importImage(file) {
     beginLayer(await fb.loadImageSource(file));
   } catch (err) {
     toast(`No se pudo leer la imagen: ${err.message}`, 'error');
+  }
+}
+
+// --- Biblioteca de iconos ---------------------------------------------------
+//
+// Un icono de la biblioteca entra por el mismo camino que una imagen importada:
+// se convierte en capa flotante y se coloca con los mismos controles. Así no hay
+// dos mecanismos distintos que mantener, y lo que se elige del catálogo se puede
+// mover, escalar o invertir antes de fijarlo.
+
+function setLibCat(cat) {
+  view.libCat = cat;
+  document.querySelectorAll('[data-act="lib-cat"]')
+    .forEach((b) => b.classList.toggle('on', b.dataset.cat === cat));
+  refreshLibraryGrid();
+}
+
+// Solo se repinta la rejilla, no la tarjeta entera: rehacer el panel al teclear
+// le quitaría el foco al buscador en cada letra.
+function refreshLibraryGrid() {
+  const grid = document.getElementById('oled-lib-grid');
+  if (grid) grid.outerHTML = renderLibraryGrid();
+}
+
+async function pickLibraryIcon(id) {
+  const item = lib.byId(id);
+  if (!item) return;
+  try {
+    // Blanco explícito: el rasterizador mide luminancia, y el color del tema
+    // (violeta claro sobre transparente) caería según el umbral.
+    beginLayer(await fb.makeSvgSource(lib.svgMarkup(item, { size: 256, color: '#fff' })));
+  } catch (err) {
+    toast(`No se pudo cargar el icono: ${err.message}`, 'error');
   }
 }
 
@@ -838,8 +882,43 @@ function renderHint() {
           del cursor. Las líneas violetas marcan las páginas de 8 px en las que el SSD1306 direcciona la memoria.`;
 }
 
+function renderLibraryGrid() {
+  const found = lib.search(view.libQuery, view.libCat);
+  if (!found.length) {
+    return `<div class="icon-lib-grid empty" id="oled-lib-grid">Ningún icono coincide con la búsqueda.</div>`;
+  }
+  return `
+    <div class="icon-lib-grid" id="oled-lib-grid">
+      ${found.map((it) => `
+        <button class="icon-lib-item" data-act="lib-pick" data-id="${it.id}" title="${escape(it.name)}">
+          ${lib.svgMarkup(it, { size: 28 })}
+        </button>`).join('')}
+    </div>`;
+}
+
+function renderLibraryCard() {
+  const total = lib.ICONS.length;
+  return `
+    <div class="glass-panel oled-card">
+      <div class="card-header">${icon('square', 20)}<h2>Biblioteca de iconos</h2></div>
+      <p class="setting-desc mb-8">${total} iconos listos para usar. Pincha en uno y colócalo como quieras.</p>
+
+      <input type="search" class="text-input" data-act="lib-search" placeholder="Buscar: guardar, volumen, carpeta…"
+             value="${escape(view.libQuery)}">
+
+      <div class="chip-row icon-lib-cats">
+        <button class="chip ${view.libCat === 'all' ? 'on' : ''}" data-act="lib-cat" data-cat="all">Todos</button>
+        ${lib.CATEGORIES.map((c) => `
+          <button class="chip ${view.libCat === c.id ? 'on' : ''}" data-act="lib-cat" data-cat="${c.id}">${c.label}</button>`).join('')}
+      </div>
+
+      ${renderLibraryGrid()}
+    </div>`;
+}
+
 function renderSourcePanel() {
   return `
+    ${renderLibraryCard()}
     <div class="glass-panel oled-card">
       <div class="card-header">${icon('text', 20)}<h2>Generar contenido</h2></div>
 

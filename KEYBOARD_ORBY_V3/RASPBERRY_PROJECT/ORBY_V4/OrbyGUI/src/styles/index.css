@@ -1261,6 +1261,34 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 .chip { padding: 7px 12px; font-size: 12px; font-weight: 600; }
 .chip-row.screens .chip { min-width: 38px; text-align: center; }
 
+/* Biblioteca de iconos */
+.mb-8 { margin-bottom: 10px; }
+.icon-lib-cats { margin: 10px 0 12px; }
+.icon-lib-cats .chip { padding: 5px 9px; font-size: 11px; }
+/* Altura fija con scroll propio: si la rejilla creciera con el catálogo entero,
+   el panel de "Generar contenido" quedaría a cientos de píxeles de aquí. */
+.icon-lib-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px;
+  max-height: 232px; overflow-y: auto; padding: 4px;
+  background: rgba(0,0,0,0.28); border-radius: var(--radius-sm);
+  overscroll-behavior: contain;
+}
+.icon-lib-grid.empty {
+  display: block; padding: 18px; text-align: center;
+  font-size: 12px; color: var(--text-muted);
+}
+.icon-lib-item {
+  display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 1; padding: 0; cursor: pointer;
+  background: rgba(255,255,255,0.02); border: 1px solid transparent;
+  border-radius: 8px; color: var(--text-muted); transition: all 0.12s;
+}
+.icon-lib-item:hover {
+  color: var(--text-main); background: rgba(139,92,246,0.16);
+  border-color: rgba(139,92,246,0.5);
+}
+.icon-lib-item svg { display: block; }
+
 .oled-preview-box { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; background: rgba(0,0,0,0.35); border-radius: var(--radius-sm); margin-bottom: 16px; }
 #oled-preview { image-rendering: pixelated; border: 1px solid #333; border-radius: 2px; }
 

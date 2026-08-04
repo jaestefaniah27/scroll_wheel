@@ -222,6 +222,18 @@ actual en el lienzo para poder editarlo encima.
   **Ctrl + rueda** sobre el lienzo (mantiene quieto el píxel bajo el cursor).
   Con la rueda sola se desplaza el lienzo cuando no cabe entero.
 
+**Biblioteca de iconos.** Lo primero del panel derecho: 216 iconos vectoriales
+ya dibujados (flechas, multimedia, edición, sistema, programación, comunicación
+y varios), con buscador —que ignora acentos, así que *camara* encuentra
+*Cámara*— y filtro por categoría. Pinchas en uno y entra como capa flotante,
+igual que una imagen importada, para colocarlo a tu gusto antes de fijarlo. No
+hace falta que nadie se dibuje sus propios PNG para empezar.
+
+Están escritos a mano en `src/icon-library.js` como cadenas SVG sobre una
+rejilla de 24×24, no en `node_modules` ni en ningún CDN: la app sigue
+funcionando sin conexión. Como son trazos vectoriales limpios, entran con el
+suavizado a 0 (a diferencia de una foto importada, que arranca en 1).
+
 **Colocar imagen o texto.** Ni las imágenes ni el texto se pegan de golpe: se
 convierten en una **capa flotante** con recuadro punteado que puedes ajustar
 antes de fijarla.
