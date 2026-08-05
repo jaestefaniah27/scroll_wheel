@@ -10,6 +10,7 @@ import * as wheelDial from './wheel-dial.js';
 import * as variants from './variants.js';
 import * as mirror from './mirror.js';
 import * as updater from './updater.js';
+import * as plugins from './plugins.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
@@ -312,6 +313,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeView === 'view-profiles') profiles.render();
     if (activeView === 'view-settings') settings.render();
   });
+
+  // Complementos instalados: la lista llega del proceso principal, así que el
+  // primer pintado del editor puede no tenerla todavía. plugins.onChange hace
+  // que las vistas se repinten al llegar (ver profiles.init y settings.init).
+  plugins.init();
 
   // Variaciones de perfil por aplicación: se leen del disco antes de que el
   // detector de ventanas empiece a pedir evaluaciones.

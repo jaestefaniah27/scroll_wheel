@@ -20,8 +20,19 @@ contextBridge.exposeInMainWorld('orby', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
 
-  // Lámpara LampDesk: comprobar que responde en la dirección configurada
-  lampTest: (host) => ipcRenderer.invoke('lamp:test', host),
+  // Complementos: lo que amplía la app para controlar aparatos y programas que
+  // el teclado por sí solo no conoce (ver electron/plugins.js y docs/PLUGINS.md).
+  // Solo su gestión: las acciones las ejecuta el proceso principal.
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+    install: () => ipcRenderer.invoke('plugins:install'),
+    uninstall: (id) => ipcRenderer.invoke('plugins:uninstall', id),
+    setEnabled: (id, enabled) => ipcRenderer.invoke('plugins:setEnabled', id, enabled),
+    getSettings: (id) => ipcRenderer.invoke('plugins:getSettings', id),
+    setSettings: (id, patch) => ipcRenderer.invoke('plugins:setSettings', id, patch),
+    test: (id, values) => ipcRenderer.invoke('plugins:test', id, values),
+    openFolder: () => ipcRenderer.invoke('plugins:openFolder'),
+  },
 
   // Autoarranque con Windows (app.setLoginItemSettings)
   autostart: {

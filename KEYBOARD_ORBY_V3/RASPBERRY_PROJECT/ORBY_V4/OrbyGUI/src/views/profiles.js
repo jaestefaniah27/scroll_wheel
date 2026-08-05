@@ -26,6 +26,7 @@ import { goTo } from '../nav.js';
 import * as cache from '../oled-cache.js';
 import * as fb from '../oled-fb.js';
 import * as variants from '../variants.js';
+import * as plugins from '../plugins.js';
 
 // Mandos giratorios agrupados como se ven en el teclado.
 const ROTARY_GROUPS = [
@@ -176,25 +177,14 @@ const POWER_MODE_LABELS = {
   sleep: 'Suspender', hibernate: 'Hibernar', restart: 'Reiniciar',
   shutdown: 'Apagar', lock: 'Bloquear pantalla', logoff: 'Cerrar sesión',
 };
-// Lámpara LampDesk. Mismo mecanismo que las acciones de energía: una macro de un
-// único paso que ejecuta el PC hablando con la API HTTP del firmware de la
-// lámpara (ver electron/macros.js, runLampAction). La dirección se configura en
-// Ajustes.
+// Acciones de complemento. Mismo mecanismo que las acciones de energía: una
+// macro de un único paso que ejecuta el PC, aquí llamando al complemento
+// instalado que la ofrece (ver electron/plugins.js). La app base no conoce
+// ninguna: la lista sale de lo que declare cada complemento.
 //
-// Las teclas solo pueden con las órdenes que no tienen dirección; el brillo y la
-// temperatura son de los mandos, donde el sentido del giro pone el signo.
-const LAMP_KEY_OPS = {
-  toggle: 'Encender / apagar',
-  on:     'Encender',
-  off:    'Apagar',
-};
-
-// `step` es cuánto se mueve por muesca del encoder. Los dos van en el mismo
-// 0-100 que enseña la app Casa: 20 muescas de punta a punta.
-const LAMP_ROTARY_OPS = {
-  brightness_delta: { label: 'Brillo de la lámpara', step: 5 },
-  color_delta:      { label: 'Color de la lámpara',  step: 5 },
-};
+// Cada complemento dice dónde encaja cada acción: las teclas y la pulsación de
+// un encoder solo pueden con las órdenes que no tienen dirección, mientras que
+// un giro necesita una acción con sentido (el signo lo pone el propio giro).
 // Hueco por defecto entre cada repetición de un mismo paso (tecla o clic
 // repetido, ver sameStep): se usa mientras el paso no traiga uno propio (el
 // campo `gap`, editable en el inspector a partir de 2 repeticiones). Debe
@@ -307,6 +297,11 @@ export function init() {
   // teclado: se leen una vez al arrancar y se repintan si ya se estaba
   // enseñando el inspector de una tecla en modo "Secuencia".
   loadPCMacros().then(() => { if (isActiveView() && view.selected) render(); });
+
+  // Instalar, activar o quitar un complemento cambia qué acciones se pueden
+  // asignar: el inspector tiene que enterarse aunque el cambio se haya hecho
+  // desde Ajustes.
+  plugins.onChange(() => { if (isActiveView()) render(); });
 
   // Cuando el detector de aplicaciones aplica o quita una variación hay que
   // reflejarlo aquí (el distintivo de "aplicada ahora").
@@ -489,20 +484,23 @@ function onClick(e) {
     applyKeymap(0, 0);
   } else if (act === 'rotary-macro') {
     applyRotaryMacro();
-  } else if (act === 'set-lamp') {
-    setLampAction(el.dataset.op);
-  } else if (act === 'rotary-lamp') {
-    setRotaryLampAction(el.dataset.op);
-  } else if (act === 'rotary-lamp-invert') {
-    invertirGiroLampara();
-  } else if (act === 'rotary-lamp-tab') {
-    // Entrar en "Lámpara" sin haber elegido todavía qué controla: se asigna el
-    // primero de la lista para que el mando quede con algo que hacer, igual que
-    // "Secuencia" crea una macro vacía.
+  } else if (act === 'set-plugin') {
+    setPluginAction(el.dataset.plugin, el.dataset.op);
+  } else if (act === 'rotary-plugin') {
+    setRotaryPluginAction(el.dataset.plugin, el.dataset.op);
+  } else if (act === 'rotary-plugin-invert') {
+    invertirGiroPlugin();
+  } else if (act === 'rotary-plugin-tab') {
+    // Entrar en un complemento sin haber elegido todavía qué controla: se
+    // asigna la primera acción que encaje en este hueco, para que el mando
+    // quede con algo que hacer, igual que "Secuencia" crea una macro vacía.
+    const pluginId = el.dataset.plugin;
     const yaEsta = currentRotary();
-    if (!(yaEsta.modifier === MACRO_MODIFIER && isLampMacro(yaEsta.keycode))) {
+    const previo = yaEsta.modifier === MACRO_MODIFIER ? pluginMacroOf(yaEsta.keycode) : null;
+    if (previo?.plugin !== pluginId) {
       const clic = Boolean(rotaryPart(selectedRotarySlot())?.part.discrete);
-      setRotaryLampAction(clic ? 'toggle' : 'brightness_delta');
+      const primera = plugins.actionsFor(plugins.byId(pluginId), clic ? 'click' : 'turn')[0];
+      if (primera) setRotaryPluginAction(pluginId, primera.op);
     }
   } else if (act === 'rec-toggle') {
     toggleRecording();
@@ -1130,26 +1128,23 @@ function isPowerMacro(id) {
   return acts.length === 1 && acts[0].type === 'system_power';
 }
 
-// Igual, para una acción de lámpara.
-function isLampMacro(id) {
+// Igual, para una acción de un complemento.
+function isPluginMacro(id) {
   const acts = macroById(id)?.actions || [];
-  return acts.length === 1 && acts[0].type === 'lamp';
+  return acts.length === 1 && acts[0].type === 'plugin';
 }
 
-function lampStepLabel(step) {
-  if (!step) return 'Sin asignar';
-  if (LAMP_KEY_OPS[step.op]) return `Lámpara: ${LAMP_KEY_OPS[step.op].toLowerCase()}`;
-  const spec = LAMP_ROTARY_OPS[step.op];
-  if (!spec) return 'Lámpara';
-  const signo = Number(step.value) < 0 ? '−' : '+';
-  return `${spec.label} ${signo}${Math.abs(Number(step.value) || 0)}`;
+// El paso de un complemento concreto: sirve para saber si el mando ya está
+// dentro de "su" pestaña o si hay que cambiarlo de complemento.
+function pluginMacroOf(id) {
+  return isPluginMacro(id) ? macroById(id).actions[0] : null;
 }
 
 // describeRotary (hid-keys.js) solo ve el modificador y el código, y ahí todas
 // las macros son iguales. Aquí sí se puede mirar qué guarda la macro.
 function describeRotaryFull(action) {
-  if (action?.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER && isLampMacro(action.keycode)) {
-    return lampStepLabel(macroById(action.keycode).actions[0]);
+  if (action?.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER && isPluginMacro(action.keycode)) {
+    return plugins.describeStep(macroById(action.keycode).actions[0]);
   }
   return describeRotary(action);
 }
@@ -1177,8 +1172,8 @@ function describeKey(action) {
   if (isPowerMacro(action.keycode)) {
     return POWER_MODE_LABELS[macroById(action.keycode).actions[0].mode] || 'Energía';
   }
-  if (isLampMacro(action.keycode)) {
-    return lampStepLabel(macroById(action.keycode).actions[0]);
+  if (isPluginMacro(action.keycode)) {
+    return plugins.describeStep(macroById(action.keycode).actions[0]);
   }
   return describeAction(action.modifier, action.keycode);
 }
@@ -1190,7 +1185,7 @@ function tabForAction(action) {
   if (action.modifier === GOTO_PAGE_MODIFIER || action.modifier === PAGE_STATE_MODIFIER) return 'pages';
   if (action.modifier === MACRO_MODIFIER) {
     if (isRecordOrResetMacro(action.keycode)) return 'record';
-    if (isPowerMacro(action.keycode) || isLampMacro(action.keycode)) return 'media';
+    if (isPowerMacro(action.keycode) || isPluginMacro(action.keycode)) return 'media';
     return isAppMacro(action.keycode) ? 'app' : 'sequence';
   }
   return 'shortcut';
@@ -1219,7 +1214,7 @@ function setTab(tab) {
   if (tab === 'sequence' && prevTab !== 'sequence') {
     const action = currentAction();
     if (action.modifier !== MACRO_MODIFIER || isAppMacro(action.keycode)
-        || isPowerMacro(action.keycode) || isLampMacro(action.keycode)
+        || isPowerMacro(action.keycode) || isPluginMacro(action.keycode)
         || isRecordOrResetMacro(action.keycode)) {
       const id = nextMacroId();
       ensureMacro(id);
@@ -1352,14 +1347,16 @@ function setPowerAction(mode) {
   applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
 }
 
-// --- Sección "Lámpara" de la pestaña Multimedia ---------------------------
+// --- Secciones de complemento de la pestaña Multimedia ---------------------
 // Calcado de setPowerAction: macro de un solo paso, un clic y listo.
-function setLampAction(op) {
+function setPluginAction(pluginId, op) {
   const action = currentAction();
-  const id = (action.modifier === MACRO_MODIFIER && isLampMacro(action.keycode))
-    ? action.keycode : nextMacroId();
+  const previo = pluginMacroOf(action.modifier === MACRO_MODIFIER ? action.keycode : -1);
+  // Se reutiliza la macro solo si ya era de ESTE complemento: cambiar de uno a
+  // otro es cambiar de acción, no editarla.
+  const id = previo?.plugin === pluginId ? action.keycode : nextMacroId();
   const m = ensureMacro(id);
-  m.actions = [{ type: 'lamp', op }];
+  m.actions = [{ type: 'plugin', plugin: pluginId, op }];
   savePCMacros(id);
   applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
 }
@@ -1369,8 +1366,8 @@ function setLampAction(op) {
 // en los encoders baja el giro antihorario, y en la rueda el "hacia abajo"
 // (WHEEL_CW, ver WHEEL_GROUP), que es el sentido en el que se baja cualquier
 // otra cosa. Si el encoder está montado del revés, el botón "Invertir giro" del
-// inspector le da la vuelta al par entero (ver invertirGiroLampara).
-const LAMP_ROTARY_DOWN_SLOTS = new Set([
+// inspector le da la vuelta al par entero (ver invertirGiroPlugin).
+const ROTARY_DOWN_SLOTS = new Set([
   ROTARY_SLOTS.ENC1_CCW, ROTARY_SLOTS.ENC2_CCW, ROTARY_SLOTS.WHEEL_CW,
 ]);
 
@@ -1385,8 +1382,8 @@ const ROTARY_TWIN = {
 };
 
 // ¿Este hueco está girando al revés de lo que le tocaría por su sentido?
-function lampGiroInvertido(base, step) {
-  const porDefecto = LAMP_ROTARY_DOWN_SLOTS.has(base) ? -1 : 1;
+function giroInvertido(base, step) {
+  const porDefecto = ROTARY_DOWN_SLOTS.has(base) ? -1 : 1;
   return Math.sign(Number(step?.value) || 0) === -porDefecto;
 }
 
@@ -1397,7 +1394,7 @@ function lampGiroInvertido(base, step) {
 //
 // Solo toca el paso de la macro, que vive en el PC: el hueco sigue apuntando a
 // la misma macro, así que no hay nada que escribir en el teclado.
-function invertirGiroLampara() {
+function invertirGiroPlugin() {
   const prof = currentProfile();
   const base = selectedRotarySlot();
   if (!prof || base === null) return;
@@ -1407,30 +1404,36 @@ function invertirGiroLampara() {
 
   for (const b of huecos) {
     const accion = variants.effectiveRotary(prof, variant, b, view.layer);
-    if (accion?.modifier !== MACRO_MODIFIER || !isLampMacro(accion.keycode)) continue;
+    if (accion?.modifier !== MACRO_MODIFIER || !isPluginMacro(accion.keycode)) continue;
     const paso = macroById(accion.keycode).actions[0];
-    if (!LAMP_ROTARY_OPS[paso.op]) continue;   // encender/apagar no tiene sentido de giro
-    paso.value = -(Number(paso.value) || 0);
+    // Encender/apagar no tiene sentido de giro: sin cantidad no hay signo que
+    // dar la vuelta.
+    if (!Number(paso.value)) continue;
+    paso.value = -Number(paso.value);
     savePCMacros(accion.keycode);
   }
 
   render();
 }
 
-function setRotaryLampAction(op) {
-  const spec = LAMP_ROTARY_OPS[op];
-  if (!spec && !LAMP_KEY_OPS[op]) return;
+function setRotaryPluginAction(pluginId, op) {
+  const { action: spec } = plugins.findAction(pluginId, op);
+  if (!spec) return;
 
   const action = currentRotary();
-  const id = (action.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER
-              && isLampMacro(action.keycode))
-    ? action.keycode : nextMacroId();
+  const previo = (action.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER)
+    ? pluginMacroOf(action.keycode) : null;
+  const id = previo?.plugin === pluginId ? action.keycode : nextMacroId();
 
-  const signo = LAMP_ROTARY_DOWN_SLOTS.has(selectedRotarySlot()) ? -1 : 1;
+  // Solo los giros llevan cantidad; la pulsación de un encoder es un evento
+  // suelto, sin dirección que aplicarle.
+  const esGiro = spec.targets.includes('turn') && spec.step > 0;
+  const signo = ROTARY_DOWN_SLOTS.has(selectedRotarySlot()) ? -1 : 1;
+
   const m = ensureMacro(id);
-  m.actions = spec
-    ? [{ type: 'lamp', op, value: signo * spec.step }]
-    : [{ type: 'lamp', op }];   // la pulsación del encoder no tiene sentido de giro
+  m.actions = esGiro
+    ? [{ type: 'plugin', plugin: pluginId, op, value: signo * spec.step }]
+    : [{ type: 'plugin', plugin: pluginId, op }];
   savePCMacros(id);
   applyRotary({ type: ROTARY_TYPES.KEY, modifier: MACRO_MODIFIER, keycode: id });
 }
@@ -2312,15 +2315,15 @@ function renderRotaryInspector() {
   const action = currentRotary();
   const isClick = Boolean(found?.part.discrete);
   const isMacro = action.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER;
-  const isLamp = isMacro && isLampMacro(action.keycode);
-  const lampStep = isLamp ? macroById(action.keycode).actions[0] : null;
-  const lampOp = lampStep?.op ?? null;
-  const lampInvertido = isLamp && lampGiroInvertido(base, lampStep);
-  // Una pulsación no tiene sentido de giro, así que ahí la lámpara solo puede
-  // encenderse y apagarse; el brillo y la temperatura son cosa de los giros.
-  const lampOps = isClick
-    ? Object.entries(LAMP_KEY_OPS)
-    : Object.entries(LAMP_ROTARY_OPS).map(([op, spec]) => [op, spec.label]);
+  // Una pulsación no tiene sentido de giro, así que ahí un complemento solo
+  // puede ofrecer órdenes sueltas; lo que se mueve por pasos es cosa del giro.
+  const target = isClick ? 'click' : 'turn';
+  const pluginStep = isMacro ? pluginMacroOf(action.keycode) : null;
+  const isPlugin = Boolean(pluginStep);
+  const activePlugin = isPlugin ? plugins.byId(pluginStep.plugin) : null;
+  const pluginOps = plugins.actionsFor(activePlugin, target);
+  const puedeInvertir = isPlugin && !isClick && Boolean(Number(pluginStep.value));
+  const invertido = puedeInvertir && giroInvertido(base, pluginStep);
   const types = ROTARY_TYPE_OPTIONS.filter((t) => !(isClick && t.turnOnly));
 
   const variant = editingVariant();
@@ -2352,31 +2355,41 @@ function renderRotaryInspector() {
           ${types.map((t) => `
             <button class="type-chip ${action.type === t.type && !(t.type === ROTARY_TYPES.KEY && isMacro) ? 'on' : ''}"
                     data-act="rotary-type" data-type="${t.type}">${t.label}</button>`).join('')}
-          <button class="type-chip ${isMacro && !isLamp ? 'on' : ''}" data-act="rotary-macro">Secuencia</button>
-          <button class="type-chip ${isLamp ? 'on' : ''}" data-act="rotary-lamp-tab">Lámpara</button>
+          <button class="type-chip ${isMacro && !isPlugin ? 'on' : ''}" data-act="rotary-macro">Secuencia</button>
+          ${plugins.withActionsFor(target).map((p) => `
+            <button class="type-chip ${activePlugin?.id === p.id ? 'on' : ''}"
+                    data-act="rotary-plugin-tab" data-plugin="${p.id}">${escape(p.name)}</button>`).join('')}
         </div>
       </div>
 
-      ${isLamp ? `
+      ${isPlugin ? `
         <div class="field">
           <span class="field-label">Qué controla</span>
-          <div class="consumer-grid">
-            ${lampOps.map(([op, label]) => `
-              <button class="consumer-chip ${lampOp === op ? 'on' : ''}"
-                      data-act="rotary-lamp" data-op="${op}">${label}</button>`).join('')}
-          </div>
-          ${!isClick && LAMP_ROTARY_OPS[lampOp] ? `
-            <button class="consumer-chip ${lampInvertido ? 'on' : ''}" data-act="rotary-lamp-invert"
+          ${pluginOps.length ? `
+            <div class="consumer-grid">
+              ${pluginOps.map((a) => `
+                <button class="consumer-chip ${pluginStep.op === a.op ? 'on' : ''}"
+                        data-act="rotary-plugin" data-plugin="${pluginStep.plugin}"
+                        data-op="${escape(a.op)}">${escape(a.label)}</button>`).join('')}
+            </div>` : `
+            <p class="setting-desc">
+              ${activePlugin
+                ? 'Este complemento no ofrece nada para este mando.'
+                : `El complemento «${escape(pluginStep.plugin)}» no está instalado o está
+                   desactivado: el mando no hará nada hasta que vuelva.`}
+            </p>`}
+          ${puedeInvertir ? `
+            <button class="consumer-chip ${invertido ? 'on' : ''}" data-act="rotary-plugin-invert"
                     style="margin-top:8px">
               ${icon('reset', 14)} Invertir giro
             </button>` : ''}
           <p class="setting-desc">
             ${isClick
-              ? 'La lámpara la maneja el PC por la red; su dirección se pone en Ajustes.'
+              ? 'Esto lo maneja el PC, así que OrbyGUI tiene que estar abierto.'
               : `Cada muesca mueve el valor un paso, y el sentido lo pone el propio giro: pon lo
                  mismo en los dos sentidos del encoder y ya sube y baja. Si el mando está montado
-                 al revés, <em>Invertir giro</em> le da la vuelta a los dos sentidos a la vez. La
-                 lámpara la maneja el PC por la red; su dirección se pone en Ajustes.`}
+                 al revés, <em>Invertir giro</em> le da la vuelta a los dos sentidos a la vez.
+                 Esto lo maneja el PC, así que OrbyGUI tiene que estar abierto.`}
           </p>
         </div>` : ''}
 
@@ -2390,7 +2403,7 @@ function renderRotaryInspector() {
           </div>
         </div>` : ''}
 
-      ${isMacro && !isLamp ? renderSequenceEditor(action.keycode) : ''}
+      ${isMacro && !isPlugin ? renderSequenceEditor(action.keycode) : ''}
 
       ${action.type === ROTARY_TYPES.KEY && !isMacro ? `
         <div class="field">
@@ -2555,21 +2568,34 @@ function renderKeyInspector() {
             —vale con el icono de la bandeja— para que funcione.
           </p>
         </div>
-        <div class="field">
-          <span class="field-label">Lámpara</span>
-          <div class="consumer-grid">
-            ${Object.entries(LAMP_KEY_OPS).map(([op, label]) => `
-              <button class="consumer-chip ${isMacro && isLampMacro(action.keycode) && macroById(action.keycode).actions[0].op === op ? 'on' : ''}"
-                      data-act="set-lamp" data-op="${op}">${label}</button>`).join('')}
-          </div>
-          <p class="setting-desc">
-            Habla directamente con la lámpara por la red; su dirección se pone en Ajustes.
-            El brillo y la temperatura se asignan a un mando, no a una tecla: necesitan sentido de giro.
-          </p>
-        </div>` : ''}
+        ${renderPluginKeyActions(isMacro ? action.keycode : null)}` : ''}
 
       ${tab === 'pages' ? renderPageActions(action) : ''}
     </div>`;
+}
+
+// Un bloque por complemento instalado dentro de la pestaña Multimedia, con sus
+// acciones asignables a una tecla. Sin complementos no pinta nada: la
+// instalación por defecto de OrbyGUI no trae ninguno, y una sección vacía solo
+// haría preguntarse qué falta.
+function renderPluginKeyActions(macroId) {
+  const paso = macroId === null ? null : pluginMacroOf(macroId);
+
+  return plugins.withActionsFor('key').map((p) => `
+    <div class="field">
+      <span class="field-label">${escape(p.name)}</span>
+      <div class="consumer-grid">
+        ${plugins.actionsFor(p, 'key').map((a) => `
+          <button class="consumer-chip ${paso?.plugin === p.id && paso.op === a.op ? 'on' : ''}"
+                  data-act="set-plugin" data-plugin="${p.id}" data-op="${escape(a.op)}">
+            ${escape(a.label)}
+          </button>`).join('')}
+      </div>
+      <p class="setting-desc">
+        ${escape(p.description || 'Lo ejecuta el PC, así que OrbyGUI tiene que estar abierto.')}
+        Lo que necesite sentido de giro (subir, bajar) se asigna a un mando, no a una tecla.
+      </p>
+    </div>`).join('');
 }
 
 // --- Pestaña "Grabar": capturar una operación y repetirla -------------------

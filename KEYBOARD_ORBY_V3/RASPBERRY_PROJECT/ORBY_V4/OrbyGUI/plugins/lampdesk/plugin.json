@@ -1,0 +1,14 @@
+{
+  "id": "lampdesk",
+  "name": "Lámpara LampDesk",
+  "version": "1.0.0",
+  "description": "Enciende, apaga y regula una lámpara LampDesk por la red desde cualquier tecla o mando.",
+  "author": "Jorge Estefanía",
+  "icon": "sun",
+  "apiVersion": 1,
+  "main": "main.js",
+  "legacy": {
+    "stepType": "lamp",
+    "configKey": "lamp"
+  }
+}

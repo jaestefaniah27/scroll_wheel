@@ -24,13 +24,12 @@ const DEFAULTS = {
   //                 | { type: 'delay', ms } | { type: 'key', code } | { type: 'center_mouse' /* legado */ }] }]
   macros: [],
 
-  // Lámpara LampDesk: dirección y puerto de su API HTTP (ver electron/macros.js,
-  // runLampAction). El 8080 es porque el 80 lo ocupa el servidor HomeKit dentro
-  // de la propia lámpara. Es un aparato de la red, no del teclado, así que como
-  // las reglas de aplicación vive aquí y no necesita "Guardar en Flash".
-  lamp: {
-    host: '192.168.1.35:8080',
-  },
+  // Complementos instalados: si están activos y sus ajustes propios. El código
+  // de cada uno vive en userData/plugins/<id>/, no aquí (ver electron/plugins.js).
+  // Lo que decida el usuario sobre ellos sí vive aquí para que sobreviva a
+  // desinstalar y volver a instalar el complemento.
+  // { "<id>": { enabled: true, settings: { ... } } }
+  plugins: {},
 
   // Calibración del dibujo de la rueda: depende de cómo estén montados el imán
   // y el marcador de la tapa, así que es del PC y no del firmware.
@@ -72,23 +71,10 @@ function merge(base, patch) {
   return out;
 }
 
-// Direcciones de lámpara que hubo durante el desarrollo y que no llevan a
-// ninguna parte: el nombre mDNS nunca llegó a existir en la red, y el guardado
-// gana al valor por defecto, así que sin esto la acción de lámpara falla con un
-// "fetch failed" que no dice contra qué dirección lo intentó.
-const LAMP_HOSTS_MUERTOS = new Set(['lampdesk.local', 'lampdesk.local:80', 'lampdesk.local:8080']);
-
-function migrar(cfg) {
-  if (LAMP_HOSTS_MUERTOS.has(cfg.lamp?.host)) {
-    cfg.lamp = { ...cfg.lamp, host: DEFAULTS.lamp.host };
-  }
-  return cfg;
-}
-
 function load() {
   if (cache) return cache;
   try {
-    cache = migrar(merge(DEFAULTS, JSON.parse(fs.readFileSync(file(), 'utf8'))));
+    cache = merge(DEFAULTS, JSON.parse(fs.readFileSync(file(), 'utf8')));
   } catch {
     cache = structuredClone(DEFAULTS);
   }

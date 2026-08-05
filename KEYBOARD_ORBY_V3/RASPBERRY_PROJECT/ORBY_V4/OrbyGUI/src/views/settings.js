@@ -7,6 +7,7 @@ import { toast, requireDevice } from '../ui.js';
 import { runExport, runImport } from '../backup.js';
 import * as cache from '../oled-cache.js';
 import * as wheelDial from '../wheel-dial.js';
+import * as plugins from '../plugins.js';
 import { icon } from '../icons.js';
 import * as dashboard from './dashboard.js';
 
@@ -46,7 +47,7 @@ export function init() {
   });
 
   initAutostart();
-  initLamp();
+  initPlugins();
 
   document.getElementById('btn-reconnect').addEventListener('click', () => {
     window.orby.reconnect();
@@ -133,41 +134,205 @@ async function initAutostart() {
   });
 }
 
-// ================= Lámpara LampDesk =================
-// Solo la dirección: las acciones de lámpara las manda el proceso principal al
-// recibir MACRO:<id> por CDC (ver electron/macros.js, runLampAction), sin pasar
-// por esta vista. Aquí se guarda dónde está y se comprueba que contesta.
-async function initLamp() {
-  const input = document.getElementById('lamp-host');
-  const test = document.getElementById('btn-lamp-test');
-  const status = document.getElementById('lamp-status');
-  if (!input || !test) return;
+// ================= Complementos =================
+// La lista de instalados y, debajo, una tarjeta por cada uno que pida ajustes
+// propios. Los ajustes se declaran (nombre, tipo, valor por defecto) y se
+// pintan solos: la app no sabe qué es una "dirección de lámpara", solo que ese
+// complemento pide un texto llamado así.
+//
+// Las acciones de los complementos no pasan por esta vista: las dispara el
+// firmware con MACRO:<id> y las ejecuta el proceso principal (ver
+// electron/plugins.js).
+function initPlugins() {
+  const install = document.getElementById('btn-plugin-install');
+  const folder = document.getElementById('btn-plugin-folder');
+  const list = document.getElementById('plugin-list');
+  const cards = document.getElementById('plugin-settings-cards');
+  if (!install || !list || !cards) return;
 
-  const cfg = await window.orby.getConfig();
-  input.value = cfg.lamp?.host || '';
+  install.addEventListener('click', async () => {
+    install.disabled = true;
+    const res = await window.orby.plugins.install();
+    install.disabled = false;
+    if (res.canceled) return;
+    if (!res.ok) {
+      toast(`No se pudo instalar: ${res.error}`, 'error', 6000);
+      return;
+    }
+    await plugins.refresh();
+    toast(`Complemento «${res.plugin.name}» instalado`);
+  });
 
-  const guardar = () => {
-    const host = input.value.trim();
-    if (!host) return;
-    window.orby.setConfig({ lamp: { host } });
-  };
-  input.addEventListener('change', guardar);
+  folder?.addEventListener('click', () => window.orby.plugins.openFolder());
 
-  test.addEventListener('click', async () => {
-    guardar();
-    status.textContent = 'Probando…';
-    test.disabled = true;
-    const res = await window.orby.lampTest(input.value.trim());
-    test.disabled = false;
-    if (res.ok) {
-      status.textContent = `Responde: ${res.state.on ? 'encendida' : 'apagada'}, `
-                         + `brillo ${res.state.brightness} %`;
-      toast('La lámpara responde');
-    } else {
-      status.textContent = `No responde (${res.error})`;
-      toast('La lámpara no responde en esa dirección', 'error');
+  list.addEventListener('click', async (e) => {
+    const el = e.target.closest('[data-act]');
+    if (!el) return;
+    const id = el.dataset.plugin;
+
+    if (el.dataset.act === 'plugin-enable') {
+      const p = plugins.byId(id);
+      await window.orby.plugins.setEnabled(id, !p?.enabled);
+      await plugins.refresh();
+    } else if (el.dataset.act === 'plugin-remove') {
+      const p = plugins.byId(id);
+      if (!confirm(`Se desinstalará «${p?.name || id}».\n\n`
+                 + 'Las teclas y mandos que lo usaran dejarán de hacer nada, pero conservarán su '
+                 + 'ajuste: si vuelves a instalarlo, volverán a funcionar.\n\n¿Continuar?')) return;
+      const res = await window.orby.plugins.uninstall(id);
+      if (!res.ok) {
+        toast(`No se pudo desinstalar: ${res.error}`, 'error', 5000);
+        return;
+      }
+      await plugins.refresh();
+      toast('Complemento desinstalado');
     }
   });
+
+  // Cada campo se guarda al salir de él, como la dirección de la lámpara hacía
+  // antes: escribir a cada tecla dispararía una escritura del archivo por letra.
+  cards.addEventListener('change', (e) => {
+    const el = e.target.closest('[data-plugin][data-key]');
+    if (!el) return;
+    const value = el.type === 'number' ? Number(el.value) : el.value;
+    window.orby.plugins.setSettings(el.dataset.plugin, { [el.dataset.key]: value });
+  });
+
+  cards.addEventListener('click', async (e) => {
+    const el = e.target.closest('[data-act]');
+    if (!el) return;
+
+    if (el.dataset.act === 'plugin-toggle-field') {
+      const on = !el.classList.contains('on');
+      el.classList.toggle('on', on);
+      window.orby.plugins.setSettings(el.dataset.plugin, { [el.dataset.key]: on });
+    } else if (el.dataset.act === 'plugin-test') {
+      await runPluginTest(el.dataset.plugin, el);
+    }
+  });
+
+  plugins.onChange(renderPlugins);
+  renderPlugins();
+}
+
+// La comprobación se hace con lo que hay escrito en los campos ahora mismo, no
+// con lo guardado: probar una dirección nueva sin haber salido antes del campo
+// es justo lo que uno intenta hacer cuando algo no responde.
+async function runPluginTest(id, btn) {
+  const status = document.getElementById(`plugin-status-${id}`);
+  const values = {};
+  document.querySelectorAll(`#plugin-settings-cards [data-plugin="${id}"][data-key]`).forEach((el) => {
+    values[el.dataset.key] = el.classList?.contains('switch')
+      ? el.classList.contains('on')
+      : (el.type === 'number' ? Number(el.value) : el.value);
+  });
+  window.orby.plugins.setSettings(id, values);
+
+  if (status) status.textContent = 'Probando…';
+  btn.disabled = true;
+  const res = await window.orby.plugins.test(id, values);
+  btn.disabled = false;
+
+  if (status) status.textContent = res.ok ? res.detail : `Sin respuesta (${res.error})`;
+  toast(res.ok ? 'El complemento responde' : 'El complemento no responde', res.ok ? 'success' : 'error');
+}
+
+function renderPlugins() {
+  renderPluginList();
+  renderPluginCards();
+}
+
+function renderPluginList() {
+  const list = document.getElementById('plugin-list');
+  if (!list) return;
+  const all = plugins.all();
+
+  if (!all.length) {
+    list.innerHTML = '<p class="plugin-empty">Todavía no hay ninguno instalado.</p>';
+    return;
+  }
+
+  list.innerHTML = all.map((p) => `
+    <div class="plugin-row ${p.error ? 'has-error' : ''}">
+      <span class="plugin-row-icon">${icon(p.icon, 18)}</span>
+      <div class="plugin-row-main">
+        <span class="plugin-row-name">${escape(p.name)} <b>${escape(p.version)}</b></span>
+        <span class="plugin-row-desc">${escape(p.error ? `No se pudo cargar: ${p.error}` : p.description)}</span>
+      </div>
+      <div class="plugin-row-actions">
+        ${p.error ? '' : `
+          <button class="switch ${p.enabled ? 'on' : ''}" data-act="plugin-enable" data-plugin="${p.id}"
+                  title="${p.enabled ? 'Desactivar' : 'Activar'}">
+            <span class="switch-knob"></span>
+          </button>`}
+        <button class="tool-btn small danger" data-act="plugin-remove" data-plugin="${p.id}"
+                title="Desinstalar">${icon('trash', 14)}</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderPluginCards() {
+  const host = document.getElementById('plugin-settings-cards');
+  if (!host) return;
+
+  // Solo los activos y con ajustes que pedir: uno desactivado no debe dejar una
+  // tarjeta que parezca que sigue haciendo algo.
+  const conAjustes = plugins.active().filter((p) => p.settings?.fields?.length || p.settings?.hasTest);
+
+  host.innerHTML = conAjustes.map((p) => `
+    <div class="settings-card glass-panel">
+      <div class="card-header">
+        <span>${icon(p.icon, 22)}</span>
+        <h2>${escape(p.name)}</h2>
+      </div>
+      <div class="setting-body">
+        ${(p.settings.fields || []).map((f) => renderPluginField(p, f)).join('')}
+        ${p.settings.hasTest ? `
+          <div class="row-inline">
+            <button class="secondary-btn" data-act="plugin-test" data-plugin="${p.id}">Probar</button>
+            <span class="setting-desc" id="plugin-status-${p.id}"></span>
+          </div>` : ''}
+        ${p.settings.description ? `<p class="setting-desc">${escape(p.settings.description)}</p>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+function renderPluginField(p, f) {
+  const value = p.values?.[f.key];
+  const attrs = `data-plugin="${p.id}" data-key="${escape(f.key)}"`;
+
+  if (f.type === 'toggle') {
+    return `
+      <div class="row-inline">
+        <button class="switch ${value ? 'on' : ''}" data-act="plugin-toggle-field" ${attrs}>
+          <span class="switch-knob"></span>
+        </button>
+        <span class="switch-label">${escape(f.label)}</span>
+      </div>
+      ${f.hint ? `<p class="setting-desc">${escape(f.hint)}</p>` : ''}`;
+  }
+
+  const control = f.type === 'select'
+    ? `<select class="select-input" ${attrs}>
+         ${f.options.map((o) => `
+           <option value="${escape(o.value)}" ${String(value) === o.value ? 'selected' : ''}>${escape(o.label)}</option>`).join('')}
+       </select>`
+    : `<input class="text-input" type="${f.type === 'number' ? 'number' : f.type}" ${attrs}
+              value="${escape(value ?? '')}" placeholder="${escape(f.placeholder)}" spellcheck="false">`;
+
+  return `
+    <label class="field">
+      <span class="field-label">${escape(f.label)}</span>
+      ${control}
+    </label>
+    ${f.hint ? `<p class="setting-desc">${escape(f.hint)}</p>` : ''}`;
+}
+
+// Lo que llega de un complemento es texto de terceros: acaba en innerHTML, así
+// que no puede entrar sin escapar.
+function escape(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // ================= Calibración de la rueda =================

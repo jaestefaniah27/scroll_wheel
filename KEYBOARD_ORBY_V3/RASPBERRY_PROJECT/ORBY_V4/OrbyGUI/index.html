@@ -174,25 +174,37 @@
 
           <div class="settings-card glass-panel">
             <div class="card-header">
-              <span data-icon="sun" data-icon-size="22"></span>
-              <h2>Lámpara</h2>
+              <span data-icon="plug" data-icon-size="22"></span>
+              <h2>Complementos</h2>
             </div>
             <div class="setting-body">
-              <div class="row-inline">
-                <input type="text" id="lamp-host" class="text-input compact"
-                       placeholder="192.168.1.35:8080" spellcheck="false">
-                <button class="secondary-btn" id="btn-lamp-test">Probar</button>
-              </div>
-              <p class="setting-desc" id="lamp-status"></p>
               <p class="setting-desc">
-                Dirección y puerto de la lámpara en la red (el 8080 lo sirve su firmware; el 80 lo
-                ocupa HomeKit dentro de la propia lámpara). Con esto puesto,
-                cualquier tecla o mando puede encenderla, apagarla o llevarle el brillo (pestaña
-                <em>Multimedia</em> de una tecla, o el tipo <em>Lámpara</em> de un mando).
-                Las órdenes las manda el PC, así que OrbyGUI tiene que estar abierto.
+                Amplían el teclado para que pueda controlar cosas que OrbyGUI no conoce de serie:
+                una lámpara de la red, un programa concreto, lo que haga falta. Sus acciones
+                aparecen luego en la pestaña <em>Multimedia</em> de una tecla y en el tipo de acción
+                de un mando.
+              </p>
+              <div id="plugin-list"></div>
+              <div class="row-inline">
+                <button class="primary-btn" id="btn-plugin-install">
+                  <span data-icon="download" data-icon-size="16"></span> Instalar complemento
+                </button>
+                <button class="secondary-btn" id="btn-plugin-folder">
+                  <span data-icon="upload" data-icon-size="16"></span> Abrir carpeta
+                </button>
+              </div>
+              <p class="setting-desc">
+                Un complemento se ejecuta dentro de OrbyGUI con tus mismos permisos: puede leer tus
+                archivos, salir a internet y abrir programas. Instala solo los que vengan de un
+                origen que conozcas. Para escribir uno, mira <code>docs/PLUGINS.md</code>.
               </p>
             </div>
           </div>
+
+          <!-- Una tarjeta por complemento con ajustes propios (la pinta
+               src/views/settings.js). display:contents las deja caer en la
+               misma rejilla que las demás. -->
+          <div id="plugin-settings-cards" class="settings-card-host"></div>
 
           <div class="settings-card glass-panel">
             <div class="card-header">

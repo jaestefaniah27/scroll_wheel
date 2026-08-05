@@ -167,29 +167,20 @@ Tipos de acción disponibles:
   calculadora, buscar, zoom…
 - **Atajo de teclado** — cualquier combinación, también con captura en vivo.
 - **Desplazar vertical / horizontal** y **Zoom (Ctrl + rueda)**.
-- **Lámpara** — brillo o color de la lámpara del escritorio (*Flexo*).
+- **Un complemento instalado**, si ofrece algo para ese hueco (ver *Complementos*).
 
 Desplazar y zoom llevan el sentido en el signo del giro, así que una sola acción
 cubre las dos direcciones y la app espeja el par automáticamente. Las
 pulsaciones no los ofrecen: un clic no tiene dirección.
 
-**Lámpara.** Pone el brillo o el color de la lámpara del escritorio en un
-encoder. Cada muesca mueve cinco puntos de cien y el signo lo pone el hueco
+**Complementos.** Cada complemento instalado añade su propio tipo de acción con
+lo que sepa hacer en ese hueco. Lo que se mueve por pasos (un brillo, un
+volumen) es cosa del giro: cada muesca mueve un paso y el signo lo pone el hueco
 —horario sube, antihorario baja—, así que basta con elegir lo mismo en los dos
-sentidos. En la pulsación del encoder la opción cambia a encender, apagar o
-alternar, que es lo único que tiene sentido sin giro; para una tecla está en su
-pestaña *Multimedia*.
-
-Los valores van en el mismo 0-100 que enseña la app Casa, así que los tres
-mandos —el encoder, el panel de la bandeja y el iPhone— marcan siempre lo mismo.
-Los incrementos los resuelve la propia lámpara (`dbrightness`, `dcolor`), no el
-PC: quien manda «sube cinco» no tiene por qué saber de cuánto se partía.
-
-Las órdenes salen del PC, no del teclado: el firmware avisa con `MACRO:<id>` y
-OrbyGUI llama a la API HTTP de la lámpara. Los incrementos de un giro rápido se
-agrupan y viajan en una sola petición cada 60 ms, porque el teclado manda un
-aviso **por muesca** y la ESP32 las atiende de una en una. La dirección se pone
-en *Ajustes*.
+sentidos. Si el mando está montado del revés, *Invertir giro* le da la vuelta al
+par entero. En la pulsación del encoder solo salen las órdenes sueltas
+(encender, apagar…), que es lo único que tiene sentido sin giro; para una tecla
+están en su pestaña *Multimedia*.
 
 > Solo **Desplazar vertical** aprovecha la alta resolución de la rueda
 > magnética. El resto de acciones son discretas y trabajan por clics completos.
@@ -334,15 +325,29 @@ Detalles de implementación:
 Reposo automático, información del dispositivo, reconexión forzada, relectura de
 la configuración y restauración de valores de fábrica.
 
-**Lámpara.** La dirección y el puerto de la lámpara en la red
-(`192.168.1.35:8080`) y un botón para comprobar que responde. El puerto no es el
-80 porque ese lo ocupa el servidor HomeKit dentro de la propia lámpara. Conviene
-fijarle reserva DHCP en el router: el nombre mDNS que publica lo pone HomeSpan a
-partir del identificador del accesorio y cambia si se vuelve a emparejar.
+**Complementos.** OrbyGUI sabe manejar el teclado; lo que hay al otro lado del
+PC lo ponen los complementos. Un complemento es un programa que traduce «esta
+tecla» a «esto de fuera»: una lámpara de la red, un servicio con API, lo que sea
+que el ordenador pueda alcanzar. Sus acciones aparecen luego en la pestaña
+*Multimedia* de una tecla y como un tipo más en un mando.
 
-Es un ajuste del PC (`%APPDATA%\OrbyGUI\orby-config.json`), no del teclado: no
-necesita «Guardar en Flash». El firmware de la lámpara vive en
-`ESP-32_Projects/lampDesk`.
+La instalación por defecto **no trae ninguno**. Se instalan desde esta tarjeta
+(desde un `.zip` o, si lo estás desarrollando, desde su carpeta) y viven en
+`%APPDATA%\OrbyGUI\plugins\<id>\`, así que actualizar la app no se los lleva.
+Cada uno que pida ajustes propios añade su tarjeta debajo, con su botón de
+comprobación.
+
+> Un complemento se ejecuta dentro de OrbyGUI con tus mismos permisos: puede
+> leer tus archivos, salir a internet y abrir programas. Instala solo los que
+> vengan de un origen que conozcas; la app pide confirmación antes de copiarlo.
+
+Sus acciones las ejecuta el PC, así que necesitan OrbyGUI abierto —basta con el
+icono de la bandeja— y **no** necesitan «Guardar en Flash»: lo que guarda el
+teclado es solo el identificador de la macro.
+
+Para escribir uno, ver [`docs/PLUGINS.md`](docs/PLUGINS.md). El de la lámpara
+del escritorio está en [`plugins/lampdesk/`](plugins/lampdesk/) y se empaqueta
+con `npm run pack:plugins`.
 
 **Copia de seguridad.** Guarda en un archivo JSON del PC todos los perfiles
 completos: nombres, etiquetas, atajos, mandos giratorios de las dos capas, la

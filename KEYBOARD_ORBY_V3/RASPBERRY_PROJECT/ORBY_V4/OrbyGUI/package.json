@@ -1,6 +1,6 @@
 {
   "name": "orbygui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Orby V4 Macro Keyboard Companion App",
   "main": "electron/main.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "npm run build && electron .",
+    "pack:plugins": "node scripts/pack-plugins.js",
     "dist": "npm run build && electron-builder --win --publish never",
     "release": "npm run build && electron-builder --win --publish always",
     "postinstall": "electron-builder install-app-deps"

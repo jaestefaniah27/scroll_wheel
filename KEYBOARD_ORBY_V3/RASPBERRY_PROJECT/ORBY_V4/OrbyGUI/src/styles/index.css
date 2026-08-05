@@ -539,6 +539,30 @@ body {
 .setting-body { display: flex; flex-direction: column; gap: 12px; }
 .setting-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
 
+/* Complementos. Las tarjetas de sus ajustes las pinta el JS dentro de este
+   contenedor; `display: contents` lo borra de la caja para que sus hijas caigan
+   en la misma columna que las demás tarjetas en vez de amontonarse en una sola. */
+.settings-card-host { display: contents; }
+
+.plugin-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  background: rgba(0,0,0,0.26); border: 1px solid var(--border-light);
+  margin-bottom: 8px;
+}
+.plugin-row.has-error { border-color: rgba(239,68,68,0.4); }
+.plugin-row-icon { color: var(--primary); display: flex; flex-shrink: 0; }
+.plugin-row.has-error .plugin-row-icon { color: var(--danger); }
+.plugin-row-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.plugin-row-name { font-size: 13px; font-weight: 600; }
+.plugin-row-name b { font-weight: 400; font-size: 11px; color: var(--text-muted); }
+.plugin-row-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+.plugin-row-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.plugin-empty {
+  padding: 18px; text-align: center; font-size: 13px; color: var(--text-muted);
+  border: 1px dashed var(--border-light); border-radius: var(--radius-sm);
+}
+
 /* Texto al lado de un interruptor. Sin tamaño propio heredaba los 16px del
    cuerpo y no cabía junto al interruptor, así que la fila se partía en dos y
    la etiqueta acababa pareciendo un título. */

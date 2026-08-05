@@ -5,9 +5,10 @@ const { autoUpdater } = require('electron-updater');
 const { OrbySerial } = require('./serial');
 const { ForegroundWatcher } = require('./foreground');
 const config = require('./config');
-const { executeMacro, getMousePosition, warmup, lampTest } = require('./macros');
+const { executeMacro, getMousePosition, warmup } = require('./macros');
 const { listInstalledApps } = require('./apps');
 const recorder = require('./recorder');
+const plugins = require('./plugins');
 
 let mainWindow = null;
 let serial = null;
@@ -390,11 +391,19 @@ ipcMain.handle('mouse:getPosition', async () => getMousePosition());
 ipcMain.handle('config:get', async () => config.load());
 ipcMain.handle('config:set', async (_e, patch) => config.save(patch));
 
-// --- IPC: lámpara LampDesk ---
-// Solo la comprobación de la tarjeta de ajustes. Las acciones asignadas a teclas
-// y mandos no pasan por aquí: las dispara el firmware con MACRO:<id> y las
-// ejecuta electron/macros.js sin tocar el renderer.
-ipcMain.handle('lamp:test', async (_e, host) => lampTest(host));
+// --- IPC: complementos ---
+// Solo la gestión (instalar, activar, ajustar, comprobar) y la lista para
+// pintarla. Las acciones asignadas a teclas y mandos no pasan por aquí: las
+// dispara el firmware con MACRO:<id> y las ejecuta electron/macros.js contra
+// electron/plugins.js, sin tocar el renderer.
+ipcMain.handle('plugins:list', async () => plugins.list());
+ipcMain.handle('plugins:install', async () => plugins.install(mainWindow));
+ipcMain.handle('plugins:uninstall', async (_e, id) => plugins.uninstall(id));
+ipcMain.handle('plugins:setEnabled', async (_e, id, enabled) => plugins.setEnabled(id, enabled));
+ipcMain.handle('plugins:getSettings', async (_e, id) => plugins.settingsOf(id));
+ipcMain.handle('plugins:setSettings', async (_e, id, patch) => plugins.saveSettings(id, patch));
+ipcMain.handle('plugins:test', async (_e, id, values) => plugins.test(id, values));
+ipcMain.handle('plugins:openFolder', async () => plugins.openFolder());
 
 // --- IPC: autoarranque con Windows ---
 // app.setLoginItemSettings ya persiste el valor en el registro de Windows por
@@ -503,6 +512,11 @@ if (gotSingleInstanceLock) {
   app.on('second-instance', revealWindow);
 
   app.whenReady().then(() => {
+    // Antes de la ventana y del puerto serie: el teclado puede mandar un
+    // MACRO:<id> en cuanto se conecta, y si el complemento al que apunta no
+    // estuviera cargado todavía ese primer disparo se perdería sin más.
+    plugins.loadAll();
+
     createWindow();
     createTray();
     setupAutoUpdater();

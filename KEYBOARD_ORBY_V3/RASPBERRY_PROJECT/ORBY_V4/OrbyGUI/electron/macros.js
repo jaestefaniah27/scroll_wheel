@@ -1,6 +1,7 @@
 const { shell } = require('electron');
 const { exec } = require('child_process');
 const config = require('./config');
+const plugins = require('./plugins');
 
 // Ejecuta en el PC las macros que el propio teclado NO puede reproducir solo
 // (avisa por CDC con MACRO:<id> en vez de tocarlas él, ver trigger_macro en
@@ -71,135 +72,6 @@ function runPowerAction(mode) {
   });
 }
 
-// --- Lámpara LampDesk -------------------------------------------------------
-// Habla directamente con la API HTTP del firmware de la lámpara (ver el README
-// de lampDesk). Como open_app y system_power, no hay opcode de firmware que
-// valga: siempre corre por el camino del PC.
-//
-// Los incrementos se mandan como tales (`dbrightness`, `dcolorTemp`) en vez de
-// leer el estado, sumar y escribir el resultado: la lámpara resuelve la suma, y
-// así el encoder no se pelea con la app Casa ni con el panel de la bandeja por
-// quién tenía el valor bueno.
-const LAMP_OPS = {
-  toggle:           () => ({ on: 'toggle' }),
-  on:               () => ({ on: 1 }),
-  off:              () => ({ on: 0 }),
-  brightness_delta: (v) => ({ dbrightness: v }),
-  color_delta:      (v) => ({ dcolor: v }),
-};
-
-const LAMP_DELTA_OPS = new Set(['brightness_delta', 'color_delta']);
-// Cada escritura hace que la lámpara avise por HomeKit a los iPhone
-// emparejados, y esa ida y vuelta le bloquea el bucle principal unos cientos de
-// ms: la petición siguiente se come la espera. Lo normal son 20-35 ms; el pico
-// medido pasa de dos segundos.
-const LAMP_TIMEOUT_MS = 4000;
-
-// El firmware del Orby manda un MACRO:<id> **por cada muesca** del encoder (ver
-// emit_discrete en main.cpp), así que un giro rápido son veinte disparos en un
-// suspiro. Sin agrupar, eso son veinte peticiones HTTP en cola contra una ESP32
-// que las atiende de una en una, y el brillo llega tarde y a tirones.
-// 120 ms y no menos: la lámpara resuelve una petición suelta en unos 20 ms,
-// pero encadenadas cada 60 ms se le acumulan y la mediana se va a 240 ms. Como
-// el incremento se agrupa, esperar un poco más no pierde ninguna muesca — solo
-// las junta en una petición más gorda.
-const LAMP_COALESCE_MS = 120;
-
-let lampPending = null;
-let lampFlushTimer = null;
-let lampInFlight = false;
-
-function lampHost() {
-  return config.load().lamp?.host || '192.168.1.35:8080';
-}
-
-// Una lámpara desenchufada no puede dejar colgada la ejecución de macros: sin
-// AbortController, fetch espera al agotamiento del TCP (más de un minuto).
-async function lampRequest(params, host = lampHost()) {
-  const control = new AbortController();
-  const timer = setTimeout(() => control.abort(), LAMP_TIMEOUT_MS);
-  try {
-    const query = new URLSearchParams(params).toString();
-    const res = await fetch(`http://${host}/set?${query}`, { signal: control.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function scheduleLampFlush() {
-  if (lampFlushTimer || lampInFlight) return;
-  lampFlushTimer = setTimeout(async () => {
-    lampFlushTimer = null;
-    if (!lampPending) return;
-    const params = lampPending;
-    lampPending = null;
-    lampInFlight = true;
-    try {
-      await lampRequest(params);
-    } catch (err) {
-      console.error(`Lámpara (${lampHost()}):`, err.message);
-    } finally {
-      lampInFlight = false;
-      if (lampPending) scheduleLampFlush();
-    }
-  }, LAMP_COALESCE_MS);
-}
-
-function runLampAction(action) {
-  const build = LAMP_OPS[action.op];
-  if (!build) {
-    console.error(`Acción de lámpara "${action.op}" desconocida`);
-    return;
-  }
-
-  const params = build(Math.trunc(Number(action.value)) || 0);
-
-  // Encender y apagar van sin agrupar: dos pulsaciones seguidas son dos
-  // órdenes, y fundidas en una sola "alterna" se anularían entre ellas.
-  if (!LAMP_DELTA_OPS.has(action.op)) {
-    lampRequest(params).catch((err) => console.error(`Lámpara (${lampHost()}):`, err.message));
-    return;
-  }
-
-  lampPending = lampPending || {};
-  for (const [key, value] of Object.entries(params)) {
-    lampPending[key] = Number(lampPending[key] || 0) + Number(value);
-  }
-  scheduleLampFlush();
-}
-
-// Comprobación desde los ajustes: pide el estado sin cambiar nada.
-//
-// Con un reintento, porque leer es inofensivo: si la lámpara estaba ocupada
-// avisando a HomeKit, el primer intento se queda sin respuesta y la tarjeta de
-// ajustes diría "no responde" con la lámpara perfectamente viva. Las escrituras
-// **no** se reintentan: un incremento repetido se aplicaría dos veces.
-async function lampTest(host) {
-  const pedir = async () => {
-    const control = new AbortController();
-    const timer = setTimeout(() => control.abort(), LAMP_TIMEOUT_MS);
-    try {
-      const res = await fetch(`http://${host || lampHost()}/state`, { signal: control.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
-  try {
-    return { ok: true, state: await pedir() };
-  } catch {
-    try {
-      return { ok: true, state: await pedir() };
-    } catch (err) {
-      return { ok: false, error: String(err.message || err) };
-    }
-  }
-}
-
 // Traduce el mismo usage HID (Usage Page 0x07) que usa el editor de atajos
 // (ver src/hid-keys.js, KEY_GROUPS) al nombre de tecla de nut.js. Cubre
 // exactamente los códigos que ofrece el selector de teclas de la app.
@@ -248,11 +120,13 @@ function modifierKeys(modifier, Key) {
 const DEFAULT_REPEAT_GAP_MS = 20;
 
 async function runAction(action) {
-  // Antes de cargar nut.js: la lámpara solo necesita la red, y sin esta salida
+  // Antes de cargar nut.js: un complemento no tiene por qué necesitar el ratón
+  // ni el teclado (el de la lámpara solo usa la red), y sin esta salida
   // temprana un fallo al cargar el binario nativo (OneDrive con node_modules
-  // como marcador de nube, por ejemplo) también dejaría la luz sin funcionar.
-  if (action.type === 'lamp') {
-    runLampAction(action);
+  // como marcador de nube, por ejemplo) dejaría también sin funcionar lo que no
+  // dependía de él.
+  if (action.type === 'plugin') {
+    await plugins.runStep(action);
     return;
   }
 
@@ -352,4 +226,4 @@ function warmup() {
   loadNutJs();
 }
 
-module.exports = { executeMacro, getMousePosition, warmup, lampTest };
+module.exports = { executeMacro, getMousePosition, warmup };
