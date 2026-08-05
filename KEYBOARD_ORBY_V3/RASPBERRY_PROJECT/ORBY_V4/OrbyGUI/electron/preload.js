@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('orby', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
 
+  // Lámpara LampDesk: comprobar que responde en la dirección configurada
+  lampTest: (host) => ipcRenderer.invoke('lamp:test', host),
+
   // Autoarranque con Windows (app.setLoginItemSettings)
   autostart: {
     get: () => ipcRenderer.invoke('autostart:get'),

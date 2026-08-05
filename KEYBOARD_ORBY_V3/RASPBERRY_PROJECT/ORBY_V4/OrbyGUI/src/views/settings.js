@@ -46,6 +46,7 @@ export function init() {
   });
 
   initAutostart();
+  initLamp();
 
   document.getElementById('btn-reconnect').addEventListener('click', () => {
     window.orby.reconnect();
@@ -129,6 +130,43 @@ async function initAutostart() {
     const enabled = await window.orby.autostart.set(!btn.classList.contains('on'));
     btn.classList.toggle('on', enabled);
     toast(enabled ? 'OrbyGUI arrancará con Windows' : 'Autoarranque desactivado');
+  });
+}
+
+// ================= Lámpara LampDesk =================
+// Solo la dirección: las acciones de lámpara las manda el proceso principal al
+// recibir MACRO:<id> por CDC (ver electron/macros.js, runLampAction), sin pasar
+// por esta vista. Aquí se guarda dónde está y se comprueba que contesta.
+async function initLamp() {
+  const input = document.getElementById('lamp-host');
+  const test = document.getElementById('btn-lamp-test');
+  const status = document.getElementById('lamp-status');
+  if (!input || !test) return;
+
+  const cfg = await window.orby.getConfig();
+  input.value = cfg.lamp?.host || '';
+
+  const guardar = () => {
+    const host = input.value.trim();
+    if (!host) return;
+    window.orby.setConfig({ lamp: { host } });
+  };
+  input.addEventListener('change', guardar);
+
+  test.addEventListener('click', async () => {
+    guardar();
+    status.textContent = 'Probando…';
+    test.disabled = true;
+    const res = await window.orby.lampTest(input.value.trim());
+    test.disabled = false;
+    if (res.ok) {
+      status.textContent = `Responde: ${res.state.on ? 'encendida' : 'apagada'}, `
+                         + `brillo ${res.state.brightness} %`;
+      toast('La lámpara responde');
+    } else {
+      status.textContent = `No responde (${res.error})`;
+      toast('La lámpara no responde en esa dirección', 'error');
+    }
   });
 }
 

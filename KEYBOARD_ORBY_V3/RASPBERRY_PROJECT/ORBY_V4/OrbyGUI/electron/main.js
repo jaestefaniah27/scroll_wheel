@@ -5,7 +5,7 @@ const { autoUpdater } = require('electron-updater');
 const { OrbySerial } = require('./serial');
 const { ForegroundWatcher } = require('./foreground');
 const config = require('./config');
-const { executeMacro, getMousePosition, warmup } = require('./macros');
+const { executeMacro, getMousePosition, warmup, lampTest } = require('./macros');
 const { listInstalledApps } = require('./apps');
 const recorder = require('./recorder');
 
@@ -389,6 +389,12 @@ ipcMain.handle('mouse:getPosition', async () => getMousePosition());
 // --- IPC: configuración local ---
 ipcMain.handle('config:get', async () => config.load());
 ipcMain.handle('config:set', async (_e, patch) => config.save(patch));
+
+// --- IPC: lámpara LampDesk ---
+// Solo la comprobación de la tarjeta de ajustes. Las acciones asignadas a teclas
+// y mandos no pasan por aquí: las dispara el firmware con MACRO:<id> y las
+// ejecuta electron/macros.js sin tocar el renderer.
+ipcMain.handle('lamp:test', async (_e, host) => lampTest(host));
 
 // --- IPC: autoarranque con Windows ---
 // app.setLoginItemSettings ya persiste el valor en el registro de Windows por
