@@ -82,7 +82,7 @@ const view = {
   layer: 'normal',
   variantId: null,  // null = perfil base; si no, la variación que se edita
   selected: null,   // { kind: 'key', index } | { kind: 'rotary', slot }
-  tab: 'shortcut',  // pestaña del inspector de tecla: shortcut | sequence | media | pages
+  tab: 'shortcut',  // pestaña del inspector de tecla: shortcut | sequence | text | record | app | media | pages
   capturing: false, // false | true (atajo) | 'sequence' (grabando una macro) | 'position' (capturando dónde poner el ratón)
   busy: false,      // hay un alta/baja de perfil en marcha
 };
@@ -449,6 +449,9 @@ function onClick(e) {
     // mismos controles (App en foco / Examinar / buscador) que enseña cada
     // paso ya en la lista.
     seqAddAction({ type: 'open_app', target: '', kind: 'app' });
+  } else if (act === 'seq-add-text') {
+    // En blanco, como el paso "Abrir": el texto se escribe en el propio paso.
+    seqAddAction({ type: 'text', text: '' });
   } else if (act === 'seq-open-browse') {
     pickOpenTarget(Number(el.dataset.index), el.dataset.kind);
   } else if (act === 'seq-open-kind') {
@@ -565,6 +568,14 @@ function onChange(e) {
   } else if (act === 'seq-open-target') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) { step.target = e.target.value; savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-text') {
+    // `change` salta al salir del campo: guarda ya lo último escrito sin
+    // esperar a que venza el retardo de onInput.
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.text = e.target.value; saveMacroNow(currentMacroId()); }
+  } else if (act === 'text-value') {
+    const step = currentTextStep();
+    if (step) { step.text = e.target.value; saveMacroNow(currentMacroId()); }
   } else if (act === 'app-target') {
     const step = currentAppStep();
     if (step) { step.target = e.target.value; savePCMacros(currentMacroId()); }
@@ -587,11 +598,37 @@ function clampMoveDelta(v) {
   return Math.max(-127, Math.min(127, n));
 }
 
+// Escribir en un campo de texto dispara un evento por tecla, y cada guardado
+// reescribe la copia de la macro en el teclado (ver savePCMacros): se espera a
+// que pare de escribir en vez de mandar una ráfaga por el puerto serie. No
+// repinta, que se llevaría por delante el foco y el cursor del campo.
+let macroTextDebounce = null;
+function saveMacroLater(id) {
+  clearTimeout(macroTextDebounce);
+  macroTextDebounce = setTimeout(() => savePCMacros(id), 400);
+}
+
+// Lo mismo pero ya: al salir del campo (`change`) no hay nada que esperar, y
+// así la etiqueta de la tecla en la rejilla se pone al día al momento.
+function saveMacroNow(id) {
+  clearTimeout(macroTextDebounce);
+  savePCMacros(id);
+  render();
+}
+
 let labelDebounce = null;
 function onInput(e) {
   const act = e.target.dataset.act;
 
-  if (act === 'edit-name') {
+  if (act === 'seq-text') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.text = e.target.value; saveMacroLater(currentMacroId()); }
+
+  } else if (act === 'text-value') {
+    const step = currentTextStep();
+    if (step) { step.text = e.target.value; saveMacroLater(currentMacroId()); }
+
+  } else if (act === 'edit-name') {
     const text = e.target.value.slice(0, 7);
     clearTimeout(labelDebounce);
     labelDebounce = setTimeout(async () => {
@@ -1119,6 +1156,14 @@ function isAppMacro(id) {
   return acts.length === 1 && acts[0].type === 'open_app';
 }
 
+// Igual que isAppMacro, pero para la pestaña Texto: un único paso que escribe
+// un texto tal cual. Con más pasos (o con el texto mezclado con clics, teclas…)
+// ya es una Secuencia, y se edita como tal.
+function isTextMacro(id) {
+  const acts = macroById(id)?.actions || [];
+  return acts.length === 1 && acts[0].type === 'text';
+}
+
 // Igual que isAppMacro, pero para una acción de energía del PC (Suspender,
 // Apagar…). Vive en la pestaña Multimedia por ser también una sola pulsación
 // sin más ajustes que elegir cuál, aunque por dentro sea una macro de un paso
@@ -1169,6 +1214,11 @@ function describeKey(action) {
     const target = macroById(action.keycode).actions[0].target || '';
     return target ? `Abrir ${target.split(/[\\/]/).pop()}` : 'Abrir…';
   }
+  if (isTextMacro(action.keycode)) {
+    const text = (macroById(action.keycode).actions[0].text || '').replace(/\s+/g, ' ').trim();
+    if (!text) return 'Escribir texto';
+    return `Escribir "${text.length > 14 ? `${text.slice(0, 14)}…` : text}"`;
+  }
   if (isPowerMacro(action.keycode)) {
     return POWER_MODE_LABELS[macroById(action.keycode).actions[0].mode] || 'Energía';
   }
@@ -1186,6 +1236,7 @@ function tabForAction(action) {
   if (action.modifier === MACRO_MODIFIER) {
     if (isRecordOrResetMacro(action.keycode)) return 'record';
     if (isPowerMacro(action.keycode) || isPluginMacro(action.keycode)) return 'media';
+    if (isTextMacro(action.keycode)) return 'text';
     return isAppMacro(action.keycode) ? 'app' : 'sequence';
   }
   return 'shortcut';
@@ -1215,9 +1266,21 @@ function setTab(tab) {
     const action = currentAction();
     if (action.modifier !== MACRO_MODIFIER || isAppMacro(action.keycode)
         || isPowerMacro(action.keycode) || isPluginMacro(action.keycode)
-        || isRecordOrResetMacro(action.keycode)) {
+        || isTextMacro(action.keycode) || isRecordOrResetMacro(action.keycode)) {
       const id = nextMacroId();
       ensureMacro(id);
+      applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
+      return;
+    }
+  }
+
+  if (tab === 'text' && prevTab !== 'text') {
+    const action = currentAction();
+    if (action.modifier !== MACRO_MODIFIER || !isTextMacro(action.keycode)) {
+      const id = nextMacroId();
+      const m = ensureMacro(id);
+      m.actions = [{ type: 'text', text: '' }];
+      savePCMacros(id);
       applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
       return;
     }
@@ -1330,6 +1393,19 @@ function setAppKind(kind) {
   step.kind = kind;
   savePCMacros(currentMacroId());
   render();
+}
+
+// --- Pestaña "Texto": una tecla que escribe un texto tal cual --------------
+// Mismo mecanismo que "App" (MACRO_MODIFIER + id, un único paso), aquí de tipo
+// "text". Lo mete el PC por el camino unicode del sistema (ver typeText en
+// electron/macros.js), no el teclado: el firmware solo sabe mandar usages HID,
+// que dependen de la distribución que tenga puesta el usuario.
+function currentTextStep() {
+  const id = currentMacroId();
+  const m = id === null ? null : macroById(id);
+  if (!m) return null;
+  if (!m.actions.length) m.actions.push({ type: 'text', text: '' });
+  return m.actions[0];
 }
 
 // --- Pestaña "Multimedia", sección de energía ------------------------------
@@ -1553,6 +1629,31 @@ function renderAppTab(macroId) {
     <p class="setting-desc">
       Se ejecuta en el PC al pulsar la tecla (necesita esta app abierta), igual que un paso
       "Abrir" de una secuencia.
+    </p>
+
+    <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar</button>`;
+}
+
+// Pestaña "Texto": un solo campo, el texto que escribe la tecla. Para meterlo
+// entre clics, esperas u otras teclas está la pestaña Secuencia, que tiene el
+// mismo paso ("Escribir texto") junto a los demás.
+function renderTextTab(macroId) {
+  const step = macroId === null ? { text: '' } : (macroById(macroId)?.actions?.[0] || { text: '' });
+
+  return `
+    <label class="field">
+      <span class="field-label">Texto que escribe la tecla</span>
+      <textarea class="text-input" rows="4" data-act="text-value"
+                placeholder="Por ejemplo tu correo, una firma o un trozo de código">${escape(step.text || '')}</textarea>
+    </label>
+
+    <p class="setting-desc">
+      Lo escribe el PC, así que necesita esta app abierta (vale con el icono de la bandeja).
+      Al ir por unicode y no por códigos de tecla, sale igual con cualquier distribución: eñes,
+      acentos y símbolos incluidos. Los textos de más de cuatro letras entran de golpe por el
+      portapapeles y un Ctrl+V (se restaura lo que tuvieras copiado), así que da igual lo largos
+      que sean; donde Ctrl+V no pegue —la consola clásica, algún juego— no aparecerá nada. Los
+      saltos de línea se mandan como Intro y los tabuladores como Tab.
     </p>
 
     <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar</button>`;
@@ -2511,6 +2612,7 @@ function renderKeyInspector() {
       <div class="inspector-tabs">
         <button class="inspector-tab ${tab === 'shortcut' ? 'active' : ''}" data-act="set-tab" data-tab="shortcut">Atajo</button>
         <button class="inspector-tab ${tab === 'sequence' ? 'active' : ''}" data-act="set-tab" data-tab="sequence">Secuencia</button>
+        <button class="inspector-tab ${tab === 'text' ? 'active' : ''}" data-act="set-tab" data-tab="text">Texto</button>
         <button class="inspector-tab ${tab === 'record' ? 'active' : ''}" data-act="set-tab" data-tab="record">Grabar</button>
         <button class="inspector-tab ${tab === 'app' ? 'active' : ''}" data-act="set-tab" data-tab="app">App</button>
         <button class="inspector-tab ${tab === 'media' ? 'active' : ''}" data-act="set-tab" data-tab="media">Multimedia</button>
@@ -2542,6 +2644,8 @@ function renderKeyInspector() {
         </div>` : ''}
 
       ${tab === 'sequence' ? renderSequenceEditor(isMacro ? action.keycode : null) : ''}
+
+      ${tab === 'text' ? renderTextTab(isMacro ? action.keycode : null) : ''}
 
       ${tab === 'record' ? renderRecordTab(isMacro ? action.keycode : null) : ''}
 
@@ -3156,6 +3260,28 @@ function renderSequenceEditor(macroId) {
         </li>`;
     }
 
+    // Como el paso "Abrir", necesita apilar en vertical: el campo del texto va
+    // debajo de la fila de título (de ahí seq-item-open, ver index.css).
+    if (a.type === 'text') {
+      return `
+        <li class="seq-item seq-item-open">
+          <div class="row-inline" style="justify-content:space-between">
+            <span>${stepNum}. Escribir texto ${a.count > 1 ? `×${a.count}` : ''}</span>
+            <span class="row-inline" style="gap:4px">
+              ${countField(a, idx)}
+              ${gapField(a, idx)}
+              ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
+              <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+                ${icon('trash', 14)}
+              </button>
+            </span>
+          </div>
+          <textarea class="text-input mt-4" rows="2" style="width:100%"
+                    data-act="seq-text" data-index="${idx}"
+                    placeholder="Texto que se escribirá">${escape(a.text || '')}</textarea>
+        </li>`;
+    }
+
     if (a.type === 'open_app') {
       const openKind = a.kind === 'file' ? 'file' : 'app';
       return `
@@ -3239,6 +3365,7 @@ function renderSequenceEditor(macroId) {
         </button>
         <button class="secondary-btn" data-act="seq-add-click">${icon('bolt', 16)} Clic</button>
         <button class="secondary-btn" data-act="seq-add-move">${icon('reset', 16)} Mover ratón</button>
+        <button class="secondary-btn" data-act="seq-add-text">${icon('pencil', 16)} Escribir texto</button>
         <button class="secondary-btn" data-act="seq-add-open">${icon('upload', 16)} Abrir app/archivo</button>
       </div>
       ${capturingPos ? `<p class="setting-desc" id="seq-live-pos">(${lastMousePos.x}, ${lastMousePos.y}) — mueve el ratón y pulsa Esc para fijarla</p>` : ''}
@@ -3265,7 +3392,8 @@ function renderSequenceEditor(macroId) {
 
       <p class="setting-desc">
         "Grabar secuencia" solo reconoce letras, dígitos, Enter y Espacio; para el resto de
-        teclas o combinaciones con modificadores usa "Tecla" arriba. Entre cada dos pasos se
+        teclas o combinaciones con modificadores usa "Tecla" arriba, y para meter un texto tal
+        cual (correo, firma, un trozo de código) "Escribir texto". Entre cada dos pasos se
         espera automáticamente lo que pongas en "Espera" (${DEFAULT_STEP_DELAY_MS} ms por
         defecto suele bastar).
       </p>
@@ -3286,9 +3414,12 @@ function renderSequenceLocation(macro) {
               funcionando aunque cierres esta app.</p>`;
   }
   const needsOpen = (macro.actions || []).some((a) => a.type === 'open_app');
+  const needsText = (macro.actions || []).some((a) => a.type === 'text');
   const needsPos = (macro.actions || []).some((a) => a.type === 'mouse_position' || a.type === 'center_mouse');
   const reason = needsOpen
     ? 'abre una app o un archivo, algo que solo sabe hacer el PC'
+    : needsText
+    ? 'escribe un texto, y eso el PC lo manda como unicode: el teclado solo sabe mandar códigos de tecla, que cambian con la distribución'
     : needsPos
     ? 'usa una posición de ratón absoluta, que de momento solo sabe reproducir el PC'
     : `tiene más de ${MACRO_MAX_STEPS_DEVICE} pasos, o alguno de un formato antiguo`;

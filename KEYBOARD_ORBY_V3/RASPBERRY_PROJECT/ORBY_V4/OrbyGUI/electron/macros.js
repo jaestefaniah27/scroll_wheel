@@ -1,4 +1,4 @@
-const { shell } = require('electron');
+const { shell, clipboard } = require('electron');
 const { exec } = require('child_process');
 const config = require('./config');
 const plugins = require('./plugins');
@@ -119,6 +119,87 @@ function modifierKeys(modifier, Key) {
 // DEFAULT_REPEAT_GAP_MS en profiles.js — debe coincidir con ese valor).
 const DEFAULT_REPEAT_GAP_MS = 20;
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+// Hueco entre cada letra al escribir un texto letra a letra. Con 0 (lo que deja
+// puesto loadNutJs para el resto de pasos) hay aplicaciones que se comen
+// caracteres sueltos porque no llegan a procesar el evento anterior.
+const TEXT_CHAR_DELAY_MS = 4;
+
+// Escribir letra a letra tiene un techo que ningún ajuste arregla: cada carácter
+// es un evento de teclado que el sistema tiene que entregar y la app destino
+// procesar, así que un texto largo (una firma, un correo, un trozo de código) se
+// ve teclear. A partir de este umbral se va por el portapapeles y un Ctrl+V, que
+// mete el texto entero de golpe sin importar la longitud. Por debajo no
+// compensa: pisar el portapapeles del usuario por cuatro letras sale más caro
+// que escribirlas.
+const TEXT_PASTE_MIN_CHARS = 5;
+
+// Margen para que el portapapeles quede escrito antes de mandar el Ctrl+V, y
+// para que la app destino lo lea antes de devolverle al usuario lo que tenía.
+// Restaurarlo de inmediato hace que algunas apps peguen lo viejo: leen el
+// portapapeles al procesar el atajo, no al recibirlo.
+const CLIPBOARD_SETTLE_MS = 30;
+const CLIPBOARD_RESTORE_MS = 120;
+
+// Mete el texto de golpe por el portapapeles. Devuelve false si algo falla, para
+// que el que llama pueda caer a escribirlo letra a letra.
+//
+// Se restaura el portapapeles anterior, pero solo su parte de texto: si lo que
+// había copiado era una imagen o un archivo, se pierde. Y hay entornos donde
+// Ctrl+V no pega (la consola clásica de Windows, algún juego, escritorios
+// remotos); ahí el texto no aparece y no hay forma de detectarlo desde aquí.
+async function pasteText(texto, keyboard, Key) {
+  let previo = '';
+  try {
+    previo = clipboard.readText();
+    clipboard.writeText(texto);
+    await sleep(CLIPBOARD_SETTLE_MS);
+    await keyboard.pressKey(Key.LeftControl, Key.V);
+    await keyboard.releaseKey(Key.LeftControl, Key.V);
+    await sleep(CLIPBOARD_RESTORE_MS);
+    return true;
+  } catch (err) {
+    console.error('No se pudo pegar el texto por el portapapeles:', err.message);
+    return false;
+  } finally {
+    if (previo) clipboard.writeText(previo);
+  }
+}
+
+// Escribe un texto tal cual. No pasa por códigos de tecla HID (como sí hace
+// "hotkey", ver más abajo), sino por el camino unicode del sistema: así sale
+// igual con cualquier distribución de teclado -ñ, acentos, símbolos- sin tener
+// que saber cuál tiene puesta el usuario. Eso mismo es lo que impide subirlo al
+// teclado, que solo sabe mandar usages HID (ver DEVICE_STEP_TYPE en profiles.js).
+//
+// Un salto de línea o un tabulador no son caracteres que se puedan "escribir" ni
+// pegar sueltos: se mandan como pulsación de Intro y de Tab, que es lo que el
+// usuario espera (en un chat, Intro envía; pegar un "\n" no).
+async function typeText(text, keyboard, Key) {
+  if (!text) return;
+  const previo = keyboard.config.autoDelayMs;
+  keyboard.config.autoDelayMs = TEXT_CHAR_DELAY_MS;
+  try {
+    for (const trozo of String(text).split(/(\r\n|\n|\r|\t)/)) {
+      if (!trozo) continue;
+      if (trozo === '\t') {
+        await keyboard.pressKey(Key.Tab);
+        await keyboard.releaseKey(Key.Tab);
+      } else if (trozo === '\n' || trozo === '\r' || trozo === '\r\n') {
+        await keyboard.pressKey(Key.Return);
+        await keyboard.releaseKey(Key.Return);
+      } else if (trozo.length >= TEXT_PASTE_MIN_CHARS && await pasteText(trozo, keyboard, Key)) {
+        continue;
+      } else {
+        await keyboard.type(trozo);
+      }
+    }
+  } finally {
+    keyboard.config.autoDelayMs = previo;
+  }
+}
+
 async function runAction(action) {
   // Antes de cargar nut.js: un complemento no tiene por qué necesitar el ratón
   // ni el teclado (el de la lámpara solo usa la red), y sin esta salida
@@ -145,7 +226,7 @@ async function runAction(action) {
     const button = Button[CLICK_BUTTONS[action.button] || 'LEFT'];
     await repeatWithGap(action.count, action.gap, () => mouse.click(button));
   } else if (action.type === 'delay') {
-    await new Promise((resolve) => setTimeout(resolve, Math.max(0, action.ms || 0)));
+    await sleep(action.ms || 0);
   } else if (action.type === 'key') {
     const key = mapCodeToNutKey(action.code, Key);
     if (key === null || key === undefined) return;
@@ -153,6 +234,8 @@ async function runAction(action) {
       await keyboard.pressKey(key);
       await keyboard.releaseKey(key);
     });
+  } else if (action.type === 'text') {
+    await repeatWithGap(action.count, action.gap, () => typeText(action.text, keyboard, Key));
   } else if (action.type === 'open_app') {
     // No hay opcode de firmware para esto (abrir algo requiere el SO): siempre
     // corre por el camino del PC, nunca se sube al teclado (ver DEVICE_STEP_TYPE
@@ -186,7 +269,7 @@ async function repeatWithGap(count, gap, run) {
   const ms = Math.max(0, Math.round(gap ?? DEFAULT_REPEAT_GAP_MS));
   for (let i = 0; i < times; i++) {
     await run();
-    if (i < times - 1) await new Promise((resolve) => setTimeout(resolve, ms));
+    if (i < times - 1) await sleep(ms);
   }
 }
 

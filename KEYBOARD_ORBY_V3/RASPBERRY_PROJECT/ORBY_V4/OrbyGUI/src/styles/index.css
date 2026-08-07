@@ -1015,14 +1015,17 @@ body {
 .inspector-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .inspector-head h3 { font-size: 18px; }
 
-/* Pestañas del inspector de tecla: Atajo / Secuencia / Multimedia / Páginas. */
+/* Pestañas del inspector de tecla: Atajo / Secuencia / Texto / Grabar / App /
+   Multimedia / Páginas. Son suficientes para no caber en una línea con el
+   inspector estrecho, así que saltan de fila en vez de quedar ilegibles. */
 .inspector-tabs {
-  display: flex; gap: 4px; margin-bottom: 18px; padding: 4px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  gap: 4px; margin-bottom: 18px; padding: 4px;
   background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
 }
 .inspector-tab {
-  flex: 1; padding: 8px 6px; font-size: 12px; font-weight: 600; font-family: inherit;
+  padding: 8px 6px; font-size: 12px; font-weight: 600; font-family: inherit;
   background: transparent; border: none; border-radius: var(--radius-sm);
   color: var(--text-muted); cursor: pointer; transition: all 0.15s;
 }

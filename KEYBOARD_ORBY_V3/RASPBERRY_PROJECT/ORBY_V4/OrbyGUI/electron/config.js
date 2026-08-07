@@ -21,7 +21,8 @@ const DEFAULTS = {
   // firmware solo guarda el id en el campo del modificador de la tecla o del
   // mando; la secuencia en sí vive aquí, no en el teclado.
   // [{ id, actions: [{ type: 'mouse_position', x, y } | { type: 'mouse_click', button: 'left'|'middle'|'right' }
-  //                 | { type: 'delay', ms } | { type: 'key', code } | { type: 'center_mouse' /* legado */ }] }]
+  //                 | { type: 'delay', ms } | { type: 'key', code } | { type: 'text', text }
+  //                 | { type: 'center_mouse' /* legado */ }] }]
   macros: [],
 
   // Complementos instalados: si están activos y sus ajustes propios. El código
