@@ -332,10 +332,13 @@ export function applyDeviceContext(profileIdx, pageIdx, pageCount) {
   return true;
 }
 
+// La página nueva sale vacía. Copiar la anterior arrastraba sus atajos pero no
+// sus iconos —el firmware no duplica el tramo de la Flash—, así que se heredaba
+// media página y había que deshacerla a mano.
 export async function addPage() {
   const prof = profile();
   if (!prof || pageCountOf(prof) >= maxPages()) return false;
-  await device.addPage(prof.idx, true);
+  await device.addPage(prof.idx, false);
   await syncFromDevice();
   markDirty();
   return true;

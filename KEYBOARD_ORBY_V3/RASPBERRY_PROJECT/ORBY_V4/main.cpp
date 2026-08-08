@@ -815,13 +815,13 @@ static void apply_default_scroll(Page& p) {
     p.scroll_invert[1]  = 0;
 }
 
-// Página en blanco: sin atajos y con etiquetas numeradas, para que las pantallas
-// no salgan vacías.
+// Página en blanco: teclas sin atajo y pantallas sin etiqueta. Antes se rellenaban
+// con "T1".."T10" y había que borrarlas una a una antes de poder usarla; se parte
+// del lienzo vacío, que es lo que se espera al crear algo nuevo.
+// Los mandos sí conservan sus valores por defecto: una página que llega con la
+// rueda y los encoders muertos no es un lienzo, es una avería.
 static void make_blank_page(Page& pg) {
     memset(&pg, 0, sizeof(pg));
-    for (int s = 0; s < 20; s++) {
-        snprintf(pg.oled_labels[s], sizeof(pg.oled_labels[s]), "T%d", (s % 10) + 1);
-    }
     apply_default_rotaries(pg);
     apply_default_scroll(pg);
 }
@@ -1763,11 +1763,15 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
             oleds.paint_screen(screen_num, bmp);
         } else {
             // Perfiles de fábrica de texto personalizado con contorno premium (o OFIM en SUPER)
-            draw_premium_frame(fb);
             int label_idx = (screen_num - 1) + (super_active ? 10 : 0);
             const char* label = cur_page().oled_labels[label_idx];
-            OledText::render_string_to_framebuffer(label, fb);
-            draw_premium_frame(fb); // Volver a aplicar el marco tras renderizar el texto
+            // Sin etiqueta, la pantalla se queda a negro: el marco solo enmarca el
+            // texto. Dibujarlo igualmente convertía una página recién creada en una
+            // rejilla de recuadros vacíos en vez de un lienzo por pintar.
+            if (label[0] != '\0') {
+                OledText::render_string_to_framebuffer(label, fb);
+                draw_premium_frame(fb); // El renderizador limpia el búfer, así que el marco va después
+            }
             oleds.paint_screen(screen_num, fb);
         }
     }

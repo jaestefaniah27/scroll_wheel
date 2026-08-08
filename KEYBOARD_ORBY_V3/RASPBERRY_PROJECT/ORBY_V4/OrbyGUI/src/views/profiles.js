@@ -981,7 +981,7 @@ async function createPage() {
       const p = state.profiles[view.editingProfile];
       await selectPage(pageCountOf(p) - 1);   // abrir la recién creada
       cache.loadProfile(view.editingProfile);
-      toast(`Página ${pageCountOf(p)} añadida, copiando la anterior`);
+      toast(`Página ${pageCountOf(p)} añadida, vacía`);
     } else {
       toast(`El tope es de ${maxPages()} páginas por perfil`);
     }
@@ -1046,7 +1046,7 @@ function renderPageHint() {
   const count = pageCountOf(prof);
   if (count <= 1) {
     return `<p class="grid-status">Este perfil tiene una sola página. Con
-      <strong>+</strong> añades otra copiando esta, y el teclado alterna entre ellas
+      <strong>+</strong> añades otra en blanco, y el teclado alterna entre ellas
       con una pulsación corta del botón de menú.</p>`;
   }
   const live = view.editingProfile === state.activeProfileIdx;
