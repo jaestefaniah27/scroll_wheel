@@ -14,8 +14,18 @@ Tareas completadas, extraídas del TODO.md
       Solo falta poner Settings → Pages → Source: GitHub Actions.
 * [x] Guía de SmartScreen y checklist de release con SHA-256, en la landing y en
       PUBLICACION.md.
-* [x] Hecha la parte de interfaz: la insignia en teclas y mandos de `src/views/profiles.js`
-      que avisa cuando una acción necesita la app abierta.
+* [x] Las releases de firmware (`fw-v*`) van como prerelease. Comparten repositorio con
+      las de la app y `releases/latest` devuelve la más reciente sea de lo que sea: la
+      `fw-v4.4` dejó a todas las copias instaladas de OrbyGUI con "Cannot find latest.yml
+      in the latest release artifacts" y sin poder actualizarse.
+* [x] Avisar de las teclas que no funcionan sin la app abierta, en los dos sitios:
+   * [x] La parte de interfaz: la insignia en teclas y mandos de `src/views/profiles.js`
+         que avisa cuando una acción necesita la app abierta.
+   * [x] La parte del teclado (firmware 4.5): la pantalla OLED de esas teclas sale
+         tachada con una barra diagonal mientras la app de escritorio no esté delante.
+         El teclado no lo deduce de tener el puerto abierto —la WebGUI también lo abre
+         y no puede ejecutar nada en el PC—: la app se anuncia con `HOST_APP:1` en cada
+         presentación y el aviso caduca a los 25 s si deja de llegar.
 * [X] Mejorar plugin de lampara: permitir ver el brillo que estás configurando en una tecla que configures. así puedes tener si quieres una página que veas lo que estás configurando en la lámpara. También poder ver el color que estás configurando. También añadir controles para poder poner con una tecla un brillo determinado, y también un color determinado.
 * [X] Poder asignar un icono a un perfíl. Así, Desde el teclado cuando quieres cambiar de perfil, puedes identificar rápidamente cada perfil.
 

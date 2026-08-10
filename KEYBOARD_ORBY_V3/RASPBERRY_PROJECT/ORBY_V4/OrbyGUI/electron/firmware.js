@@ -9,6 +9,15 @@
 // .github/workflows/firmware.yml). Son releases distintas de las de la app: el
 // teclado y la app se publican por separado, y cuál va con cuál lo decide
 // OrbyGUI/src/compat.js, que es quien pasa aquí el `maxFw`.
+//
+// Van marcadas como **prerelease**, y no por estar a medias: comparten
+// repositorio con las de la app, y `releases/latest` de GitHub devuelve la más
+// reciente de todas sin mirar la etiqueta. Publicar un firmware después de una
+// versión de la app dejaba a electron-updater buscando el `latest.yml` de la app
+// dentro de una release de firmware, que no lo lleva ("Cannot find latest.yml in
+// the latest release artifacts"): la app se quedaba sin actualizarse hasta la
+// siguiente publicación. Una prerelease no cuenta para `releases/latest`, y aquí
+// no molesta porque este listado las incluye a propósito.
 
 const fs = require('fs');
 const os = require('os');
@@ -127,6 +136,8 @@ class FirmwareUpdater extends EventEmitter {
       });
       if (!res.ok) throw new Error(`GitHub respondió ${res.status}`);
 
+      // Las prerelease SÍ entran: es como se publican las de firmware (ver la
+      // cabecera). Solo se descartan los borradores, que nadie puede descargar.
       const candidatos = (await res.json())
         .filter((r) => !r.draft && r.tag_name?.startsWith(TAG_PREFIX))
         .map((r) => ({

@@ -175,6 +175,20 @@ class OrbySerial extends EventEmitter {
       this.isConnected = true;
       this.stopAutoScan();
       this._startWatchdog();
+
+      // El teclado tacha en sus pantallas las teclas que solo puede ejecutar el
+      // PC (abrir una app, un complemento, una secuencia que no le cabe). No lo
+      // deduce de tener el puerto abierto —la WebGUI también lo abre y no puede
+      // ejecutar nada—, así que hay que decírselo. Va en cada presentación, y no
+      // solo en la primera, porque el aviso caduca en el teclado si deja de
+      // llegar: el ACK del vigilante lo renueva de paso.
+      if (this.deviceInfo?.hostapp === '1') {
+        this._sendRaw('HOST_APP:1\n');
+        // Se registra solo la primera vez: con la conexión ya hecha esto pasa
+        // cada pocos segundos y llenaría el log.
+        if (!yaConectado) log('[serie] anunciada la app al teclado (HOST_APP:1)');
+      }
+
       if (yaConectado) return;
       // Si se había dado por conectado por telemetría, esto NO es un aviso
       // repetido: es la identidad de verdad sustituyendo a la provisional, y la

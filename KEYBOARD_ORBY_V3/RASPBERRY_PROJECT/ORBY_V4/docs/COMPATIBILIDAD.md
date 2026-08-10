@@ -23,6 +23,7 @@ commit, más este documento.
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
 |---|---|---|
+| **4.5** | Comando `HOST_APP:<0\|1>` y bandera `HOSTAPP=1`: el teclado tacha con una barra diagonal las pantallas de las teclas que solo puede ejecutar la app de PC mientras esta no esté anunciada | OrbyGUI 0.4.x o posterior |
 | **4.4** | Icono propio por perfil, visible en el menú de perfiles del teclado | OrbyGUI 0.4.x o posterior |
 | **4.3** | Sin cambios de protocolo respecto a la 4.2. Es la primera versión que sale como release publicada, y por tanto la primera que se puede instalar desde la propia app | 0.4.1 o posterior |
 | **4.2** | Comando `BOOTSEL`: el teclado se reinicia en el cargador de la ROM cuando la app se lo pide, así que se actualiza desde Ajustes sin desenchufar nada. El handshake anuncia `MAXMACROS` (cuántas secuencias caben) y `BOOTSEL=1` | 0.4.1 o posterior |
@@ -74,12 +75,29 @@ Copy-Item build\ORBY_V4.uf2 build\ORBY_V4-fw-4.3.uf2
 Get-FileHash build\ORBY_V4-fw-4.3.uf2 -Algorithm SHA256
 
 # 6. Crear la release y subir el .uf2 (con gh, o por la web)
-gh release create fw-v4.3 --title "Firmware 4.3" --notes-file notas.md `
+#    --prerelease NO es opcional: ver abajo.
+gh release create fw-v4.3 --title "Firmware 4.3" --notes-file notas.md --prerelease `
    build\ORBY_V4-fw-4.3.uf2 build\ORBY_V4-fw-4.3.uf2.sha256
 ```
 
 La app solo exige dos cosas de la release: que la etiqueta empiece por `fw-v` y
 que haya un asset `.uf2`. Todo lo demás son notas para quien las lea.
+
+### Por qué las releases de firmware van como prerelease
+
+Porque comparten repositorio con las de la app, y `releases/latest` de GitHub
+devuelve la más reciente **sin mirar la etiqueta**. electron-updater pregunta por
+ahí: publicada la `fw-v4.4` dos minutos después de la `v0.5.0`, todas las copias
+instaladas de OrbyGUI se quedaron mostrando
+
+> `Error: Cannot find latest.yml in the latest release artifacts (…/fw-v4.4/latest.yml)`
+
+y sin poder actualizarse. Una prerelease no cuenta para `releases/latest`, así que
+el actualizador de la app vuelve a ver la suya. El instalador de firmware de la
+app no se entera: lista `releases?per_page=50`, que las incluye.
+
+Si alguna vez se publica un firmware **sin** `--prerelease`, se arregla marcándolo
+después; no hace falta rehacer la release.
 
 **Comprobar a mano lo que comprobaba el workflow:** que la etiqueta y
 `ORBY_FW_MINOR` dicen lo mismo. Nadie lo valida ya, y la app decide qué comandos

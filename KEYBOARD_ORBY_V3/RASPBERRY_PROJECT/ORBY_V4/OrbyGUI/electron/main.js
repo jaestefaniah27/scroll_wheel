@@ -347,6 +347,12 @@ function createTray() {
 // Solo tiene sentido con la app empaquetada e instalada: en dev no hay
 // instalador que sustituir ni feed de actualizaciones que consultar.
 //
+// electron-updater pregunta por `releases/latest`, que es la release más reciente
+// del repositorio **sea de lo que sea**. Aquí conviven las de la app y las de
+// firmware (`fw-v*`), así que las de firmware van como prerelease: si no, la
+// primera que se publique detrás de una versión de la app deja al actualizador
+// buscando el `latest.yml` dentro de ella. Ver electron/firmware.js.
+//
 // El estado se replica al renderer (canal 'updater:state') porque
 // `autoInstallOnAppQuit` no basta en esta app: la X esconde la ventana en vez
 // de cerrar, así que el proceso puede pasar semanas vivo con la actualización

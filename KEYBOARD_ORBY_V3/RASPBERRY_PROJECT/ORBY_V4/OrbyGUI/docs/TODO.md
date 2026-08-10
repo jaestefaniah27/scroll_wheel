@@ -50,11 +50,6 @@
   * [ ] Kickstarter: exige entidad legal, cuenta bancaria, vídeo y coste unitario cerrado.
     Y enviar a la UE sin CE no es una opción.
 * [ ] Añadir la opción a multimedia de una tecla que sea la hora. Añadir también la opción de una tecla que sea la fecha.
-* [ ] Que en la vista de perfiles y macros, si una tecla no se reproducirá desde el teclado sino desde la app al no ser device elgible, que haya un pequeño simbolito para que se indique que sin la app abierta no funciona. Además, quiero que en el teclado, si no tienes la app abierta, las teclas cuya acción no sea debice elegible se marquen para que sepas que no tienes la app conectada y que justo esa tecla no va a funcionar.
-
-  * [ ] Pendiente la parte del teclado: marcar en las pantallas OLED del propio Orby
-    las teclas que no van a funcionar sin la app conectada. Es firmware, fuera del
-    alcance de la WebGUI.
 * [ ] Necesito investigar si gracias a la nueva funcionalidad de plugins, se puede hacer un plugin para que en chrome poder ejecutar ciertas acciones como: ir a la página número N del documento que tengo abierto ahora mismo. Y de manera similar a esto, si se podría hacer un plugin por ejemplo para altium, y poder realizar acciones de altium más fácilmente gracias al plugin, por ejemplo que el plugin detecte automáticamente si estás en un esquemático, en un diseño pcb, etc, y cambie de página de un perfil automáticamente (por ejemplo tener una página para esquemáticos, otra para layout, etc, y que el plugin ayude con la experiencia de crear los atajos ofreciendo ayudas). Lo mismo con un plugin para work o excel y cosas así. Después, evaluar si merece la pena que la existencia de estos plugins venga directamente en la app como funcionalidades disponibles, o es mejor que se mantengan como plugins separados disponibles a descargar desde la propia app por ejemplo.
 
   * **Investigación (2026-08-10):**

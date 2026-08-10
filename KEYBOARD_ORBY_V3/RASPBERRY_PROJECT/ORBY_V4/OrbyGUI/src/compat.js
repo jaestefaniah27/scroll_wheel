@@ -24,7 +24,7 @@ export const FW_MIN = '2.0';
 
 // La que trae este repositorio (include/orby_version.h). Con una anterior la
 // app funciona recortada; con una posterior, la app es la vieja.
-export const FW_RECOMMENDED = '4.4';
+export const FW_RECOMMENDED = '4.5';
 
 // Qué versión hace falta para cada función, y qué bandera del handshake la
 // confirma cuando el firmware la anuncia.
@@ -38,7 +38,13 @@ export const FEATURES = {
   hash:       { since: '4.1', label: 'sincronización por huella y precarga de iconos', flag: 'hash' },
   bootsel:    { since: '4.2', label: 'actualizar el firmware desde la app sin tocar el botón', flag: 'bootsel' },
   profileIcon: { since: '4.4', label: 'icono propio para cada perfil', flag: 'picon' },
+  hostApp:    { since: '4.5', label: 'tachar en las pantallas las teclas que necesitan la app', flag: 'hostapp' },
 };
+
+// Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y
+// allí no se puede importar este fichero: mira la bandera `hostapp` del
+// handshake a pelo. Es la misma regla de siempre —la bandera manda—, solo que
+// escrita dos veces.
 
 // El `MAXMACROS` del handshake (firmware 4.2) no entra en FEATURES a propósito:
 // no es una función que el usuario gane o pierda, es un límite que el teclado

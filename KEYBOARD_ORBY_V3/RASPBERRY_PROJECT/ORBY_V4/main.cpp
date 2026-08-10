@@ -1737,6 +1737,45 @@ void wheel_accumulate(int32_t delta_counts) {
 }
 
 // ==========================================
+// ¿ESTÁ LA APP DE PC DELANTE?
+// ==========================================
+// Lo que el teclado no sabe tocar solo (abrir una aplicación, un complemento,
+// una secuencia que no cabe en su memoria) lo ejecuta OrbyGUI al recibir
+// "MACRO:<id>" por CDC. Con la app cerrada esas teclas no hacen nada, y la única
+// pista era justo esa: pulsar y que no pasara nada. Ahora su pantalla sale
+// tachada.
+//
+// No sirve el DTR del CDC (tud_cdc_n_connected): lo levanta cualquiera que abra
+// el puerto, y la WebGUI lo abre sin poder ejecutar nada en el PC —ahí las
+// teclas de este tipo no funcionan nunca—. Así que la app de escritorio se
+// anuncia a mano con HOST_APP:1 y lo repite en cada presentación; si deja de
+// llegar, el aviso caduca.
+//
+// El plazo cubre de sobra al vigilante de la app, que pregunta con ACK tras 12 s
+// de silencio (electron/serial.js): con menos margen, un teclado callado y una
+// app quieta se tacharían las pantallas solas.
+#define HOST_APP_TIMEOUT_MS 25000
+
+static bool     host_app_announced = false;
+static uint32_t host_app_last_ms   = 0;
+
+static inline bool host_app_alive() {
+    if (!host_app_announced) return false;
+    // Al cerrar la app se cierra el puerto y se cae el DTR: eso se nota al
+    // momento, sin esperar a que caduque el aviso.
+    if (!tud_cdc_n_connected(0)) return false;
+    uint32_t ms = to_ms_since_boot(get_absolute_time());
+    return (uint32_t)(ms - host_app_last_ms) < HOST_APP_TIMEOUT_MS;
+}
+
+// Espejo exacto de la condición de trigger_macro. Las dos tienen que decir lo
+// mismo o se acabaría tachando una tecla que el teclado sí sabe reproducir.
+static inline bool key_needs_app(const KeyAction& a) {
+    if (a.modifier != KEYACT_MACRO) return false;
+    return !(a.keycode < MACRO_MAX_COUNT && macros[a.keycode].step_count > 0);
+}
+
+// ==========================================
 // CORE 1: MANEJA EXCLUSIVAMENTE LAS PANTALLAS
 // ==========================================
 // Dibuja un marco rectangular premium en el framebuffer (72x40)
@@ -1750,6 +1789,33 @@ void draw_premium_frame(uint8_t* fb) {
     for (int p = 0; p < 5; p++) {
         fb[p * 72] = 0xFF;
         fb[p * 72 + 71] = 0xFF;
+    }
+}
+
+// Tacha la pantalla entera con una barra diagonal: esta tecla la ejecuta el PC y
+// la app no está delante, así que no va a hacer nada.
+//
+// La barra lleva un canal apagado a cada lado porque debajo puede haber un icono
+// blanco subido por el usuario: una línea encendida a secas se perdería dentro de
+// él y el tachado no se vería.
+static void draw_disabled_slash(uint8_t* fb) {
+    auto px = [fb](int x, int y, bool on) {
+        if (y < 0 || y >= 40) return;
+        uint8_t bit = (uint8_t)(1 << (y % 8));
+        if (on) fb[(y / 8) * 72 + x] |= bit;
+        else    fb[(y / 8) * 72 + x] &= (uint8_t)~bit;
+    };
+
+    // De la esquina superior izquierda a la inferior derecha. La pendiente es
+    // menor que 1, así que la línea nunca se corta al avanzar en x.
+    for (int x = 0; x < 72; x++) {
+        int y = (x * 39) / 71;
+        px(x, y - 2, false);
+        px(x, y - 1, false);
+        px(x, y,     true);
+        px(x, y + 1, true);
+        px(x, y + 2, false);
+        px(x, y + 3, false);
     }
 }
 
@@ -1777,13 +1843,32 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
             return;
         }
 
+        // Una acción que ejecuta el PC no hace nada con la app cerrada, así que
+        // su pantalla se tacha entera. Los dos primeros caminos pintan un bitmap
+        // que vive en la Flash: para tacharlo hay que copiarlo antes, porque el
+        // original no se toca.
+        const bool tachada = key_needs_app(act) && !host_app_alive();
+
         if (slot < OLED_SLOTS && oled_slot_used(active_profile_idx, active_page, slot)) {
             // Icono personalizado subido desde la app con OLED_CHUNK
-            oleds.paint_screen(screen_num, oled_slot_ptr(active_profile_idx, active_page, slot));
+            const uint8_t* icono = oled_slot_ptr(active_profile_idx, active_page, slot);
+            if (!tachada) {
+                oleds.paint_screen(screen_num, icono);
+            } else {
+                memcpy(fb, icono, sizeof(fb));
+                draw_disabled_slash(fb);
+                oleds.paint_screen(screen_num, fb);
+            }
         } else if (active_profile_idx == 0 && active_page == 0 && !super_active) {
             // Perfil por defecto (OFIM) -> Carga mapas de bits pre-horneados
             const uint8_t* bmp = OledBitmaps::get_bitmap_by_index(screen_num - 1);
-            oleds.paint_screen(screen_num, bmp);
+            if (!tachada) {
+                oleds.paint_screen(screen_num, bmp);
+            } else {
+                memcpy(fb, bmp, sizeof(fb));
+                draw_disabled_slash(fb);
+                oleds.paint_screen(screen_num, fb);
+            }
         } else {
             // Perfiles de fábrica de texto personalizado con contorno premium (o OFIM en SUPER)
             int label_idx = (screen_num - 1) + (super_active ? 10 : 0);
@@ -1795,6 +1880,10 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
                 OledText::render_string_to_framebuffer(label, fb);
                 draw_premium_frame(fb); // El renderizador limpia el búfer, así que el marco va después
             }
+            // Sin etiqueta la pantalla está a negro, pero la tecla puede tener
+            // acción igual: la barra es entonces lo único que se ve, y es
+            // justamente el aviso que hace falta.
+            if (tachada) draw_disabled_slash(fb);
             oleds.paint_screen(screen_num, fb);
         }
     }
@@ -2217,6 +2306,11 @@ static void dump_oled_slot(const char* head, uint8_t profile, uint8_t page, uint
 }
 
 void process_command(const char* cmd) {
+    // Cualquier línea que llegue prueba que quien se anunció sigue vivo: el
+    // vigilante de la app pregunta con ACK cada pocos segundos aunque el usuario
+    // no toque nada, así que el aviso de HOST_APP no caduca por estar quieto.
+    if (host_app_announced) host_app_last_ms = to_ms_since_boot(get_absolute_time());
+
     // ---------- Descubrimiento y estado ----------
     if (strncmp(cmd, "ACK", 3) == 0) {
         // MAXPAGES lo añade el firmware 4.0; una app anterior lo ignora y una
@@ -2237,7 +2331,9 @@ void process_command(const char* cmd) {
         // cable con el botón pulsado.
         // PICON=1: el hueco 20 de la página 0 es el icono del perfil, visible en
         // el menú físico de perfiles (MODE_MENU_PERF).
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:MODE=%s\n",
+        // HOSTAPP=1: este firmware entiende HOST_APP y tacha en las pantallas las
+        // teclas que necesitan la app de PC mientras no esté anunciada.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2256,6 +2352,19 @@ void process_command(const char* cmd) {
         }
         cdc_printf("HASH:ALL:%08lx\n", (unsigned long)all);
         cdc_printf("HASH:END\n");
+        return;
+    }
+
+    // HOST_APP:<0|1> — la app de escritorio dice que está delante y que puede
+    // ejecutar lo que el teclado no sabe tocar solo. Ver host_app_alive: no se
+    // deduce del puerto abierto porque la WebGUI también lo abre.
+    if (strncmp(cmd, "HOST_APP:", 9) == 0) {
+        // El repintado no se pide aquí: lo dispara el repaso de host_app_alive()
+        // del bucle de Core 0, que es el mismo camino que cubre irse sin avisar.
+        const bool on = (cmd[9] == '1');
+        host_app_announced = on;
+        host_app_last_ms = to_ms_since_boot(get_absolute_time());
+        cdc_printf("HOST_APP:OK:%d\n", on ? 1 : 0);
         return;
     }
 
@@ -2518,8 +2627,12 @@ void process_command(const char* cmd) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
         }
+        const bool era_del_pc = (macros[id].step_count == 0);
         macros[id].steps[step] = { (uint8_t)type, (int16_t)a, (int16_t)b, (uint8_t)repeat, (int16_t)gap };
         if (step >= macros[id].step_count) macros[id].step_count = (uint8_t)(step + 1);
+        // Deja de depender del PC: si alguna tecla la llevaba tachada, hay que
+        // quitarle la barra (ver key_needs_app).
+        if (era_del_pc && macros[id].step_count > 0) push_system_refresh();
         cdc_printf("MACRO:OK:%d:%d\n", id, step);
         return;
     }
@@ -2533,7 +2646,9 @@ void process_command(const char* cmd) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
         }
+        const bool jugable = (macros[id].step_count > 0);
         macros[id].step_count = (uint8_t)count;
+        if (jugable != (count > 0)) push_system_refresh(); // pasa a depender del PC, o deja de hacerlo
         cdc_printf("MACRO:TRUNC:OK:%d:%d\n", id, count);
         return;
     }
@@ -2543,7 +2658,9 @@ void process_command(const char* cmd) {
     if (strncmp(cmd, "MACRO_CLEAR:", 12) == 0) {
         int id = atoi(cmd + 12);
         if (id < 0 || id >= MACRO_MAX_COUNT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        const bool jugable = (macros[id].step_count > 0);
         memset(&macros[id], 0, sizeof(macros[id]));
+        if (jugable) push_system_refresh(); // vuelve a depender del PC: se tacha
         cdc_printf("MACRO:CLEARED:%d\n", id);
         return;
     }
@@ -2886,6 +3003,19 @@ int main() {
 
         uint32_t now = to_ms_since_boot(get_absolute_time());
         bool activity_detected = false;
+
+        // Las teclas tachadas dependen de si la app está delante, y eso cambia
+        // sin que nadie mande nada: al cerrarla se cae el DTR, y si se cuelga
+        // caduca su aviso. Sin este repaso las pantallas se quedarían mintiendo
+        // hasta el siguiente refresco por otro motivo.
+        {
+            static bool host_app_pintado = false;
+            const bool viva = host_app_alive();
+            if (viva != host_app_pintado) {
+                host_app_pintado = viva;
+                if (current_mode == MODE_NORMAL) push_system_refresh();
+            }
+        }
 
         // --- ENCODER IZQUIERDO (VOLUMEN) ---
         int delta_izq = rueda_izq.get_delta();
