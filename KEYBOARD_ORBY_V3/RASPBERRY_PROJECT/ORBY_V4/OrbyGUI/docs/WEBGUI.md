@@ -27,6 +27,11 @@ Todo esto necesita un proceso con permisos de escritorio, y el navegador no lo t
 - Cambiar de perfil según la ventana en primer plano.
 - Autoarranque con la sesión de Windows.
 - Actualizar la propia app o el firmware del teclado.
+- Capturar la posición del cursor dentro del editor de secuencias (el botón
+  "Posición de ratón", `src/views/profiles/sequence-editor.js`): queda
+  deshabilitado porque `getMousePosition()` devuelve `null` sin el proceso de
+  Electron detrás. Es distinto del módulo de grabación de ratón/teclado del punto
+  anterior — este es un botón concreto dentro del editor de una secuencia.
 
 ## Qué sí puede hacer
 
