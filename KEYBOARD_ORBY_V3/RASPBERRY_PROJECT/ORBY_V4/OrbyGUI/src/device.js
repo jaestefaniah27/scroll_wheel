@@ -169,6 +169,28 @@ export const macroTrunc = (id, count) =>
 export const macroClear = (id) =>
   request(`MACRO_CLEAR:${id}`, { match: (l) => l === `MACRO:CLEARED:${id}`, fail: REJECTED });
 
+// Los pasos que el teclado tiene guardados de una secuencia.
+//
+// Hace falta para no reescribirla si ya es la que toca: al conectar se
+// reenviaban todas, y cada escritura marca la configuración como pendiente, así
+// que el guardado automático acababa escribiendo la Flash del teclado en CADA
+// conexión aunque no hubiera cambiado nada. La Flash tiene un número de
+// escrituras contado; enchufar el cable no debería gastar una.
+export function getMacro(id) {
+  const steps = [];
+  const prefix = `MACRO:${id}:STEP:`;
+  return request(`GET_MACRO:${id}`, {
+    collect: (line) => {
+      if (!line.startsWith(prefix)) return false;
+      const [step, type, a, b, repeat, gap] = line.slice(prefix.length).split(':').map(Number);
+      steps[step] = { type, a, b, repeat, gap };
+      return true;
+    },
+    match: (line) => line === `MACRO:${id}:END` || line.startsWith('ERR:'),
+    result: steps,
+  });
+}
+
 // --- Alta y baja de perfiles ------------------------------------------------
 // El teclado responde con PROFILE:ADDED/DELETED y, acto seguido, con el recuento
 // nuevo. Basta con esperar la primera línea: quien llama vuelve a sincronizar.
@@ -457,10 +479,54 @@ export async function uploadOled(profile, slot, bytes) {
 
 // --- Enganche con el proceso principal -------------------------------------
 
+// El teclado que ya se ha dado por conectado. La conexión llega por dos
+// caminos —el evento del proceso principal y la consulta del estado al
+// arrancar— y sin esto un arranque con el teclado ya enchufado podía dispararla
+// dos veces: dos sincronizaciones seguidas, con sus dos tandas de peticiones.
+let connectedKey = null;
+
+function markConnected(info) {
+  const key = `${info?.port || ''}|${info?.raw || ''}`;
+  if (linkUp && key === connectedKey) return;
+  connectedKey = key;
+  linkUp = true;
+  emit('connected', info || {});
+}
+
+// Pregunta al proceso principal si hay teclado. Se llama al arrancar y cada vez
+// que llega una línea sin conexión declarada; el freno evita convertir la
+// telemetría (que llega a decenas por segundo al girar la rueda) en una
+// avalancha de peticiones IPC.
+const RECOVER_THROTTLE_MS = 2000;
+let lastRecover = 0;
+
+function recoverLink() {
+  const now = Date.now();
+  if (now - lastRecover < RECOVER_THROTTLE_MS) return;
+  lastRecover = now;
+
+  window.orby.getStatus().then(async (status) => {
+    if (status !== 'connected' || linkUp) return;
+    markConnected(await window.orby.getDeviceInfo());
+  }).catch(() => {});
+}
+
 export function init() {
-  window.orby.onConnected((info) => { linkUp = true; emit('connected', info); });
+  window.orby.onConnected((info) => markConnected(info));
+
+  // El proceso principal empieza a buscar el teclado al crear la ventana, antes
+  // de que este renderer exista. Si el teclado ya estaba enchufado, el ACK se
+  // contesta en ese hueco y 'serial:connected' se emite sin nadie escuchando:
+  // la app se quedaba con el cartel de "Desconectado" —y en solo lectura—
+  // aunque la telemetría sí se viera en el dashboard (esa llega en cada línea
+  // nueva, no es un evento perdido), y había que desenchufar y volver a
+  // enchufar. Se pregunta el estado en vez de confiar en un evento que pudo
+  // pasar antes de tiempo.
+  recoverLink();
+
   window.orby.onDisconnected(() => {
     linkUp = false;
+    connectedKey = null;
     // Lo que estuviera a medias se corta con error, no con un resultado vacío:
     // una descarga interrumpida devolvía null y quien la esperaba lo guardaba
     // como si fuese un perfil de verdad.
@@ -475,6 +541,12 @@ export function init() {
   window.orby.onError((err) => emit('error', err));
 
   window.orby.onData((line) => {
+    // Red de seguridad: si llegan líneas del teclado y la app se cree
+    // desconectada, el aviso de conexión se perdió por el camino. Antes había
+    // que desenchufar y volver a enchufar para salir de ahí, viendo mientras
+    // tanto el dashboard moverse con la rueda debajo del cartel "Desconectado".
+    if (!linkUp) recoverLink();
+
     emit('rx', line);
     const consumed = settlePending(line);
     if (!consumed) emit('telemetry', line);

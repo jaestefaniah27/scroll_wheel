@@ -67,6 +67,8 @@ export async function init() {
   if (state.profiles.length) return false;
 
   hydrate(stored);
+  console.debug(`[mirror] copia del PC cargada: ${state.profiles.length} perfiles,`,
+                `${Object.keys(stored.icons || {}).length} iconos`);
   notify();
   return true;
 }
@@ -144,14 +146,23 @@ function fill(dst, src, empty) {
 // --- Guardado ---------------------------------------------------------------
 
 export function watch() {
-  subscribe(() => {
-    if (!ready || state.syncing || !state.profiles.length) return;
-    // Sin teclado no se guarda: lo que hay en pantalla es esta misma copia y no
-    // se puede editar, así que reescribirla no aporta nada y sí puede estropear
-    // una copia buena si el estado se quedó a medias.
-    if (!state.connected) return;
-    schedule();
-  });
+  subscribe(() => touch());
+
+  // Los iconos que llegan del teclado no pasan por notify(): la caché tiene sus
+  // propios avisos. Sin engancharse aquí, un icono descargado al cambiar de
+  // página se quedaba fuera de la copia hasta que algo más la hiciera guardar,
+  // y sin él la conexión siguiente no puede comparar huellas.
+  cache.onChange(() => touch());
+}
+
+// Programa el guardado si toca. Se queda corto a propósito en dos casos:
+// mientras se está sincronizando (el estado está a medias) y sin teclado
+// delante, donde lo que hay en pantalla es esta misma copia en solo lectura y
+// reescribirla no aporta nada.
+export function touch() {
+  if (!ready || state.syncing || !state.profiles.length) return;
+  if (!state.connected) return;
+  schedule();
 }
 
 function schedule() {
@@ -159,18 +170,34 @@ function schedule() {
   saveTimer = setTimeout(save, SAVE_DELAY_MS);
 }
 
+// Lo último que se escribió, para no reescribir lo mismo. El guardado se
+// dispara con cada notify(), y muchos no cambian la configuración: girar la
+// rueda, pulsar SUPER o un cambio de página del propio teclado también notifican.
+// Cada uno de esos volcaba a disco los perfiles enteros con sus iconos (más de
+// cien kilobytes, y el proceso principal los escribe de una vez).
+let lastSignature = null;
+
 export function save() {
   clearTimeout(saveTimer);
   if (!ready || !state.profiles.length) return;
+
+  const snapshot = snapshotFromState();
+  const icons = cache.dump();
+  // savedAt cambia siempre, así que queda fuera de la comparación: si no,
+  // nunca coincidiría nada.
+  const signature = JSON.stringify({ snapshot: { ...snapshot, savedAt: null }, icons });
+  if (signature === lastSignature) return;
+
   try {
     window.orby.setConfig({
       deviceMirror: {
         savedAt: new Date().toISOString(),
-        snapshot: snapshotFromState(),
-        icons: cache.dump(),
+        snapshot,
+        icons,
         iconsVersion: ICONS_VERSION,
       },
     });
+    lastSignature = signature;
   } catch (err) {
     console.error('No se pudo guardar el espejo local:', err);
   }

@@ -8,8 +8,91 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;" />
   <title>OrbyGUI - Panel de control Orby V4</title>
+
+  <!-- Pantalla de carga.
+       Va EN LÍNEA y no en src/styles/index.css a propósito: esa hoja la importa
+       el módulo de JavaScript, así que llega después del primer pintado y hasta
+       entonces se veía el esqueleto sin estilo (peor todavía en desarrollo, con
+       Vite sirviendo los módulos de uno en uno). Esto lo pinta el navegador con
+       el propio HTML, tapa el arranque entero y se quita cuando la interfaz ya
+       está montada y el teclado ha tenido su oportunidad de contestar
+       (ver src/splash.js). -->
+  <style>
+    html, body { background: #0a0a0f; }
+    #app-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: radial-gradient(circle at 50% 40%, #16162a 0%, #0a0a0f 70%);
+      font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+      color: #f8fafc;
+      opacity: 1;
+      transition: opacity .28s ease;
+    }
+    #app-splash.gone { opacity: 0; pointer-events: none; }
+    .splash-logo {
+      width: 78px;
+      height: 78px;
+      border-radius: 22px;
+      background: linear-gradient(135deg, #8b5cf6, #6366f1);
+      box-shadow: 0 0 42px rgba(139, 92, 246, .45);
+      animation: splash-pulse 1.8s ease-in-out infinite;
+    }
+    .splash-name { font-size: 20px; font-weight: 600; letter-spacing: 1px; }
+    .splash-msg {
+      font-size: 13px;
+      color: #94a3b8;
+      min-height: 18px;
+      /* El texto cambia varias veces durante el arranque (copia del PC,
+         teclado, perfiles): sin ancho fijo el bloque saltaría a cada cambio. */
+      text-align: center;
+    }
+    .splash-bar {
+      width: 168px;
+      height: 3px;
+      border-radius: 2px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, .08);
+    }
+    .splash-bar::after {
+      content: '';
+      display: block;
+      width: 40%;
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #8b5cf6, #6366f1);
+      animation: splash-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes splash-pulse {
+      0%, 100% { transform: scale(1);    box-shadow: 0 0 42px rgba(139, 92, 246, .45); }
+      50%      { transform: scale(1.06); box-shadow: 0 0 60px rgba(139, 92, 246, .65); }
+    }
+    @keyframes splash-slide {
+      0%   { transform: translateX(-110%); }
+      100% { transform: translateX(360%); }
+    }
+    /* Sin animaciones si el sistema las tiene desactivadas. */
+    @media (prefers-reduced-motion: reduce) {
+      .splash-logo, .splash-bar::after { animation: none; }
+    }
+  </style>
 </head>
 <body>
+  <!-- Tapa el arranque entero: la hoja de estilos llega con el módulo de
+       JavaScript y hasta entonces lo de debajo es HTML sin estilar. Lo quita
+       src/splash.js cuando la interfaz está montada. -->
+  <div id="app-splash">
+    <div class="splash-logo"></div>
+    <div class="splash-name">OrbyGUI</div>
+    <div class="splash-bar"></div>
+    <div class="splash-msg" id="splash-msg">Iniciando…</div>
+  </div>
+
   <div class="titlebar">
     <div class="titlebar-drag-region"></div>
     <div class="titlebar-left">

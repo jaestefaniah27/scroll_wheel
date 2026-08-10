@@ -93,7 +93,21 @@ export function init() {
   root.addEventListener('input', onInput);
   window.addEventListener('keydown', onKeyDown);
 
-  device.on('connected', () => { cache.clearAll(); loadPreviews(); });
+  // Al conectar NO se tira la caché de iconos.
+  //
+  // Se hacía cuando la única forma de saber qué tenía el teclado era leerlo
+  // entero: lo guardado podía ser de otro teclado o de antes de un cambio, así
+  // que se empezaba de cero. Ahora hay algo mejor: la copia del PC (mirror.js)
+  // llega con sus bitmaps y las huellas de GET_HASH dicen cuáles siguen
+  // valiendo; main.js tira los de los perfiles que SÍ han cambiado.
+  //
+  // Y era caro: este manejador es síncrono y el de main.js no (espera a la copia
+  // del PC y a GET_HASH), así que el borrado siempre ganaba la carrera. La
+  // comparación se encontraba la caché vacía, no podía calcular ninguna huella
+  // —hace falta el bitmap de cada hueco ocupado— y concluía que TODOS los
+  // perfiles habían cambiado: en cada conexión se releían los perfiles enteros
+  // y se volvían a bajar los veinte iconos de cada página.
+  device.on('connected', () => { loadPreviews(); });
 
   let lastProfileCount = 0;
   subscribe(() => {

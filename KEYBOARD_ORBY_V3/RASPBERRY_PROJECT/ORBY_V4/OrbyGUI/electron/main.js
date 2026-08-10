@@ -105,6 +105,17 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     if (!startHidden) revealWindow();
   });
+
+  // En desarrollo, lo que la app escribe en su consola sale también por el
+  // terminal. Sin esto había que abrir las herramientas de desarrollo a mano
+  // para ver por qué la app decide releer la configuración del teclado
+  // (los avisos "[sync] …" de store.js), y en una ventana sin menú eso no
+  // siempre es cómodo.
+  if (isDev) {
+    mainWindow.webContents.on('console-message', (_e, level, message) => {
+      console.log(`[renderer] ${message}`);
+    });
+  }
   loadRenderer(mainWindow);
 
   // --- Serie ---
@@ -151,10 +162,18 @@ function createWindow() {
   // Las líneas MACRO:<id> las dispara el firmware pero las ejecuta el PC; se
   // interceptan aquí además de seguir reenviándolas al renderer como siempre,
   // para que la consola de la app también las vea.
+  //
+  // El id y NADA MÁS detrás. El prefijo "MACRO:" lo comparten todas las
+  // respuestas del protocolo de secuencias (MACRO:OK:…, MACRO:<id>:STEP:…,
+  // MACRO:<id>:END), y con un parseInt suelto el volcado de GET_MACRO se leía
+  // como una pulsación: al conectar, la app se ponía a ejecutar en el PC todas
+  // las secuencias que estaba leyendo del teclado.
+  const MACRO_TRIGGER = /^MACRO:(\d+)$/;
+
   serial.on('data', (line) => {
-    if (line.startsWith('MACRO:')) {
-      const id = parseInt(line.slice(6), 10);
-      if (Number.isInteger(id)) triggerMacro(id);
+    const trigger = MACRO_TRIGGER.exec(line);
+    if (trigger) {
+      triggerMacro(parseInt(trigger[1], 10));
     } else if (line.startsWith('KEY_EV:') && line.endsWith(':0')) {
       // Reproducción "mientras se mantenga pulsada": el firmware solo avisa de
       // la macro al pulsar, así que la suelta se saca de la telemetría de
@@ -395,7 +414,13 @@ ipcMain.handle('firmware:update', (_e, opts) => firmware?.update(opts) ?? null);
 ipcMain.handle('firmware:cancel', () => firmware?.cancel() ?? null);
 
 // --- IPC: serie ---
-ipcMain.handle('serial:send', async (_e, cmd) => (serial ? serial.sendCommand(cmd) : false));
+ipcMain.handle('serial:send', async (_e, cmd) => {
+  // En desarrollo se ve por el terminal todo lo que la app le pide al teclado.
+  // Es la única forma cómoda de comprobar que una conexión NO está releyendo la
+  // configuración: si aparecen GET_PROFILE o GET_OLED_PG, es que sí.
+  if (isDev) console.log(`[serie] > ${cmd}`);
+  return serial ? serial.sendCommand(cmd) : false;
+});
 ipcMain.handle('serial:getInfo', async () => serial?.getDeviceInfo() ?? null);
 ipcMain.handle('serial:getStatus', async () => serial?.getStatus() ?? 'disconnected');
 ipcMain.handle('serial:reconnect', async () => {

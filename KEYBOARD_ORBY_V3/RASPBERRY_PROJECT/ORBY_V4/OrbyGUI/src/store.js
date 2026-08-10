@@ -148,10 +148,34 @@ export function scrollFor(prof, layer) {
 //
 // profileHash devuelve null cuando falta algún icono por leer: sin ellos no se
 // puede afirmar que sean iguales, así que se descarga, que es lo seguro.
+// Cuál es el primer hueco que la copia del PC no tiene. Solo para el aviso de
+// arriba: "faltan iconos" a secas no dice si es un perfil entero sin descargar
+// o un solo hueco que se quedó por el camino.
+function firstMissingIcon(prof, idx, iconOf) {
+  const pages = Math.max(1, Math.min(prof.pageCount || 1, prof.pages.length));
+  for (let pg = 0; pg < pages; pg++) {
+    const mask = (prof.pages[pg]?.oledMask || 0) & 0xfffff;
+    for (let s = 0; s < 20; s++) {
+      if (!(mask & (1 << s))) continue;
+      const bytes = iconOf(idx, s, pg);
+      if (!bytes || bytes.length !== 360) return `${idx}:${pg}:${s}`;
+    }
+  }
+  return '(ninguno: la huella falla por otra cosa)';
+}
+
 function reusableProfile(prof, idx, expected, iconOf) {
   if (!prof || !expected?.[idx] || !iconOf) return null;
   const mine = profileHash(prof, (slot, page) => iconOf(idx, slot, page));
-  if (mine === null || toHex(mine) !== expected[idx]) return null;
+  if (mine === null || toHex(mine) !== expected[idx]) {
+    // Queda apuntado en la consola de desarrollo: cuando la app se pone a
+    // descargarlo todo en cada conexión, esto dice si es porque faltaban
+    // iconos (null) o porque las dos huellas no cuadran, que sería una
+    // serialización desviada entre hash.js y config_hash.h.
+    console.debug(`[sync] perfil ${idx} hay que releerlo:`,
+                  mine === null ? `falta el icono ${firstMissingIcon(prof, idx, iconOf)}` : `${toHex(mine)} != ${expected[idx]}`);
+    return null;
+  }
   prof.idx = idx;
   return prof;
 }

@@ -9,6 +9,7 @@ import { setNavigator } from './nav.js';
 import * as wheelDial from './wheel-dial.js';
 import * as variants from './variants.js';
 import * as mirror from './mirror.js';
+import * as splash from './splash.js';
 import * as updater from './updater.js';
 import * as plugins from './plugins.js';
 import * as compat from './compat.js';
@@ -36,6 +37,32 @@ let activeView = 'view-dashboard';
 // conectarse antes de que termine de leerse del disco, y comparar huellas
 // contra una lista de perfiles vacía haría descargarlo todo sin motivo.
 let mirrorReady = Promise.resolve();
+
+// Arranque: la pantalla de carga tapa hasta que la app está montada Y el
+// teclado ha tenido su oportunidad de contestar. Sin esto lo primero que se veía
+// era la interfaz vacía (o sin estilos) rellenándose a trozos mientras llegaban
+// los perfiles.
+let bootDone = false;
+
+// Margen para el teclado cuando no ha dicho nada todavía. El proceso principal
+// escanea los puertos cada 3 s y el ACK tarda ~2 s en confirmarse, así que un
+// arranque con el Orby ya enchufado necesita esperar un poco antes de darlo por
+// ausente; si no aparece, se abre en solo lectura con la copia del PC.
+const BOOT_GRACE_MS = 2500;
+
+function finishBoot() {
+  if (bootDone) return;
+  bootDone = true;
+  splash.hide();
+}
+
+// Durante el arranque los mensajes de progreso van al texto de la pantalla de
+// carga: forman parte de "todavía me estoy montando", no son avisos que el
+// usuario tenga que leer encima de una app ya pintada.
+function progress(msg, kind = 'info', ms = 900) {
+  if (splash.visible()) splash.status(msg);
+  else toast(msg, kind, ms);
+}
 
 function initChrome() {
   document.getElementById('btn-minimize').addEventListener('click', () => window.orby.minimize());
@@ -187,6 +214,14 @@ function renderChrome() {
 //
 // Sin GET_OLED_PG (firmware anterior al 4.1) no se puede: hay que conformarse
 // con los del perfil activo, que es lo que había.
+// Cada cuántos iconos se vuelca el espejo mientras se descargan. Guardar solo al
+// final salía carísimo: si el teclado se iba (o se cerraba la app) a mitad, lo
+// descargado se perdía entero, la copia del PC se quedaba sin esos iconos y la
+// conexión siguiente no podía comparar huellas —profileHash necesita los
+// bitmaps— así que volvía a leer el perfil entero y sus veinte iconos. Con la
+// app abriéndose y cerrándose a menudo, eso no convergía nunca.
+const ICON_SAVE_EVERY = 20;
+
 function preloadIcons(canHash) {
   if (!canHash) {
     cache.loadProfile(state.activeProfileIdx);
@@ -194,7 +229,8 @@ function preloadIcons(canHash) {
   }
 
   cache.preloadAll((done, total) => {
-    if (done === total) toast('Iconos descargados', 'info', 1500);
+    if (done % ICON_SAVE_EVERY === 0) mirror.save();
+    if (done === total) progress('Iconos descargados', 'info', 1500);
   }).then(() => {
     VIEWS[activeView]?.render?.();
     // El espejo del disco se guarda con los iconos ya dentro: así la próxima
@@ -202,78 +238,114 @@ function preloadIcons(canHash) {
     mirror.save();
   }).catch((err) => {
     console.error('No se pudieron precargar los iconos:', err);
+    mirror.save();   // lo que sí llegó se conserva
   });
 }
 
+// Las huellas por perfil, con reintentos.
+//
+// Un GET_HASH perdido no es un detalle: sin huellas la app no puede saber qué
+// ha cambiado y se descarga los perfiles enteros con sus iconos. Y perderse se
+// pierde: al enchufar el teclado, el CDC acaba de enumerarse y la primera
+// pregunta se puede quedar por el camino. Antes bastaba con eso para que la
+// conexión siguiente volviera a leerlo todo.
+async function askHashes(attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    const hashes = await device.getHash();
+    if (hashes?.all) return hashes.per;
+    if (!device.isConnected()) return null;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return null;
+}
+
+async function onDeviceConnected(info) {
+  state.connected = true;
+  state.deviceInfo = info;
+  notify();
+
+  // Qué sabe hacer el teclado que hay delante. La tabla vive en compat.js
+  // para que no haya un número de versión suelto por cada vista; aquí solo
+  // se decide si se sigue adelante y qué se le cuenta al usuario.
+  const verdict = compat.check(info);
+  if (verdict.level === 'blocked') {
+    toast(`${verdict.title}. ${verdict.detail}`, 'error', 9000);
+    return;
+  }
+  if (verdict.level !== 'ok') {
+    toast(`${verdict.title}. ${verdict.detail}`, 'error', 9000);
+  }
+
+  // La copia del PC tiene que estar cargada antes de comparar huellas: es
+  // contra ella contra lo que se decide qué hace falta descargar.
+  await mirrorReady;
+
+  // GET_HASH y GET_OLED_PG los añadió el firmware 4.1. Con uno anterior se
+  // sigue haciendo lo de siempre: descargarlo todo y leer los iconos de la
+  // página activa según hagan falta.
+  const canHash = compat.supports(info, 'hash');
+
+  try {
+    let expected = null;
+    if (canHash) {
+      progress('Comprobando si la copia del PC sigue valiendo…');
+      expected = await askHashes();
+      if (!expected) {
+        // Sin huellas no queda otra que descargarlo todo, así que conviene
+        // dejar dicho por qué: es la diferencia entre una conexión instantánea
+        // y una que se pasa medio minuto leyendo perfiles e iconos.
+        console.warn('[sync] el teclado no ha dado las huellas: toca releerlo todo');
+        progress('El teclado no ha dado las huellas: hay que releerlo todo', 'error', 5000);
+      }
+    }
+
+    const reloaded = await syncFromDevice({
+      expected,
+      iconOf: cache.get,
+      onProgress: (i, total) => progress(`Leyendo perfil ${i + 1} de ${total}…`),
+    });
+
+    // Un perfil que se ha vuelto a leer es un perfil que había cambiado: sus
+    // iconos en caché son los de antes. Y los de los perfiles que la copia
+    // traía de más ya no valen para nada.
+    for (const idx of reloaded) cache.dropProfile(idx);
+    cache.pruneBeyond(state.profiles.length);
+
+    VIEWS[activeView]?.render?.();
+    // Cuando no ha hecho falta descargar nada no se dice nada: es el caso
+    // normal, y un aviso en cada conexión para contar que no ha pasado nada
+    // solo es ruido.
+    if (reloaded.length) progress('Perfiles cargados desde el teclado', 'success', 2600);
+    else splash.status('Todo al día');
+  } catch (err) {
+    toast(`No se pudo leer la configuración: ${err.message}`, 'error');
+    return;
+  }
+
+  preloadIcons(canHash);
+
+  // No bloquea el arranque: si el teclado lleva firmware con secuencias
+  // propias, sube las que le falten (cubre un teclado recién reflasheado, cuya
+  // Flash de secuencias está vacía aunque la app ya las tuviera guardadas).
+  profiles.syncAllMacrosToDevice?.().catch(() => {});
+
+  // Qué firmware hay publicado para este teclado. No bloquea: si GitHub no
+  // contesta, la tarjeta de Ajustes lo dirá y no pasa nada más.
+  firmware.check()?.then((st) => {
+    if (st?.available) {
+      toast(`Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
+    }
+  }).catch(() => {});
+}
+
 function wireDevice() {
-  device.on('connected', async (info) => {
-    state.connected = true;
-    state.deviceInfo = info;
-    notify();
-
-    // Qué sabe hacer el teclado que hay delante. La tabla vive en compat.js
-    // para que no haya un número de versión suelto por cada vista; aquí solo
-    // se decide si se sigue adelante y qué se le cuenta al usuario.
-    const verdict = compat.check(info);
-    if (verdict.level === 'blocked') {
-      toast(`${verdict.title}. ${verdict.detail}`, 'error', 9000);
-      return;
-    }
-    if (verdict.level !== 'ok') {
-      toast(`${verdict.title}. ${verdict.detail}`, 'error', 9000);
-    }
-
-    // La copia del PC tiene que estar cargada antes de comparar huellas: es
-    // contra ella contra lo que se decide qué hace falta descargar.
-    await mirrorReady;
-
-    // GET_HASH y GET_OLED_PG los añadió el firmware 4.1. Con uno anterior se
-    // sigue haciendo lo de siempre: descargarlo todo y leer los iconos de la
-    // página activa según hagan falta.
-    const canHash = compat.supports(info, 'hash');
-
-    try {
-      let expected = null;
-      if (canHash) {
-        const hashes = await device.getHash();
-        if (hashes?.all) expected = hashes.per;
-      }
-
-      const reloaded = await syncFromDevice({
-        expected,
-        iconOf: cache.get,
-        onProgress: (i, total) => toast(`Leyendo perfil ${i + 1} de ${total}…`, 'info', 900),
-      });
-
-      // Un perfil que se ha vuelto a leer es un perfil que había cambiado: sus
-      // iconos en caché son los de antes. Y los de los perfiles que la copia
-      // traía de más ya no valen para nada.
-      for (const idx of reloaded) cache.dropProfile(idx);
-      cache.pruneBeyond(state.profiles.length);
-
-      VIEWS[activeView]?.render?.();
-      toast(reloaded.length
-        ? 'Perfiles cargados desde el teclado'
-        : 'La copia del PC está al día: no ha hecho falta descargar nada');
-    } catch (err) {
-      toast(`No se pudo leer la configuración: ${err.message}`, 'error');
-      return;
-    }
-
-    preloadIcons(canHash);
-
-    // No bloquea el arranque: si el teclado lleva firmware con secuencias
-    // propias, reenvía las que haya (cubre un teclado recién reflasheado, cuya
-    // Flash de secuencias está vacía aunque la app ya las tuviera guardadas).
-    profiles.syncAllMacrosToDevice?.().catch(() => {});
-
-    // Qué firmware hay publicado para este teclado. No bloquea: si GitHub no
-    // contesta, la tarjeta de Ajustes lo dirá y no pasa nada más.
-    firmware.check()?.then((st) => {
-      if (st?.available) {
-        toast(`Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
-      }
-    }).catch(() => {});
+  // El arranque no se da por terminado hasta que esto acaba, salga bien o mal:
+  // así la pantalla de carga se levanta con la app ya cuadrada con el teclado,
+  // en vez de enseñar los perfiles apareciendo de uno en uno.
+  device.on('connected', (info) => {
+    onDeviceConnected(info).catch((err) => {
+      console.error('Fallo al preparar la conexión con el teclado:', err);
+    }).finally(finishBoot);
   });
 
   device.on('disconnected', () => {
@@ -314,6 +386,7 @@ function wireDevice() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  splash.init();
   hydrateIcons();
   initChrome();
   device.init();
@@ -347,10 +420,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // copia no está cargada no se puede comparar con las huellas del teclado, y
   // sin eso volvería a descargarse todo en cada arranque.
   mirror.watch();
+  splash.status('Leyendo la copia del PC…');
   mirrorReady = mirror.init().then((hydrated) => {
-    if (!hydrated) return;
-    VIEWS[activeView]?.render?.();
-    if (!state.connected) toast('Configuración cargada de la copia del PC; conecta el Orby para editarla', 'info', 5000);
+    if (hydrated) VIEWS[activeView]?.render?.();
+
+    // A partir de aquí la app ya se puede enseñar entera. Solo falta saber si
+    // hay teclado: se le da un margen y, si no aparece, se abre en solo lectura
+    // con esta copia. El aviso se deja para entonces, no antes, para no soltarlo
+    // por encima de una app que aún estaba montándose.
+    splash.status(state.connected ? 'Hablando con el teclado…' : 'Buscando el teclado…');
+    setTimeout(() => {
+      if (state.connected) return;   // ya lo terminará el manejador de conexión
+      finishBoot();
+      if (hydrated) toast('Configuración cargada de la copia del PC; conecta el Orby para editarla', 'info', 5000);
+    }, BOOT_GRACE_MS);
   });
 
   dashboard.init();

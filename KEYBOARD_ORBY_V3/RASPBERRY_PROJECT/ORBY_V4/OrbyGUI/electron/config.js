@@ -25,6 +25,12 @@ const DEFAULTS = {
   //                 | { type: 'center_mouse' /* legado */ }] }]
   macros: [],
 
+  // Ids de las secuencias que se han subido al teclado (las que él mismo sabe
+  // reproducir). Sirve para no preguntarle por las otras noventa y pico en cada
+  // conexión: si no está en esta lista, no hay copia suya que limpiar.
+  // null = todavía no se ha hecho el repaso completo.
+  macrosOnDevice: null,
+
   // Complementos instalados: si están activos y sus ajustes propios. El código
   // de cada uno vive en userData/plugins/<id>/, no aquí (ver electron/plugins.js).
   // Lo que decida el usuario sobre ellos sí vive aquí para que sobreviva a

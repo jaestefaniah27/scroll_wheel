@@ -11,6 +11,9 @@ class OrbySerial extends EventEmitter {
     this.SerialPort = null;
     this.ReadlineParser = null;
     this._buffer = '';
+    // Hay teclado hablando pero todavía no se ha presentado (ver _chaseHandshake).
+    this.provisional = false;
+    this._provisionalTimer = null;
   }
 
   async _loadSerialPort() {
@@ -51,8 +54,10 @@ class OrbySerial extends EventEmitter {
         }
       };
 
-      // Timeout just in case the port hangs during open
-      setTimeout(() => finish(false), 3000);
+      // Red por si el puerto se cuelga al abrirse. Tiene que dar tiempo a los
+      // dos intentos de presentación de abajo (400 + 1200 + 1200), o se daría
+      // por fallido justo antes de que llegue la buena.
+      setTimeout(() => finish(false), 6000);
 
       try {
         this.port = new this.SerialPort({
@@ -93,6 +98,8 @@ class OrbySerial extends EventEmitter {
             this.isConnected = false;
             this.deviceInfo = null;
             this.port = null;
+            this.provisional = false;
+            clearTimeout(this._provisionalTimer);
             this.emit('disconnected');
             // Restart scanning
             this.startAutoScan();
@@ -103,21 +110,27 @@ class OrbySerial extends EventEmitter {
             this.emit('error', err.message);
           });
 
-          // Send handshake
+          // Presentación. Se pregunta DOS veces antes de descartar el puerto: el
+          // primer ACK se pierde a menudo si el teclado acaba de enumerarse o
+          // está ocupado (arranque de las pantallas, telemetría de la rueda), y
+          // con un solo intento el puerto bueno se descartaba y la app se
+          // quedaba en "Desconectado" hasta desenchufar y volver a enchufar.
+          const HANDSHAKE_WAIT_MS = 1200;
           setTimeout(() => {
             this._sendRaw('ACK\n');
-            // Wait for response
             setTimeout(() => {
-              if (this.deviceInfo) {
-                finish(true);
-              } else {
-                // Not an Orby device, close
+              if (this.deviceInfo) { finish(true); return; }
+
+              this._sendRaw('ACK\n');
+              setTimeout(() => {
+                if (this.deviceInfo) { finish(true); return; }
+                // No es un Orby (o no contesta): se suelta el puerto.
                 this.port?.close(() => {});
                 this.port = null;
                 finish(false);
-              }
-            }, 1500);
-          }, 500);
+              }, HANDSHAKE_WAIT_MS);
+            }, HANDSHAKE_WAIT_MS);
+          }, 400);
         });
       } catch (err) {
         console.error(`Error connecting to ${portPath}: ${err.message}`);
@@ -129,22 +142,36 @@ class OrbySerial extends EventEmitter {
   _handleLine(line) {
     // Check for handshake response
     if (line.startsWith('ORBY_V4:')) {
+      const wasProvisional = this.provisional;
       this._parseDeviceInfo(line);
+      this.provisional = false;
+      clearTimeout(this._provisionalTimer);
       this.isConnected = true;
       this.stopAutoScan();
+      // Si se había dado por conectado por telemetría, esto NO es un aviso
+      // repetido: es la identidad de verdad sustituyendo a la provisional, y la
+      // app tiene que enterarse para dejar de tratar al teclado como si llevara
+      // un firmware sin páginas ni huellas.
+      if (wasProvisional) console.log('Handshake recibido: identidad real del teclado');
       this.emit('connected', this.deviceInfo);
       return;
     }
 
-    // Fallback: If we missed the ACK but receive Orby telemetry, assume connected
-    if (!this.isConnected && (line.startsWith('KEY_EV:') || line.startsWith('ENC:'))) {
-      this.deviceInfo = {
-        device: 'ORBY_V4', raw: 'ORBY_V4 (detectado por telemetría)',
-        keys: 12, oleds: 10, port: this._portPath || null,
-      };
-      this.isConnected = true;
-      this.stopAutoScan();
-      this.emit('connected', this.deviceInfo);
+    // Hay teclado —está mandando telemetría— pero su presentación no ha llegado.
+    //
+    // Antes se daba por conectado con una identidad inventada, sin FW ni
+    // banderas de capacidades. Eso hacía que la app lo tratara como un firmware
+    // antiguo: nada de GET_HASH, así que se descargaban TODOS los perfiles y
+    // TODOS los iconos en cada conexión, y encima las funciones nuevas
+    // desaparecían de la interfaz.
+    //
+    // Ahora se le vuelve a pedir la presentación y solo se cae en la identidad
+    // inventada si no contesta en varios intentos: un teclado que habla pero no
+    // se presenta sigue valiendo para lo básico, que es lo que cubría el apaño.
+    if (!this.isConnected && !this.provisional
+        && (line.startsWith('KEY_EV:') || line.startsWith('ENC:'))) {
+      this.provisional = true;
+      this._chaseHandshake();
     }
 
     // Check for command responses
@@ -158,6 +185,36 @@ class OrbySerial extends EventEmitter {
 
     // Forward telemetry
     this.emit('data', line);
+  }
+
+  // Persigue la presentación del teclado cuando se sabe que está ahí pero no se
+  // ha presentado. Reintenta el ACK unas cuantas veces y, si aun así calla, se
+  // da por conectado con lo mínimo: es mejor una app en modo básico que una que
+  // dice "Desconectado" con el teclado escribiendo.
+  _chaseHandshake(attempt = 0) {
+    const ATTEMPTS = 4;
+    const EVERY_MS = 600;
+
+    if (this.isConnected && !this.provisional) return;   // ya llegó
+    if (!this.port?.isOpen) { this.provisional = false; return; }
+
+    if (attempt < ATTEMPTS) {
+      this._sendRaw('ACK\n');
+      this._provisionalTimer = setTimeout(() => this._chaseHandshake(attempt + 1), EVERY_MS);
+      return;
+    }
+
+    // Sin presentación: identidad mínima. No lleva ni FW ni banderas, así que la
+    // app degradará a lo que sabía hacer un firmware antiguo.
+    this.provisional = false;
+    this.deviceInfo = {
+      device: 'ORBY_V4', raw: 'ORBY_V4 (detectado por telemetría)',
+      keys: 12, oleds: 10, port: this._portPath || null,
+    };
+    this.isConnected = true;
+    this.stopAutoScan();
+    console.log('El teclado no contesta al ACK: se sigue con identidad mínima');
+    this.emit('connected', this.deviceInfo);
   }
 
   _parseDeviceInfo(line) {
@@ -235,6 +292,8 @@ class OrbySerial extends EventEmitter {
   forceRescan() {
     this.stopAutoScan();
     this.isScanning = false;
+    this.provisional = false;
+    clearTimeout(this._provisionalTimer);
     if (this.port) {
       try {
         this.port.removeAllListeners('close');
@@ -250,6 +309,9 @@ class OrbySerial extends EventEmitter {
       if (this.isConnected) this.stopAutoScan();
       return;
     }
+    // Puerto abierto, teclado hablando, esperando a que se presente: abrir otro
+    // puerto ahora solo tropezaría con el que ya tenemos cogido.
+    if (this.provisional) return;
     
     this.isScanning = true;
 

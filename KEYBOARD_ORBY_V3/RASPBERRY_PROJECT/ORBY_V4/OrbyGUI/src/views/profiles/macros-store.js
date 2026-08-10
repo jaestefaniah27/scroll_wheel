@@ -140,9 +140,53 @@ export function macroDeviceEligible(m) {
       && acts.every((a) => a.type in DEVICE_STEP_TYPE);
 }
 
+// Los pasos de una macro tal y como los quiere el teclado. Se saca aparte
+// porque sirve para dos cosas: subirlos y compararlos con los que ya tiene.
+function deviceStepsOf(m) {
+  return m.actions.map((a) => {
+    const type = DEVICE_STEP_TYPE[a.type];
+    let a1 = 0, b1 = 0;
+    if (a.type === 'delay') a1 = Math.max(0, Math.min(32767, Math.round(a.ms) || 0));
+    else if (a.type === 'hotkey') { a1 = a.modifier || 0; b1 = a.keycode || 0; }
+    else if (a.type === 'mouse_move') { a1 = a.dx || 0; b1 = a.dy || 0; }
+    else if (a.type === 'mouse_click') { a1 = CLICK_BUTTON_CODE[a.button] ?? 0; }
+    // Solo tecla y clic saben repetirse en el firmware (ver sameStep en macro-tabs.js): el
+    // resto de tipos siempre suben con 1 repetición y sin hueco.
+    const repeatable = a.type === 'hotkey' || a.type === 'mouse_click';
+    const repeat = repeatable ? Math.max(1, Math.min(255, a.count || 1)) : 1;
+    const gap = repeat > 1 ? Math.max(0, Math.min(32767, Math.round(a.gap ?? DEFAULT_REPEAT_GAP_MS))) : 0;
+    return { type, a: a1, b: b1, repeat, gap };
+  });
+}
+
+// Si el teclado ya tiene exactamente esos pasos. Con `steps` vacío pregunta por
+// "no tiene nada", que es lo que hace falta antes de mandar un MACRO_CLEAR.
+//
+// Devuelve false si no se puede saber (el teclado no contesta): ante la duda se
+// escribe, que es lo que se hacía siempre.
+async function matchesDevice(id, steps) {
+  let current;
+  try {
+    current = await device.getMacro(id);
+  } catch {
+    return false;
+  }
+  if (!current || current.length !== steps.length) return false;
+  return steps.every((s, i) => {
+    const c = current[i];
+    return c && c.type === s.type && c.a === s.a && c.b === s.b
+        && c.repeat === s.repeat && c.gap === s.gap;
+  });
+}
+
 // Sube (o, si ya no es jugable en el teclado, limpia) la copia de una macro en
 // el dispositivo. No bloquea al que llama: si falla, la macro se queda
 // funcionando por el camino del PC hasta el próximo intento.
+//
+// Antes de escribir se compara con lo que el teclado ya tiene. Sin eso, la
+// resincronización de la conexión reescribía todas las secuencias, marcaba la
+// configuración como pendiente y el guardado automático gastaba una escritura
+// de Flash del teclado en cada enchufada, sin que hubiera cambiado nada.
 export async function syncMacroToDevice(id) {
   // Sin esto, un firmware anterior a esta función respondería "ERR:UNKNOWN_CMD"
   // a SET_MACRO_STEP, que ninguna petición espera: cada intento agotaría su
@@ -154,27 +198,21 @@ export async function syncMacroToDevice(id) {
   const m = macroById(id);
 
   if (!m || !macroDeviceEligible(m)) {
+    if (await matchesDevice(id, [])) return;   // ya estaba vacía
     try { await device.macroClear(id); } catch { /* sin conexión o firmware viejo: no pasa nada */ }
+    markDirty();
     return;
   }
 
+  const steps = deviceStepsOf(m);
+  if (await matchesDevice(id, steps)) return;
+
   try {
-    for (let i = 0; i < m.actions.length; i++) {
-      const a = m.actions[i];
-      const type = DEVICE_STEP_TYPE[a.type];
-      let p1 = 0, p2 = 0;
-      if (a.type === 'delay') p1 = Math.max(0, Math.min(32767, Math.round(a.ms) || 0));
-      else if (a.type === 'hotkey') { p1 = a.modifier || 0; p2 = a.keycode || 0; }
-      else if (a.type === 'mouse_move') { p1 = a.dx || 0; p2 = a.dy || 0; }
-      else if (a.type === 'mouse_click') { p1 = CLICK_BUTTON_CODE[a.button] ?? 0; }
-      // Solo tecla y clic saben repetirse en el firmware (ver sameStep en macro-tabs.js): el
-      // resto de tipos siempre suben con 1 repetición y sin hueco.
-      const repeatable = a.type === 'hotkey' || a.type === 'mouse_click';
-      const count = repeatable ? Math.max(1, Math.min(255, a.count || 1)) : 1;
-      const gap = count > 1 ? Math.max(0, Math.min(32767, Math.round(a.gap ?? DEFAULT_REPEAT_GAP_MS))) : 0;
-      await device.setMacroStep(id, i, type, p1, p2, count, gap);
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      await device.setMacroStep(id, i, s.type, s.a, s.b, s.repeat, s.gap);
     }
-    await device.macroTrunc(id, m.actions.length);
+    await device.macroTrunc(id, steps.length);
     // Vive en RAM del teclado hasta que se guarde en Flash, igual que un
     // cambio de atajo: sin esto, el aviso de "Guardar en Flash" no se
     // encendería y un apagado se llevaría la secuencia por delante.
@@ -185,13 +223,44 @@ export async function syncMacroToDevice(id) {
   }
 }
 
-// Reenvía todas las secuencias al conectar: cubre tanto un teclado recién
-// reflasheado (su Flash de secuencias está vacía) como una macro editada
-// mientras estaba desconectado.
+// Repasa todas las secuencias al conectar y sube solo las que el teclado no
+// tenga ya iguales: cubre tanto un teclado recién reflasheado (su Flash de
+// secuencias está vacía) como una macro editada mientras estaba desconectado.
+//
+// La mayoría de las macros no las puede tocar el teclado (abrir una app,
+// escribir un texto, un complemento…): de esas no hay nada que subir, solo
+// habría que limpiar la copia del teclado si alguna vez se subió. Cuáles se
+// subieron se apunta en la configuración del PC, así que preguntar por las
+// demás es gastar una ida y vuelta por el CDC para oír "no tengo nada". Con
+// cien macros eso eran cien preguntas en cada conexión.
+//
+// La lista apuntada puede no existir (primera vez con esta versión): entonces
+// se repasan todas una vez y se apunta el resultado.
 export async function syncAllMacrosToDevice() {
   if (!compat.supports(state.deviceInfo, 'macros')) return;
   await loadPCMacros();
-  for (const m of pcMacros) await syncMacroToDevice(m.id);
+
+  const known = await uploadedIds();
+  for (const m of pcMacros) {
+    // Sin nada que subir y sin constancia de que el teclado tenga una copia
+    // suya, no hay nada que comprobar.
+    if (!macroDeviceEligible(m) && known && !known.includes(m.id)) continue;
+    await syncMacroToDevice(m.id);
+  }
+
+  const capacity = deviceMacroCapacity();
+  const now = pcMacros.filter((m) => macroDeviceEligible(m) && m.id < capacity).map((m) => m.id);
+  window.orby.setConfig({ macrosOnDevice: now });
+}
+
+// Los ids que este PC ha subido al teclado, o null si nunca se ha apuntado.
+async function uploadedIds() {
+  try {
+    const cfg = await window.orby.getConfig();
+    return Array.isArray(cfg?.macrosOnDevice) ? cfg.macrosOnDevice : null;
+  } catch {
+    return null;
+  }
 }
 
 // Una macro "vale" para la pestaña App si es justo lo que esa pestaña sabe
