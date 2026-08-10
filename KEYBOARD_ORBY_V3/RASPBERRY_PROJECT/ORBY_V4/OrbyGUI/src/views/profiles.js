@@ -29,6 +29,7 @@ import * as fb from '../oled-fb.js';
 import * as variants from '../variants.js';
 import * as plugins from '../plugins.js';
 import * as platform from '../platform.js';
+import * as compat from '../compat.js';
 
 import { ROTARY_GROUPS, ROTARY_TYPE_OPTIONS, SCROLL_PRESETS } from './profiles/constants.js';
 import { view, setRenderers, currentPageIdx, editingVariant, selectedKeyIndex, selectedRotarySlot,
@@ -78,8 +79,22 @@ export function init() {
   });
 
   // Las miniaturas llegan por el puerto serie con retraso: cuando la caché se
-  // completa hay que repintar la rejilla, no la vista entera.
-  cache.onChange(() => { if (isActiveView()) renderKeyGrid(); });
+  // completa hay que repintar la rejilla, no la vista entera. El icono del
+  // perfil vive en la barra de pestañas, no en la rejilla, así que se atiende
+  // aparte: si su bitmap todavía no estaba, la pestaña se dibujó con el icono
+  // decorativo y NO hay ningún <canvas> donde pintarlo, así que hay que rehacer
+  // la barra. Solo cuando cambia esa cuenta: repintar en cada bitmap que entra
+  // sería rehacerla veinte veces seguidas al conectar.
+  cache.onChange(() => {
+    if (!isActiveView()) return;
+    renderKeyGrid();
+    const bar = document.getElementById('profile-bar');
+    if (!bar) return;
+    const pintados = bar.querySelectorAll('.tab-icon-canvas').length;
+    const esperados = state.profiles.filter((p, i) => cache.profileIcon(i)).length;
+    if (pintados !== esperados) renderTabs();
+    else cache.paintThumbs(bar);
+  });
 
   // Las macros (secuencias) viven en la configuración local del PC, no en el
   // teclado: se leen una vez al arrancar y se repintan si ya se estaba
@@ -220,6 +235,8 @@ function onClick(e) {
     createProfile(view.editingProfile);
   } else if (act === 'profile-del') {
     removeProfile();
+  } else if (act === 'profile-icon') {
+    goTo('view-oled', { profile: view.editingProfile, kind: 'profile' });
   } else if (act === 'scroll-preset') {
     applyScroll({ detentsPerRev: Number(el.dataset.value) });
   } else if (act === 'scroll-invert') {
@@ -899,12 +916,15 @@ export function render() {
 
 function renderTabsInner() {
   const full = state.profiles.length >= state.maxProfiles;
+  const hasProfileIcon = compat.supports(state.deviceInfo, 'profileIcon');
   return `
     <div class="profile-tabs">
       ${state.profiles.map((p, i) => `
         <button class="profile-tab ${i === view.editingProfile ? 'active' : ''} ${i === state.activeProfileIdx ? 'is-live' : ''}"
                 data-act="pick-profile" data-idx="${i}">
-          <span class="tab-icon" style="--accent:${profileMeta(i).accent}">${icon(profileMeta(i).icon, 18)}</span>
+          <span class="tab-icon" style="--accent:${profileMeta(i).accent}">${cache.profileIcon(i)
+            ? `<canvas class="tab-icon-canvas" data-bmp="${i}:0:20"></canvas>`
+            : icon(profileMeta(i).icon, 18)}</span>
           <span class="tab-name">${escape(p.name)}</span>
           ${i === state.activeProfileIdx ? '<span class="tab-live">EN USO</span>' : ''}
         </button>`).join('')}
@@ -922,13 +942,22 @@ function renderTabsInner() {
               ${state.profiles.length <= 1 || view.busy ? 'disabled' : ''}>
         ${icon('trash', 16)} Eliminar
       </button>
+      <button class="secondary-btn" data-act="profile-icon" ${hasProfileIcon ? '' : 'disabled'}
+              title="${hasProfileIcon ? 'Icono que enseña este perfil en el menú del teclado'
+                : `Necesita firmware ${compat.FEATURES.profileIcon.since} o posterior`}">
+        ${icon('oled', 16)} Icono del perfil
+      </button>
       <span class="profile-count">${state.profiles.length} / ${state.maxProfiles}</span>
     </div>`;
 }
 
 function renderTabs() {
   const bar = document.getElementById('profile-bar');
-  if (bar) bar.innerHTML = renderTabsInner();
+  if (!bar) return;
+  bar.innerHTML = renderTabsInner();
+  // Los <canvas> del icono de perfil no sobreviven al innerHTML de arriba:
+  // hay que rellenarlos otra vez, igual que hace render() con el cuerpo entero.
+  cache.paintThumbs(bar);
 }
 
 // Variaciones del perfil: el mismo juego de atajos con un par de teclas

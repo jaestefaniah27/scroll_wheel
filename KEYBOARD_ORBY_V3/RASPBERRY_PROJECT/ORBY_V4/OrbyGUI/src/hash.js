@@ -116,6 +116,17 @@ export function profileHash(prof, iconOf) {
     }
   }
 
+  // El icono del perfil es el hueco 20 de la página 0, fuera del bucle de
+  // páginas de arriba: existe una sola vez por perfil, no una por página. Tiene
+  // que replicar BYTE A BYTE lo que hace crc32_profile_of() en config_hash.h.
+  const hasIcon = ((prof.pages[0]?.oledMask || 0) & (1 << 20)) ? 1 : 0;
+  crc.u8(hasIcon);
+  if (hasIcon) {
+    const bytes = iconOf(20, 0);
+    if (!bytes || bytes.length !== 360) return null; // aún sin descargar
+    crc.bytes(bytes);
+  }
+
   return crc.done();
 }
 

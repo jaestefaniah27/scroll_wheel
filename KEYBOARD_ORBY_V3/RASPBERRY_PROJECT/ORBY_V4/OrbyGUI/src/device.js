@@ -57,6 +57,10 @@ function settlePending(line) {
 // un error inesperado.
 export const ERR_OFFLINE = 'Conecta el Orby para poder editar la configuración';
 
+// Hueco 20 del banco de iconos: no es una tecla, es el icono del perfil que
+// pinta el menú físico (MODE_MENU_PERF). Vive siempre en la página 0.
+export const PROFILE_ICON_SLOT = 20;
+
 function request(command, { match, collect, result, fail, timeout = 4000 } = {}) {
   // Sin teclado no se manda nada. Antes la petición se daba por hecha y el
   // cambio se quedaba solo en el PC para subirlo al reconectar, pero eso creaba
@@ -143,7 +147,9 @@ export const setName = (profile, text) =>
   request(`SET_NAME:${profile}:${text}`, { match: (l) => l === `NAME:OK:${profile}` });
 
 export const clearOled = async (profile, slot) => {
-  await onEditPage(profile);
+  // El icono del perfil fuerza la página 0 en el propio firmware: engancharlo
+  // aquí movería la página del teclado bajo los dedos del usuario sin motivo.
+  if (slot !== PROFILE_ICON_SLOT) await onEditPage(profile);
   return request(`OLED_CLEAR:${profile}:${slot}`, { match: (l) => l.startsWith(`OLED:CLEARED:${profile}:`) });
 };
 
@@ -399,7 +405,9 @@ export async function getOled(profile, slot) {
 
   // Leer también va por página: sin esto la caché de iconos se llenaría con los
   // de la página que el teclado tenga puesta, no con los de la que se edita.
-  await onEditPage(profile);
+  // El icono del perfil es la excepción: el firmware ya lo sirve de la página 0
+  // pase lo que pase, así que no hace falta mover nada para leerlo.
+  if (slot !== PROFILE_ICON_SLOT) await onEditPage(profile);
 
   return request(`GET_OLED:${profile}:${slot}`, {
     timeout: 6000,
@@ -465,7 +473,8 @@ const OLED_CHUNK_BYTES = 90;
 export async function uploadOled(profile, slot, bytes) {
   // Una sola vez para todo el icono: los trozos tienen que caer en la misma
   // página, y cambiarla entre uno y otro dejaría el bitmap partido en dos.
-  await onEditPage(profile);
+  // El icono del perfil no depende de la página puesta (ver PROFILE_ICON_SLOT).
+  if (slot !== PROFILE_ICON_SLOT) await onEditPage(profile);
 
   for (let offset = 0; offset < bytes.length; offset += OLED_CHUNK_BYTES) {
     const slice = bytes.subarray(offset, Math.min(offset + OLED_CHUNK_BYTES, bytes.length));

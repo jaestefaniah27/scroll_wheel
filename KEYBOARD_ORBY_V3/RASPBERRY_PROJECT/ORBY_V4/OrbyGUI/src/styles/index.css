@@ -837,6 +837,9 @@ body {
 .profile-tab:hover { background: var(--bg-panel-hover); color: var(--text-main); }
 .profile-tab.active { border-color: var(--border-active); color: var(--text-main); box-shadow: var(--shadow-glow); }
 .profile-tab .tab-icon { color: var(--accent); display: flex; }
+/* Icono real del perfil (72x40) en vez del decorativo: mismo alto que el SVG
+   que sustituye (18px), ancho proporcional, sin difuminar al escalar. */
+.tab-icon-canvas { height: 18px; width: auto; image-rendering: pixelated; display: block; }
 .tab-live { font-size: 9px; letter-spacing: 0.5px; color: var(--success); background: rgba(16,185,129,0.12); padding: 2px 6px; border-radius: 8px; }
 
 /* Variaciones: el mismo perfil con un par de atajos distintos para una app.

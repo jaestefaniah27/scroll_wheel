@@ -24,7 +24,7 @@ export const FW_MIN = '2.0';
 
 // La que trae este repositorio (include/orby_version.h). Con una anterior la
 // app funciona recortada; con una posterior, la app es la vieja.
-export const FW_RECOMMENDED = '4.3';
+export const FW_RECOMMENDED = '4.4';
 
 // Qué versión hace falta para cada función, y qué bandera del handshake la
 // confirma cuando el firmware la anuncia.
@@ -37,6 +37,7 @@ export const FEATURES = {
   macros:     { since: '4.0', label: 'secuencias reproducidas por el teclado', flag: 'macros' },
   hash:       { since: '4.1', label: 'sincronización por huella y precarga de iconos', flag: 'hash' },
   bootsel:    { since: '4.2', label: 'actualizar el firmware desde la app sin tocar el botón', flag: 'bootsel' },
+  profileIcon: { since: '4.4', label: 'icono propio para cada perfil', flag: 'picon' },
 };
 
 // El `MAXMACROS` del handshake (firmware 4.2) no entra en FEATURES a propósito:

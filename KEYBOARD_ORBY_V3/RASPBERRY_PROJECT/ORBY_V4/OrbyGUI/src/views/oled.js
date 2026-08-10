@@ -50,6 +50,9 @@ const TOOLS = [
 
 const view = {
   profile: 0,
+  // 'key' (por defecto) edita el icono de una tecla; 'profile' edita el icono
+  // del perfil que pinta el menú físico de perfiles (hueco fijo, página 0).
+  kind: 'key',
   // Página del perfil que se estaba editando al entrar. Se guarda porque el
   // teclado puede cambiar de página mientras se dibuja (su botón de menú, una
   // tecla de salto), y el icono tiene que acabar en la que se abrió, no en la
@@ -120,16 +123,20 @@ export function init() {
   });
 }
 
-// Abre el editor sobre una tecla concreta. Es la ÚNICA forma de entrar aquí:
-// lo llama el botón "Editar icono" del editor de perfiles con el perfil, la
-// tecla y la capa que se estaban configurando.
-export function openTarget({ profile, key, layer } = {}) {
+// Abre el editor sobre una tecla concreta, o sobre el icono del perfil con
+// `kind: 'profile'`. Es la ÚNICA forma de entrar aquí: lo llama el botón
+// "Editar icono" del editor de perfiles (o el de "Icono del perfil" en la
+// barra de pestañas) con el destino ya decidido.
+export function openTarget({ profile, key, layer, kind } = {}) {
   if (Number.isInteger(profile) && profile < state.profiles.length) view.profile = profile;
   if (layer === 'normal' || layer === 'super') view.layer = layer;
+  view.kind = kind === 'profile' ? 'profile' : 'key';
   cancelLayer(false);
 
   if (Number.isInteger(key) && screenOf(key)) view.key = key;
-  view.page = state.profiles[view.profile]?.pageIdx || 0;
+  // El icono del perfil vive fijo en la página 0, sea cual sea la que el
+  // teclado tenga puesta.
+  view.page = view.kind === 'profile' ? 0 : (state.profiles[view.profile]?.pageIdx || 0);
 
   const cached = cache.get(view.profile, slot(), view.page);
   view.buffer = cached ? Uint8Array.from(cached) : fb.createFramebuffer();
@@ -165,7 +172,7 @@ function slotOf(keyIndex, layer = view.layer) {
 }
 
 function slot() {
-  return slotOf(view.key);
+  return view.kind === 'profile' ? device.PROFILE_ICON_SLOT : slotOf(view.key);
 }
 
 // Los bitmaps guardados se comparten con el editor de perfiles a través de
@@ -757,15 +764,21 @@ async function upload() {
   if (btn) btn.disabled = true;
   try {
     // El teclado ha podido irse a otra página mientras se dibujaba: se vuelve a
-    // la que se abrió antes de mandar nada, o el icono caería en la otra.
-    await ensureEditTarget(view.profile, view.page);
+    // la que se abrió antes de mandar nada, o el icono caería en la otra. El
+    // icono del perfil no depende de la página puesta, así que no hace falta.
+    if (view.kind !== 'profile') await ensureEditTarget(view.profile, view.page);
     await device.uploadOled(view.profile, slot(), view.buffer);
     cache.set(view.profile, slot(), Uint8Array.from(view.buffer), view.page);
     const prof = state.profiles[view.profile];
-    if (prof) prof.oledMask |= (1 << slot());
+    // El alias `oledMask` apunta a la página que se esté editando, que no tiene
+    // por qué ser la 0: el icono del perfil marca su máscara directamente.
+    if (prof) {
+      if (view.kind === 'profile') prof.pages[0].oledMask |= (1 << slot());
+      else prof.oledMask |= (1 << slot());
+    }
     markDirty();
     view.dirty = false;
-    toast(`Icono enviado a la tecla ${view.key + 1}`);
+    toast(view.kind === 'profile' ? 'Icono enviado al perfil' : `Icono enviado a la tecla ${view.key + 1}`);
     backToProfiles();
   } catch (err) {
     toast(`Error al enviar: ${err.message}`, 'error');
@@ -776,16 +789,19 @@ async function upload() {
 async function resetSlot() {
   if (!requireDevice()) return;
   try {
-    await ensureEditTarget(view.profile, view.page);
+    if (view.kind !== 'profile') await ensureEditTarget(view.profile, view.page);
     await device.clearOled(view.profile, slot());
     cache.set(view.profile, slot(), null, view.page);
     const prof = state.profiles[view.profile];
-    if (prof) prof.oledMask &= ~(1 << slot());
+    if (prof) {
+      if (view.kind === 'profile') prof.pages[0].oledMask &= ~(1 << slot());
+      else prof.oledMask &= ~(1 << slot());
+    }
     fb.clear(view.buffer);
     markDirty();
     view.dirty = false;
     render();
-    toast('Icono eliminado; vuelve la etiqueta de texto');
+    toast(view.kind === 'profile' ? 'Icono del perfil eliminado' : 'Icono eliminado; vuelve la etiqueta de texto');
   } catch (err) {
     toast(`Error: ${err.message}`, 'error');
   }
@@ -793,9 +809,9 @@ async function resetSlot() {
 
 async function loadFromDevice() {
   if (!requireDevice()) return;
-  await ensureEditTarget(view.profile, view.page);
+  if (view.kind !== 'profile') await ensureEditTarget(view.profile, view.page);
   const bytes = await device.getOled(view.profile, slot());
-  if (!bytes) { toast('Esa tecla no tiene icono guardado', 'info'); return; }
+  if (!bytes) { toast(view.kind === 'profile' ? 'Este perfil no tiene icono guardado' : 'Esa tecla no tiene icono guardado', 'info'); return; }
   cache.set(view.profile, slot(), bytes, view.page);
   pushUndo();
   view.buffer = Uint8Array.from(bytes);
@@ -837,6 +853,25 @@ export function render() {
 // puede quedar tapada por mucho que se baje en el panel lateral.
 function renderActionBar() {
   const prof = state.profiles[view.profile];
+
+  if (view.kind === 'profile') {
+    // Sin tecla, sin pantalla, sin capa y sin página: el icono del perfil es
+    // uno solo y no depende de nada de eso.
+    return `
+      <header class="oled-actionbar">
+        <div class="oled-actionbar-info">
+          <h1>Icono del perfil</h1>
+          <p>${escape(prof?.name || `Perfil ${view.profile + 1}`)}</p>
+        </div>
+        <div class="oled-actionbar-btns">
+          <button class="secondary-btn" data-act="exit">${icon('close', 16)} Salir sin guardar</button>
+          <button class="primary-btn" id="btn-oled-upload" data-act="upload">
+            ${icon('check', 16)} Enviar al perfil
+          </button>
+        </div>
+      </header>`;
+  }
+
   // La página es la que se abrió (view.page), no la que el teclado tenga puesta
   // ahora: es a la que va el icono al pulsar "Enviar".
   const pageTxt = (hasPages() && prof && pageCountOf(prof) > 1)

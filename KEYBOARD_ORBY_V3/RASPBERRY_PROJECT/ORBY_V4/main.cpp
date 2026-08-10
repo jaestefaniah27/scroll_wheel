@@ -121,7 +121,7 @@ static inline uint8_t rot_slot(uint8_t base, bool super) {
 // salto directo o desde el gestor de páginas.
 //
 // Cada página cuesta 260 bytes de RAM, así que multiplicarlas es barato. Lo que
-// NO cabía eran los iconos (7424 bytes por página): por eso el banco de iconos
+// NO cabía eran los iconos (7680 bytes por página): por eso el banco de iconos
 // se ha mudado a la Flash y se pinta directamente de ahí. Ver FLASH_OLED_OFFSET.
 #define MAX_PAGES 4
 
@@ -338,8 +338,10 @@ volatile uint8_t profile_count = DEFAULT_PROFILES;
 // En RAM queda únicamente un búfer de preparación con el tramo que se está
 // editando, para que un icono recién subido se vea antes de grabarlo.
 #define OLED_FB_SIZE         360
-#define OLED_SLOTS           20
-#define OLED_PAGE_STRIDE     7424   // 20*360 = 7200, redondeado a página de 256
+#define OLED_KEY_SLOTS       20   // pantallas × capas (normal/SUPER)
+#define OLED_PROFILE_SLOT    20   // hueco extra, solo en la página 0: icono del perfil
+#define OLED_SLOTS           21
+#define OLED_PAGE_STRIDE     7680 // 21*360 = 7560, redondeado a página de 256
 
 // Un bit por hueco ocupado, por perfil y página. Vive en los ajustes: perderla
 // equivale a perder los iconos.
@@ -604,7 +606,7 @@ static uint8_t settings_blob[SETTINGS_BLOB_SIZE];
 static_assert(SETTINGS_BLOB_SIZE <= FLASH_SETTINGS_BYTES,
               "Los ajustes ya no caben en la región reservada de Flash");
 static_assert(OLED_SLOTS * OLED_FB_SIZE <= OLED_PAGE_STRIDE,
-              "El stride por página no cubre sus 20 bitmaps");
+              "El stride por página no cubre sus 21 bitmaps");
 static_assert(OLED_PAGE_STRIDE % FLASH_PAGE_SIZE == 0,
               "flash_range_program exige múltiplos de página");
 
@@ -1259,16 +1261,35 @@ static bool page_remove(uint8_t profile, uint8_t pg) {
         staging_profile = staging_page = 0xFF;
         staging_dirty = false;
     }
+
+    // El icono del perfil vive siempre en el tramo de la página 0. Si es esa la
+    // que se borra (pg == 0), el bucle de abajo hace que la página 1 ocupe su
+    // tramo y se lo llevaría por delante: es el único caso que le afecta, así
+    // que se guarda aparte y se repone en la iteración i == 0. Con pg > 0 la
+    // página 0 no se toca y `restore_icon` nunca entra en juego.
+    uint8_t saved_icon[OLED_FB_SIZE];
+    bool restore_icon = oled_slot_used(profile, 0, OLED_PROFILE_SLOT);
+    if (restore_icon) memcpy(saved_icon, oled_slot_ptr(profile, 0, OLED_PROFILE_SLOT), OLED_FB_SIZE);
+
     // Aquí sí hay que mover los iconos: el número de página ES el índice de su
     // tramo, así que desplazar las páginas sin desplazarlos los descuadraría.
     // En orden ascendente nunca se lee un tramo ya sobrescrito.
     for (uint8_t i = pg; i + 1 < p.page_count; i++) {
         p.pages[i] = p.pages[i + 1];
         custom_oled_mask[profile][i] = custom_oled_mask[profile][i + 1];
-        if (custom_oled_mask[profile][i]) {
-            memcpy(oled_staging,
-                   (const uint8_t*)(XIP_BASE + FLASH_OLED_AT(p.oled_bank, i + 1)),
-                   OLED_PAGE_STRIDE);
+        bool restore_here = (i == 0) && restore_icon;
+        if (custom_oled_mask[profile][i] || restore_here) {
+            if (custom_oled_mask[profile][i]) {
+                memcpy(oled_staging,
+                       (const uint8_t*)(XIP_BASE + FLASH_OLED_AT(p.oled_bank, i + 1)),
+                       OLED_PAGE_STRIDE);
+            } else {
+                memset(oled_staging, 0, OLED_PAGE_STRIDE);
+            }
+            if (restore_here) {
+                memcpy(&oled_staging[OLED_PROFILE_SLOT * OLED_FB_SIZE], saved_icon, OLED_FB_SIZE);
+                custom_oled_mask[profile][0] |= (1u << OLED_PROFILE_SLOT);
+            }
             write_oled_slice(p.oled_bank, i, oled_staging);
         }
     }
@@ -1795,10 +1816,16 @@ void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
         uint8_t option = (uint8_t)(perf_menu_first + screen_num - 1);
 
         if (option < profile_count) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(profiles[option].name, fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
+            // Con icono propio, la pantalla entera es el icono: nada de marco ni
+            // nombre debajo, igual que MODE_NORMAL con una tecla personalizada.
+            if (oled_slot_used(option, 0, OLED_PROFILE_SLOT)) {
+                oleds.paint_screen(screen_num, oled_slot_ptr(option, 0, OLED_PROFILE_SLOT));
+            } else {
+                draw_premium_frame(fb);
+                OledText::render_string_to_framebuffer(profiles[option].name, fb);
+                draw_premium_frame(fb);
+                oleds.paint_screen(screen_num, fb);
+            }
         } else if (option == profile_count) {
             draw_premium_frame(fb);
             OledText::render_string_to_framebuffer("BACK", fb);
@@ -2208,7 +2235,9 @@ void process_command(const char* cmd) {
         // BOOTSEL=1: este firmware sabe reiniciarse en el cargador de la ROM a
         // petición de la app, así que se puede actualizar sin desenchufar el
         // cable con el botón pulsado.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:MODE=%s\n",
+        // PICON=1: el hueco 20 de la página 0 es el icono del perfil, visible en
+        // el menú físico de perfiles (MODE_MENU_PERF).
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2548,14 +2577,14 @@ void process_command(const char* cmd) {
     }
 
     // ---------- Iconos OLED personalizados ----------
-    // OLED_CHUNK:<perfil>:<hueco 0-19>:<offset>:<hex>
+    // OLED_CHUNK:<perfil>:<hueco 0-20>:<offset>:<hex>  (hueco 20 = icono del perfil)
     // El framebuffer es de 360 bytes (72x40, 5 páginas). La app lo trocea.
     if (strncmp(cmd, "OLED_CHUNK:", 11) == 0) {
         int idx = 0, slot = 0, offset = 0;
         const char* p = next_field(cmd + 11, &idx);
         p = next_field(p, &slot);
         p = next_field(p, &offset);
-        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 19 ||
+        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > OLED_PROFILE_SLOT ||
             offset < 0 || offset >= OLED_FB_SIZE) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
@@ -2563,7 +2592,9 @@ void process_command(const char* cmd) {
 
         // Los iconos viven en la Flash, así que el trozo entra en el búfer de
         // preparación de esa página. Se graba al guardar o al cambiar de página.
-        uint8_t page = cmd_page((uint8_t)idx);
+        // El icono del perfil vive siempre en la página 0, sea cual sea la que el
+        // teclado tenga puesta: así la app no tiene que moverla para escribirlo.
+        uint8_t page = (slot == OLED_PROFILE_SLOT) ? 0 : cmd_page((uint8_t)idx);
         load_oled_staging((uint8_t)idx, page);
         uint8_t* dst = &oled_staging[slot * OLED_FB_SIZE];
         int written = 0;
@@ -2583,29 +2614,32 @@ void process_command(const char* cmd) {
         return;
     }
 
-    // GET_OLED:<perfil>:<hueco 0-19>
+    // GET_OLED:<perfil>:<hueco 0-20>  (hueco 20 = icono del perfil)
     // Devuelve el bitmap guardado para que la app pueda dibujar la previsualización
     // real de cada tecla en lugar de fiarse de una caché local.
     if (strncmp(cmd, "GET_OLED:", 9) == 0) {
         int idx = 0, slot = 0;
         const char* p = next_field(cmd + 9, &idx);
         p = next_field(p, &slot);
-        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot > OLED_PROFILE_SLOT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
-        uint8_t page = cmd_page((uint8_t)idx);
+        uint8_t page = (slot == OLED_PROFILE_SLOT) ? 0 : cmd_page((uint8_t)idx);
         char head[24];
         snprintf(head, sizeof(head), "OLEDDATA:%d:%d", idx, slot);
         dump_oled_slot(head, (uint8_t)idx, page, (uint8_t)slot);
         return;
     }
 
-    // GET_OLED_PG:<perfil>:<página>:<hueco 0-19>
+    // GET_OLED_PG:<perfil>:<página>:<hueco 0-20>  (hueco 20 = icono del perfil)
     // Igual que GET_OLED pero con la página escrita en el propio comando, así
     // que no toca la que el teclado tenga puesta. GET_OLED solo sabe leer la
     // activa, y por eso la app tenía que ir cambiándola —moviendo las pantallas
     // del teclado bajo los dedos del usuario— para llenar su caché de iconos.
     // Con esto puede descargarlos todos de una vez al conectar y navegar luego
     // entre perfiles y páginas sin esperas.
+    //
+    // El icono del perfil solo existe en la página 0, pero como la app siempre
+    // lo pide con página 0 la validación de abajo ya lo deja pasar sin más.
     if (strncmp(cmd, "GET_OLED_PG:", 12) == 0) {
         int idx = 0, page = 0, slot = 0;
         const char* p = next_field(cmd + 12, &idx);
@@ -2613,7 +2647,7 @@ void process_command(const char* cmd) {
         p = next_field(p, &slot);
         if (!p || idx < 0 || idx >= (int)profile_count
             || page < 0 || page >= (int)profiles[idx].page_count
-            || slot < 0 || slot > 19) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+            || slot < 0 || slot > OLED_PROFILE_SLOT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
         char head[28];
         snprintf(head, sizeof(head), "OLEDDATA:%d:P%d:%d", idx, page, slot);
@@ -2621,19 +2655,21 @@ void process_command(const char* cmd) {
         return;
     }
 
-    // OLED_CLEAR:<perfil>:<hueco>  (hueco 255 = borrar todos los del perfil)
+    // OLED_CLEAR:<perfil>:<hueco>  (hueco 255 = borrar los de tecla; 20 = icono del perfil)
     if (strncmp(cmd, "OLED_CLEAR:", 11) == 0) {
         int idx = 0, slot = 0;
         const char* p = next_field(cmd + 11, &idx);
         p = next_field(p, &slot);
         if (idx < 0 || idx >= (int)profile_count) { cdc_printf("ERR:BAD_ARGS\n"); return; }
 
-        uint8_t page = cmd_page((uint8_t)idx);
+        uint8_t page = (slot == OLED_PROFILE_SLOT) ? 0 : cmd_page((uint8_t)idx);
         load_oled_staging((uint8_t)idx, page);
         if (slot == 255) {
-            custom_oled_mask[idx][page] = 0;
-            memset(oled_staging, 0, OLED_SLOTS * OLED_FB_SIZE);
-        } else if (slot >= 0 && slot <= 19) {
+            // Solo los huecos de tecla: vaciar los iconos de una página no se
+            // puede llevar por delante el del perfil, que vive en el bit 20.
+            custom_oled_mask[idx][page] &= ~0xFFFFFu;
+            memset(oled_staging, 0, OLED_KEY_SLOTS * OLED_FB_SIZE);
+        } else if (slot >= 0 && slot <= OLED_PROFILE_SLOT) {
             custom_oled_mask[idx][page] &= ~(1u << slot);
             memset(&oled_staging[slot * OLED_FB_SIZE], 0, OLED_FB_SIZE);
         } else {

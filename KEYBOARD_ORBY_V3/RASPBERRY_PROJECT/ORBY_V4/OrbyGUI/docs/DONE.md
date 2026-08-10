@@ -1,6 +1,6 @@
 # DONE
 
-Tareas completadas, extraídas del TODO.md (evaluación "que ORBY parezca un producto" del 2026-08-08).
+Tareas completadas, extraídas del TODO.md 
 
 * [x] Identidad USB en constantes (`ORBY_USB_VID` / `ORBY_USB_PID`) en un solo sitio, y
       `bcdDevice` con la versión real de firmware (0x0410) en vez del 1.0 de plantilla.
@@ -16,6 +16,8 @@ Tareas completadas, extraídas del TODO.md (evaluación "que ORBY parezca un pro
       PUBLICACION.md.
 * [x] Hecha la parte de interfaz: la insignia en teclas y mandos de `src/views/profiles.js`
       que avisa cuando una acción necesita la app abierta.
+* [X] Mejorar plugin de lampara: permitir ver el brillo que estás configurando en una tecla que configures. así puedes tener si quieres una página que veas lo que estás configurando en la lámpara. También poder ver el color que estás configurando. También añadir controles para poder poner con una tecla un brillo determinado, y también un color determinado.
+* [X] Poder asignar un icono a un perfíl. Así, Desde el teclado cuando quieres cambiar de perfil, puedes identificar rápidamente cada perfil.
 
 ### Orby WebGUI (Versión Portátil / Entornos Corporativos)
 Objetivo: crear una versión web de la app que funcione mediante WebHID/Web Serial,
@@ -46,3 +48,16 @@ permitiendo configurar el teclado sin instalar software en el PC host.
    * El cambio manual de perfil desde el propio teclado ya existía: el menú de la
      tecla 12 y la telemetría `EV:CTX:<perfil>:<pagina>:<total>` que el teclado emite
      por su cuenta al cambiar de contexto.
+
+### Mejoras de perfiles
+
+* [x] Cambiar funcionalidad del botón menú. Una pulsación corta avanza a la siguiente página. Mantener pulsado te muestra los perfiles que tienes: si mientras mantienes, pulsas otro perfil, cambias a ese perfil. de esta manera se puede cambiar de perfiles fácilmente.
+
+  Hecho en `main.cpp` (bloque "TECLA DE MENÚ"): mientras se mantiene el menú
+  pulsado (tras el segundo que lo abre), se sigue sondeando el resto de teclas
+  sin esperar a soltar. Si se toca la que tiene un perfil debajo (misma
+  correspondencia tecla↔pantalla que ya pintan los OLEDs), se activa ese
+  perfil al momento y se vuelve a `MODE_NORMAL`; si se suelta el menú sin
+  tocar nada, queda como antes: abierto en `MODE_MENU_PERF` para elegir a
+  mano. Se espera también a que se suelte la tecla del perfil elegido para que
+  el bucle normal no la lea como una pulsación nueva y dispare su atajo.

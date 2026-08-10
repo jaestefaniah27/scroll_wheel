@@ -37,6 +37,10 @@
 #define CFGHASH_SLOTS    20
 #define CFGHASH_FB_SIZE  360
 
+// Hueco 20, solo en la página 0: el icono del perfil, aparte de los CFGHASH_SLOTS
+// de las teclas. No entra en el `& 0xFFFFF` de la máscara por página de abajo.
+#define CFGHASH_PROFILE_SLOT 20
+
 #define CFGHASH_INIT 0xFFFFFFFFu
 
 // Tabla de 16 entradas (medio byte por vuelta): la de 256 costaría 1 KB de
@@ -124,6 +128,14 @@ inline uint32_t crc32_profile_of(const char* name, uint8_t page_count,
 
         tick();
     }
+
+    // El icono del perfil es el hueco 20, pero solo existe en la página 0 y no
+    // depende de cuántas páginas tenga el perfil: se resume aparte, después del
+    // bucle de páginas, para que cambiarlo mueva la huella igual que cualquier
+    // otro bitmap.
+    const uint8_t has_icon = (mask_of(0) & (1u << CFGHASH_PROFILE_SLOT)) ? 1 : 0;
+    crc = crc32_feed(crc, &has_icon, 1);
+    if (has_icon) crc = crc32_feed(crc, icon_of(0, CFGHASH_PROFILE_SLOT), CFGHASH_FB_SIZE);
 
     return crc ^ 0xFFFFFFFFu;
 }

@@ -23,6 +23,7 @@ commit, más este documento.
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
 |---|---|---|
+| **4.4** | Icono propio por perfil, visible en el menú de perfiles del teclado | OrbyGUI 0.4.x o posterior |
 | **4.3** | Sin cambios de protocolo respecto a la 4.2. Es la primera versión que sale como release publicada, y por tanto la primera que se puede instalar desde la propia app | 0.4.1 o posterior |
 | **4.2** | Comando `BOOTSEL`: el teclado se reinicia en el cargador de la ROM cuando la app se lo pide, así que se actualiza desde Ajustes sin desenchufar nada. El handshake anuncia `MAXMACROS` (cuántas secuencias caben) y `BOOTSEL=1` | 0.4.1 o posterior |
 | **4.1** | `GET_HASH` y `GET_OLED_PG`: sincronización por huella y precarga de iconos de cualquier página. Identidad USB propia (número de serie único por teclado, `bcdDevice` real) | 0.4.0 o posterior |

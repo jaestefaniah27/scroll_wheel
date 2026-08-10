@@ -12,7 +12,8 @@ import * as cache from './oled-cache.js';
 const FORMAT = 'orby-backup';
 // v2: número de perfiles variable, mandos con capa SUPER (16 huecos) y rueda de
 // scroll por perfil y capa.
-const VERSION = 3;   // v3: perfiles con páginas
+// v3: perfiles con páginas.
+const VERSION = 4;   // v4: icono propio por perfil (hueco 20, página 0)
 
 function bytesToHex(bytes) {
   let hex = '';
@@ -53,6 +54,16 @@ export async function exportAll(onProgress = () => {}) {
       if (bytes) icons[slot] = bytesToHex(bytes);
     }
 
+    // El icono del perfil es un hueco más (el 20), pero uno solo por perfil, no
+    // por página: vive siempre en la página 0 y GET_OLED_PG no toca la que el
+    // teclado tenga puesta.
+    let profileIcon = null;
+    if ((prof.pages[0]?.oledMask || 0) & (1 << 20)) {
+      onProgress(`Perfil ${p + 1}: icono del perfil…`);
+      const bytes = await device.getOledPage(p, 0, 20);
+      if (bytes) profileIcon = bytesToHex(bytes);
+    }
+
     payload.profiles.push({
       name: prof.name,
       // labels/keys/rotary/scroll son accesos a la página que se esté editando,
@@ -73,6 +84,7 @@ export async function exportAll(onProgress = () => {}) {
       // la página activa y no se puede pedir otra sin cambiarla.
       iconsPage: prof.pageIdx || 0,
       icons,
+      profileIcon,
     });
   }
 
@@ -106,6 +118,7 @@ export function snapshotFromState() {
       })),
       iconsPage: prof.pageIdx || 0,
       icons: iconsForPage(prof.idx, prof.pageIdx || 0),
+      profileIcon: bytesToHexOrNull(cache.profileIcon(prof.idx)),
     })),
   };
 }
@@ -118,6 +131,10 @@ function iconsForPage(profileIdx, page) {
     if (bytes) icons[slot] = bytesToHex(bytes);
   }
   return icons;
+}
+
+function bytesToHexOrNull(bytes) {
+  return bytes ? bytesToHex(bytes) : null;
 }
 
 // Vuelca una copia al teclado. Como cualquier otro cambio, queda marcada como
@@ -176,6 +193,13 @@ export async function importAll(data, onProgress = () => {}) {
       const slot = Number(slots[i]);
       onProgress(`Perfil ${p + 1}: icono ${i + 1} de ${slots.length}…`);
       await device.uploadOled(p, slot, hexToBytes(icons[slot]));
+    }
+
+    // Copias anteriores a la v4 no traen este campo: se dejan tal cual, sin
+    // tocar lo que ya tuviera el teclado.
+    if (typeof prof.profileIcon === 'string' && prof.profileIcon) {
+      onProgress(`Perfil ${p + 1}: icono del perfil…`);
+      await device.uploadOled(p, 20, hexToBytes(prof.profileIcon));
     }
   }
 

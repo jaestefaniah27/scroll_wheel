@@ -60,9 +60,10 @@ for b in range(MAX_PROFILES):
             errors.append('los tramos (%d,%d) y %s comparten direccion' % (b, pg, seen[a]))
         seen[a] = (b, pg)
 
-# 2. El tramo cubre los 20 bitmaps y cabe en su hueco.
-if OLED_PAGE_STRIDE < 20 * 360:
-    errors.append('el stride (%d) no cubre los 20 bitmaps de 360 B' % OLED_PAGE_STRIDE)
+# 2. El tramo cubre los 21 bitmaps (20 de tecla + el icono del perfil) y cabe
+#    en su hueco.
+if OLED_PAGE_STRIDE < 21 * 360:
+    errors.append('el stride (%d) no cubre los 21 bitmaps de 360 B' % OLED_PAGE_STRIDE)
 if OLED_PAGE_STRIDE > SLICE:
     errors.append('el stride (%d) no cabe en el tramo de %d B' % (OLED_PAGE_STRIDE, SLICE))
 if OLED_PAGE_STRIDE % 256:

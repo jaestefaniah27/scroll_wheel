@@ -32,6 +32,11 @@ export function get(profile, slot, page) {
   return cache.get(cacheKey(profile, slot, page)) ?? null;
 }
 
+// El icono del perfil, para que las vistas no repitan la clave "perfil:0:20".
+export function profileIcon(profileIdx) {
+  return get(profileIdx, 20, 0);
+}
+
 export function has(profile, slot, page) {
   return cache.has(cacheKey(profile, slot, page));
 }
@@ -159,6 +164,18 @@ export async function loadProfile(profileIdx) {
       cache.set(cacheKey(profileIdx, slot, page), bytes);
       emit();
     }
+
+    // El icono del perfil es un hueco más, pero fijo en la página 0 y ajeno a la
+    // página que se esté editando: se resuelve aparte del bucle de arriba.
+    const iconKey = cacheKey(profileIdx, 20, 0);
+    if (!cache.has(iconKey)) {
+      if (!((prof.pages[0]?.oledMask || 0) & (1 << 20))) {
+        cache.set(iconKey, null);
+      } else {
+        const bytes = await device.getOledPage(profileIdx, 0, 20);
+        if (!outOfDate()) { cache.set(iconKey, bytes); emit(); }
+      }
+    }
   } finally {
     loadingProfile = null;
     emit();
@@ -201,6 +218,14 @@ export async function preloadAll(onProgress = () => {}) {
         if (!(mask & (1 << slot))) { cache.set(key, null); continue; }
         missing.push({ profile: prof.idx, page, slot, key });
       }
+    }
+
+    // El icono del perfil: un hueco más, pero uno solo por perfil (página 0),
+    // no uno por página como los de arriba.
+    const iconKey = cacheKey(prof.idx, 20, 0);
+    if (!cache.has(iconKey)) {
+      if (!((prof.pages[0]?.oledMask || 0) & (1 << 20))) cache.set(iconKey, null);
+      else missing.push({ profile: prof.idx, page: 0, slot: 20, key: iconKey });
     }
   }
 

@@ -49,10 +49,8 @@
   * [ ] FCC Part 15 clase B si se vende en EEUU.
   * [ ] Kickstarter: exige entidad legal, cuenta bancaria, vídeo y coste unitario cerrado.
     Y enviar a la UE sin CE no es una opción.
-* [ ] Poder asignar un icono a un perfíl. Así, Desde el teclado cuando quieres cambiar de perfil, puedes identificar rápidamente cada perfil.
-* [ ] Mejorar plugin de lampara: permitir ver el brillo que estás configurando en una tecla que configures. así puedes tener si quieres una página que veas lo que estás configurando en la lámpara. También poder ver el color que estás configurando. También añadir controles para poder poner con una tecla un brillo determinado, y también un color determinado.
 * [ ] Añadir la opción a multimedia de una tecla que sea la hora. Añadir también la opción de una tecla que sea la fecha.
-* [ ] Que en la vusta de perfiles y macros, si una tecla no se reproducirá desde el teclado sino desde la app al no ser device elgible, que haya un pequeño simbolito para que se indique que sin la app abierta no funciona. Además, quiero que en el teclado, si no tienes la app abierta, las teclas cuya acción no sea debice elegible se marquen para que sepas que no tienes la app conectada y que justo esa tecla no va a funcionar.
+* [ ] Que en la vista de perfiles y macros, si una tecla no se reproducirá desde el teclado sino desde la app al no ser device elgible, que haya un pequeño simbolito para que se indique que sin la app abierta no funciona. Además, quiero que en el teclado, si no tienes la app abierta, las teclas cuya acción no sea debice elegible se marquen para que sepas que no tienes la app conectada y que justo esa tecla no va a funcionar.
 
   * [ ] Pendiente la parte del teclado: marcar en las pantallas OLED del propio Orby
     las teclas que no van a funcionar sin la app conectada. Es firmware, fuera del
@@ -85,18 +83,3 @@ Para hacer que el ecosistema Orby resulte muy atractivo "out-of-the-box" aprovec
 
   * Crear la interfaz de usuario dentro de OrbyGUI para explorar, descargar e instalar plugins creados por la comunidad o de forma oficial.
   * Diseñar la arquitectura del repositorio/backend donde se alojarán los plugins para su descarga.
-
-
-
-### Mejoras de perfiles
-
-* [x] Cambiar funcionalidad del botón menú. Una pulsación corta avanza a la siguiente página. Mantener pulsado te muestra los perfiles que tienes: si mientras mantienes, pulsas otro perfil, cambias a ese perfil. de esta manera se puede cambiar de perfiles fácilmente.
-
-  Hecho en `main.cpp` (bloque "TECLA DE MENÚ"): mientras se mantiene el menú
-  pulsado (tras el segundo que lo abre), se sigue sondeando el resto de teclas
-  sin esperar a soltar. Si se toca la que tiene un perfil debajo (misma
-  correspondencia tecla↔pantalla que ya pintan los OLEDs), se activa ese
-  perfil al momento y se vuelve a `MODE_NORMAL`; si se suelta el menú sin
-  tocar nada, queda como antes: abierto en `MODE_MENU_PERF` para elegir a
-  mano. Se espera también a que se suelte la tecla del perfil elegido para que
-  el bucle normal no la lea como una pulsación nueva y dispare su atajo.
