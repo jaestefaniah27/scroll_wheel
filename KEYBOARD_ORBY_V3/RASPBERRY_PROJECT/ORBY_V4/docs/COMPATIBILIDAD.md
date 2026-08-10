@@ -18,8 +18,7 @@ novedades no se ven hasta actualizar la app.
 | Versión de la app | `OrbyGUI/package.json` |
 
 Al subir la versión del firmware hay que tocar los tres sitios en el mismo
-commit, más este documento. Es lo que comprueba el workflow de publicación:
-si la etiqueta `fw-vX.Y` no coincide con `orby_version.h`, no compila.
+commit, más este documento.
 
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
@@ -52,21 +51,40 @@ preguntan por función, nunca por número de versión.
 
 ## Publicar una versión de firmware
 
+> **GitHub Actions no se ejecuta en esta cuenta.** Los workflows del repositorio
+> mueren al arrancar con `The job was not started because your account is locked
+> due to a billing issue`. El de firmware
+> ([`.github/workflows/firmware.yml`](../../../../.github/workflows/firmware.yml))
+> se queda como documentación de los pasos y como red de seguridad por si algún
+> día vuelve a funcionar, pero **hoy se publica a mano**.
+
 ```powershell
 # 1. Subir ORBY_FW_MINOR (o MAJOR) en include/orby_version.h
 # 2. Actualizar FW_RECOMMENDED y FEATURES en OrbyGUI/src/compat.js
-# 3. Añadir la fila de arriba
-# 4. Commit, y entonces:
-git tag fw-v4.2
-git push origin fw-v4.2
+# 3. Añadir la fila de la tabla de arriba
+# 4. Commit y etiqueta
+git tag -a fw-v4.3 -m "Firmware 4.3"
+git push origin main
+git push origin fw-v4.3
+
+# 5. Compilar y nombrar el .uf2 con su versión
+cmake --build build
+Copy-Item build\ORBY_V4.uf2 build\ORBY_V4-fw-4.3.uf2
+Get-FileHash build\ORBY_V4-fw-4.3.uf2 -Algorithm SHA256
+
+# 6. Crear la release y subir el .uf2 (con gh, o por la web)
+gh release create fw-v4.3 --title "Firmware 4.3" --notes-file notas.md `
+   build\ORBY_V4-fw-4.3.uf2 build\ORBY_V4-fw-4.3.uf2.sha256
 ```
 
-El workflow [`.github/workflows/firmware.yml`](../../../../.github/workflows/firmware.yml)
-compila el `.uf2` en limpio, comprueba que la etiqueta y el código dicen lo
-mismo, publica la release con el SHA-256 y pega esa tabla en las notas.
+La app solo exige dos cosas de la release: que la etiqueta empiece por `fw-v` y
+que haya un asset `.uf2`. Todo lo demás son notas para quien las lea.
 
-Para probar que compila sin publicar nada: *Actions → Publicar firmware de ORBY
-→ Run workflow*. Deja el `.uf2` como artefacto y no crea release.
+**Comprobar a mano lo que comprobaba el workflow:** que la etiqueta y
+`ORBY_FW_MINOR` dicen lo mismo. Nadie lo valida ya, y la app decide qué comandos
+manda mirando ese número: si el `.uf2` de `fw-v4.3` se presenta como 4.2, la app
+se cree la versión que anuncia el teclado y no la de la etiqueta, así que el
+único perjudicado es quien lea la lista de releases. Al revés es peor.
 
 ## Actualizar desde la app
 
