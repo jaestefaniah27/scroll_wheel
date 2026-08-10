@@ -46,6 +46,28 @@ export const CONSUMER_ACTIONS = [
   { index: 16, label: 'Alejar (zoom −)' },
 ];
 
+// Subida y bajada de un mismo control multimedia: como el giro de un
+// complemento, el sentido lo pone el hueco físico (ver ROTARY_DOWN_SLOTS en
+// profiles/constants.js), así que el editor los enseña como un único control
+// "Giro" en vez de pedir Vol+ y Vol- por separado.
+export const CONSUMER_TURN_PAIRS = [
+  { id: 'volumen', label: 'Volumen', up: 7,  down: 8  },
+  { id: 'brillo',  label: 'Brillo',  up: 10, down: 11 },
+  { id: 'zoom',    label: 'Zoom',    up: 15, down: 16 },
+];
+
+// El resto de acciones multimedia (Silenciar, Reproducir/Pausa…) son eventos
+// sueltos sin pareja arriba/abajo, así que se quedan asignables por hueco.
+const CONSUMER_PAIRED_INDICES = new Set(CONSUMER_TURN_PAIRS.flatMap((p) => [p.up, p.down]));
+export const CONSUMER_TURN_OPTIONS = [
+  ...CONSUMER_TURN_PAIRS.map((p) => ({ pairId: p.id, label: p.label, up: p.up, down: p.down })),
+  ...CONSUMER_ACTIONS.filter((a) => !CONSUMER_PAIRED_INDICES.has(a.index)),
+];
+
+export function consumerPairFor(index) {
+  return CONSUMER_TURN_PAIRS.find((p) => p.up === index || p.down === index) || null;
+}
+
 // Tipos de acción para encoders y rueda. Deben coincidir con el enum
 // RotaryType del firmware.
 export const ROTARY_TYPES = {

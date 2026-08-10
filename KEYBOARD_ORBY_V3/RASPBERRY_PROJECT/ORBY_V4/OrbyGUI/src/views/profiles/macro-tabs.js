@@ -7,7 +7,7 @@
 
 import { state, markDirty, layerIndex, scrollFor } from '../../store.js';
 import * as device from '../../device.js';
-import { MACRO_MODIFIER, ROTARY_TYPES } from '../../hid-keys.js';
+import { MACRO_MODIFIER, ROTARY_TYPES, CONSUMER_TURN_PAIRS } from '../../hid-keys.js';
 import { toast, requireDevice } from '../../ui.js';
 import { icon } from '../../icons.js';
 import * as variants from '../../variants.js';
@@ -210,6 +210,24 @@ function setGiroPluginAction(base, pluginId, op, spec) {
   applyRotaryPair(
     posSlot, { type: ROTARY_TYPES.KEY, modifier: MACRO_MODIFIER, keycode: idPos },
     negSlot, { type: ROTARY_TYPES.KEY, modifier: MACRO_MODIFIER, keycode: idNeg },
+  );
+}
+
+// Mismo mecanismo que setGiroPluginAction pero para un par multimedia (Volumen,
+// Brillo, Zoom): sin macro de por medio, así que basta con escribir Subir/Bajar
+// en el hueco que corresponda según el sentido de montaje del encoder.
+export function setRotaryConsumerPair(pairId) {
+  const pair = CONSUMER_TURN_PAIRS.find((p) => p.id === pairId);
+  const base = selectedRotarySlot();
+  const twin = base === null ? undefined : ROTARY_TWIN[base];
+  if (!pair || base === null || twin === undefined) return;
+
+  const posSlot = ROTARY_DOWN_SLOTS.has(base) ? twin : base;
+  const negSlot = ROTARY_DOWN_SLOTS.has(base) ? base : twin;
+
+  applyRotaryPair(
+    posSlot, { type: ROTARY_TYPES.CONSUMER, modifier: 0, keycode: pair.up },
+    negSlot, { type: ROTARY_TYPES.CONSUMER, modifier: 0, keycode: pair.down },
   );
 }
 

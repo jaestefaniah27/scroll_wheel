@@ -1,3 +1,4 @@
+
 * [ ] Añadir biblioteca de perfiles para que los usuarios no tengan que crear los suyos desde cero. Los usuarios pueden aportar al pool de perfiles en el apartado perfiles de la comunidad. Los usuarios tienen que aportar Nombre del perfil y descripción. EN la biblioteca de perfiles sale el número total de atajos, el número de páginas, etc.
 * [ ] He pensado en monetizar perfiles o paquetes de perfiles: el software básico es gratis pero hay que pagar una baja cantidad de € para obtener acceso a un paquete de perfiles para unos cuantos programas como Altium, excel, word, etc, o pagar cada uno por separado. Estudiar viavilidad de esto.
 * [ ] **Que ORBY parezca un producto, no un proyecto.** La app ya es algo que usaría a diario
@@ -50,13 +51,15 @@
   * [ ] Kickstarter: exige entidad legal, cuenta bancaria, vídeo y coste unitario cerrado.
     Y enviar a la UE sin CE no es una opción.
 * [ ] Poder asignar un icono a un perfíl. Así, Desde el teclado cuando quieres cambiar de perfil, puedes identificar rápidamente cada perfil.
-* [ ] Mejorar plugin de lampara: permitir ver el brillo que estás configurando en una tecla que configures. así puedes tener si quieres una página que veas lo que estás configurando en la lámpara.
+* [ ] Mejorar plugin de lampara: permitir ver el brillo que estás configurando en una tecla que configures. así puedes tener si quieres una página que veas lo que estás configurando en la lámpara. También poder ver el color que estás configurando. También añadir controles para poder poner con una tecla un brillo determinado, y también un color determinado.
 * [ ] Añadir la opción a multimedia de una tecla que sea la hora. Añadir también la opción de una tecla que sea la fecha.
 * [ ] Que en la vusta de perfiles y macros, si una tecla no se reproducirá desde el teclado sino desde la app al no ser device elgible, que haya un pequeño simbolito para que se indique que sin la app abierta no funciona. Además, quiero que en el teclado, si no tienes la app abierta, las teclas cuya acción no sea debice elegible se marquen para que sepas que no tienes la app conectada y que justo esa tecla no va a funcionar.
+
   * [ ] Pendiente la parte del teclado: marcar en las pantallas OLED del propio Orby
     las teclas que no van a funcionar sin la app conectada. Es firmware, fuera del
     alcance de la WebGUI.
 * [ ] Necesito investigar si gracias a la nueva funcionalidad de plugins, se puede hacer un plugin para que en chrome poder ejecutar ciertas acciones como: ir a la página número N del documento que tengo abierto ahora mismo. Y de manera similar a esto, si se podría hacer un plugin por ejemplo para altium, y poder realizar acciones de altium más fácilmente gracias al plugin, por ejemplo que el plugin detecte automáticamente si estás en un esquemático, en un diseño pcb, etc, y cambie de página de un perfil automáticamente (por ejemplo tener una página para esquemáticos, otra para layout, etc, y que el plugin ayude con la experiencia de crear los atajos ofreciendo ayudas). Lo mismo con un plugin para work o excel y cosas así. Después, evaluar si merece la pena que la existencia de estos plugins venga directamente en la app como funcionalidades disponibles, o es mejor que se mantengan como plugins separados disponibles a descargar desde la propia app por ejemplo.
+
   * **Investigación (2026-08-10):**
     * **Chrome:** Es posible mediante una *Chrome Extension* utilizando **Native Messaging** para comunicarse con la app de escritorio (OrbyGUI). La app registra un "Native Messaging Host" en el registro de Windows. La extensión puede leer la URL actual, inyectar scripts para leer el contexto (HTML) y comunicarse bidireccionalmente. *Nota:* Interactuar con el visor de PDFs nativo de Chrome para ir a una página concreta es muy limitado (sandboxing), aunque sí se puede controlar el scroll y estado de páginas web normales.
     * **Altium Designer:** Altium no expone fácilmente su contexto en tiempo real a ejecutables externos de forma directa. Para lograrlo (saber si estás en esquemático o PCB), hay que desarrollar un **Custom Plugin (Extensión DLL)** usando el Altium SDK (Delphi/C#) que corra *dentro* de Altium y acceda a `SchServer` y `PCBServer`. Este plugin podría comunicarse con OrbyGUI vía WebSockets o IPC para avisarle de cambios de contexto y que OrbyGUI cambie de página de perfil automáticamente.
@@ -64,20 +67,22 @@
     * **¿Integrados o separados?** Dado que requieren componentes de terceros (una extensión en la Chrome Web Store, una DLL compilada para Altium, interacciones COM), **es mejor mantenerlos como plugins separados**. Incluirlos en la app base aumentaría el peso, la probabilidad de falsos positivos en antivirus y la complejidad de mantenimiento. OrbyGUI debería ofrecer un sistema de "Marketplace" o descargas bajo demanda.
 
 ### Ideas Estratégicas para la Tienda de Plugins (Marketplace)
+
 Para hacer que el ecosistema Orby resulte muy atractivo "out-of-the-box" aprovechando su hardware único (10 OLEDs, encoders rotativos, rueda magnética alta resolución), se priorizarán los siguientes plugins de terceros:
 
 * [ ] **Hardware Monitor (CPU / GPU / RAM):**
-   * Leer estadísticas vía API de Windows (WMI/LibreHardwareMonitor).
-   * Aprovechar las pantallas OLED para dibujar gráficos de barras, porcentajes y temperaturas en tiempo real. Un "dashboard" de hardware autónomo.
 
+  * Leer estadísticas vía API de Windows (WMI/LibreHardwareMonitor).
+  * Aprovechar las pantallas OLED para dibujar gráficos de barras, porcentajes y temperaturas en tiempo real. Un "dashboard" de hardware autónomo.
 * [ ] **Control de Streaming (OBS Studio):**
-   * Conectarse vía WebSocket a OBS.
-   * Actualizar texto/iconos OLED según las escenas disponibles. Feedback de luces intermitentes en la OLED al estar grabando (REC) o transmitiendo.
 
+  * Conectarse vía WebSocket a OBS.
+  * Actualizar texto/iconos OLED según las escenas disponibles. Feedback de luces intermitentes en la OLED al estar grabando (REC) o transmitiendo.
 * [ ] **Integración de Teletrabajo / Audio (Teams / Discord / Spotify):**
-   * Muteo universal a nivel de sistema/aplicación, con un icono en la OLED mostrando si el micrófono está capturando audio para dar seguridad.
-   * Uso de los encoders para controlar los niveles de volumen de aplicaciones específicas de manera separada (audio routing).
 
+  * Muteo universal a nivel de sistema/aplicación, con un icono en la OLED mostrando si el micrófono está capturando audio para dar seguridad.
+  * Uso de los encoders para controlar los niveles de volumen de aplicaciones específicas de manera separada (audio routing).
 * [ ] **Desarrollo de la Tienda de Plugins (Marketplace):**
-   * Crear la interfaz de usuario dentro de OrbyGUI para explorar, descargar e instalar plugins creados por la comunidad o de forma oficial.
-   * Diseñar la arquitectura del repositorio/backend donde se alojarán los plugins para su descarga.
+
+  * Crear la interfaz de usuario dentro de OrbyGUI para explorar, descargar e instalar plugins creados por la comunidad o de forma oficial.
+  * Diseñar la arquitectura del repositorio/backend donde se alojarán los plugins para su descarga.

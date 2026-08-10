@@ -17,7 +17,8 @@ import * as device from '../device.js';
 import { state, notify, markDirty, subscribe, syncFromDevice, profileMeta, labelSlot, keymapSlot,
          rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU,
          hasPages, maxPages, pageCountOf, selectPage, addPage, removePage } from '../store.js';
-import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER,
+import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, CONSUMER_TURN_OPTIONS, consumerPairFor,
+         GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER,
          MACRO_MODIFIER, KEY_GROUPS, describeAction, eventToAction,
          ROTARY_TYPES, ROTARY_SLOTS, isScrollType, describeRotary } from '../hid-keys.js';
 import { icon } from '../icons.js';
@@ -42,7 +43,8 @@ import { recordMacro, detachResetKey, onRecorderState, setRecordMode, setRecordS
          clearRecording, toggleRecording, renderRecordTab,
          startRecordingKey } from './profiles/recorder.js';
 import { seqAddAction, currentAppStep, setAppKind, currentTextStep, setPowerAction, setPluginAction,
-         giroInvertido, invertirGiroPlugin, setRotaryPluginAction, pickAppTarget, pickAppFocus,
+         giroInvertido, invertirGiroPlugin, setRotaryPluginAction, setRotaryConsumerPair,
+         pickAppTarget, pickAppFocus,
          renderAppTab, renderTextTab, pickOpenTarget, setSeqOpenKind, pickSeqOpenFocus,
          seqRemoveAction, seqMoveAction, seqActionAt, seqKeyBuilder, startPositionCapture,
          stopPositionCapture, applyRotaryMacro, cancelPositionPoll } from './profiles/macro-tabs.js';
@@ -176,6 +178,8 @@ function onClick(e) {
     applyRotary({ type: Number(el.dataset.type), modifier: 0, keycode: 0 });
   } else if (act === 'rotary-consumer') {
     applyRotary({ type: ROTARY_TYPES.CONSUMER, modifier: 0, keycode: Number(el.dataset.index) });
+  } else if (act === 'rotary-consumer-pair') {
+    setRotaryConsumerPair(el.dataset.pair);
   } else if (act === 'rotary-mod') {
     const cur = currentRotary();
     applyRotary({ type: ROTARY_TYPES.KEY, modifier: cur.modifier ^ Number(el.dataset.bit), keycode: cur.keycode });
@@ -1180,13 +1184,23 @@ function renderKeyGrid() {
   paintKeyGrid();
 }
 
-// Un giro de complemento (brillo, color…) reparte su valor entre CW y CCW por
+// Un giro de complemento (brillo, color…) o de una pareja multimedia con
+// arriba/abajo (Volumen, Brillo, Zoom) reparte su valor entre CW y CCW por
 // construcción: no tiene sentido editarlos por separado, así que la lista los
-// enseña como un único control "Giro". Multimedia y Atajo de teclado sí
-// necesitan una tecla distinta por sentido (Vol+ / Vol-, por ejemplo), así que
-// esos se quedan con sus dos filas de siempre.
+// enseña como un único control "Giro". Lo mismo vale para desplazamiento y el
+// zoom por Ctrl+rueda, que ya llegan con la misma acción en los dos huecos
+// (ver isScrollType en applyRotary, keys.js). Atajo de teclado y las acciones
+// multimedia sueltas (Silenciar, Reproducir/Pausa…) sí necesitan una tecla
+// distinta por sentido, así que esas se quedan con sus dos filas de siempre.
 function isPluginTurnAction(action) {
   return action?.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER && isPluginMacro(action.keycode);
+}
+
+function isUnifiedTurnAction(action) {
+  if (!action?.type) return true;
+  if (isScrollType(action.type)) return true;
+  if (isPluginTurnAction(action)) return true;
+  return action.type === ROTARY_TYPES.CONSUMER && Boolean(consumerPairFor(action.keycode));
 }
 
 function renderRotaryGroups() {
@@ -1211,8 +1225,7 @@ function renderRotaryGroups() {
     const [cwPart, ccwPart, clickPart] = group.parts;
     const cwAction = variants.effectiveRotary(prof, variant, cwPart.slot, view.layer);
     const ccwAction = variants.effectiveRotary(prof, variant, ccwPart.slot, view.layer);
-    const mergeable = (a) => !a.type || isPluginTurnAction(a);
-    const merged = mergeable(cwAction) && mergeable(ccwAction);
+    const merged = isUnifiedTurnAction(cwAction) && isUnifiedTurnAction(ccwAction);
 
     const cwChanged = variant && variants.override(variant, 'rotary', rotarySlot(cwPart.slot, view.layer));
     const ccwChanged = variant && variants.override(variant, 'rotary', rotarySlot(ccwPart.slot, view.layer));
@@ -1383,10 +1396,12 @@ function renderRotaryInspector() {
   const changed = Boolean(variant && variants.override(variant, 'rotary', rotarySlot(base, view.layer)));
   const baseAction = currentProfile().rotary?.[rotarySlot(base, view.layer)] || { type: 0, modifier: 0, keycode: 0 };
 
-  // Sin asignar todavía o ya con un complemento, el giro se edita como control
-  // único (ver renderRotaryGroups); solo Multimedia/Atajo, que necesitan tecla
-  // distinta por sentido, siguen enseñando "Giro horario"/"antihorario".
-  const subLabel = !isClick && (action.type === ROTARY_TYPES.NONE || isPlugin) ? 'Giro' : found?.part.label;
+  // Sin asignar todavía, ya con un complemento, con desplazamiento/zoom o con
+  // una pareja multimedia (Volumen, Brillo, Zoom), el giro se edita como
+  // control único (ver renderRotaryGroups); solo Atajo de teclado y las
+  // acciones multimedia sueltas, que necesitan tecla distinta por sentido,
+  // siguen enseñando "Giro horario"/"antihorario".
+  const subLabel = !isClick && isUnifiedTurnAction(action) ? 'Giro' : found?.part.label;
 
   return `
     <div class="editor-inspector glass-panel">
@@ -1455,10 +1470,21 @@ function renderRotaryInspector() {
         <div class="field">
           <span class="field-label">Acción</span>
           <div class="consumer-grid">
-            ${CONSUMER_ACTIONS.map((c) => `
-              <button class="consumer-chip ${action.keycode === c.index ? 'on' : ''}"
-                      data-act="rotary-consumer" data-index="${c.index}">${c.label}</button>`).join('')}
+            ${isClick
+              ? CONSUMER_ACTIONS.map((c) => `
+                  <button class="consumer-chip ${action.keycode === c.index ? 'on' : ''}"
+                          data-act="rotary-consumer" data-index="${c.index}">${c.label}</button>`).join('')
+              : CONSUMER_TURN_OPTIONS.map((c) => c.pairId
+                  ? `<button class="consumer-chip ${action.keycode === c.up || action.keycode === c.down ? 'on' : ''}"
+                             data-act="rotary-consumer-pair" data-pair="${c.pairId}">${c.label}</button>`
+                  : `<button class="consumer-chip ${action.keycode === c.index ? 'on' : ''}"
+                             data-act="rotary-consumer" data-index="${c.index}">${c.label}</button>`).join('')}
           </div>
+          ${!isClick ? `
+            <p class="setting-desc">
+              Cada muesca sube o baja un paso, y el sentido lo pone el propio giro: no hace
+              falta elegir qué va en cada lado.
+            </p>` : ''}
         </div>` : ''}
 
       ${isMacro && !isPlugin ? renderSequenceEditor(action.keycode) : ''}
