@@ -1,4 +1,5 @@
 const EventEmitter = require('events');
+const { log } = require('./log');
 
 class OrbySerial extends EventEmitter {
   constructor() {
@@ -14,6 +15,10 @@ class OrbySerial extends EventEmitter {
     // Hay teclado hablando pero todavía no se ha presentado (ver _chaseHandshake).
     this.provisional = false;
     this._provisionalTimer = null;
+    // Señales de vida de la conexión (ver _startWatchdog).
+    this._watchdog = null;
+    this._lastLineAt = 0;
+    this._pingAt = 0;
   }
 
   async _loadSerialPort() {
@@ -45,6 +50,11 @@ class OrbySerial extends EventEmitter {
   async tryConnect(portPath) {
     if (!(await this._loadSerialPort())) return false;
 
+    // Nunca se prueba un puerto teniendo otro a medias: dejarlo abierto sería
+    // quedarse su handle para siempre y estrellarse contra "Access denied" en
+    // todos los intentos siguientes.
+    if (this.port && !this.isConnected) this._releasePort('quedaba un intento anterior sin cerrar');
+
     return new Promise((resolve) => {
       let isResolved = false;
       const finish = (result) => {
@@ -57,7 +67,16 @@ class OrbySerial extends EventEmitter {
       // Red por si el puerto se cuelga al abrirse. Tiene que dar tiempo a los
       // dos intentos de presentación de abajo (400 + 1200 + 1200), o se daría
       // por fallido justo antes de que llegue la buena.
-      setTimeout(() => finish(false), 6000);
+      //
+      // Suelta el puerto además de rendirse: darlo por fallido y dejarlo abierto
+      // deja un puerto huérfano que nadie va a cerrar nunca, con el agravante de
+      // que sigue cogido. El intento siguiente choca contra él —"Access denied"—
+      // y la app no vuelve a encontrar el teclado por mucho que se enchufe.
+      setTimeout(() => {
+        if (isResolved || this.isConnected) return;
+        this._releasePort('el puerto no contestó al abrirse');
+        finish(false);
+      }, 6000);
 
       try {
         this.port = new this.SerialPort({
@@ -68,7 +87,7 @@ class OrbySerial extends EventEmitter {
 
         this.port.open((err) => {
           if (err) {
-            console.log(`Failed to open ${portPath}: ${err.message}`);
+            log(`[serie] no se pudo abrir ${portPath}: ${err.message}`);
             this.port = null;
             finish(false);
             return;
@@ -94,19 +113,20 @@ class OrbySerial extends EventEmitter {
           });
 
           this.port.on('close', () => {
-            console.log(`Port ${portPath} closed`);
+            log(`[serie] puerto ${portPath} cerrado`);
             this.isConnected = false;
             this.deviceInfo = null;
             this.port = null;
             this.provisional = false;
             clearTimeout(this._provisionalTimer);
+            this._stopWatchdog();
             this.emit('disconnected');
             // Restart scanning
             this.startAutoScan();
           });
 
           this.port.on('error', (err) => {
-            console.error(`Port error: ${err.message}`);
+            log(`[serie] error del puerto: ${err.message}`);
             this.emit('error', err.message);
           });
 
@@ -125,8 +145,7 @@ class OrbySerial extends EventEmitter {
               setTimeout(() => {
                 if (this.deviceInfo) { finish(true); return; }
                 // No es un Orby (o no contesta): se suelta el puerto.
-                this.port?.close(() => {});
-                this.port = null;
+                this._releasePort('no se ha presentado tras dos ACK');
                 finish(false);
               }, HANDSHAKE_WAIT_MS);
             }, HANDSHAKE_WAIT_MS);
@@ -140,19 +159,29 @@ class OrbySerial extends EventEmitter {
   }
 
   _handleLine(line) {
+    // Cualquier línea vale como señal de vida (ver _startWatchdog).
+    this._lastLineAt = Date.now();
+
     // Check for handshake response
     if (line.startsWith('ORBY_V4:')) {
+      // El vigilante pregunta con ACK cada tanto, así que esta línea llega
+      // también con la conexión ya hecha: entonces no es una conexión nueva y
+      // volver a anunciarla haría a la app resincronizarse cada pocos segundos.
+      const yaConectado = this.isConnected && this.deviceInfo?.raw === line;
       const wasProvisional = this.provisional;
       this._parseDeviceInfo(line);
       this.provisional = false;
       clearTimeout(this._provisionalTimer);
       this.isConnected = true;
       this.stopAutoScan();
+      this._startWatchdog();
+      if (yaConectado) return;
       // Si se había dado por conectado por telemetría, esto NO es un aviso
       // repetido: es la identidad de verdad sustituyendo a la provisional, y la
       // app tiene que enterarse para dejar de tratar al teclado como si llevara
       // un firmware sin páginas ni huellas.
-      if (wasProvisional) console.log('Handshake recibido: identidad real del teclado');
+      if (wasProvisional) log('[serie] presentación recibida: identidad real del teclado');
+      log(`[serie] teclado detectado: fw ${this.deviceInfo.fw ?? '?'} en ${this.deviceInfo.port ?? '?'}`);
       this.emit('connected', this.deviceInfo);
       return;
     }
@@ -187,6 +216,87 @@ class OrbySerial extends EventEmitter {
     this.emit('data', line);
   }
 
+  // Cierra y suelta el puerto que se estaba probando. Todo intento fallido pasa
+  // por aquí: un puerto abierto que ya no se va a usar y que nadie recuerda
+  // sigue cogido, y el siguiente intento se estrella contra "Access denied".
+  _releasePort(motivo) {
+    const port = this.port;
+    this.port = null;
+    this.provisional = false;
+    clearTimeout(this._provisionalTimer);
+    if (!port) return;
+    log(`[serie] se suelta el puerto: ${motivo}`);
+    try {
+      // Sin el manejador de cierre: no había conexión que anunciar como perdida,
+      // y dispararlo mandaría un 'disconnected' por un teclado que nunca estuvo.
+      port.removeAllListeners('close');
+      if (port.isOpen) port.close(() => {});
+    } catch { /* ya estaba cerrado */ }
+  }
+
+  // --- Vigilante de la conexión ---------------------------------------------
+  // Una conexión puede morirse sin que el puerto avise: el equipo suspende, el
+  // cable hace mal contacto, Windows se queda el descriptor de un aparato que
+  // ya no está. El puerto sigue "abierto", nadie emite 'close', y la app se
+  // queda con un teclado que no existe y sin volver a escanear — que es cuando
+  // había que ir a Ajustes y pulsar Reconectar a mano.
+  //
+  // El teclado no habla si no lo tocas, así que el silencio por sí solo no dice
+  // nada: hay que preguntar. ACK siempre se contesta.
+  _startWatchdog() {
+    if (this._watchdog) return;
+    const SILENCIO_MS = 12_000;   // sin oír nada, se pregunta
+    const RESPUESTA_MS = 4_000;   // sin contestar al ACK, se da por muerta
+
+    this._watchdog = setInterval(() => {
+      if (!this.isConnected || !this.port?.isOpen) return;
+      const ahora = Date.now();
+
+      if (this._pingAt) {
+        if (this._lastLineAt > this._pingAt) { this._pingAt = 0; return; }  // contestó
+        if (ahora - this._pingAt > RESPUESTA_MS) {
+          this._dropConnection('el teclado no contesta al ACK');
+        }
+        return;
+      }
+
+      if (ahora - (this._lastLineAt || 0) > SILENCIO_MS) {
+        this._pingAt = ahora;
+        this._sendRaw('ACK\n');
+      }
+    }, 2000);
+  }
+
+  _stopWatchdog() {
+    clearInterval(this._watchdog);
+    this._watchdog = null;
+    this._pingAt = 0;
+  }
+
+  // Suelta la conexión y vuelve a buscar. Hace a mano lo que haría el evento
+  // 'close' del puerto, porque el caso que cubre es justo ese: que ese evento no
+  // llegue nunca.
+  _dropConnection(motivo) {
+    log(`[serie] se suelta la conexión: ${motivo}`);
+    const port = this.port;
+    this.port = null;
+    this.isConnected = false;
+    this.deviceInfo = null;
+    this.provisional = false;
+    clearTimeout(this._provisionalTimer);
+    this._stopWatchdog();
+
+    if (port) {
+      try {
+        port.removeAllListeners('close');   // el cierre ya lo estamos anunciando aquí
+        if (port.isOpen) port.close(() => {});
+      } catch { /* el puerto ya no existe: es justo lo que se sospechaba */ }
+    }
+
+    this.emit('disconnected');
+    this.startAutoScan();
+  }
+
   // Persigue la presentación del teclado cuando se sabe que está ahí pero no se
   // ha presentado. Reintenta el ACK unas cuantas veces y, si aun así calla, se
   // da por conectado con lo mínimo: es mejor una app en modo básico que una que
@@ -213,7 +323,8 @@ class OrbySerial extends EventEmitter {
     };
     this.isConnected = true;
     this.stopAutoScan();
-    console.log('El teclado no contesta al ACK: se sigue con identidad mínima');
+    this._startWatchdog();
+    log('[serie] sin presentación tras varios ACK: se sigue con identidad mínima');
     this.emit('connected', this.deviceInfo);
   }
 
@@ -250,6 +361,9 @@ class OrbySerial extends EventEmitter {
   }
 
   disconnect() {
+    this._stopWatchdog();
+    clearTimeout(this._provisionalTimer);
+    this.provisional = false;
     if (this.port && this.port.isOpen) {
       this.port.close(() => {});
     }
@@ -347,10 +461,10 @@ class OrbySerial extends EventEmitter {
 
       for (const candidate of candidates) {
         if (this.isConnected) break;
-        console.log(`Trying port: ${candidate.path} (${candidate.manufacturer || 'Unknown'})`);
+        log(`[serie] probando ${candidate.path} (${candidate.manufacturer || 'desconocido'})`);
         const success = await this.tryConnect(candidate.path);
         if (success) {
-          console.log(`Connected to Orby V4 on ${candidate.path}`);
+          log(`[serie] conectado al Orby en ${candidate.path}`);
           break;
         }
       }

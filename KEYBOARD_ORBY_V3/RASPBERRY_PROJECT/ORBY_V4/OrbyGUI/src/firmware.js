@@ -45,21 +45,32 @@ export async function init() {
   apply(await window.orby.firmware.get());
 }
 
-export function check() {
+// El resultado se aplica aquí mismo, además de llegar por el evento de estado.
+//
+// Los dos caminos son mensajes distintos: la respuesta de la petición y el
+// aviso 'firmware:state'. Nada garantiza cuál llega antes, y quien hacía
+// `await firmware.check()` y miraba `fw.latest` se encontraba el estado de
+// antes: en el primer arranque eso es `latest: null`, y Ajustes decía "No hay
+// firmware publicado" justo después de una comprobación que había ido bien.
+export async function check() {
   if (!available()) return null;
-  return window.orby.firmware.check({
+  const st = await window.orby.firmware.check({
     maxFw: compat.FW_RECOMMENDED,
     currentFw: state.deviceInfo?.fw ?? null,
   });
+  apply(st);
+  return st;
 }
 
 // `viaBootsel` decide qué se le pide al usuario: si el teclado sabe reiniciarse
 // solo (bandera BOOTSEL=1), nada; si no, que lo enchufe con el botón pulsado.
-export function update() {
+export async function update() {
   if (!available()) return null;
-  return window.orby.firmware.update({
+  const st = await window.orby.firmware.update({
     viaBootsel: compat.supports(state.deviceInfo, 'bootsel'),
   });
+  apply(st);
+  return st;
 }
 
 export function cancel() {

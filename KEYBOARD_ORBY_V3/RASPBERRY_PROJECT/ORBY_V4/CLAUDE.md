@@ -79,6 +79,7 @@ número de versión: cuando el handshake trae la bandera (`MACROS=1`, `HASH=1`,
 | `apps.js` | lista apps instaladas del menú Inicio |
 | `config.js` | configuración local del PC (no del firmware) |
 | `firmware.js` | actualiza el firmware del teclado: releases `fw-v*`, `BOOTSEL`, copia del `.uf2` |
+| `log.js` | registro del ciclo de vida de la conexión en `%APPDATA%\OrbyGUI\orby.log` |
 
 Todo IPC va por `ipcMain.handle`; el renderer nunca toca Node directamente.
 
@@ -120,6 +121,9 @@ Ejemplo de referencia: `OrbyGUI/plugins/lampdesk`.
 
 - **No hay tests automatizados.** `tools/test/*.py` son comprobaciones sueltas
   (descriptor USB, mapa de Flash, teclas) que se lanzan a mano.
+- **La app instalada no tiene consola.** Cuando no detecta el teclado, el rastro
+  está en `%APPDATA%\OrbyGUI\orby.log` (`electron/log.js`). En desarrollo,
+  `npm run dev` saca además la consola del renderer y cada comando enviado.
 - **OneDrive bloquea `node_modules/electron`.** Si `npm install` o el arranque fallan
   con ficheros en uso, es sincronización, no un bug del código.
 - **VS Code filtra `ELECTRON_RUN_AS_NODE`.** Si Electron arranca como Node y no abre

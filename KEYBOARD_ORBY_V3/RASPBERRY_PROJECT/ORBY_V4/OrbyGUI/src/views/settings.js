@@ -137,9 +137,14 @@ function initFirmwareCard() {
   }
 
   document.getElementById('btn-fw-check').addEventListener('click', async () => {
-    await firmware.check();
-    if (firmware.fw.status === 'idle' && !firmware.fw.available) {
-      toast(firmware.fw.latest ? 'El teclado ya tiene el último firmware' : 'No hay firmware publicado', 'info');
+    const st = await firmware.check();
+    // Un fallo al consultar GitHub no es "no hay firmware": decir eso mandaba a
+    // buscar un problema que no existe (la release estaba publicada).
+    if (st?.status === 'error') { toast(st.error, 'error', 6000); return; }
+    if (st?.status === 'idle' && !st.available) {
+      toast(st.latest
+        ? `El teclado ya tiene el último firmware (${st.latest.version})`
+        : 'No hay firmware publicado que esta versión de la app sepa instalar', 'info');
     }
   });
 
