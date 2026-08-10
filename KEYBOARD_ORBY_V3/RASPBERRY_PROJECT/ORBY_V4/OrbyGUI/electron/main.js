@@ -10,7 +10,7 @@ const { listInstalledApps } = require('./apps');
 const recorder = require('./recorder');
 const plugins = require('./plugins');
 const { FirmwareUpdater } = require('./firmware');
-const pkg = require('../package.json');
+const { log } = require('./log');
 
 let mainWindow = null;
 let serial = null;
@@ -33,11 +33,37 @@ if (!gotSingleInstanceLock) {
 // cierre real del sistema) pone `quitting` a true y deja pasar el cierre.
 let quitting = false;
 
+// Un fallo aquí arriba no se ve en ningún sitio: la app instalada no tiene
+// consola y Electron se traga la excepción dejando la app a medio montar (fue
+// justo lo que pasó con `pkg.build.publish`). Al registro, que sí se puede leer.
+process.on('uncaughtException', (err) => {
+  log(`[app] excepción sin capturar: ${err?.stack || err}`);
+});
+process.on('unhandledRejection', (err) => {
+  log(`[app] promesa rechazada sin capturar: ${err?.stack || err}`);
+});
+
 // El modo desarrollo se pide explícitamente con --dev. Deducirlo de
 // app.isPackaged hacía que un `electron .` normal intentara conectarse al
 // servidor de Vite y se quedara en pantalla en blanco.
 const isDev = process.argv.includes('--dev');
 const DEV_URL = 'http://localhost:5173';
+
+// Dónde se publican las releases: las de la app (`v*`) y las del firmware
+// (`fw-v*`), dos feeds sobre el mismo repositorio.
+//
+// Escrito aquí y no leído de `pkg.build.publish`: electron-builder SE LLEVA el
+// campo `build` del package.json al empaquetar, así que en la app instalada no
+// existe. Leerlo reventaba createWindow() con "Cannot read properties of
+// undefined (reading 'publish')" justo después de crear el puerto serie, y todo
+// lo que venía detrás —el reenvío de líneas al renderer, el arranque del
+// escaneo, el disparo de macros, el cierre a la bandeja— no llegaba a
+// registrarse: la app instalada no detectaba el teclado, no se quedaba en la
+// bandeja y no ejecutaba secuencias, y en desarrollo no se reproducía nada de
+// eso porque ahí el package.json sí tiene su `build`.
+//
+// Tiene que coincidir con "build.publish" del package.json.
+const GITHUB_REPO = 'jaestefaniah27/scroll_wheel';
 
 // Autoarranque relanza con este flag (ver autostart:set) para que la ventana
 // no se muestre sola al iniciar sesión: el usuario la abre desde la bandeja
@@ -118,6 +144,30 @@ function createWindow() {
   }
   loadRenderer(mainWindow);
 
+  // La X de la barra propia manda 'window:close', que llama a .close() más
+  // abajo: se intercepta aquí para esconder en vez de cerrar de verdad.
+  let balloonShown = false;
+  mainWindow.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    mainWindow.hide();
+    if (!balloonShown && tray) {
+      balloonShown = true;
+      tray.displayBalloon({
+        title: 'OrbyGUI sigue activo',
+        content: 'Se quedó en la bandeja del sistema para poder seguir ejecutando secuencias. Para cerrarlo del todo, usa "Salir" en el icono de la bandeja.',
+      });
+    }
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    serial?.stopAutoScan();
+    serial?.disconnect();
+    foreground?.stop();
+  });
+
+
   // --- Serie ---
   serial = new OrbySerial();
   const forward = (event, channel) =>
@@ -131,13 +181,18 @@ function createWindow() {
   // --- Firmware del teclado ---
   // Necesita el puerto serie para pedirle al teclado que se reinicie en el
   // cargador, así que se crea aquí y no arriba con el resto de módulos.
-  // El repositorio sale del mismo sitio que el de las actualizaciones de la
-  // app: dos feeds distintos (etiquetas `fw-v*` frente a `v*`), un solo repo.
-  firmware = new FirmwareUpdater({
-    repo: `${pkg.build.publish.owner}/${pkg.build.publish.repo}`,
-    serial,
-  });
-  firmware.on('state', (st) => mainWindow?.webContents.send('firmware:state', st));
+  //
+  // Va en su try/catch, como todo lo que no es imprescindible para hablar con el
+  // teclado: que falle la tarjeta de firmware es un incordio, pero que se lleve
+  // por delante el resto de esta función deja la app sin puerto serie, sin
+  // bandeja y sin macros (ver GITHUB_REPO).
+  try {
+    firmware = new FirmwareUpdater({ repo: GITHUB_REPO, serial });
+    firmware.on('state', (st) => mainWindow?.webContents.send('firmware:state', st));
+    log(`[app] actualización de firmware lista (repo ${GITHUB_REPO})`);
+  } catch (err) {
+    log(`[app] no se pudo preparar la actualización de firmware: ${err.message}`);
+  }
 
   // Aviso de "acaba de enchufarse": sustituye al popup de instalación de
   // hardware nuevo tipo Razer Synapse (eso exigiría Device Metadata Authoring +
@@ -192,28 +247,6 @@ function createWindow() {
 
   if (config.load().autoProfile.enabled) foreground.start();
 
-  // La X de la barra propia manda 'window:close', que llama a .close() más
-  // abajo: se intercepta aquí para esconder en vez de cerrar de verdad.
-  let balloonShown = false;
-  mainWindow.on('close', (e) => {
-    if (quitting) return;
-    e.preventDefault();
-    mainWindow.hide();
-    if (!balloonShown && tray) {
-      balloonShown = true;
-      tray.displayBalloon({
-        title: 'OrbyGUI sigue activo',
-        content: 'Se quedó en la bandeja del sistema para poder seguir ejecutando secuencias. Para cerrarlo del todo, usa "Salir" en el icono de la bandeja.',
-      });
-    }
-  });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-    serial?.stopAutoScan();
-    serial?.disconnect();
-    foreground?.stop();
-  });
 }
 
 // --- Grabar operación -------------------------------------------------------
@@ -414,11 +447,20 @@ ipcMain.handle('firmware:update', (_e, opts) => firmware?.update(opts) ?? null);
 ipcMain.handle('firmware:cancel', () => firmware?.cancel() ?? null);
 
 // --- IPC: serie ---
+// Comandos que cambian algo en el teclado. Los de lectura (GET_*) no entran:
+// son cientos en una sincronización y no dicen nada que no se sepa ya.
+//
+// Van al registro para que "se me han borrado los perfiles" tenga respuesta.
+// Cuando pasó, no había forma de saber si lo había mandado la app, el menú del
+// propio teclado o un clic del usuario.
+const CAMBIA_ALGO = /^(SET_|DEL_|ADD_|SAVE_STATE|RESET_DEFAULTS|OLED_CLEAR|MACRO_CLEAR|MACRO_TRUNC|BOOTSEL)/;
+
 ipcMain.handle('serial:send', async (_e, cmd) => {
-  // En desarrollo se ve por el terminal todo lo que la app le pide al teclado.
-  // Es la única forma cómoda de comprobar que una conexión NO está releyendo la
-  // configuración: si aparecen GET_PROFILE o GET_OLED_PG, es que sí.
+  // En desarrollo sale TODO por el terminal: es la única forma cómoda de
+  // comprobar que una conexión no está releyendo la configuración (si aparecen
+  // GET_PROFILE o GET_OLED_PG, es que sí).
   if (isDev) console.log(`[serie] > ${cmd}`);
+  else if (CAMBIA_ALGO.test(cmd)) log(`[serie] > ${cmd}`);
   return serial ? serial.sendCommand(cmd) : false;
 });
 ipcMain.handle('serial:getInfo', async () => serial?.getDeviceInfo() ?? null);
@@ -559,14 +601,26 @@ if (gotSingleInstanceLock) {
   app.on('second-instance', revealWindow);
 
   app.whenReady().then(() => {
+    // Cada pieza en su try/catch y con su nombre en el registro. Antes iban
+    // seguidas: la primera que fallara se llevaba a las demás por delante y la
+    // app se quedaba a medio montar sin decir nada (así estuvo la app instalada
+    // sin bandeja y sin puerto serie, ver GITHUB_REPO).
+    const paso = (nombre, fn) => {
+      try {
+        fn();
+      } catch (err) {
+        log(`[app] fallo al arrancar "${nombre}": ${err?.stack || err}`);
+      }
+    };
+
     // Antes de la ventana y del puerto serie: el teclado puede mandar un
     // MACRO:<id> en cuanto se conecta, y si el complemento al que apunta no
     // estuviera cargado todavía ese primer disparo se perdería sin más.
-    plugins.loadAll();
+    paso('complementos', () => plugins.loadAll());
 
-    createWindow();
-    createTray();
-    setupAutoUpdater();
+    paso('ventana', createWindow);
+    paso('bandeja', createTray);
+    paso('actualizaciones', setupAutoUpdater);
 
     // Después de la ventana, no antes: requiere el binario nativo de nut.js y
     // puede tardar (ver warmup() en macros.js), no debe retrasar el arranque.
