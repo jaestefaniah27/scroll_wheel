@@ -411,7 +411,12 @@ function wireDevice() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+// main.js llega tanto por <script type="module"> directo (Electron, si algún día
+// se deja de pasar por entry.js) como por import() dinámico desde entry.js/web-main.js
+// después de montar window.orby en el navegador. En ese segundo camino el documento
+// ya ha disparado DOMContentLoaded para cuando este módulo se evalúa: escuchar el
+// evento sin más deja el arranque colgado para siempre, pantalla de carga incluida.
+function arrancarApp() {
   splash.init();
   hydrateIcons();
   initChrome();
@@ -467,7 +472,10 @@ document.addEventListener('DOMContentLoaded', () => {
   oled.init();
   settings.init();
   consoleView.init();
-  auto.init(); // asíncrono: lee la configuración local antes de pintarse
+  // cfg.autoProfile no existe en la WebGUI (config-merge.mjs lo quita de DEFAULTS
+  // a propósito: no hay proceso que vigile la ventana en primer plano), y auto.init
+  // lo lee sin comprobar nada. Coherente con el hueco de nav de initChrome de arriba.
+  if (platform.can('autoProfile')) auto.init(); // asíncrono: lee la configuración local antes de pintarse
 
   subscribe(() => {
     renderChrome();
@@ -477,4 +485,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   renderChrome();
   switchView('view-dashboard');
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', arrancarApp);
+} else {
+  arrancarApp();
+}

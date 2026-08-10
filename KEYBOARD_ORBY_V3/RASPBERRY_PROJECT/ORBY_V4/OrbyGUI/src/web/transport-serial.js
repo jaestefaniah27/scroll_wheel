@@ -24,6 +24,10 @@ let conectado = false;
 let buscando = false;
 let cerrandoAdrede = false;
 let reintento = null;
+// Promesa de la ejecución en curso de bucleLectura(), para poder esperar a que su
+// finally (releaseLock, y a veces su propia caida()) termine antes de seguir. Ver
+// reconectar(): sin esto puede cerrar un puerto que abrir() acaba de reabrir.
+let lecturaEnCurso = null;
 // Evita que el reintento automático y una apertura manual (pedirPuerto, reconectar)
 // se solapen: dos abrir() a la vez duplicarían getWriter() y corromperían el
 // escritor/puerto a nivel de módulo.
@@ -81,13 +85,26 @@ async function abrir(p) {
     puerto = p;
     escritor = p.writable.getWriter();
     cerrandoAdrede = false;
-    bucleLectura();
+    lecturaEnCurso = bucleLectura();
 
     // El primer ACK se pierde a menudo si el CDC acaba de enumerarse, igual que en
     // la app de escritorio: se insiste unas cuantas veces hasta que se presenta.
     for (let i = 0; i < 5 && !conectado; i++) {
       await enviar('ACK');
       await new Promise((r) => setTimeout(r, 400 + i * 200));
+    }
+
+    if (!conectado) {
+      // El teclado no se ha presentado tras los reintentos: no hubo conexión que
+      // perder (no toca 'disconnected' ni reintentar(), de eso ya se encarga quien
+      // llamó a abrir()), pero el puerto y el bucle de lectura siguen vivos. Sin
+      // cerrarlos, el siguiente intento choca con un SerialPort ya abierto y
+      // p.open() falla con InvalidStateError sin que quede forma de recuperarse.
+      cerrandoAdrede = true;
+      try { await lector?.cancel(); } catch { /* nada que cancelar */ }
+      await lecturaEnCurso;
+      await cerrarPuertoInterno();
+      cerrandoAdrede = false;
     }
     return conectado;
   } finally {
@@ -137,14 +154,21 @@ function manejarLinea(linea) {
   emitir('data', linea);
 }
 
-async function caida() {
-  if (!conectado && !puerto) return;
-  conectado = false;
-  identidad = null;
+// Cierre del puerto sin más: lo usan tanto caida() (que además avisa y reintenta)
+// como abrir() cuando el apretón de manos no llega a cuajar (ahí no toca ninguna
+// de las dos cosas, porque nunca hubo una conexión que perder).
+async function cerrarPuertoInterno() {
   try { escritor?.releaseLock(); } catch { /* ya liberado */ }
   escritor = null;
   try { await puerto?.close(); } catch { /* ya cerrado, o se lo llevó el desenchufe */ }
   puerto = null;
+}
+
+async function caida() {
+  if (!conectado && !puerto) return;
+  conectado = false;
+  identidad = null;
+  await cerrarPuertoInterno();
   emitir('disconnected');
   reintentar();
 }
@@ -235,6 +259,12 @@ export async function reconectar() {
   // puerto: si puerto.close() llega con el lock aún tomado, WebUSB lanza un
   // InvalidStateError silencioso (nadie lo captura) y el puerto se queda atascado.
   try { await lector?.cancel(); } catch { /* nada que cancelar */ }
+  // cancel() solo dispara la salida del bucle; no garantiza que su finally (que
+  // libera el lock y, si cerrandoAdrede ya hubiera vuelto a false, dispararía su
+  // propia caida()) haya terminado. Sin esperar a lecturaEnCurso, caida() de abajo
+  // puede correr con el lock aún tomado, o el finally de bucleLectura() puede cerrar
+  // por su cuenta el puerto que arrancar() acaba de reabrir.
+  await lecturaEnCurso;
   await caida();
   cerrandoAdrede = false;
   await arrancar();
