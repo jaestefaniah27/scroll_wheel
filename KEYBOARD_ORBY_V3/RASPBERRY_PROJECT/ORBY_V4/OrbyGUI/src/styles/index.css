@@ -1523,3 +1523,12 @@ body.read-only #timeout-selector {
 .gate-error { margin-bottom: 1rem; color: var(--danger, #ff6b6b); font-size: 0.9rem; }
 .gate-btn { margin-bottom: 1.5rem; }
 .gate-note { font-size: 0.8rem; opacity: 0.6; line-height: 1.5; }
+
+/* Marca de "esto lo ejecuta el PC" en la rejilla de teclas. Va pegada al texto de
+   la acción y no en una esquina: lo que califica es la acción, no la tecla. */
+.okey-pc {
+  display: inline-flex;
+  vertical-align: -1px;
+  margin-left: 0.25rem;
+  opacity: 0.65;
+}

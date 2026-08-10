@@ -34,7 +34,7 @@ import { view, setRenderers, currentPageIdx, editingVariant, selectedKeyIndex, s
          currentMacroId } from './profiles/view-state.js';
 import { loadPCMacros, savePCMacros, macroById, ensureMacro, nextMacroId, POWER_MODE_LABELS,
          isAppMacro, isTextMacro, isPowerMacro, isPluginMacro, pluginMacroOf, describeRotaryFull,
-         isRecordOrResetMacro, describeKey } from './profiles/macros-store.js';
+         isRecordOrResetMacro, describeKey, keyNeedsApp, rotaryNeedsApp } from './profiles/macros-store.js';
 import { applyKeymap, blankKeyScreen, keyClipboard, copyKey, pasteKey,
          applyRotary } from './profiles/keys.js';
 import { recordMacro, detachResetKey, onRecorderState, setRecordMode, setRecordSpeed,
@@ -1133,6 +1133,8 @@ function renderKeyGridInner() {
     const label = lslot >= 0 ? variants.effectiveLabel(prof, variant, i, view.layer) : '';
     const bmp = lslot >= 0 ? cache.get(view.editingProfile, lslot) : null;
     const assigned = action.modifier || action.keycode;
+    // Esta tecla la ejecuta el PC, no el teclado: sin OrbyGUI abierta no hace nada.
+    const necesitaApp = keyNeedsApp(action);
     // Marca las teclas que la variación redefine respecto al perfil base.
     const changed = variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
                              || variants.override(variant, 'labels', lslot));
@@ -1147,7 +1149,10 @@ function renderKeyGridInner() {
                    : `<span class="okey-text">${escape(label || '—')}</span>`)
             : `<span class="okey-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`}
         </span>
-        <span class="okey-action ${assigned ? 'assigned' : ''}">${escape(describeKey(action))}</span>
+        <span class="okey-action ${assigned ? 'assigned' : ''}">${escape(describeKey(action))}${
+          necesitaApp
+            ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esta tecla no hace nada">${icon('plug', 11)}</i>`
+            : ''}</span>
       </button>`;
   }
   return html;
@@ -1191,7 +1196,10 @@ function renderRotaryGroups() {
             <span class="rp-dir">${part.short}</span>
             <span class="rp-body">
               <em>${part.label}</em>
-              <strong>${escape(describeRotaryFull(action))}</strong>
+              <strong>${escape(describeRotaryFull(action))}${
+                rotaryNeedsApp(action)
+                  ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esto no hace nada">${icon('plug', 11)}</i>`
+                  : ''}</strong>
             </span>
           </button>`;
       }).join('')}
@@ -1274,12 +1282,18 @@ function renderWheelCard() {
             <button class="rotary-part ${selectedRotarySlot() === ROTARY_SLOTS.WHEEL_CW ? 'selected' : ''}"
                     data-act="pick-rotary" data-slot="${ROTARY_SLOTS.WHEEL_CW}">
               <span class="rp-dir">↓</span>
-              <span class="rp-body"><em>Hacia abajo</em><strong>${escape(describeRotaryFull(cw))}</strong></span>
+              <span class="rp-body"><em>Hacia abajo</em><strong>${escape(describeRotaryFull(cw))}${
+                rotaryNeedsApp(cw)
+                  ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esto no hace nada">${icon('plug', 11)}</i>`
+                  : ''}</strong></span>
             </button>
             <button class="rotary-part ${selectedRotarySlot() === ROTARY_SLOTS.WHEEL_CCW ? 'selected' : ''}"
                     data-act="pick-rotary" data-slot="${ROTARY_SLOTS.WHEEL_CCW}">
               <span class="rp-dir">↑</span>
-              <span class="rp-body"><em>Hacia arriba</em><strong>${escape(describeRotaryFull(ccw))}</strong></span>
+              <span class="rp-body"><em>Hacia arriba</em><strong>${escape(describeRotaryFull(ccw))}${
+                rotaryNeedsApp(ccw)
+                  ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esto no hace nada">${icon('plug', 11)}</i>`
+                  : ''}</strong></span>
             </button>
           </div>
 

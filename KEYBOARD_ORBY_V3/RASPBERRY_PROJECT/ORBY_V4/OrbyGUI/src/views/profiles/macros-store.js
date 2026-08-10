@@ -353,3 +353,25 @@ export function describeKey(action) {
   }
   return describeAction(action.modifier, action.keycode);
 }
+
+// Si esta acción la tiene que ejecutar el PC. Es lo contrario de "el teclado sabe
+// tocarla solo": una secuencia con pasos que el firmware no conoce (abrir una app,
+// escribir un texto, un complemento, una grabación), o una que no cabe en su
+// memoria de secuencias.
+//
+// Sin la app abierta esa tecla no hace nada, y hasta ahora no había forma de saber
+// cuál era cuál mirando la rejilla. En la WebGUI la diferencia es permanente: ahí
+// no hay app de escritorio detrás, nunca.
+export function keyNeedsApp(action) {
+  if (!action || action.modifier !== MACRO_MODIFIER) return false;
+  const m = macroById(action.keycode);
+  if (!m) return false;
+  return !macroDeviceEligible(m);
+}
+
+// Lo mismo para un mando giratorio. Solo las acciones de tipo "atajo" pueden llevar
+// una macro dentro; el resto (multimedia, desplazar, zoom) las toca el firmware.
+export function rotaryNeedsApp(action) {
+  if (!action || action.type !== ROTARY_TYPES.KEY) return false;
+  return keyNeedsApp(action);
+}
