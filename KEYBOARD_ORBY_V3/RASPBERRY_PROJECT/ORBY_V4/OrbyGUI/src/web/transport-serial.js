@@ -24,6 +24,10 @@ let conectado = false;
 let buscando = false;
 let cerrandoAdrede = false;
 let reintento = null;
+// Evita que el reintento automático y una apertura manual (pedirPuerto, reconectar)
+// se solapen: dos abrir() a la vez duplicarían getWriter() y corromperían el
+// escritor/puerto a nivel de módulo.
+let abriendo = false;
 
 export function disponible() {
   return typeof navigator !== 'undefined' && 'serial' in navigator;
@@ -66,23 +70,29 @@ function parsearIdentidad(linea) {
 // --- Apertura --------------------------------------------------------------
 
 async function abrir(p) {
-  await p.open({ baudRate: BAUD_RATE });
-  // TinyUSB no acepta lo que le mandamos si el host no ha levantado DTR: sin esto
-  // el teclado nunca ve el ACK y la presentación no llega jamás.
-  try { await p.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch { /* algún backend no las soporta */ }
+  if (abriendo) return false;
+  abriendo = true;
+  try {
+    await p.open({ baudRate: BAUD_RATE });
+    // TinyUSB no acepta lo que le mandamos si el host no ha levantado DTR: sin esto
+    // el teclado nunca ve el ACK y la presentación no llega jamás.
+    try { await p.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch { /* algún backend no las soporta */ }
 
-  puerto = p;
-  escritor = p.writable.getWriter();
-  cerrandoAdrede = false;
-  bucleLectura();
+    puerto = p;
+    escritor = p.writable.getWriter();
+    cerrandoAdrede = false;
+    bucleLectura();
 
-  // El primer ACK se pierde a menudo si el CDC acaba de enumerarse, igual que en
-  // la app de escritorio: se insiste unas cuantas veces hasta que se presenta.
-  for (let i = 0; i < 5 && !conectado; i++) {
-    await enviar('ACK');
-    await new Promise((r) => setTimeout(r, 400 + i * 200));
+    // El primer ACK se pierde a menudo si el CDC acaba de enumerarse, igual que en
+    // la app de escritorio: se insiste unas cuantas veces hasta que se presenta.
+    for (let i = 0; i < 5 && !conectado; i++) {
+      await enviar('ACK');
+      await new Promise((r) => setTimeout(r, 400 + i * 200));
+    }
+    return conectado;
+  } finally {
+    abriendo = false;
   }
-  return conectado;
 }
 
 async function bucleLectura() {
@@ -151,9 +161,11 @@ function reintentar() {
   emitir('searching');
   reintento = setInterval(async () => {
     if (conectado) { clearInterval(reintento); reintento = null; return; }
-    const p = await puertoAutorizado();
-    if (!p) return;
-    try { await abrir(p); } catch { /* sigue sin estar listo */ }
+    try {
+      const p = await puertoAutorizado();
+      if (!p) return;
+      await abrir(p);
+    } catch { /* sigue sin estar listo, o getPorts() ha fallado esta vuelta */ }
   }, REINTENTO_MS);
 }
 
@@ -219,7 +231,10 @@ export async function arrancar() {
 
 export async function reconectar() {
   cerrandoAdrede = true;
-  try { lector?.cancel(); } catch { /* nada que cancelar */ }
+  // Hay que esperar a que cancel() libere el lock del lector antes de cerrar el
+  // puerto: si puerto.close() llega con el lock aún tomado, WebUSB lanza un
+  // InvalidStateError silencioso (nadie lo captura) y el puerto se queda atascado.
+  try { await lector?.cancel(); } catch { /* nada que cancelar */ }
   await caida();
   cerrandoAdrede = false;
   await arrancar();
