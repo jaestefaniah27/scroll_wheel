@@ -1,0 +1,124 @@
+name: Publicar firmware de ORBY
+
+# El firmware se publica aparte de la app: son dos cosas con su propio ritmo, y
+# lo que hace falta saber es qué versión de cada una funciona con la otra. Esa
+# respuesta está en docs/COMPATIBILIDAD.md, y la release la copia en sus notas
+# para que se pueda leer desde la página de descargas sin abrir el repo.
+#
+# Se dispara con una etiqueta `fw-vX.Y`. La etiqueta tiene que coincidir con
+# include/orby_version.h: si no, el trabajo falla antes de compilar. Sin esa
+# comprobación es fácil etiquetar fw-v4.3 y publicar un .uf2 que se presenta
+# como 4.2, y la app decide qué comandos manda mirando justo ese número.
+on:
+  push:
+    tags: ['fw-v*']
+  workflow_dispatch:
+    inputs:
+      etiqueta:
+        description: 'Versión a compilar (por ejemplo 4.2). Solo compila, no publica.'
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  PROYECTO: KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4
+  PICO_SDK_VERSION: 2.2.0
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar que la etiqueta y orby_version.h dicen lo mismo
+        id: version
+        run: |
+          set -euo pipefail
+          cabecera="$PROYECTO/include/orby_version.h"
+          mayor=$(sed -n 's/^#define ORBY_FW_MAJOR \([0-9]\+\).*/\1/p' "$cabecera")
+          menor=$(sed -n 's/^#define ORBY_FW_MINOR \([0-9]\+\).*/\1/p' "$cabecera")
+          codigo="$mayor.$menor"
+          echo "fw=$codigo" >> "$GITHUB_OUTPUT"
+          echo "Firmware en el código: $codigo"
+
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            etiqueta="${GITHUB_REF_NAME#fw-v}"
+            if [ "$etiqueta" != "$codigo" ]; then
+              echo "::error::La etiqueta dice $etiqueta y orby_version.h dice $codigo."
+              exit 1
+            fi
+          fi
+
+      # El compilador cruzado y ninja. cmake ya viene en la imagen.
+      - name: Instalar el toolchain ARM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi \
+                                  libstdc++-arm-none-eabi-newlib ninja-build
+
+      # El SDK trae TinyUSB como submódulo: sin --recursive no hay tusb.h y el
+      # error que sale no menciona el submódulo por ningún lado.
+      - name: Traer el Pico SDK
+        run: |
+          git clone --branch "$PICO_SDK_VERSION" --depth 1 --recursive \
+              https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
+          echo "PICO_SDK_PATH=$RUNNER_TEMP/pico-sdk" >> "$GITHUB_ENV"
+
+      - name: Compilar
+        working-directory: ${{ env.PROYECTO }}
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Renombrar con la versión
+        id: artefacto
+        run: |
+          set -euo pipefail
+          fw="${{ steps.version.outputs.fw }}"
+          nombre="ORBY_V4-fw-$fw.uf2"
+          cp "$PROYECTO/build/ORBY_V4.uf2" "$nombre"
+          sha256sum "$nombre" | tee "$nombre.sha256"
+          echo "nombre=$nombre" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ steps.version.outputs.fw }}
+          path: |
+            ${{ steps.artefacto.outputs.nombre }}
+            ${{ steps.artefacto.outputs.nombre }}.sha256
+
+      # Solo al etiquetar. El workflow_dispatch sirve para comprobar que
+      # compila sin dejar una release a medias.
+      - name: Publicar la release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fw="${{ steps.version.outputs.fw }}"
+          nombre="${{ steps.artefacto.outputs.nombre }}"
+
+          {
+            echo "## Instalación"
+            echo
+            echo "1. Conecta el teclado con el botón **BOOTSEL** pulsado."
+            echo "2. Aparece una unidad \`RPI-RP2\`. Copia \`$nombre\` dentro."
+            echo "3. El teclado se reinicia solo."
+            echo
+            echo "Comprueba antes que el fichero es el que publicamos:"
+            echo
+            echo '```'
+            cat "$nombre.sha256"
+            echo '```'
+            echo
+            echo "## Compatibilidad con OrbyGUI"
+            echo
+            sed -n '/<!-- tabla:inicio -->/,/<!-- tabla:fin -->/p' \
+                "$PROYECTO/docs/COMPATIBILIDAD.md" | sed '1d;$d'
+          } > notas.md
+
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Firmware $fw" \
+            --notes-file notas.md \
+            "$nombre" "$nombre.sha256"

@@ -11,6 +11,7 @@ import * as device from '../../device.js';
 import { state, markDirty } from '../../store.js';
 import { MACRO_MODIFIER, ROTARY_TYPES, describeAction, describeRotary } from '../../hid-keys.js';
 import * as plugins from '../../plugins.js';
+import * as compat from '../../compat.js';
 
 // --- Macros (secuencias ejecutadas en el PC) --------------------------------
 // Viven en la configuración local (window.orby.getConfig/setConfig), no en el
@@ -63,8 +64,16 @@ export function ensureMacro(id) {
   return m;
 }
 
+// El id más bajo que esté libre, no el siguiente al mayor. Con "el mayor + 1"
+// los ids crecían para siempre: borrar y volver a crear macros bastaba para
+// pasar de MACRO_MAX_COUNT_DEVICE, y a partir de ahí ninguna macro nueva podía
+// vivir en el teclado aunque hubiera hueco de sobra (el firmware indexa un
+// array por id, no lleva una lista).
 export function nextMacroId() {
-  return pcMacros.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+  const used = new Set(pcMacros.map((m) => m.id));
+  let id = 1;
+  while (used.has(id)) id++;
+  return id;
 }
 
 // --- Reproducción en el propio teclado ---------------------------------
@@ -88,6 +97,20 @@ export function nextMacroId() {
 export const DEVICE_STEP_TYPE = { delay: 1, hotkey: 2, mouse_move: 3, mouse_click: 4 };
 export const MACRO_MAX_STEPS_DEVICE = 48; // == MACRO_MAX_STEPS en main.cpp
 export const CLICK_BUTTON_CODE = { left: 0, middle: 1, right: 2 };
+
+// Cuántas secuencias caben en el teclado. El firmware las guarda en un array
+// indexado por id, así que un id fuera de rango no es "una macro más": es un
+// comando que el teclado rechaza con ERR:BAD_ARGS, un error que ninguna
+// petición espera y que por tanto se comía los 4 s de espera enteros, una vez
+// por macro y en serie, al conectar.
+// El firmware 4.2 lo anuncia en el handshake (MAXMACROS); con uno anterior se
+// asume el 64 de toda la vida, que es lo que valía MACRO_MAX_COUNT.
+export const MACRO_CAPACITY_FALLBACK = 64; // == MACRO_MAX_COUNT en main.cpp
+
+export function deviceMacroCapacity() {
+  const n = parseInt(state.deviceInfo?.maxmacros ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : MACRO_CAPACITY_FALLBACK;
+}
 // Acciones de energía del PC, elegibles desde la pestaña Multimedia (macro de
 // un único paso "system_power", ver electron/macros.js).
 export const POWER_MODE_LABELS = {
@@ -113,6 +136,7 @@ export function macroDeviceEligible(m) {
   const acts = m?.actions || [];
   return acts.length > 0
       && acts.length <= MACRO_MAX_STEPS_DEVICE
+      && m.id < deviceMacroCapacity()
       && acts.every((a) => a.type in DEVICE_STEP_TYPE);
 }
 
@@ -123,7 +147,10 @@ export async function syncMacroToDevice(id) {
   // Sin esto, un firmware anterior a esta función respondería "ERR:UNKNOWN_CMD"
   // a SET_MACRO_STEP, que ninguna petición espera: cada intento agotaría su
   // tiempo de espera (varios segundos) en vez de fallar al momento.
-  if (!state.connected || state.deviceInfo?.macros !== '1') return;
+  if (!state.connected || !compat.supports(state.deviceInfo, 'macros')) return;
+  // Un id que no cabe en el teclado nunca llegó a subirse, así que tampoco hay
+  // nada que limpiar: mandar MACRO_CLEAR con él solo saca un ERR:BAD_ARGS.
+  if (id >= deviceMacroCapacity()) return;
   const m = macroById(id);
 
   if (!m || !macroDeviceEligible(m)) {
@@ -162,7 +189,7 @@ export async function syncMacroToDevice(id) {
 // reflasheado (su Flash de secuencias está vacía) como una macro editada
 // mientras estaba desconectado.
 export async function syncAllMacrosToDevice() {
-  if (state.deviceInfo?.macros !== '1') return;
+  if (!compat.supports(state.deviceInfo, 'macros')) return;
   await loadPCMacros();
   for (const m of pcMacros) await syncMacroToDevice(m.id);
 }

@@ -76,6 +76,15 @@ contextBridge.exposeInMainWorld('orby', {
     onState: (cb) => ipcRenderer.on('updater:state', (_e, st) => cb(st)),
   },
 
+  // Firmware del teclado (releases `fw-v*` del mismo repositorio)
+  firmware: {
+    get: () => ipcRenderer.invoke('firmware:get'),
+    check: (opts) => ipcRenderer.invoke('firmware:check', opts),
+    update: (opts) => ipcRenderer.invoke('firmware:update', opts),
+    cancel: () => ipcRenderer.invoke('firmware:cancel'),
+    onState: (cb) => ipcRenderer.on('firmware:state', (_e, st) => cb(st)),
+  },
+
   // Controles de ventana
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),

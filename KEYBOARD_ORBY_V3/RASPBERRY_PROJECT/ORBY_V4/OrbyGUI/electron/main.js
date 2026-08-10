@@ -9,11 +9,14 @@ const { executeMacro, getMousePosition, warmup } = require('./macros');
 const { listInstalledApps } = require('./apps');
 const recorder = require('./recorder');
 const plugins = require('./plugins');
+const { FirmwareUpdater } = require('./firmware');
+const pkg = require('../package.json');
 
 let mainWindow = null;
 let serial = null;
 let foreground = null;
 let tray = null;
+let firmware = null;
 
 // Solo puede haber una instancia: si arranca sola (autostart) y luego el
 // usuario hace doble clic en el icono, la segunda instancia no debe abrir un
@@ -113,6 +116,17 @@ function createWindow() {
   forward('disconnected', 'serial:disconnected');
   forward('error', 'serial:error');
   forward('searching', 'serial:searching');
+
+  // --- Firmware del teclado ---
+  // Necesita el puerto serie para pedirle al teclado que se reinicie en el
+  // cargador, así que se crea aquí y no arriba con el resto de módulos.
+  // El repositorio sale del mismo sitio que el de las actualizaciones de la
+  // app: dos feeds distintos (etiquetas `fw-v*` frente a `v*`), un solo repo.
+  firmware = new FirmwareUpdater({
+    repo: `${pkg.build.publish.owner}/${pkg.build.publish.repo}`,
+    serial,
+  });
+  firmware.on('state', (st) => mainWindow?.webContents.send('firmware:state', st));
 
   // Aviso de "acaba de enchufarse": sustituye al popup de instalación de
   // hardware nuevo tipo Razer Synapse (eso exigiría Device Metadata Authoring +
@@ -371,6 +385,14 @@ function installUpdate() {
 ipcMain.handle('updater:get', () => updateState);
 ipcMain.handle('updater:check', () => { checkForUpdates(); return updateState; });
 ipcMain.handle('updater:install', () => installUpdate());
+
+// --- IPC: firmware del teclado ---
+// `maxFw` lo pone el renderer desde compat.js: es la app la que sabe hasta qué
+// firmware entiende, y no tiene sentido ofrecer uno que no sabría manejar.
+ipcMain.handle('firmware:get', () => firmware?.state ?? null);
+ipcMain.handle('firmware:check', (_e, opts) => firmware?.check(opts) ?? null);
+ipcMain.handle('firmware:update', (_e, opts) => firmware?.update(opts) ?? null);
+ipcMain.handle('firmware:cancel', () => firmware?.cancel() ?? null);
 
 // --- IPC: serie ---
 ipcMain.handle('serial:send', async (_e, cmd) => (serial ? serial.sendCommand(cmd) : false));

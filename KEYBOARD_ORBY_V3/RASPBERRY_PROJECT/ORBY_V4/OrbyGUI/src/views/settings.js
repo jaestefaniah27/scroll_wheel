@@ -8,6 +8,8 @@ import { runExport, runImport } from '../backup.js';
 import * as cache from '../oled-cache.js';
 import * as wheelDial from '../wheel-dial.js';
 import * as plugins from '../plugins.js';
+import * as compat from '../compat.js';
+import * as firmware from '../firmware.js';
 import { icon } from '../icons.js';
 import * as dashboard from './dashboard.js';
 
@@ -81,6 +83,7 @@ export function init() {
 
   initWheelCalib();
   initAppCard();
+  initFirmwareCard();
 }
 
 // ================= Aplicación (versión y actualizaciones) =================
@@ -115,6 +118,88 @@ function renderAppCard() {
   status.textContent = updater.describe();
   status.style.color = updater.update.status === 'error' ? 'var(--danger)' : '';
   install.classList.toggle('hidden', updater.update.status !== 'downloaded');
+}
+
+// ================= Firmware del teclado =================
+// Actualizar el teclado no es como actualizar la app: hay que reiniciarlo en el
+// cargador de la ROM, y mientras dura la copia el teclado *no existe* (aparece
+// una unidad USB en su lugar). Por eso esta tarjeta avisa antes de empezar y
+// deja el estado a la vista durante todo el proceso.
+function initFirmwareCard() {
+  const card = document.getElementById('settings-firmware');
+  if (!card) return;
+
+  // Sin preload (la interfaz abierta en un navegador para maquetar) no hay
+  // manera de flashear nada: la tarjeta sobra.
+  if (!firmware.available()) {
+    card.classList.add('hidden');
+    return;
+  }
+
+  document.getElementById('btn-fw-check').addEventListener('click', async () => {
+    await firmware.check();
+    if (firmware.fw.status === 'idle' && !firmware.fw.available) {
+      toast(firmware.fw.latest ? 'El teclado ya tiene el último firmware' : 'No hay firmware publicado', 'info');
+    }
+  });
+
+  document.getElementById('btn-fw-update').addEventListener('click', async () => {
+    if (!requireDevice()) return;
+
+    // Guardar primero, y no después: el reinicio en el cargador se lleva por
+    // delante lo que hubiera solo en RAM, y las variaciones por aplicación
+    // viven exactamente ahí (ver variants.js).
+    if (state.dirty) {
+      toast('Guarda los cambios en Flash antes de actualizar el firmware', 'error', 6000);
+      return;
+    }
+
+    const manual = !compat.supports(state.deviceInfo, 'bootsel');
+    const aviso = manual
+      ? 'Este firmware no sabe reiniciarse solo: cuando te lo pida, desenchufa el teclado y vuelve a enchufarlo con BOOTSEL pulsado.\n\n'
+      : '';
+    if (!confirm(`${aviso}El teclado dejará de funcionar durante la copia (unos segundos). No lo desconectes.\n\n¿Actualizar a la ${firmware.fw.latest?.version}?`)) return;
+
+    await firmware.update();
+    if (firmware.fw.status === 'done') toast('Firmware actualizado');
+    else if (firmware.fw.status === 'error') toast(firmware.fw.error, 'error', 9000);
+  });
+
+  document.getElementById('btn-fw-cancel').addEventListener('click', () => {
+    firmware.cancel();
+    toast('Actualización cancelada', 'info');
+  });
+
+  firmware.onChange(renderFirmwareCard);
+  firmware.init().then(renderFirmwareCard);
+}
+
+function renderFirmwareCard() {
+  const current = document.getElementById('fw-current');
+  if (!current) return;
+
+  const st = firmware.fw;
+  const latest = document.getElementById('fw-latest');
+  const status = document.getElementById('fw-status');
+  const btnUpdate = document.getElementById('btn-fw-update');
+  const btnCheck = document.getElementById('btn-fw-check');
+  const btnCancel = document.getElementById('btn-fw-cancel');
+
+  // La versión que manda es la del teclado que hay delante ahora mismo, no la
+  // que guardó el proceso principal la última vez que se comprobó.
+  current.textContent = state.connected ? (state.deviceInfo?.fw || '?') : 'sin teclado';
+  latest.textContent = st.latest?.version || '—';
+  status.textContent = firmware.describe();
+  status.style.color = st.status === 'error' ? 'var(--danger)' : '';
+
+  btnCheck.disabled = firmware.busy();
+  btnCancel.classList.toggle('hidden', !['downloading', 'bootsel'].includes(st.status));
+  // Se ofrece cuando hay algo que instalar y hay teclado al que instalárselo.
+  btnUpdate.classList.toggle('hidden', !st.latest || !state.connected || firmware.busy());
+  // Solo la etiqueta: escribir sobre el botón entero se llevaría por delante el
+  // <span data-icon>, que ya está hidratado y no se vuelve a pintar.
+  document.getElementById('fw-update-label').textContent =
+    st.available ? `Actualizar a ${st.latest.version}` : 'Reinstalar firmware';
 }
 
 // ================= Autoarranque con Windows =================
@@ -461,6 +546,7 @@ function renderWheelCalib() {
 
 export function render() {
   renderAppCard();
+  renderFirmwareCard();
 
   document.querySelectorAll('#timeout-selector .opt-btn').forEach((btn) => {
     btn.classList.toggle('active', Number(btn.dataset.val) === state.timeout);
@@ -471,9 +557,16 @@ export function render() {
 
   if (state.connected) {
     const info = state.deviceInfo || {};
+    // La versión de firmware sola no dice nada: lo que importa es si la app
+    // puede con ella. El veredicto sale de compat.js, el mismo que decide qué
+    // comandos se mandan, para que la pantalla no pueda contar otra cosa.
+    const verdict = compat.check(info);
+    const verdictColor = verdict.level === 'ok' ? 'var(--ok, inherit)' : 'var(--danger)';
     list.innerHTML = `
       <li><span class="lbl">Dispositivo</span><span class="val">${info.device || 'ORBY_V4'}</span></li>
       <li><span class="lbl">Firmware</span><span class="val">${info.fw || '?'}</span></li>
+      <li><span class="lbl">Compatibilidad</span><span class="val" style="color:${verdictColor}"
+          title="${verdict.detail}">${verdict.level === 'ok' ? 'al día' : verdict.title}</span></li>
       <li><span class="lbl">Puerto</span><span class="val">${info.port || '—'}</span></li>
       <li><span class="lbl">Teclas / OLEDs</span><span class="val">${info.keys || 12} / ${info.oleds || 10}</span></li>
       <li><span class="lbl">Perfiles</span><span class="val">${state.profiles.length} / ${state.maxProfiles}</span></li>

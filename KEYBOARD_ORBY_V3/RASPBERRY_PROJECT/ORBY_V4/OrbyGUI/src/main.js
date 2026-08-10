@@ -11,6 +11,8 @@ import * as variants from './variants.js';
 import * as mirror from './mirror.js';
 import * as updater from './updater.js';
 import * as plugins from './plugins.js';
+import * as compat from './compat.js';
+import * as firmware from './firmware.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
@@ -154,7 +156,11 @@ function renderChrome() {
 
   if (state.connected) {
     badge.className = 'status-badge connected';
-    text.textContent = state.syncing ? 'Sincronizando…' : 'Orby V4 conectado';
+    // La versión de firmware va aquí y no solo en Ajustes: es el primer dato
+    // que hace falta para saber si un fallo es del teclado o de la app, y
+    // tenerla a la vista ahorra tener que ir a buscarla.
+    const fw = state.deviceInfo?.fw ? ` · fw ${state.deviceInfo.fw}` : '';
+    text.textContent = state.syncing ? 'Sincronizando…' : `Orby V4 conectado${fw}`;
   } else {
     badge.className = 'status-badge disconnected';
     text.textContent = 'Desconectado';
@@ -205,16 +211,16 @@ function wireDevice() {
     state.deviceInfo = info;
     notify();
 
-    // El firmware 1.0 no conoce GET_STATE ni GET_PROFILE, así que la sincronía
-    // acabaría en un tiempo de espera agotado poco explicativo.
-    const fw = parseFloat(info?.fw ?? '0');
-    if (fw < 2) {
-      toast('Firmware antiguo detectado: flashea la versión 3.0 para usar el editor y el scroll suave', 'error', 9000);
+    // Qué sabe hacer el teclado que hay delante. La tabla vive en compat.js
+    // para que no haya un número de versión suelto por cada vista; aquí solo
+    // se decide si se sigue adelante y qué se le cuenta al usuario.
+    const verdict = compat.check(info);
+    if (verdict.level === 'blocked') {
+      toast(`${verdict.title}. ${verdict.detail}`, 'error', 9000);
       return;
     }
-    if (fw < 3) {
-      toast('Firmware 2.x: no admite crear perfiles, mandos en capa SUPER ni rueda por perfil. '
-          + 'Flashea la versión 3.0 para esas funciones', 'error', 9000);
+    if (verdict.level !== 'ok') {
+      toast(`${verdict.title}. ${verdict.detail}`, 'error', 9000);
     }
 
     // La copia del PC tiene que estar cargada antes de comparar huellas: es
@@ -224,7 +230,7 @@ function wireDevice() {
     // GET_HASH y GET_OLED_PG los añadió el firmware 4.1. Con uno anterior se
     // sigue haciendo lo de siempre: descargarlo todo y leer los iconos de la
     // página activa según hagan falta.
-    const canHash = info?.hash === '1';
+    const canHash = compat.supports(info, 'hash');
 
     try {
       let expected = null;
@@ -260,6 +266,14 @@ function wireDevice() {
     // propias, reenvía las que haya (cubre un teclado recién reflasheado, cuya
     // Flash de secuencias está vacía aunque la app ya las tuviera guardadas).
     profiles.syncAllMacrosToDevice?.().catch(() => {});
+
+    // Qué firmware hay publicado para este teclado. No bloquea: si GitHub no
+    // contesta, la tarjeta de Ajustes lo dirá y no pasa nada más.
+    firmware.check()?.then((st) => {
+      if (st?.available) {
+        toast(`Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
+      }
+    }).catch(() => {});
   });
 
   device.on('disconnected', () => {

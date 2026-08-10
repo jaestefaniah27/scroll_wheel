@@ -273,6 +273,33 @@
             </div>
           </div>
 
+          <div class="settings-card glass-panel" id="settings-firmware">
+            <div class="card-header">
+              <span data-icon="download" data-icon-size="22"></span>
+              <h2>Firmware del teclado</h2>
+            </div>
+            <div class="setting-body">
+              <ul class="info-list">
+                <li><span class="lbl">Versión en el teclado</span><span class="val" id="fw-current">—</span></li>
+                <li><span class="lbl">Última compatible</span><span class="val" id="fw-latest">—</span></li>
+                <li><span class="lbl">Estado</span><span class="val" id="fw-status">—</span></li>
+              </ul>
+              <div class="row-inline mt-4">
+                <button class="secondary-btn" id="btn-fw-check">
+                  <span data-icon="refresh" data-icon-size="16"></span> Buscar firmware
+                </button>
+                <button class="primary-btn hidden" id="btn-fw-update">
+                  <span data-icon="download" data-icon-size="16"></span> <span id="fw-update-label">Actualizar teclado</span>
+                </button>
+                <button class="secondary-btn danger hidden" id="btn-fw-cancel">Cancelar</button>
+              </div>
+              <p class="setting-desc" id="fw-desc">
+                Se descarga de las publicaciones del proyecto. Durante la copia el teclado
+                aparece como una unidad USB y deja de funcionar unos segundos: es normal.
+              </p>
+            </div>
+          </div>
+
           <div class="settings-card glass-panel" id="settings-wheel-calib">
             <div class="card-header">
               <span data-icon="wheel" data-icon-size="22"></span>

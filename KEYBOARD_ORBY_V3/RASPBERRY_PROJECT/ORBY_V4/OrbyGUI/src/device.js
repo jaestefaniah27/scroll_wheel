@@ -38,6 +38,16 @@ function settlePending(line) {
       req.resolve(req.result !== undefined ? req.result : line);
       return true;
     }
+    // El protocolo no correlaciona, así que un ERR: no dice de quién es. Se lo
+    // queda la petición más antigua en vuelo, y solo si lo ha pedido con
+    // `fail`: sin esto, un rechazo del teclado no lo esperaba nadie y la
+    // petición agotaba sus 4 s enteros antes de darse por perdida.
+    if (i === 0 && req.fail && req.fail(line)) {
+      pending.splice(i, 1);
+      clearTimeout(req.timer);
+      req.reject(new Error(line));
+      return true;
+    }
   }
   return false;
 }
@@ -47,7 +57,7 @@ function settlePending(line) {
 // un error inesperado.
 export const ERR_OFFLINE = 'Conecta el Orby para poder editar la configuración';
 
-function request(command, { match, collect, result, timeout = 4000 } = {}) {
+function request(command, { match, collect, result, fail, timeout = 4000 } = {}) {
   // Sin teclado no se manda nada. Antes la petición se daba por hecha y el
   // cambio se quedaba solo en el PC para subirlo al reconectar, pero eso creaba
   // dos versiones de la misma configuración y alguien tenía que perder: ahora
@@ -61,7 +71,7 @@ function request(command, { match, collect, result, timeout = 4000 } = {}) {
   if (!match) return Promise.resolve(null);
 
   return new Promise((resolve, reject) => {
-    const req = { match, collect, resolve, reject, result };
+    const req = { match, collect, resolve, reject, result, fail };
     req.timer = setTimeout(() => {
       const i = pending.indexOf(req);
       if (i >= 0) pending.splice(i, 1);
@@ -143,15 +153,21 @@ export const clearOled = async (profile, slot) => {
 // equivalente aquí: de esa se sigue encargando el PC por CDC (ver MACRO:<id>).
 // `repeat`/`gap` solo los usa el reproductor en tecla y clic (ver
 // macro_repeat_or_advance en main.cpp); el resto de tipos van con 1/0.
+//
+// Los tres declaran `fail`: el firmware rechaza los argumentos fuera de rango
+// con ERR:BAD_ARGS, y sin esto la sincronización de secuencias al conectar se
+// quedaba esperando 4 s por cada una.
+const REJECTED = (l) => l.startsWith('ERR:');
+
 export const setMacroStep = (id, step, type, a, b, repeat = 1, gap = 0) =>
   request(`SET_MACRO_STEP:${id}:${step}:${type}:${a}:${b}:${repeat}:${gap}`,
-          { match: (l) => l === `MACRO:OK:${id}:${step}` });
+          { match: (l) => l === `MACRO:OK:${id}:${step}`, fail: REJECTED });
 
 export const macroTrunc = (id, count) =>
-  request(`MACRO_TRUNC:${id}:${count}`, { match: (l) => l === `MACRO:TRUNC:OK:${id}:${count}` });
+  request(`MACRO_TRUNC:${id}:${count}`, { match: (l) => l === `MACRO:TRUNC:OK:${id}:${count}`, fail: REJECTED });
 
 export const macroClear = (id) =>
-  request(`MACRO_CLEAR:${id}`, { match: (l) => l === `MACRO:CLEARED:${id}` });
+  request(`MACRO_CLEAR:${id}`, { match: (l) => l === `MACRO:CLEARED:${id}`, fail: REJECTED });
 
 // --- Alta y baja de perfiles ------------------------------------------------
 // El teclado responde con PROFILE:ADDED/DELETED y, acto seguido, con el recuento

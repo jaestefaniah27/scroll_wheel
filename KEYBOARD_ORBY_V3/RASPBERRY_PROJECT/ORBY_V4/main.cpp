@@ -7,9 +7,11 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "hardware/watchdog.h"
+#include "pico/bootrom.h"
 #include "bsp/board.h"
 #include "tusb.h"
 #include "class/cdc/cdc_device.h"
+#include "orby_version.h"
 #include "pinout.h"
 #include "config_hash.h"
 #include "hardware_encoder.h"
@@ -2199,8 +2201,15 @@ void process_command(const char* cmd) {
         // HASH=1 dice que este firmware sabe resumir su configuración con
         // GET_HASH y servir iconos de cualquier página con GET_OLED_PG. Sin él
         // la app tiene que releerlo todo al conectar, como hasta ahora.
-        cdc_printf("ORBY_V4:FW=4.1:KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:HASH=1:MODE=%s\n",
-                   (int)profile_count, MAX_PROFILES, MAX_PAGES,
+        // MAXMACROS dice cuántas secuencias caben en el teclado. La app las
+        // numera por su cuenta y antes subía cualquier id: a partir de 64 el
+        // firmware contestaba ERR:BAD_ARGS a un comando que nadie esperaba, y
+        // la petición se moría de vieja (4 s) una por macro.
+        // BOOTSEL=1: este firmware sabe reiniciarse en el cargador de la ROM a
+        // petición de la app, así que se puede actualizar sin desenchufar el
+        // cable con el botón pulsado.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:MODE=%s\n",
+                   (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
     }
@@ -2650,6 +2659,29 @@ void process_command(const char* cmd) {
         push_system_refresh();
         cdc_printf("RESET:OK\n");
         return;
+    }
+
+    // ---------- Actualización de firmware ----------
+    // Reinicia en el cargador de la ROM: el teclado desaparece y en su lugar
+    // sale la unidad RPI-RP2, donde la app copia el .uf2 nuevo. Es lo mismo que
+    // arrancar con BOOTSEL pulsado, pero sin tener que desenchufar el cable con
+    // el botón hundido — que en una caja cerrada no siempre se puede.
+    //
+    // La configuración no se toca aquí a propósito: guardarla es cosa de la
+    // app antes de mandar esto, y hacerlo por sorpresa escribiría en Flash lo
+    // que hubiera en RAM, variaciones por aplicación incluidas (ver
+    // variants.withBase en la app).
+    if (strcmp(cmd, "BOOTSEL") == 0) {
+        cdc_printf("BOOTSEL:OK\n");
+        // El reinicio corta el USB en seco. Sin este respiro la confirmación se
+        // queda en el búfer del CDC y la app no llega a leerla nunca: daría el
+        // comando por perdido justo cuando sí ha funcionado.
+        tud_cdc_n_write_flush(0);
+        sleep_ms(100);
+        // 0,0: ni disco de arranque deshabilitado ni actividad en un LED. El
+        // LED de la Pico está ocupado por el hardware del teclado.
+        reset_usb_boot(0, 0);
+        return; // no se llega: el chip ya se ha reiniciado
     }
 
     cdc_printf("ERR:UNKNOWN_CMD\n");
