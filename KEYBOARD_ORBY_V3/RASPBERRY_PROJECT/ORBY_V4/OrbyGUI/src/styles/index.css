@@ -1507,7 +1507,7 @@ body.read-only #timeout-selector {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-app, #12141a);
+  background: var(--bg-dark);
 }
 
 .web-gate.hidden { display: none; }
