@@ -1,13 +1,16 @@
-name: Publicar la landing de ORBY
+name: Publicar la landing y la WebGUI de ORBY
 
-# La landing es un único index.html estático. No hay build: se sube la carpeta
-# tal cual. Este workflow no hace nada hasta que en Ajustes → Pages se
-# seleccione "GitHub Actions" como origen.
+# La landing es un único index.html estático; la WebGUI sí necesita build (vite).
+# Salen juntas: la landing en la raíz y la app en /app/. Este workflow no hace nada
+# hasta que en Ajustes → Pages se seleccione "GitHub Actions" como origen.
 on:
   push:
     branches: [main]
     paths:
       - 'KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/web/**'
+      - 'KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/OrbyGUI/src/**'
+      - 'KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/OrbyGUI/index.html'
+      - 'KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/OrbyGUI/package*.json'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -21,6 +24,10 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  APP_DIR: KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/OrbyGUI
+  WEB_DIR: KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/web
+
 jobs:
   publicar:
     runs-on: ubuntu-latest
@@ -30,11 +37,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
+
+      # --ignore-scripts se salta el postinstall (electron-builder install-app-deps)
+      # y la descarga del binario de Electron: ~100 MB que aquí no pinta nada, porque
+      # lo único que se compila es el renderer.
+      - name: Instalar dependencias
+        working-directory: ${{ env.APP_DIR }}
+        run: npm ci --ignore-scripts
+
+      - name: Tests
+        working-directory: ${{ env.APP_DIR }}
+        run: npm test
+
+      - name: Compilar la WebGUI
+        working-directory: ${{ env.APP_DIR }}
+        run: npm run build
+
+      - name: Montar el sitio
+        run: |
+          mkdir -p _site
+          cp -r "$WEB_DIR"/. _site/
+          mkdir -p _site/app
+          cp -r "$APP_DIR"/dist/. _site/app/
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/web
+          path: _site
 
       - id: despliegue
         uses: actions/deploy-pages@v4
