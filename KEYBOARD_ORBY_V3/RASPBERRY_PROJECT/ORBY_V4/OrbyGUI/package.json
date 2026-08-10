@@ -11,6 +11,7 @@
     "pack:plugins": "node scripts/pack-plugins.js",
     "dist": "npm run build && electron-builder --win --publish never",
     "release": "npm run build && electron-builder --win --publish always",
+    "test": "node --test test/",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
