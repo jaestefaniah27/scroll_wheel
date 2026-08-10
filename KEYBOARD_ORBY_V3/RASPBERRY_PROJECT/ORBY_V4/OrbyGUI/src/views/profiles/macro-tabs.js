@@ -16,8 +16,8 @@ import { DEFAULT_STEP_DELAY_MS, ROTARY_DOWN_SLOTS, ROTARY_TWIN } from './constan
 import { view, currentProfile, selectedRotarySlot, editingVariant, currentAction,
          currentRotary, currentMacroId, isActiveView, rerender } from './view-state.js';
 import { macroById, nextMacroId, ensureMacro, savePCMacros,
-         isPowerMacro, isPluginMacro, pluginMacroOf } from './macros-store.js';
-import { applyKeymap, applyRotary } from './keys.js';
+         isPowerMacro, pluginMacroOf } from './macros-store.js';
+import { applyKeymap, applyRotary, applyRotaryPair } from './keys.js';
 import { escape, getCurrentWindowInfo } from './util.js';
 
 // ¿Son el mismo gesto repetido? Solo tiene sentido para pasos de una sola
@@ -129,54 +129,88 @@ export function giroInvertido(base, step) {
 }
 
 // Le da la vuelta al par entero del mando, no solo al hueco que se está
-// editando: si el encoder está montado del revés, lo que hay que invertir son
-// los dos sentidos a la vez, y hacerlo hueco por hueco deja a medias un estado
-// en el que los dos giros suben o los dos bajan.
+// editando: si el encoder está montado del revés, lo que hacía cada sentido
+// pasa al otro.
 //
-// Solo toca el paso de la macro, que vive en el PC: el hueco sigue apuntando a
-// la misma macro, así que no hay nada que escribir en el teclado.
+// Intercambia las dos acciones enteras (no el signo del valor guardado): así
+// no depende de que el otro sentido tuviera ya algo asignado, que era el bug
+// de antes — invertir con la pulsación configurada solo en un lado dejaba el
+// otro sin tocar, y el próximo giro que se asignara ahí salía con el mismo
+// signo en vez del contrario.
 export function invertirGiroPlugin() {
   const prof = currentProfile();
   const base = selectedRotarySlot();
-  if (!prof || base === null) return;
+  const twin = base === null ? undefined : ROTARY_TWIN[base];
+  if (!prof || base === null || twin === undefined) return;
 
   const variant = editingVariant();
-  const huecos = [base, ROTARY_TWIN[base]].filter((b) => b !== undefined);
-
-  for (const b of huecos) {
-    const accion = variants.effectiveRotary(prof, variant, b, view.layer);
-    if (accion?.modifier !== MACRO_MODIFIER || !isPluginMacro(accion.keycode)) continue;
-    const paso = macroById(accion.keycode).actions[0];
-    // Encender/apagar no tiene sentido de giro: sin cantidad no hay signo que
-    // dar la vuelta.
-    if (!Number(paso.value)) continue;
-    paso.value = -Number(paso.value);
-    savePCMacros(accion.keycode);
-  }
-
-  rerender();
+  const accBase = variants.effectiveRotary(prof, variant, base, view.layer);
+  const accTwin = variants.effectiveRotary(prof, variant, twin, view.layer);
+  applyRotaryPair(base, { ...accTwin }, twin, { ...accBase });
 }
 
 export function setRotaryPluginAction(pluginId, op) {
   const { action: spec } = plugins.findAction(pluginId, op);
   if (!spec) return;
 
+  const base = selectedRotarySlot();
+  // Solo los giros llevan cantidad; la pulsación de un encoder es un evento
+  // suelto, sin dirección que aplicarle.
+  const esGiro = spec.targets.includes('turn') && spec.step > 0;
+
+  if (esGiro && base !== null && ROTARY_TWIN[base] !== undefined) {
+    setGiroPluginAction(base, pluginId, op, spec);
+    return;
+  }
+
   const action = currentRotary();
   const previo = (action.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER)
     ? pluginMacroOf(action.keycode) : null;
   const id = previo?.plugin === pluginId ? action.keycode : nextMacroId();
 
-  // Solo los giros llevan cantidad; la pulsación de un encoder es un evento
-  // suelto, sin dirección que aplicarle.
-  const esGiro = spec.targets.includes('turn') && spec.step > 0;
-  const signo = ROTARY_DOWN_SLOTS.has(selectedRotarySlot()) ? -1 : 1;
-
   const m = ensureMacro(id);
-  m.actions = esGiro
-    ? [{ type: 'plugin', plugin: pluginId, op, value: signo * spec.step }]
-    : [{ type: 'plugin', plugin: pluginId, op }];
+  m.actions = [{ type: 'plugin', plugin: pluginId, op }];
   savePCMacros(id);
   applyRotary({ type: ROTARY_TYPES.KEY, modifier: MACRO_MODIFIER, keycode: id });
+}
+
+// El giro de un encoder son dos huecos físicos (CW y CCW) para un mismo
+// control ("Brillo de la lámpara", por ejemplo): se escriben siempre juntos,
+// con signos opuestos por construcción, en vez de dejar que cada sentido se
+// edite por separado. Así es imposible que los dos acaben subiendo (o
+// bajando) a la vez, que era justo el bug: antes cada hueco calculaba su
+// propio signo al vuelo, y una asignación hecha antes de que el otro sentido
+// existiera se quedaba corta.
+function setGiroPluginAction(base, pluginId, op, spec) {
+  const twin = ROTARY_TWIN[base];
+  const prof = currentProfile();
+  const variant = editingVariant();
+
+  const posSlot = ROTARY_DOWN_SLOTS.has(base) ? twin : base;
+  const negSlot = ROTARY_DOWN_SLOTS.has(base) ? base : twin;
+
+  // Reutiliza la macro del hueco si ya era de este mismo complemento (igual
+  // que hacía la versión de un solo hueco), para no ir dejando macros sueltas
+  // cada vez que se cambia de "Brillo" a "Color".
+  const idFor = (slot) => {
+    const previa = variants.effectiveRotary(prof, variant, slot, view.layer);
+    const paso = (previa.type === ROTARY_TYPES.KEY && previa.modifier === MACRO_MODIFIER)
+      ? pluginMacroOf(previa.keycode) : null;
+    return paso?.plugin === pluginId ? previa.keycode : nextMacroId();
+  };
+
+  const idPos = idFor(posSlot);
+  const idNeg = idFor(negSlot);
+
+  ensureMacro(idPos).actions = [{ type: 'plugin', plugin: pluginId, op, value: spec.step }];
+  ensureMacro(idNeg).actions = [{ type: 'plugin', plugin: pluginId, op, value: -spec.step }];
+  savePCMacros(idPos);
+  savePCMacros(idNeg);
+
+  applyRotaryPair(
+    posSlot, { type: ROTARY_TYPES.KEY, modifier: MACRO_MODIFIER, keycode: idPos },
+    negSlot, { type: ROTARY_TYPES.KEY, modifier: MACRO_MODIFIER, keycode: idNeg },
+  );
 }
 
 export async function pickAppTarget(kind) {

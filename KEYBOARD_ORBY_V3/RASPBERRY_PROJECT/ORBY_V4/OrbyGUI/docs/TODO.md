@@ -6,21 +6,6 @@
   Evaluado el 2026-08-08 y partido en las tareas de abajo.
   Guía operativa: [OrbyGUI/docs/PUBLICACION.md](OrbyGUI/docs/PUBLICACION.md).
 
-  **Hecho (0 €)**
-
-  * [X] Identidad USB en constantes (`ORBY_USB_VID` / `ORBY_USB_PID`) en un solo sitio, y
-    `bcdDevice` con la versión real de firmware (0x0410) en vez del 1.0 de plantilla.
-  * [X] Número de serie único desde el ID de la flash. Estaba fijo en `"123456"`, así que dos
-    teclados enchufados a la vez compartían identidad y `serial.js` no los distinguía.
-  * [X] Strings USB acordes a la marca: `Orby` / `Orby V4` / `Orby V4 Control` / `Orby V4 Input`.
-    Fuera el "Composite" (detalle interno) y el "Corp" (sociedad que no existe).
-  * [X] `serial.js` descubre el puerto por VID **y** PID. Antes bastaba con que el PID
-    coincidiera, viniera del fabricante que fuera: abría puertos ajenos.
-  * [X] Landing estática en `web/index.html` + workflow `.github/workflows/pages.yml`.
-    Solo falta poner Settings → Pages → Source: GitHub Actions.
-  * [X] Guía de SmartScreen y checklist de release con SHA-256, en la landing y en
-    PUBLICACION.md.
-
   **Se puede hacer ya, pero depende de terceros (0 €)**
 
   * [ ] Pedir un PID gratis bajo el VID de Raspberry Pi (`0x2E8A`) con una PR a
@@ -68,8 +53,6 @@
 * [ ] Mejorar plugin de lampara: permitir ver el brillo que estás configurando en una tecla que configures. así puedes tener si quieres una página que veas lo que estás configurando en la lámpara.
 * [ ] Añadir la opción a multimedia de una tecla que sea la hora. Añadir también la opción de una tecla que sea la fecha.
 * [ ] Que en la vusta de perfiles y macros, si una tecla no se reproducirá desde el teclado sino desde la app al no ser device elgible, que haya un pequeño simbolito para que se indique que sin la app abierta no funciona. Además, quiero que en el teclado, si no tienes la app abierta, las teclas cuya acción no sea debice elegible se marquen para que sepas que no tienes la app conectada y que justo esa tecla no va a funcionar.
-  * [X] Hecha la parte de interfaz: la insignia en teclas y mandos de `src/views/profiles.js`
-    que avisa cuando una acción necesita la app abierta.
   * [ ] Pendiente la parte del teclado: marcar en las pantallas OLED del propio Orby
     las teclas que no van a funcionar sin la app conectada. Es firmware, fuera del
     alcance de la WebGUI.
@@ -98,32 +81,3 @@ Para hacer que el ecosistema Orby resulte muy atractivo "out-of-the-box" aprovec
 * [ ] **Desarrollo de la Tienda de Plugins (Marketplace):**
    * Crear la interfaz de usuario dentro de OrbyGUI para explorar, descargar e instalar plugins creados por la comunidad o de forma oficial.
    * Diseñar la arquitectura del repositorio/backend donde se alojarán los plugins para su descarga.
-
-### Orby WebGUI (Versión Portátil / Entornos Corporativos)
-Objetivo: Crear una versión web de la app que funcione mediante WebHID/Web Serial, permitiendo configurar el teclado sin instalar software en el PC host.
-
-* [X] **Investigación y Pruebas de Concepto (PoC):**
-   * [X] Validar viabilidad de comunicación bidireccional vía WebHID con el firmware actual en Chrome/Edge.
-   * [X] Diseñar protocolo ligero de lectura/escritura de configuración a través de un endpoint HID Raw.
-   * Resuelto con **Web Serial**, no con WebHID: Chrome bloquea WebHID sobre colecciones
-     de teclado/ratón/consumer, así que habría hecho falta una colección *vendor*
-     nueva, subir el PID y un protocolo binario aparte. Con Web Serial se reutiliza el
-     CDC que el teclado ya expone y no hay que tocar el firmware para nada de esto.
-* [X] **Adaptación del Firmware (Raspberry Pi Pico):**
-   * [X] Habilitar un endpoint USB Raw HID para configuración (si no existe ya).
-   * [X] Implementar guardado persistente (Flash/EEPROM) de la configuración completa (macros, colores, perfiles).
-   * [X] Hacer que el firmware parsee y ejecute macros (Device-Eligible) de manera autónoma sin depender del PC.
-   * No hizo falta ninguna adaptación: el guardado en Flash y la reproducción
-     autónoma de secuencias *device-eligible* ya existían desde el firmware 4.0, y el
-     endpoint Raw HID sobra en cuanto se usa Web Serial sobre el CDC existente.
-* [X] **Desarrollo de la Web App:**
-   * [X] Configurar repositorio y hosting estático (ej. GitHub Pages o Vercel).
-   * [X] Migrar/Recrear la UI de OrbyGUI para web (React/Vue/Vanilla).
-   * [X] Implementar la API de conexión y solicitud de permisos USB/HID al navegador.
-   * [X] Crear las funciones de subida (Push) y bajada (Pull) de configuración desde el hardware.
-* [X] **Experiencia de Usuario (UX):**
-   * [X] Añadir advertencias visuales en la WebGUI sobre qué acciones son 'Device-Eligible' y cuáles no (ya que no habrá daemon corriendo).
-   * [X] Implementar método de cambio manual de perfil integrado en el teclado (pantalla OLED o combinación de teclas).
-   * El cambio manual de perfil desde el propio teclado ya existía: el menú de la
-     tecla 12 y la telemetría `EV:CTX:<perfil>:<pagina>:<total>` que el teclado emite
-     por su cuenta al cambiar de contexto.

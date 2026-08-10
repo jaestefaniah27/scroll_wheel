@@ -199,22 +199,14 @@ export async function pasteKey() {
   toast('Tecla pegada');
 }
 
-export async function applyRotary(action) {
-  if (!requireDevice()) return;
+// Núcleo compartido de escritura de mandos: aplica una lista de [hueco, acción]
+// a la vez, respetando variación. Lo usa applyRotary (un hueco, con espejo si
+// es desplazamiento) y applyRotaryPair (dos huecos con acciones distintas, ver
+// más abajo).
+async function writeRotarySlots(writes) {
   const prof = currentProfile();
-  const base = selectedRotarySlot();
-  if (!prof || base === null) return;
-
-  const slot = rotarySlot(base, view.layer);
+  if (!prof) return;
   const variant = editingVariant();
-
-  // Los desplazamientos son bidireccionales, así que el firmware ignora la
-  // acción del sentido contrario. Espejamos el par para que la interfaz no
-  // enseñe una configuración que no se va a aplicar.
-  const twinBase = ROTARY_TWIN[base];
-  const mirror = twinBase !== undefined && isScrollType(action.type);
-  const writes = [[slot, action]];
-  if (mirror) writes.push([rotarySlot(twinBase, view.layer), { ...action }]);
 
   // Editando una variación se guardan diferencias en el PC; el teclado solo se
   // toca si esa variación es la que está puesta ahora mismo.
@@ -245,4 +237,36 @@ export async function applyRotary(action) {
   } catch {
     toast('No se pudo escribir la acción del mando', 'error');
   }
+}
+
+export async function applyRotary(action) {
+  if (!requireDevice()) return;
+  const prof = currentProfile();
+  const base = selectedRotarySlot();
+  if (!prof || base === null) return;
+
+  const slot = rotarySlot(base, view.layer);
+
+  // Los desplazamientos son bidireccionales, así que el firmware ignora la
+  // acción del sentido contrario. Espejamos el par para que la interfaz no
+  // enseñe una configuración que no se va a aplicar.
+  const twinBase = ROTARY_TWIN[base];
+  const mirror = twinBase !== undefined && isScrollType(action.type);
+  const writes = [[slot, action]];
+  if (mirror) writes.push([rotarySlot(twinBase, view.layer), { ...action }]);
+
+  await writeRotarySlots(writes);
+}
+
+// Escribe los dos sentidos de un mismo mando a la vez, cada uno con su propia
+// acción. Lo usa el giro de un complemento (ver setRotaryPluginAction en
+// macro-tabs.js): los dos huecos físicos tienen que cambiar juntos, o pueden
+// quedar con el mismo signo si el otro sentido no estaba configurado todavía.
+export async function applyRotaryPair(slotA, actionA, slotB, actionB) {
+  if (!requireDevice()) return;
+  if (!currentProfile()) return;
+  await writeRotarySlots([
+    [rotarySlot(slotA, view.layer), actionA],
+    [rotarySlot(slotB, view.layer), actionB],
+  ]);
 }

@@ -1180,31 +1180,56 @@ function renderKeyGrid() {
   paintKeyGrid();
 }
 
+// Un giro de complemento (brillo, color…) reparte su valor entre CW y CCW por
+// construcción: no tiene sentido editarlos por separado, así que la lista los
+// enseña como un único control "Giro". Multimedia y Atajo de teclado sí
+// necesitan una tecla distinta por sentido (Vol+ / Vol-, por ejemplo), así que
+// esos se quedan con sus dos filas de siempre.
+function isPluginTurnAction(action) {
+  return action?.type === ROTARY_TYPES.KEY && action.modifier === MACRO_MODIFIER && isPluginMacro(action.keycode);
+}
+
 function renderRotaryGroups() {
   const prof = currentProfile();
   const variant = editingVariant();
   const selected = selectedRotarySlot();
 
-  return ROTARY_GROUPS.map((group) => `
+  const renderPart = (part, action, changed) => `
+    <button class="rotary-part ${selected === part.slot ? 'selected' : ''} ${action.type ? 'assigned' : ''} ${changed ? 'is-override' : ''}"
+            data-act="pick-rotary" data-slot="${part.slot}">
+      <span class="rp-dir">${part.short}</span>
+      <span class="rp-body">
+        <em>${part.label}</em>
+        <strong>${escape(describeRotaryFull(action))}${
+          rotaryNeedsApp(action)
+            ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esto no hace nada">${icon('plug', 11)}</i>`
+            : ''}</strong>
+      </span>
+    </button>`;
+
+  return ROTARY_GROUPS.map((group) => {
+    const [cwPart, ccwPart, clickPart] = group.parts;
+    const cwAction = variants.effectiveRotary(prof, variant, cwPart.slot, view.layer);
+    const ccwAction = variants.effectiveRotary(prof, variant, ccwPart.slot, view.layer);
+    const mergeable = (a) => !a.type || isPluginTurnAction(a);
+    const merged = mergeable(cwAction) && mergeable(ccwAction);
+
+    const cwChanged = variant && variants.override(variant, 'rotary', rotarySlot(cwPart.slot, view.layer));
+    const ccwChanged = variant && variants.override(variant, 'rotary', rotarySlot(ccwPart.slot, view.layer));
+    const clickAction = variants.effectiveRotary(prof, variant, clickPart.slot, view.layer);
+    const clickChanged = variant && variants.override(variant, 'rotary', rotarySlot(clickPart.slot, view.layer));
+
+    const turnRows = merged
+      ? renderPart({ slot: cwPart.slot, label: 'Giro', short: '⟳' }, cwAction, cwChanged)
+      : renderPart(cwPart, cwAction, cwChanged) + renderPart(ccwPart, ccwAction, ccwChanged);
+
+    return `
     <div class="rotary-group">
       <span class="rotary-group-name">${icon(group.icon, 14)} ${group.name}</span>
-      ${group.parts.map((part) => {
-        const action = variants.effectiveRotary(prof, variant, part.slot, view.layer);
-        const changed = variant && variants.override(variant, 'rotary', rotarySlot(part.slot, view.layer));
-        return `
-          <button class="rotary-part ${selected === part.slot ? 'selected' : ''} ${action.type ? 'assigned' : ''} ${changed ? 'is-override' : ''}"
-                  data-act="pick-rotary" data-slot="${part.slot}">
-            <span class="rp-dir">${part.short}</span>
-            <span class="rp-body">
-              <em>${part.label}</em>
-              <strong>${escape(describeRotaryFull(action))}${
-                rotaryNeedsApp(action)
-                  ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esto no hace nada">${icon('plug', 11)}</i>`
-                  : ''}</strong>
-            </span>
-          </button>`;
-      }).join('')}
-    </div>`).join('');
+      ${turnRows}
+      ${renderPart(clickPart, clickAction, clickChanged)}
+    </div>`;
+  }).join('');
 }
 
 function renderWheelCard() {
@@ -1358,13 +1383,18 @@ function renderRotaryInspector() {
   const changed = Boolean(variant && variants.override(variant, 'rotary', rotarySlot(base, view.layer)));
   const baseAction = currentProfile().rotary?.[rotarySlot(base, view.layer)] || { type: 0, modifier: 0, keycode: 0 };
 
+  // Sin asignar todavía o ya con un complemento, el giro se edita como control
+  // único (ver renderRotaryGroups); solo Multimedia/Atajo, que necesitan tecla
+  // distinta por sentido, siguen enseñando "Giro horario"/"antihorario".
+  const subLabel = !isClick && (action.type === ROTARY_TYPES.NONE || isPlugin) ? 'Giro' : found?.part.label;
+
   return `
     <div class="editor-inspector glass-panel">
       <div class="inspector-head">
         <h3>${escape(found?.group.name || 'Mando')}</h3>
         <span class="pill">${view.layer === 'super' ? 'Capa SUPER' : 'Capa normal'}</span>
       </div>
-      <p class="setting-desc inspector-sub">${escape(found?.part.label || '')}</p>
+      <p class="setting-desc inspector-sub">${escape(subLabel || '')}</p>
 
       ${variant ? `
         <div class="override-note ${changed ? 'is-override' : ''}">
