@@ -4,6 +4,8 @@ Teclado macro con rueda. Dos mitades que hablan por USB CDC:
 
 - **Firmware** — Raspberry Pi Pico (RP2040), C++17, Pico SDK 2.2.0 + TinyUSB. Raíz del proyecto.
 - **OrbyGUI** — app de escritorio (Electron + Vite, JS vanilla) que configura el teclado. `OrbyGUI/`.
+  La misma app corre también en el navegador (Chrome/Edge) por Web Serial, para
+  equipos donde no se puede instalar nada: ver [docs/WEBGUI.md](OrbyGUI/docs/WEBGUI.md).
 
 El teclado funciona solo: la configuración vive en su Flash. OrbyGUI es un editor,
 no un runtime — salvo para las acciones que solo el PC puede ejecutar (secuencias,
@@ -32,6 +34,8 @@ npm install
 npm run dev          # vite + electron en paralelo, con recarga
 npm start            # build + electron (sin recarga)
 npm run dist         # instalador NSIS en release/
+npm test             # node --test sobre los módulos puros de la vía navegador
+npm run preview:web  # build + servidor local para probar la vía navegador en Chrome
 ```
 
 ## Arquitectura
@@ -99,6 +103,14 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
 - `compat.js` — qué firmware sabe usar esta app (`FW_MIN`, `FW_RECOMMENDED`, `FEATURES`).
 - `firmware.js` — espejo de `electron/firmware.js`; pone el tope de versión desde `compat.js`.
 
+### OrbyGUI — versión de navegador
+`src/entry.js` arranca la vía Electron o la vía navegador según exista ya
+`window.orby`. En navegador lo monta `src/web/orby-web.js` (Web Serial + IndexedDB en
+vez de `electron/preload.js`), y `src/platform.js` es el único sitio donde se
+pregunta dónde corre la app. Regla al añadir algo que necesite el proceso principal:
+tocar `PC_ONLY` en `src/platform.js` **y** darle un valor vacío en
+`src/web/orby-web.js`. Detalle completo en [docs/WEBGUI.md](OrbyGUI/docs/WEBGUI.md).
+
 ### Complementos
 Carpeta con `plugin.json` + `main.js` (CommonJS, Node). Se instalan en
 `%APPDATA%\OrbyGUI\plugins\<id>\`, fuera de la app, para sobrevivir actualizaciones.
@@ -130,6 +142,10 @@ Ejemplo de referencia: `OrbyGUI/plugins/lampdesk`.
   ventana, limpia esa variable antes de lanzar.
 - **Rutas largas de Windows.** El repo está anidado y bajo OneDrive: operaciones de
   ficheros recursivas pueden fallar con "Filename too long". Usa el prefijo `\\?\`.
+- **La app de escritorio y la WebGUI no pueden usar el teclado a la vez.** En Windows
+  solo un proceso puede tener abierto el puerto COM: con OrbyGUI de escritorio
+  corriendo, la WebGUI no consigue abrir el puerto. Ciérrala antes de probar la vía
+  navegador.
 - `orby-backup-*.json` en la raíz son copias de seguridad del usuario, no fixtures.
 - `old/`, `build/` y `main_diag.cpp` son material muerto o de diagnóstico: no son
   la referencia de nada.
