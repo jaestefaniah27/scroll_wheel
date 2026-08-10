@@ -7,6 +7,7 @@
     "dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"electron . --dev\"",
     "build": "vite build",
     "preview": "vite preview",
+    "preview:web": "vite build && vite preview --port 5174",
     "start": "npm run build && electron .",
     "pack:plugins": "node scripts/pack-plugins.js",
     "dist": "npm run build && electron-builder --win --publish never",

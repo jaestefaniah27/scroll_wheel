@@ -1496,3 +1496,30 @@ body.read-only #btn-backup-save,
 body.read-only #timeout-selector {
   opacity: 0.45;
 }
+
+/* --- Pantalla de conexión de la WebGUI ---------------------------------- */
+/* Tapa la app entera: sin teclado no hay nada que enseñar, y dejar ver el
+   editor de fondo invita a hacer clic en cosas que todavía no van. */
+.web-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-app, #12141a);
+}
+
+.web-gate.hidden { display: none; }
+
+.gate-card {
+  max-width: 26rem;
+  padding: 2.5rem;
+  text-align: center;
+}
+
+.gate-card h1 { margin-bottom: 1rem; }
+.gate-desc { margin-bottom: 1.5rem; opacity: 0.85; }
+.gate-error { margin-bottom: 1rem; color: var(--danger, #ff6b6b); font-size: 0.9rem; }
+.gate-btn { margin-bottom: 1.5rem; }
+.gate-note { font-size: 0.8rem; opacity: 0.6; line-height: 1.5; }

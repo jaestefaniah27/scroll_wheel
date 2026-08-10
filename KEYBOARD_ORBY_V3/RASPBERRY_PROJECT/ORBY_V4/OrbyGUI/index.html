@@ -422,6 +422,11 @@
     <span>Solo lectura: conecta el Orby por USB para editar la configuración</span>
   </div>
 
+  <!-- Pantalla de conexión de la versión de navegador. Vive aquí y no en un
+       fichero aparte porque el index.html es el mismo para las dos plataformas;
+       en Electron nadie la desoculta nunca. -->
+  <div id="web-gate" class="web-gate hidden"></div>
+
   <script type="module" src="/src/entry.js"></script>
 </body>
 </html>
