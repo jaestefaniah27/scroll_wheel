@@ -69,6 +69,7 @@ target_link_libraries(ORBY_V4
         hardware_pio
         hardware_timer
         pico_multicore
+        pico_unique_id
         tinyusb_device
         tinyusb_board
         )

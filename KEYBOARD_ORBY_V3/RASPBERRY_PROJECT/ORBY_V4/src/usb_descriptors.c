@@ -1,5 +1,46 @@
 #include "tusb.h"
+#include "pico/unique_id.h"
 #include "hid_hires.h"
+#include "orby_version.h"
+
+//--------------------------------------------------------------------+
+// Identidad USB
+//--------------------------------------------------------------------+
+// 0xCafe es el VID de los *ejemplos* de TinyUSB. Vale para desarrollar, pero no
+// es nuestro: un teclado que se distribuye no puede enumerarse con él, porque
+// choca con cualquier otro proyecto que tampoco lo haya cambiado y porque
+// delata que el firmware va sin tocar desde la plantilla.
+// Sustitución pendiente de que Raspberry Pi conceda un PID bajo su VID 0x2E8A
+// (gratis para productos basados en RP2040, se pide en raspberrypi/usb-pid;
+// ver OrbyGUI/docs/PUBLICACION.md). Mientras tanto se queda: ocupar un PID de
+// ese VID sin que esté concedido es peor que seguir con el de ejemplo.
+// Al cambiarlo hay que tocar KNOWN_IDS en OrbyGUI/electron/serial.js **a la
+// vez**, o la app deja de encontrar el teclado.
+#define ORBY_USB_VID 0xCafeu
+
+// El PID hace también de versión del report descriptor HID: Windows lo cachea
+// por VID/PID, así que al cambiar la estructura de un informe hay que subirlo o
+// el host seguirá usando el descriptor antiguo.
+// 0x4007: el paneo horizontal pasa de 8 a 16 bits y el Feature report gana un
+// segundo multiplicador. Sin subir el PID, Windows reutilizaría el descriptor
+// viejo y leería el informe descuadrado.
+#define ORBY_USB_PID 0x4007u
+
+// La versión de firmware en BCD (ORBY_USB_BCD_DEVICE) sale de orby_version.h,
+// el mismo sitio del que sale el `FW=` del handshake: escrita a mano aquí, se
+// quedaba atrás cada vez que se subía la del handshake.
+
+// Índices del array de strings. Antes iban como números sueltos repartidos
+// entre el descriptor de dispositivo y el de configuración, y era fácil mover
+// uno y olvidar el otro.
+enum {
+    STRID_LANGID = 0,
+    STRID_MANUFACTURER,
+    STRID_PRODUCT,
+    STRID_SERIAL,
+    STRID_CDC,
+    STRID_HID,
+};
 
 // Multiplicadores de resolución negociados con el host (ver hid_hires.h). Son
 // dos independientes: el host puede activar la alta resolución en un eje y no
@@ -21,19 +62,13 @@ tusb_desc_device_t const desc_device = {
     .bDeviceProtocol    = 0x01, // MISC_PROTOCOL_IAD
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-    .idVendor           = 0xCafe,
-    // Windows cachea el report descriptor HID por VID/PID. Al cambiar la
-    // estructura del informe de ratón hay que subir el PID o el host seguirá
-    // usando el descriptor antiguo (sin alta resolución).
-    // 0x4007: el paneo horizontal pasa de 8 a 16 bits y el Feature report gana
-    // un segundo multiplicador. Sin subir el PID, Windows reutilizaría el
-    // descriptor viejo y leería el informe descuadrado.
-    .idProduct          = 0x4007,
-    .bcdDevice          = 0x0100,
+    .idVendor           = ORBY_USB_VID,
+    .idProduct          = ORBY_USB_PID,
+    .bcdDevice          = ORBY_USB_BCD_DEVICE,
 
-    .iManufacturer      = 0x01,
-    .iProduct           = 0x02,
-    .iSerialNumber      = 0x03,
+    .iManufacturer      = STRID_MANUFACTURER,
+    .iProduct           = STRID_PRODUCT,
+    .iSerialNumber      = STRID_SERIAL,
 
     .bNumConfigurations = 0x01
 };
@@ -167,12 +202,12 @@ uint8_t const desc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 500),
 
     // Interface number, string index, EP notification address and size, EP data address (out, in) and size.
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE),
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE),
 
     // Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval.
     // bInterval = 1 ms (1000 Hz): a 5 ms el scroll de alta resolución se
     // percibía escalonado porque limitaba la cadencia de informes a 200 Hz.
-    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 5, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report), EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 1)
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, STRID_HID, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report), EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 1)
 };
 
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
@@ -183,14 +218,28 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
 //--------------------------------------------------------------------+
 // String Descriptors
 //--------------------------------------------------------------------+
+// Estos strings son lo que el usuario ve en el Administrador de dispositivos la
+// primera vez que enchufa el teclado, así que dicen lo que el aparato es y nada
+// más: "Composite" era detalle interno del descriptor, y "Orby Corp" nombraba
+// una sociedad que no existe.
 char const* string_desc_arr [] = {
-    (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
-    "Orby Corp",                   // 1: Manufacturer
-    "Orby V4 Composite",           // 2: Product
-    "123456",                      // 3: Serials, should use chip ID
-    "Orby CDC interface",          // 4: CDC Interface
-    "Orby HID interface"           // 5: HID Interface
+    (const char[]) { 0x09, 0x04 }, // 0: idioma admitido, inglés (0x0409)
+    "Orby",                        // 1: fabricante
+    "Orby V4",                     // 2: producto
+    NULL,                          // 3: número de serie, generado en tiempo de ejecución
+    "Orby V4 Control",             // 4: interfaz CDC
+    "Orby V4 Input"                // 5: interfaz HID
 };
+
+// El número de serie sale del ID único de la flash de la Pico. Con el "123456"
+// fijo de antes, dos teclados enchufados a la vez presentaban la misma
+// identidad: Windows los mezclaba y el descubrimiento de puerto de serial.js no
+// podía distinguirlos.
+// pico_get_unique_board_id_string() devuelve una copia que el SDK cachea en el
+// arranque; no toca la flash. Leerla de verdad desde aquí colgaría la placa,
+// porque este callback corre en el núcleo 0 mientras el núcleo 1 ejecuta desde
+// XIP y una orden a la flash deja el bus sin mapear.
+static char serial_str[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1];
 
 static uint16_t _desc_str[32];
 
@@ -205,7 +254,15 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     } else {
         if ( !(index < sizeof(string_desc_arr)/sizeof(string_desc_arr[0])) ) return NULL;
 
-        const char* str = string_desc_arr[index];
+        const char* str;
+        if ( index == STRID_SERIAL ) {
+            if ( serial_str[0] == '\0' ) {
+                pico_get_unique_board_id_string(serial_str, sizeof(serial_str));
+            }
+            str = serial_str;
+        } else {
+            str = string_desc_arr[index];
+        }
 
         chr_count = strlen(str);
         if ( chr_count > 31 ) chr_count = 31;

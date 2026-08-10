@@ -256,13 +256,28 @@ class OrbySerial extends EventEmitter {
     try {
       const ports = await this.listPorts();
       
-      // 4006 es el PID del firmware 2.0 (scroll de alta resolución); 4005 se
-      // mantiene para no dejar tirados a los teclados sin actualizar.
-      const KNOWN_PIDS = ['4005', '4006'];
+      // El teclado ha ido cambiando de PID (el firmware lo sube cada vez que
+      // cambia la estructura de un informe HID, porque Windows cachea el report
+      // descriptor por VID/PID), así que aquí hay que aceptar todos los que
+      // existen ahí fuera. `pids: null` significa "cualquier PID de ese VID".
+      //
+      // Cuando Raspberry Pi conceda un PID bajo su VID 0x2e8a hay que añadir la
+      // entrada aquí Y cambiar ORBY_USB_VID/PID en src/usb_descriptors.c en el
+      // mismo commit: si solo se toca el firmware, la app deja de encontrar el
+      // teclado; si solo se toca esto, no pasa nada pero tampoco sirve.
+      const KNOWN_IDS = [
+        // VID de los ejemplos de TinyUSB. Lo han usado todos los firmwares hasta
+        // el 4.1 incluido; se acepta entero para no dejar tirado a nadie.
+        { vid: 'cafe', pids: null },
+      ];
 
       const candidates = ports.filter(p => {
-        if (p.vendorId && p.vendorId.toLowerCase() === 'cafe') return true;
-        if (p.productId && KNOWN_PIDS.includes(p.productId.toLowerCase())) return true;
+        const vid = p.vendorId?.toLowerCase();
+        const pid = p.productId?.toLowerCase();
+        // El VID tiene que coincidir siempre. Antes bastaba con que el PID
+        // estuviera en la lista, viniera de quien viniera: eso abría puertos de
+        // dispositivos ajenos que casualmente compartían PID.
+        if (vid && KNOWN_IDS.some(k => k.vid === vid && (!k.pids || (pid && k.pids.includes(pid))))) return true;
         if (p.manufacturer && p.manufacturer.toLowerCase().includes('orby')) return true;
         // Se ha eliminado el fallback genérico (starts with COM) para evitar cuelgues nativos
         return false;

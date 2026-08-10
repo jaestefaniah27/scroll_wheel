@@ -1,0 +1,40 @@
+name: Publicar la landing de ORBY
+
+# La landing es un único index.html estático. No hay build: se sube la carpeta
+# tal cual. Este workflow no hace nada hasta que en Ajustes → Pages se
+# seleccione "GitHub Actions" como origen.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Una publicación a la vez: dos a la vez se pisan y Pages rechaza la segunda.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/web
+
+      - id: despliegue
+        uses: actions/deploy-pages@v4
