@@ -13,6 +13,9 @@ build/
 .claude/worktrees/
 **/.claude/worktrees/
 
+# Espacio de trabajo del desarrollo dirigido por subagentes (ledgers, briefs)
+.superpowers/
+
 # Salida de electron-builder: instaladores de ~100 MB, se regeneran con
 # "npm run dist" y se publican en GitHub Releases, no en el repo.
 OrbyGUI/release/
