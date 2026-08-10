@@ -492,6 +492,7 @@ ipcMain.handle('plugins:setEnabled', async (_e, id, enabled) => plugins.setEnabl
 ipcMain.handle('plugins:getSettings', async (_e, id) => plugins.settingsOf(id));
 ipcMain.handle('plugins:setSettings', async (_e, id, patch) => plugins.saveSettings(id, patch));
 ipcMain.handle('plugins:test', async (_e, id, values) => plugins.test(id, values));
+ipcMain.handle('plugins:read', async (_e, id, op) => plugins.read(id, op));
 ipcMain.handle('plugins:openFolder', async () => plugins.openFolder());
 
 // --- IPC: autoarranque con Windows ---

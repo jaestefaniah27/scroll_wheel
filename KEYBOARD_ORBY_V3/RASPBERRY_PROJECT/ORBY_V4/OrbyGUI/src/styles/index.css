@@ -899,6 +899,14 @@ body {
 .override-note code { font-family: 'Consolas', monospace; color: var(--primary); }
 .override-note .secondary-btn { margin-left: auto; padding: 6px 10px; font-size: 12px; }
 
+/* Selector deslizante de una acción de complemento con valor exacto ("Fijar
+   brillo"...): se abre en el sitio del botón que lo abrió. */
+.plugin-value-pick {
+  margin-top: 10px; padding: 12px; border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border-light);
+}
+.plugin-value-pick .field { margin-bottom: 10px; }
+
 /* Huecos que la variación cambia respecto al perfil base. */
 .okey.is-override, .rotary-part.is-override { border-color: rgba(245,158,11,0.55); }
 .okey-dot {

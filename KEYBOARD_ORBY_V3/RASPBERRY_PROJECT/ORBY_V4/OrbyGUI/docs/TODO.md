@@ -1,4 +1,3 @@
-
 * [ ] Añadir biblioteca de perfiles para que los usuarios no tengan que crear los suyos desde cero. Los usuarios pueden aportar al pool de perfiles en el apartado perfiles de la comunidad. Los usuarios tienen que aportar Nombre del perfil y descripción. EN la biblioteca de perfiles sale el número total de atajos, el número de páginas, etc.
 * [ ] He pensado en monetizar perfiles o paquetes de perfiles: el software básico es gratis pero hay que pagar una baja cantidad de € para obtener acceso a un paquete de perfiles para unos cuantos programas como Altium, excel, word, etc, o pagar cada uno por separado. Estudiar viavilidad de esto.
 * [ ] **Que ORBY parezca un producto, no un proyecto.** La app ya es algo que usaría a diario
@@ -86,3 +85,18 @@ Para hacer que el ecosistema Orby resulte muy atractivo "out-of-the-box" aprovec
 
   * Crear la interfaz de usuario dentro de OrbyGUI para explorar, descargar e instalar plugins creados por la comunidad o de forma oficial.
   * Diseñar la arquitectura del repositorio/backend donde se alojarán los plugins para su descarga.
+
+
+
+### Mejoras de perfiles
+
+* [x] Cambiar funcionalidad del botón menú. Una pulsación corta avanza a la siguiente página. Mantener pulsado te muestra los perfiles que tienes: si mientras mantienes, pulsas otro perfil, cambias a ese perfil. de esta manera se puede cambiar de perfiles fácilmente.
+
+  Hecho en `main.cpp` (bloque "TECLA DE MENÚ"): mientras se mantiene el menú
+  pulsado (tras el segundo que lo abre), se sigue sondeando el resto de teclas
+  sin esperar a soltar. Si se toca la que tiene un perfil debajo (misma
+  correspondencia tecla↔pantalla que ya pintan los OLEDs), se activa ese
+  perfil al momento y se vuelve a `MODE_NORMAL`; si se suelta el menú sin
+  tocar nada, queda como antes: abierto en `MODE_MENU_PERF` para elegir a
+  mano. Se espera también a que se suelte la tecla del perfil elegido para que
+  el bucle normal no la lea como una pulsación nueva y dispare su atajo.

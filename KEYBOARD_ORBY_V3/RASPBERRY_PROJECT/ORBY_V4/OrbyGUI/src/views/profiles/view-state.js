@@ -102,3 +102,11 @@ export function currentMacroId() {
   const a = view.selected?.kind === 'rotary' ? currentRotary() : currentAction();
   return a.modifier === MACRO_MODIFIER ? a.keycode : null;
 }
+
+// Selector deslizante de una acción de complemento con valor exacto ("Fijar
+// brillo"...): se abre en vez de asignar directamente, y solo al confirmar se
+// escribe la macro (ver macro-tabs.js). `mode` distingue tecla ('key') de clic
+// de mando ('rotary'), que usan funciones de asignación distintas.
+export const pluginValuePick = {
+  open: false, plugin: null, op: null, mode: null, value: 0,
+};

@@ -15,6 +15,7 @@ import * as plugins from './plugins.js';
 import * as compat from './compat.js';
 import * as firmware from './firmware.js';
 import * as platform from './platform.js';
+import * as liveOled from './live-oled.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
@@ -436,6 +437,10 @@ function arrancarApp() {
   // primer pintado del editor puede no tenerla todavía. plugins.onChange hace
   // que las vistas se repinten al llegar (ver profiles.init y settings.init).
   plugins.init();
+
+  // Visor en vivo (brillo/color actual...) en la pantalla de la tecla que se le
+  // asigne: sondea el complemento y empuja el bitmap sin tocar Flash.
+  liveOled.init();
 
   // Variaciones de perfil por aplicación: se leen del disco antes de que el
   // detector de ventanas empiece a pedir evaluaciones.

@@ -3139,7 +3139,7 @@ int main() {
             if (menu_hold_start == 0) {
                 menu_hold_start = now;
                 menu_long_fired = false;
-            } else if (!menu_long_fired && now - menu_hold_start >= 1000) {
+            } else if (!menu_long_fired && now - menu_hold_start >= 150) {
                 menu_long_fired = true;
                 activity_detected = true;
                 current_mode = MODE_MENU_PERF;
@@ -3152,11 +3152,55 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
                 
-                // Esperar a que se libere para no disparar atajos accidentales
+                // Mientras se mantiene el menú, tocar la tecla de un perfil lo
+                // selecciona sin soltar antes: "menú + perfil" en un solo gesto,
+                // sin gastar una tecla dedicada por perfil. Si se suelta el menú
+                // sin tocar nada, se cancela y se vuelve a donde se estaba.
+                int8_t picked_ki = -1;
                 while (!gpio_get(key_pins[KEY_IDX_MENU])) {
                     tud_task();
                     watchdog_update(); // el usuario puede tenerla apretada un buen rato
+
+                    if (picked_ki < 0) {
+                        for (uint8_t s = 1; s <= PERF_MENU_SCREENS; s++) {
+                            uint8_t ki = key_index_for_screen(s);
+                            if (ki == KEY_IDX_MENU || ki == KEY_IDX_SUPER) continue;
+                            if (!gpio_get(key_pins[ki])) {
+                                uint8_t option = (uint8_t)(perf_menu_first + s - 1);
+                                if (option < profile_count) {
+                                    active_profile_idx = option;
+                                    active_page = 0;
+                                    save_settings();
+                                }
+                                current_mode = MODE_NORMAL;
+                                push_system_refresh();
+                                int len2 = snprintf(tel, sizeof(tel), "MODE:NORMAL\n");
+                                tud_cdc_n_write(0, tel, len2);
+                                tud_cdc_n_write_flush(0);
+                                picked_ki = (int8_t)ki;
+                                break;
+                            }
+                        }
+                    }
                     sleep_ms(10);
+                }
+                // Si se eligió perfil con el gesto y la tecla sigue pulsada, hay
+                // que esperar a que se suelte: si no, el bucle normal la ve
+                // "recién pulsada" y dispara el atajo que tenga asignado.
+                if (picked_ki >= 0) {
+                    while (!gpio_get(key_pins[picked_ki])) {
+                        tud_task();
+                        sleep_ms(5);
+                    }
+                } else {
+                    // Se soltó el menú sin elegir perfil: cancelar y volver a
+                    // donde se estaba, no dejar el menú abierto.
+                    current_mode = MODE_NORMAL;
+                    push_system_refresh();
+                    char tel2[24];
+                    int len3 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
+                    tud_cdc_n_write(0, tel2, len3);
+                    tud_cdc_n_write_flush(0);
                 }
                 menu_hold_start = 0;
             }

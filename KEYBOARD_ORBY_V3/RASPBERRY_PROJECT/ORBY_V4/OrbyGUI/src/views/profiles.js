@@ -33,7 +33,7 @@ import * as platform from '../platform.js';
 import { ROTARY_GROUPS, ROTARY_TYPE_OPTIONS, SCROLL_PRESETS } from './profiles/constants.js';
 import { view, setRenderers, currentPageIdx, editingVariant, selectedKeyIndex, selectedRotarySlot,
          rotaryPart, currentProfile, isActiveView, currentAction, currentRotary, currentScroll,
-         currentMacroId } from './profiles/view-state.js';
+         currentMacroId, pluginValuePick } from './profiles/view-state.js';
 import { loadPCMacros, savePCMacros, macroById, ensureMacro, nextMacroId, POWER_MODE_LABELS,
          isAppMacro, isTextMacro, isPowerMacro, isPluginMacro, pluginMacroOf, describeRotaryFull,
          isRecordOrResetMacro, describeKey, keyNeedsApp, rotaryNeedsApp } from './profiles/macros-store.js';
@@ -47,7 +47,9 @@ import { seqAddAction, currentAppStep, setAppKind, currentTextStep, setPowerActi
          pickAppTarget, pickAppFocus,
          renderAppTab, renderTextTab, pickOpenTarget, setSeqOpenKind, pickSeqOpenFocus,
          seqRemoveAction, seqMoveAction, seqActionAt, seqKeyBuilder, startPositionCapture,
-         stopPositionCapture, applyRotaryMacro, cancelPositionPoll } from './profiles/macro-tabs.js';
+         stopPositionCapture, applyRotaryMacro, cancelPositionPoll,
+         openPluginValuePick, setPluginValuePickValue, cancelPluginValuePick,
+         confirmPluginValuePick } from './profiles/macro-tabs.js';
 import { renderSequenceEditor } from './profiles/sequence-editor.js';
 import { getCurrentWindowInfo, keycodeOptions, escape } from './profiles/util.js';
 
@@ -281,6 +283,19 @@ function onClick(e) {
     setPluginAction(el.dataset.plugin, el.dataset.op);
   } else if (act === 'rotary-plugin') {
     setRotaryPluginAction(el.dataset.plugin, el.dataset.op);
+  } else if (act === 'plugin-value-open') {
+    const mode = el.dataset.mode;
+    const rot = currentRotary();
+    const macroId = mode === 'rotary'
+      ? (rot.type === ROTARY_TYPES.KEY && rot.modifier === MACRO_MODIFIER ? rot.keycode : null)
+      : currentMacroId();
+    const paso = macroId != null ? pluginMacroOf(macroId) : null;
+    const current = (paso?.plugin === el.dataset.plugin && paso.op === el.dataset.op) ? paso.value : undefined;
+    openPluginValuePick(el.dataset.plugin, el.dataset.op, mode, current);
+  } else if (act === 'plugin-value-confirm') {
+    confirmPluginValuePick();
+  } else if (act === 'plugin-value-cancel') {
+    cancelPluginValuePick();
   } else if (act === 'rotary-plugin-invert') {
     invertirGiroPlugin();
   } else if (act === 'rotary-plugin-tab') {
@@ -434,6 +449,14 @@ function onInput(e) {
         toast('El teclado no confirmó el nombre', 'error');
       }
     }, 250);
+
+  } else if (act === 'plugin-value-slider') {
+    // Igual que el de la rueda: deslizar solo actualiza el número en pantalla,
+    // la macro se escribe al pulsar "Aplicar" (ver plugin-value-confirm).
+    const val = Number(e.target.value);
+    setPluginValuePickValue(val);
+    const readout = document.getElementById('plugin-value-readout');
+    if (readout) readout.textContent = val;
 
   } else if (act === 'scroll-slider') {
     // Deslizar solo actualiza el número: el comando se manda al soltar, para no
@@ -1442,9 +1465,12 @@ function renderRotaryInspector() {
             <div class="consumer-grid">
               ${pluginOps.map((a) => `
                 <button class="consumer-chip ${pluginStep.op === a.op ? 'on' : ''}"
-                        data-act="rotary-plugin" data-plugin="${pluginStep.plugin}"
+                        data-act="${a.value ? 'plugin-value-open' : 'rotary-plugin'}" data-mode="rotary"
+                        data-plugin="${pluginStep.plugin}"
                         data-op="${escape(a.op)}">${escape(a.label)}</button>`).join('')}
-            </div>` : `
+            </div>
+            ${pluginValuePick.open && pluginValuePick.mode === 'rotary' && pluginValuePick.plugin === pluginStep.plugin
+              ? renderPluginValuePicker(activePlugin, pluginValuePick.op) : ''}` : `
             <p class="setting-desc">
               ${activePlugin
                 ? 'Este complemento no ofrece nada para este mando.'
@@ -1678,6 +1704,7 @@ function renderKeyInspector() {
 // haría preguntarse qué falta.
 function renderPluginKeyActions(macroId) {
   const paso = macroId === null ? null : pluginMacroOf(macroId);
+  const pick = pluginValuePick;
 
   return plugins.withActionsFor('key').map((p) => `
     <div class="field">
@@ -1685,15 +1712,69 @@ function renderPluginKeyActions(macroId) {
       <div class="consumer-grid">
         ${plugins.actionsFor(p, 'key').map((a) => `
           <button class="consumer-chip ${paso?.plugin === p.id && paso.op === a.op ? 'on' : ''}"
-                  data-act="set-plugin" data-plugin="${p.id}" data-op="${escape(a.op)}">
+                  data-act="${a.value ? 'plugin-value-open' : 'set-plugin'}" data-mode="key"
+                  data-plugin="${p.id}" data-op="${escape(a.op)}">
             ${escape(a.label)}
           </button>`).join('')}
       </div>
+      ${pick.open && pick.mode === 'key' && pick.plugin === p.id
+        ? renderPluginValuePicker(p, pick.op) : ''}
       <p class="setting-desc">
         ${escape(p.description || 'Lo ejecuta el PC, así que OrbyGUI tiene que estar abierto.')}
         Lo que necesite sentido de giro (subir, bajar) se asigna a un mando, no a una tecla.
       </p>
+    </div>`).join('') + renderPluginViewActions(macroId);
+}
+
+// Selector deslizante para una acción de valor exacto ("Fijar brillo"...): se
+// pinta en el sitio del botón que lo abrió (ver openPluginValuePick) y solo al
+// confirmar se escribe la macro.
+function renderPluginValuePicker(plugin, op) {
+  const { action: spec } = plugins.findAction(plugin.id, op);
+  if (!spec?.value) return '';
+  const { min, max, step } = spec.value;
+  const v = pluginValuePick.value;
+
+  return `
+    <div class="plugin-value-pick">
+      <div class="field">
+        <span class="field-label">${escape(spec.label)} <b id="plugin-value-readout">${v}</b></span>
+        <input type="range" class="premium-slider" data-act="plugin-value-slider"
+               min="${min}" max="${max}" step="${step}" value="${v}">
+      </div>
+      <div class="row-inline" style="gap:6px">
+        <button class="primary-btn" data-act="plugin-value-confirm">${icon('check', 16)} Aplicar</button>
+        <button class="secondary-btn" data-act="plugin-value-cancel">${icon('close', 16)} Cancelar</button>
+      </div>
+    </div>`;
+}
+
+// Bloque de "visores": teclas que no hacen nada al pulsarlas, solo enseñan un
+// valor en su propia pantalla (ver src/live-oled.js). Solo tiene sentido en
+// una tecla con pantalla propia (KEY_TO_SCREEN), no en el clic de un mando.
+function renderPluginViewActions(macroId) {
+  const paso = macroId === null ? null : pluginMacroOf(macroId);
+  const conPantalla = KEY_TO_SCREEN[selectedKeyIndex()] > 0;
+  if (!conPantalla) return '';
+
+  const bloques = plugins.withViews().map((p) => `
+    <div class="field">
+      <span class="field-label">${escape(p.name)} · pantalla</span>
+      <div class="consumer-grid">
+        ${plugins.viewsFor(p).map((v) => `
+          <button class="consumer-chip ${paso?.plugin === p.id && paso.op === v.op ? 'on' : ''}"
+                  data-act="set-plugin" data-plugin="${p.id}" data-op="${escape(v.op)}">
+            ${escape(v.label)}
+          </button>`).join('')}
+      </div>
     </div>`).join('');
+  if (!bloques) return '';
+
+  return `${bloques}
+    <p class="setting-desc">
+      La tecla deja de hacer nada al pulsarla: solo enseña el valor en su pantalla, y se
+      actualiza solo cada par de segundos mientras esta página esté puesta en el teclado.
+    </p>`;
 }
 
 

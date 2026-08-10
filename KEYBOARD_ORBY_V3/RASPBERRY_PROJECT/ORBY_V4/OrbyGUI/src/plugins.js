@@ -65,6 +65,33 @@ export function findAction(pluginId, op) {
   return { plugin, action };
 }
 
+// Visores: solo tienen sentido en una tecla con pantalla propia, así que a
+// diferencia de actionsFor no llevan `target` (ver docs/PLUGINS.md).
+export function viewsFor(plugin) {
+  return plugin?.views || [];
+}
+
+export function withViews() {
+  return active().filter((p) => p.hasRead && viewsFor(p).length > 0);
+}
+
+export function findView(pluginId, op) {
+  const plugin = byId(pluginId);
+  const view = viewsFor(plugin).find((v) => v.op === op) || null;
+  return { plugin, view };
+}
+
+// Valor en vivo de un visor (ver live-oled.js). `{ ok:false }` cubre tanto un
+// fallo de la lectura como el complemento desactivado o sin conexión: al que
+// sondea cada dos segundos no le interesa por qué, solo si hay valor o no.
+export async function readView(pluginId, op) {
+  try {
+    return await window.orby.plugins.read(pluginId, op);
+  } catch {
+    return { ok: false };
+  }
+}
+
 // Texto para un paso ya guardado: es lo que se lee en la réplica del teclado y
 // en el resumen del inspector. El complemento puede haberse desinstalado y el
 // paso seguir ahí, así que hay que saber decirlo también.
@@ -72,7 +99,18 @@ export function describeStep(step) {
   if (!step) return 'Sin asignar';
   const { plugin, action } = findAction(step.plugin, step.op);
   if (!plugin) return `Complemento «${step.plugin}» (no instalado)`;
-  if (!action) return `${plugin.name}: acción desconocida`;
+
+  if (!action) {
+    // No es una acción de un clic: puede ser un visor (pantalla en vivo).
+    const { view } = findView(step.plugin, step.op);
+    if (view) return `${plugin.name}: ${view.label.toLowerCase()} (pantalla)`;
+    return `${plugin.name}: acción desconocida`;
+  }
+
+  // Un valor exacto (Fijar brillo...) lleva el número elegido al lado.
+  if (action.value && Number.isFinite(step.value)) {
+    return `${action.label} (${step.value})`;
+  }
 
   // Solo los giros llevan cantidad, y su signo es lo que distingue subir de
   // bajar: enseñarlo evita tener que abrir el mando para saber cuál es cuál.

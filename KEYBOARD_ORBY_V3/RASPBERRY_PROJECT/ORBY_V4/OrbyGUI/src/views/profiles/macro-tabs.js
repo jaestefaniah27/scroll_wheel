@@ -14,11 +14,45 @@ import * as variants from '../../variants.js';
 import * as plugins from '../../plugins.js';
 import { DEFAULT_STEP_DELAY_MS, ROTARY_DOWN_SLOTS, ROTARY_TWIN } from './constants.js';
 import { view, currentProfile, selectedRotarySlot, editingVariant, currentAction,
-         currentRotary, currentMacroId, isActiveView, rerender } from './view-state.js';
+         currentRotary, currentMacroId, isActiveView, rerender, pluginValuePick } from './view-state.js';
 import { macroById, nextMacroId, ensureMacro, savePCMacros,
          isPowerMacro, pluginMacroOf } from './macros-store.js';
 import { applyKeymap, applyRotary, applyRotaryPair } from './keys.js';
 import { escape, getCurrentWindowInfo } from './util.js';
+
+// --- Selector deslizante de una acción de valor exacto ----------------------
+// "Fijar brillo"/"Fijar color" no se asignan con un solo clic: primero hay que
+// elegir el número. Se abre este selector en el mismo sitio del botón (ver
+// profiles.js) y solo al confirmar se escribe la macro.
+
+// `current`: el valor ya guardado en el paso, si el hueco ya era esta misma
+// acción (para no arrancar siempre del valor por defecto al reabrir).
+export function openPluginValuePick(pluginId, op, mode, current) {
+  const { action: spec } = plugins.findAction(pluginId, op);
+  if (!spec?.value) return;
+  pluginValuePick.open = true;
+  pluginValuePick.plugin = pluginId;
+  pluginValuePick.op = op;
+  pluginValuePick.mode = mode;
+  pluginValuePick.value = Number.isFinite(current) ? current : spec.value.default;
+  rerender();
+}
+
+export function setPluginValuePickValue(value) {
+  pluginValuePick.value = value;
+}
+
+export function cancelPluginValuePick() {
+  pluginValuePick.open = false;
+  rerender();
+}
+
+export function confirmPluginValuePick() {
+  const { plugin, op, mode, value } = pluginValuePick;
+  pluginValuePick.open = false;
+  if (mode === 'rotary') setRotaryPluginAction(plugin, op, value);
+  else setPluginAction(plugin, op, value);
+}
 
 // ¿Son el mismo gesto repetido? Solo tiene sentido para pasos de una sola
 // pulsación/clic: repetir un movimiento de ratón o una posición no significa
@@ -110,14 +144,20 @@ export function setPowerAction(mode) {
 
 // --- Secciones de complemento de la pestaña Multimedia ---------------------
 // Calcado de setPowerAction: macro de un solo paso, un clic y listo.
-export function setPluginAction(pluginId, op) {
+//
+// `value`, si se da, es el número elegido en el selector deslizante (ver
+// pluginValuePick en view-state.js) para una acción de valor exacto ("Fijar
+// brillo"...). Las demás acciones —y los visores— no lo llevan.
+export function setPluginAction(pluginId, op, value) {
   const action = currentAction();
   const previo = pluginMacroOf(action.modifier === MACRO_MODIFIER ? action.keycode : -1);
   // Se reutiliza la macro solo si ya era de ESTE complemento: cambiar de uno a
   // otro es cambiar de acción, no editarla.
   const id = previo?.plugin === pluginId ? action.keycode : nextMacroId();
   const m = ensureMacro(id);
-  m.actions = [{ type: 'plugin', plugin: pluginId, op }];
+  const step = { type: 'plugin', plugin: pluginId, op };
+  if (Number.isFinite(value)) step.value = value;
+  m.actions = [step];
   savePCMacros(id);
   applyKeymap(MACRO_MODIFIER, id); // ya repinta al terminar
 }
@@ -149,7 +189,10 @@ export function invertirGiroPlugin() {
   applyRotaryPair(base, { ...accTwin }, twin, { ...accBase });
 }
 
-export function setRotaryPluginAction(pluginId, op) {
+// `value`: igual que en setPluginAction, el número del selector deslizante
+// para una acción de valor exacto asignada al clic del mando (los giros de
+// verdad, con `step`, nunca llevan esto: van por setGiroPluginAction).
+export function setRotaryPluginAction(pluginId, op, value) {
   const { action: spec } = plugins.findAction(pluginId, op);
   if (!spec) return;
 
@@ -169,7 +212,9 @@ export function setRotaryPluginAction(pluginId, op) {
   const id = previo?.plugin === pluginId ? action.keycode : nextMacroId();
 
   const m = ensureMacro(id);
-  m.actions = [{ type: 'plugin', plugin: pluginId, op }];
+  const step = { type: 'plugin', plugin: pluginId, op };
+  if (Number.isFinite(value)) step.value = value;
+  m.actions = [step];
   savePCMacros(id);
   applyRotary({ type: ROTARY_TYPES.KEY, modifier: MACRO_MODIFIER, keycode: id });
 }
@@ -199,11 +244,18 @@ function setGiroPluginAction(base, pluginId, op, spec) {
     return paso?.plugin === pluginId ? previa.keycode : nextMacroId();
   };
 
+  // ensureMacro() de cada id justo después de calcularlo, no los dos juntos al
+  // final: nextMacroId() mira qué ids ya existen en la lista, y si ningún
+  // sentido tenía todavía una macro de este complemento, pedir los dos ids
+  // ANTES de reservar el primero le daba a los dos el mismo número. Las dos
+  // escrituras cabían en la misma macro y la segunda (la negativa) se comía a
+  // la primera: los dos sentidos del encoder acababan bajando.
   const idPos = idFor(posSlot);
-  const idNeg = idFor(negSlot);
-
   ensureMacro(idPos).actions = [{ type: 'plugin', plugin: pluginId, op, value: spec.step }];
+
+  const idNeg = idFor(negSlot);
   ensureMacro(idNeg).actions = [{ type: 'plugin', plugin: pluginId, op, value: -spec.step }];
+
   savePCMacros(idPos);
   savePCMacros(idNeg);
 

@@ -41,11 +41,22 @@ const OPS = {
   off:              () => ({ on: 0 }),
   brightness_delta: (v) => ({ dbrightness: v }),
   color_delta:      (v) => ({ dcolor: v }),
+  brightness_set:   (v) => ({ brightness: v }),
+  color_set:        (v) => ({ color: v }),
 };
 
 // Las que llevan incremento: son las únicas que se pueden agrupar, porque sumar
 // dos incrementos da el mismo resultado que aplicarlos por separado.
 const OPS_DELTA = new Set(['brightness_delta', 'color_delta']);
+
+// Las de "visor": no hacen nada al pulsar la tecla (solo enseñan un valor en su
+// pantalla, ver read() más abajo y src/live-oled.js). Si la tecla se pulsa por
+// error, run() no debe ni intentar montar una petición ni quejarse de una
+// acción "desconocida".
+const DISPLAY_OPS = new Set(['brightness_view', 'color_view']);
+
+// Qué campo del estado (GET /state) enseña cada visor.
+const DISPLAY_FIELD = { brightness_view: 'brightness', color_view: 'color' };
 
 module.exports = (api) => {
   let pending = null;
@@ -106,6 +117,20 @@ module.exports = (api) => {
       { op: 'off',    label: 'Apagar',            targets: ['key', 'click'] },
       { op: 'brightness_delta', label: 'Brillo de la lámpara', targets: ['turn'], step: 5 },
       { op: 'color_delta',      label: 'Color de la lámpara',  targets: ['turn'], step: 5 },
+      // Un valor exacto en vez de un incremento: el número se elige al asignar
+      // la acción a la tecla (o al clic del mando), no al pulsarla.
+      { op: 'brightness_set', label: 'Fijar brillo', targets: ['key', 'click'],
+        value: { min: 0, max: 100, step: 5, default: 50 } },
+      { op: 'color_set',      label: 'Fijar color',  targets: ['key', 'click'],
+        value: { min: 0, max: 100, step: 5, default: 50 } },
+    ],
+
+    // Visores: no se pulsan, solo enseñan un valor en la pantalla de la tecla
+    // (ver src/live-oled.js, que llama a read() cada par de segundos mientras
+    // esa tecla esté en la página activa del teclado).
+    views: [
+      { op: 'brightness_view', label: 'Brillo actual', icon: 'sun' },
+      { op: 'color_view',      label: 'Color actual',  icon: 'moon' },
     ],
 
     settings: {
@@ -122,6 +147,10 @@ module.exports = (api) => {
     },
 
     async run(step, settings) {
+      // Un visor no ejecuta nada: si la tecla se pulsa por accidente, no hay
+      // "acción desconocida" que avisar, porque para esto no hay ninguna.
+      if (DISPLAY_OPS.has(step.op)) return;
+
       const build = OPS[step.op];
       if (!build) {
         api.error(`acción "${step.op}" desconocida`);
@@ -174,6 +203,17 @@ module.exports = (api) => {
         ok: true,
         detail: `Responde: ${estado.on ? 'encendida' : 'apagada'}, brillo ${estado.brightness} %`,
       };
+    },
+
+    // Para el visor de una tecla (ver views arriba y src/live-oled.js): un
+    // valor 0-100, sin reintento —a diferencia de test(), esto se llama solo en
+    // silencio cada par de segundos, y un fallo aislado no merece doblar el
+    // tráfico hacia la lámpara.
+    async read(op, settings) {
+      const field = DISPLAY_FIELD[op];
+      if (!field) throw new Error(`visor "${op}" desconocido`);
+      const estado = await pedir('/state', host(settings));
+      return { value: Number(estado[field]) || 0 };
     },
 
     // Desinstalar con un giro a medio agrupar dejaría el temporizador vivo (y

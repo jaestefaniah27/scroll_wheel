@@ -203,6 +203,19 @@ function migrateLegacy(rec) {
 // Solo datos: el renderer no puede recibir funciones por IPC, y tampoco debe
 // poder llamar al código del complemento por su cuenta.
 
+// Rango de un valor exacto (Fijar brillo, Fijar color...). Sin esto la acción
+// se trata como las de un solo clic: sin `value` no hay nada que elegir antes
+// de asignarla.
+function valueDescriptor(v) {
+  if (!v || !Number.isFinite(v.min) || !Number.isFinite(v.max)) return null;
+  return {
+    min: Number(v.min),
+    max: Number(v.max),
+    step: Number.isFinite(v.step) && v.step > 0 ? Number(v.step) : 1,
+    default: Number.isFinite(v.default) ? Number(v.default) : Number(v.min),
+  };
+}
+
 function actionDescriptors(rec) {
   const list = Array.isArray(rec.mod?.actions) ? rec.mod.actions : [];
   return list
@@ -214,6 +227,20 @@ function actionDescriptors(rec) {
       targets: Array.isArray(a.targets) && a.targets.length ? a.targets.map(String) : ['key'],
       step: Number.isFinite(a.step) ? Number(a.step) : 0,
       hint: a.hint ? String(a.hint) : '',
+      value: valueDescriptor(a.value),
+    }));
+}
+
+// Visores: lo que un complemento puede enseñar en la pantalla de una tecla sin
+// que haga falta pulsarla (ver read() más abajo y src/live-oled.js).
+function viewDescriptors(rec) {
+  const list = Array.isArray(rec.mod?.views) ? rec.mod.views : [];
+  return list
+    .filter((v) => v && v.op && v.label)
+    .map((v) => ({
+      op: String(v.op),
+      label: String(v.label),
+      icon: v.icon ? String(v.icon) : 'oled',
     }));
 }
 
@@ -249,6 +276,8 @@ function descriptor(rec) {
     enabled: isEnabled(rec.id),
     error: rec.error,
     actions: rec.error ? [] : actionDescriptors(rec),
+    views: rec.error ? [] : viewDescriptors(rec),
+    hasRead: !rec.error && typeof rec.mod.read === 'function',
     settings: rec.error ? null : settingsDescriptor(rec),
     values: rec.error ? {} : settingsOf(rec.id),
   };
@@ -284,6 +313,24 @@ async function runStep(step) {
     await rec.mod.run({ op: step.op, value: Number(step.value) || 0 }, settingsOf(rec.id));
   } catch (err) {
     console.error(`Complemento "${rec.id}", acción "${step.op}":`, err.message || err);
+  }
+}
+
+// Para el visor de una tecla (ver src/live-oled.js): pide el valor actual sin
+// tocar nada. A diferencia de test(), esto lo llama un temporizador cada par de
+// segundos, así que sin conexión o con el complemento desactivado se calla en
+// vez de acumular avisos en la consola.
+async function read(id, op) {
+  const rec = loaded.get(id);
+  if (!rec || rec.error || !isEnabled(rec.id)) return { ok: false };
+  if (typeof rec.mod.read !== 'function') return { ok: false };
+  try {
+    const res = await rec.mod.read(op, settingsOf(id));
+    const value = Number(res?.value);
+    return Number.isFinite(value) ? { ok: true, value } : { ok: false };
+  } catch (err) {
+    console.error(`Complemento "${rec.id}", visor "${op}":`, err.message || err);
+    return { ok: false };
   }
 }
 
@@ -461,6 +508,7 @@ module.exports = {
   loadAll,
   list,
   runStep,
+  read,
   test,
   install,
   uninstall,

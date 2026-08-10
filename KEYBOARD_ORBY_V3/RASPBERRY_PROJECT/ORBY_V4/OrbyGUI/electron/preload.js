@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('orby', {
     getSettings: (id) => ipcRenderer.invoke('plugins:getSettings', id),
     setSettings: (id, patch) => ipcRenderer.invoke('plugins:setSettings', id, patch),
     test: (id, values) => ipcRenderer.invoke('plugins:test', id, values),
+    read: (id, op) => ipcRenderer.invoke('plugins:read', id, op),
     openFolder: () => ipcRenderer.invoke('plugins:openFolder'),
   },
 
