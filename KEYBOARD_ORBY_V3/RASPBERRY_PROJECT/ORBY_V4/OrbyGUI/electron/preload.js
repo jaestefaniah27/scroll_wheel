@@ -1,6 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('orby', {
+  // Con qué está hablando el renderer. La versión de navegador monta este mismo
+  // objeto con 'web' y muchas de las claves de abajo en blanco (ver src/web/orby-web.js).
+  platform: 'electron',
+
   // Comunicación serie
   sendCommand: (cmd) => ipcRenderer.invoke('serial:send', cmd),
   getDeviceInfo: () => ipcRenderer.invoke('serial:getInfo'),
