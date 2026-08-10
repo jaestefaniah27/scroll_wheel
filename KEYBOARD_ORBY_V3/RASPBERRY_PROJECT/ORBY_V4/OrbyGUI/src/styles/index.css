@@ -1532,3 +1532,12 @@ body.read-only #timeout-selector {
   margin-left: 0.25rem;
   opacity: 0.65;
 }
+
+/* Pestaña o botón que en esta plataforma no puede funcionar. Se ve, pero no se
+   pulsa: el usuario tiene que poder averiguar que la opción existe y por qué no
+   está disponible aquí. */
+.inspector-tab.unsupported,
+.secondary-btn.unsupported {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

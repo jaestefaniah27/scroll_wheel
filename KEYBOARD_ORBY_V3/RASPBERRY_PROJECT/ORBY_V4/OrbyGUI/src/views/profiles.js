@@ -27,6 +27,7 @@ import * as cache from '../oled-cache.js';
 import * as fb from '../oled-fb.js';
 import * as variants from '../variants.js';
 import * as plugins from '../plugins.js';
+import * as platform from '../platform.js';
 
 import { ROTARY_GROUPS, ROTARY_TYPE_OPTIONS, SCROLL_PRESETS } from './profiles/constants.js';
 import { view, setRenderers, currentPageIdx, editingVariant, selectedKeyIndex, selectedRotarySlot,
@@ -1536,12 +1537,23 @@ function renderKeyInspector() {
         </p>`}
 
       <div class="inspector-tabs">
-        <button class="inspector-tab ${tab === 'shortcut' ? 'active' : ''}" data-act="set-tab" data-tab="shortcut">Atajo</button>
-        <button class="inspector-tab ${tab === 'sequence' ? 'active' : ''}" data-act="set-tab" data-tab="sequence">Secuencia</button>
-        <button class="inspector-tab ${tab === 'text' ? 'active' : ''}" data-act="set-tab" data-tab="text">Texto</button>
-        <button class="inspector-tab ${tab === 'record' ? 'active' : ''}" data-act="set-tab" data-tab="record">Grabar</button>
-        <button class="inspector-tab ${tab === 'app' ? 'active' : ''}" data-act="set-tab" data-tab="app">App</button>
-        <button class="inspector-tab ${tab === 'media' ? 'active' : ''}" data-act="set-tab" data-tab="media">Multimedia</button>
+        ${[
+          { id: 'shortcut', label: 'Atajo',      cap: null },
+          { id: 'sequence', label: 'Secuencia',  cap: null },
+          { id: 'text',     label: 'Texto',      cap: 'text' },
+          { id: 'record',   label: 'Grabar',     cap: 'recorder' },
+          { id: 'app',      label: 'App',        cap: 'openApp' },
+          { id: 'media',    label: 'Multimedia', cap: null },
+        ].map(({ id, label, cap }) => {
+          // Una pestaña que aquí no puede funcionar se deja a la vista pero apagada:
+          // esconderla dejaría al usuario preguntándose dónde está la opción que sí
+          // tenía en el PC, y "abrir una app" no es algo que un navegador vaya a poder
+          // hacer nunca.
+          const apagada = cap && !platform.can(cap);
+          return `<button class="inspector-tab ${tab === id ? 'active' : ''} ${apagada ? 'unsupported' : ''}"
+                          ${apagada ? 'disabled title="Necesita OrbyGUI de escritorio"' : ''}
+                          data-act="set-tab" data-tab="${id}">${label}</button>`;
+        }).join('')}
         ${hasPages() ? `<button class="inspector-tab ${tab === 'pages' ? 'active' : ''}" data-act="set-tab" data-tab="pages">Páginas</button>` : ''}
       </div>
 

@@ -14,6 +14,7 @@ import * as updater from './updater.js';
 import * as plugins from './plugins.js';
 import * as compat from './compat.js';
 import * as firmware from './firmware.js';
+import * as platform from './platform.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
@@ -65,6 +66,20 @@ function progress(msg, kind = 'info', ms = 900) {
 }
 
 function initChrome() {
+  // En el navegador la pestaña ya tiene su marco y su botón de cerrar, y no hay
+  // proceso que vigile la ventana en primer plano: el cambio automático de perfil
+  // no puede funcionar, así que su entrada no se enseña en vez de dejarla llevando
+  // a una pantalla que no hace nada.
+  if (!platform.can('windowChrome')) {
+    document.querySelector('.titlebar-controls')?.classList.add('hidden');
+  }
+  if (!platform.can('autoProfile')) {
+    document.querySelector('.nav-item[data-target="view-auto"]')?.classList.add('hidden');
+  }
+  if (!platform.can('appUpdate')) {
+    document.getElementById('btn-update')?.classList.add('hidden');
+  }
+
   document.getElementById('btn-minimize').addEventListener('click', () => window.orby.minimize());
   document.getElementById('btn-maximize').addEventListener('click', () => window.orby.maximize());
   document.getElementById('btn-close').addEventListener('click', () => window.orby.close());
@@ -81,6 +96,10 @@ function initChrome() {
 // es lo que el usuario ya mira, y sin él la versión descargada se quedaría
 // esperando a un cierre real de la app que puede no llegar nunca.
 function initUpdateBadge() {
+  // Sin autoactualización no hay insignia que pintar, y updater.init() llamaría a
+  // un window.orby.updater que en navegador no hace nada.
+  if (!platform.can('appUpdate')) return;
+
   const btn = document.getElementById('btn-update');
 
   btn.addEventListener('click', async () => {
@@ -96,6 +115,8 @@ function initUpdateBadge() {
 }
 
 function renderUpdateBadge() {
+  if (!platform.can('appUpdate')) return;
+
   const btn = document.getElementById('btn-update');
   const label = btn.querySelector('.update-label');
   const { status, newVersion, percent } = updater.update;
@@ -331,11 +352,16 @@ async function onDeviceConnected(info) {
 
   // Qué firmware hay publicado para este teclado. No bloquea: si GitHub no
   // contesta, la tarjeta de Ajustes lo dirá y no pasa nada más.
-  firmware.check()?.then((st) => {
-    if (st?.available) {
-      toast(`Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
-    }
-  }).catch(() => {});
+  //
+  // Actualizar el firmware exige copiar un .uf2 en la unidad USB que aparece al
+  // reiniciar en modo carga: eso el navegador no puede hacerlo.
+  if (platform.can('firmwareUpdate')) {
+    firmware.check()?.then((st) => {
+      if (st?.available) {
+        toast(`Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
+      }
+    }).catch(() => {});
+  }
 }
 
 function wireDevice() {

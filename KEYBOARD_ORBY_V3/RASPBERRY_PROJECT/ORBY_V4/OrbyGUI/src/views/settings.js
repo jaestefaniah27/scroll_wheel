@@ -10,6 +10,7 @@ import * as wheelDial from '../wheel-dial.js';
 import * as plugins from '../plugins.js';
 import * as compat from '../compat.js';
 import * as firmware from '../firmware.js';
+import * as platform from '../platform.js';
 import { icon } from '../icons.js';
 import * as dashboard from './dashboard.js';
 
@@ -30,6 +31,24 @@ function backupBusy(message) {
 }
 
 export function init() {
+  // Las tarjetas que dependen del PC se ocultan enteras en vez de deshabilitarse: un
+  // interruptor de autoarranque de Windows dentro de una pestaña de Chrome no es un
+  // ajuste apagado, es un ajuste que no significa nada.
+  //
+  // Va antes de los addEventListener porque los botones de dentro dejan de existir a
+  // efectos prácticos: engancharlos igual no rompe nada, pero deja manejadores vivos
+  // que llaman a un window.orby que aquí no hace nada.
+  const ocultarSiFalta = (capacidad, selector) => {
+    if (platform.can(capacidad)) return true;
+    document.querySelector(selector)?.classList.add('hidden');
+    return false;
+  };
+
+  const hayAutostart = ocultarSiFalta('autostart', '#settings-autostart');
+  const hayPlugins   = ocultarSiFalta('plugins', '#settings-plugins');
+  ocultarSiFalta('appUpdate', '#settings-app');
+  ocultarSiFalta('firmwareUpdate', '#settings-firmware');
+
   document.getElementById('btn-backup-save').addEventListener('click', () => runExport(backupBusy));
   document.getElementById('btn-backup-load').addEventListener('click', () => runImport(backupBusy));
 
@@ -48,8 +67,8 @@ export function init() {
     });
   });
 
-  initAutostart();
-  initPlugins();
+  if (hayAutostart) initAutostart();
+  if (hayPlugins) initPlugins();
 
   document.getElementById('btn-reconnect').addEventListener('click', () => {
     window.orby.reconnect();
@@ -109,6 +128,9 @@ function initAppCard() {
 }
 
 function renderAppCard() {
+  // render() se llama en cada notify(): sin appUpdate estos elementos ni existen.
+  if (!platform.can('appUpdate')) return;
+
   const version = document.getElementById('app-version');
   const status = document.getElementById('app-update-status');
   const install = document.getElementById('btn-install-update');
@@ -181,6 +203,9 @@ function initFirmwareCard() {
 }
 
 function renderFirmwareCard() {
+  // render() se llama en cada notify(): sin firmwareUpdate estos elementos ni existen.
+  if (!platform.can('firmwareUpdate')) return;
+
   const current = document.getElementById('fw-current');
   if (!current) return;
 
@@ -329,6 +354,8 @@ async function runPluginTest(id, btn) {
 }
 
 function renderPlugins() {
+  // render() se llama en cada notify(): sin plugins estos elementos ni existen.
+  if (!platform.can('plugins')) return;
   renderPluginList();
   renderPluginCards();
 }
