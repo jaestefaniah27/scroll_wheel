@@ -88,6 +88,11 @@ se cree la versión que anuncia el teclado y no la de la etiqueta, así que el
 
 ## Actualizar desde la app
 
+**Funciona, probado sobre el teclado real.** Con un Orby en la 4.2 y la 4.3
+publicada como release, OrbyGUI detectó la versión nueva al conectar, la
+descargó y la instaló entera **sin tocar el botón BOOTSEL**. Es el camino
+recomendado: `flash.ps1` solo hace falta para probar una compilación local.
+
 **Ajustes → Firmware del teclado.** La app mira las releases `fw-v*` del
 repositorio, se queda con la más alta que no pase de `FW_RECOMMENDED` (nunca
 ofrece un firmware que ella no sabría manejar), la descarga y la instala.
@@ -114,7 +119,13 @@ hubiera en RAM, variaciones por aplicación incluidas.
 
 ## Instalar el firmware a mano
 
-Con el `.uf2` de la release, o con el que sale de `.\flash.ps1` en local:
+`.\flash.ps1` compila y flashea sin que haya que pulsar nada: manda el mismo
+comando `BOOTSEL` que la app (busca el puerto por `VID_CAFE`) y copia el `.uf2`
+en cuanto sale la unidad. **Cierra OrbyGUI antes**, o tendrá el puerto cogido y
+el script caerá al método manual.
+
+Ese método manual sigue ahí para un firmware anterior al 4.2, o para un teclado
+que se quedó a medias:
 
 1. Conectar el teclado con **BOOTSEL** pulsado.
 2. Copiar el `.uf2` a la unidad `RPI-RP2`.

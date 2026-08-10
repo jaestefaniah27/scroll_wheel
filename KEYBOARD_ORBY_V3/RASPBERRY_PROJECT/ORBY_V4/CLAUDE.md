@@ -13,11 +13,17 @@ abrir apps, complementos).
 
 ### Firmware
 ```powershell
-.\flash.ps1          # compila + espera a la Pico en BOOTSEL + copia el .uf2
+.\flash.ps1          # compila + mete la Pico en modo carga + copia el .uf2
 cmake -B build -G Ninja && cmake --build build    # solo compilar
 ```
-Salida: `build/ORBY_V4.uf2`. `flash.ps1` busca el volumen por etiqueta `RPI-RP2`
-(la letra de unidad la asigna Windows y cambia).
+Salida: `build/ORBY_V4.uf2`.
+
+**No hace falta pulsar BOOTSEL.** `flash.ps1` busca el puerto CDC del teclado por
+VID (`VID_CAFE`, cualquier PID) y le manda el comando `BOOTSEL`, igual que hace
+OrbyGUI. Cae al método manual si el teclado lleva un firmware anterior al 4.2, si
+no está enchufado, o si **OrbyGUI tiene el puerto cogido** — ciérrala antes.
+El volumen se busca por etiqueta `RPI-RP2` o por su `INFO_UF2.TXT`, no por letra
+(la asigna Windows y cambia).
 
 ### OrbyGUI
 ```bash

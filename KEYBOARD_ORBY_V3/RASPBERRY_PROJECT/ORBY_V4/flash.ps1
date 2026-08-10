@@ -37,9 +37,8 @@ try {
 $uf2_path = ".\build\ORBY_V4.uf2"
 
 Write-Host "`n=========================================" -ForegroundColor Cyan
-Write-Host "2. Esperando a la Raspberry Pi Pico..." -ForegroundColor Cyan
+Write-Host "2. Poniendo el teclado en modo de carga..." -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "Por favor, mantén pulsado BOOTSEL y conecta la Pico al USB." -ForegroundColor Yellow
 
 # La letra de unidad la asigna Windows y no siempre es la misma: buscamos el
 # volumen por su etiqueta (o por el INFO_UF2.TXT que la Pico deja en la raíz).
@@ -58,20 +57,107 @@ function Find-PicoDrive {
     return $null
 }
 
-$target_drive = $null
-while (-not $target_drive) {
-    $target_drive = Find-PicoDrive
-    if (-not $target_drive) {
-        Start-Sleep -Seconds 1
-        Write-Host "." -NoNewline -ForegroundColor Gray
+# El puerto CDC del teclado. Se busca por VID y no por PID: el firmware sube el
+# PID cada vez que cambia la estructura de un informe HID, así que la lista de
+# PIDs se quedaría corta a la primera. Mismo criterio que KNOWN_IDS en
+# OrbyGUI/electron/serial.js.
+function Find-OrbyPort {
+    $dispositivos = Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+                    Where-Object { $_.PNPClass -eq 'Ports' -and $_.PNPDeviceID -like '*VID_CAFE*' }
+    foreach ($d in $dispositivos) {
+        if ($d.Name -match '\((COM\d+)\)') { return $Matches[1] }
+    }
+    return $null
+}
+
+# Desde el firmware 4.2 el teclado sabe reiniciarse solo en el cargador de la
+# ROM: se le manda BOOTSEL por el puerto serie y sale como unidad RPI-RP2. Es lo
+# mismo que hace OrbyGUI al actualizar (ver OrbyGUI/electron/firmware.js), y
+# ahorra tener que desenchufar el cable con el botón hundido.
+#
+# Devuelve $true solo si el comando llegó a salir. Todo lo demás —firmware
+# anterior al 4.2, teclado desenchufado, puerto ocupado— cae al camino de
+# siempre: pedirlo a mano y esperar.
+function Request-Bootloader {
+    $com = Find-OrbyPort
+    if (-not $com) {
+        Write-Host "[ .. ] No se ve el teclado en ningún puerto COM." -ForegroundColor Gray
+        return $false
+    }
+
+    Write-Host "[ .. ] Teclado en $com. Pidiéndole que entre en modo de carga..." -ForegroundColor Gray
+    $puerto = $null
+    try {
+        # La velocidad da igual en un CDC (no hay UART detrás), pero el objeto la
+        # exige. El firmware corta la línea con \r o con \n, así que WriteLine
+        # vale tal cual.
+        $puerto = New-Object System.IO.Ports.SerialPort $com, 115200
+        $puerto.Open()
+        $puerto.WriteLine("BOOTSEL")
+        # Sin esta pausa se cierra el puerto antes de que el búfer salga por el
+        # cable y el teclado no llega a ver el comando.
+        Start-Sleep -Milliseconds 300
+        return $true
+    } catch {
+        # El caso habitual: OrbyGUI está abierto y tiene el puerto cogido. No es
+        # un fallo del script, y además desde la app se puede actualizar igual.
+        Write-Host "[ !! ] No se pudo abrir $com ($($_.Exception.Message))." -ForegroundColor Yellow
+        Write-Host "       Si OrbyGUI está abierto, ciérralo y vuelve a intentarlo." -ForegroundColor Yellow
+        return $false
+    } finally {
+        if ($puerto -and $puerto.IsOpen) { $puerto.Close() }
+        if ($puerto) { $puerto.Dispose() }
     }
 }
 
-Write-Host "`n[ OK ] Pico detectada en $target_drive. Copiando firmware..." -ForegroundColor Green
+# Puede estar ya en modo de carga (un intento anterior que se quedó a medias, o
+# el usuario se adelantó con el botón). Entonces no hay teclado al que pedirle
+# nada y preguntar solo serviría para perder tiempo.
+$target_drive = Find-PicoDrive
+if ($target_drive) {
+    Write-Host "[ OK ] Ya estaba en modo de carga." -ForegroundColor Green
+} else {
+    $automatico = Request-Bootloader
+    if (-not $automatico) {
+        Write-Host "`nPor favor, mantén pulsado BOOTSEL y conecta la Pico al USB." -ForegroundColor Yellow
+    }
+
+    # El margen corto es para el camino automático (el teclado tarda un par de
+    # segundos en reenumerar); el largo, para el manual, que incluye buscar el
+    # botón y enchufar el cable.
+    $limite = (Get-Date).AddSeconds($(if ($automatico) { 20 } else { 120 }))
+    while (-not $target_drive -and (Get-Date) -lt $limite) {
+        Start-Sleep -Milliseconds 500
+        $target_drive = Find-PicoDrive
+        if (-not $target_drive) { Write-Host "." -NoNewline -ForegroundColor Gray }
+    }
+
+    if (-not $target_drive) {
+        Write-Host "`n[ ERROR ] El teclado no ha aparecido en modo de carga." -ForegroundColor Red
+        if ($automatico) {
+            Write-Host "          El comando BOOTSEL salió, así que puede ser un firmware anterior al 4.2." -ForegroundColor Red
+            Write-Host "          Enchúfalo con el botón pulsado y vuelve a lanzar el script." -ForegroundColor Red
+        }
+        exit 1
+    }
+}
+
+Write-Host "`n=========================================" -ForegroundColor Cyan
+Write-Host "3. Copiando el firmware a $target_drive" -ForegroundColor Cyan
+Write-Host "=========================================" -ForegroundColor Cyan
 
 try {
     Copy-Item -Path $uf2_path -Destination $target_drive
     Write-Host "[ OK ] ¡Flasheo completado! La Pico se reiniciará sola." -ForegroundColor Green
 } catch {
-    Write-Host "[ ERROR ] Fallo al transferir el firmware a la unidad $target_drive." -ForegroundColor Red
+    # La Pico se reinicia en cuanto recibe el último bloque, así que la unidad
+    # puede desaparecer bajo los pies de Windows antes de que se cierre el
+    # fichero. Eso no es un fallo: el fallo es que la unidad siga ahí después.
+    Start-Sleep -Milliseconds 500
+    if (Find-PicoDrive) {
+        Write-Host "[ ERROR ] Fallo al transferir el firmware a la unidad $target_drive." -ForegroundColor Red
+        Write-Host "          $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[ OK ] ¡Flasheo completado! La Pico se reiniciará sola." -ForegroundColor Green
 }
