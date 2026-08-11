@@ -93,6 +93,8 @@ Comprobado el 2026-08-11. **No hay que reimplementarlo.**
 | Agrupado de giros (`coalesce`) | `.../src/plugins/coalesce.rs` | Hecho, 8 tests |
 | Manifiesto de lampdesk en API 2 | `.../tests/fixtures/lampdesk-api2.plugin.json` | Escrito; la Tarea 10 lo pone en su sitio |
 | Máquina de estados del serie (**Tarea 3, paso 1**) | `.../src/serie.rs` | Hecho, 16 tests |
+| Montaje de peticiones de complemento | `.../src/plugins/peticion.rs` | Hecho, 14 tests |
+| Presupuesto de refresco de las OLED (**Tarea 11, paso 4**) | `.../src/plugins/oled.rs` | Hecho, 9 tests |
 
 Las pruebas del primer bloque se contrastaron ejecutando las implementaciones JS actuales
 con las mismas entradas: coinciden caso por caso. Y el descriptor de complementos se
@@ -101,7 +103,7 @@ así que la igualdad con lo que ve hoy el renderer está comprobada, no supuesta
 
 ```bash
 cd OrbyGUI/src-tauri/crates/orby-core && cargo test
-# Esperado: 68 passed (lib) + 5 passed (descriptor_lampdesk)
+# Esperado: 91 passed (lib) + 5 passed (descriptor_lampdesk)
 
 cd OrbyGUI && node --test test/*.mjs
 # Esperado: # pass 14

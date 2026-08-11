@@ -15,8 +15,12 @@
 
 pub mod coalesce;
 pub mod manifiesto;
+pub mod oled;
+pub mod peticion;
 pub mod plantilla;
 
 pub use coalesce::{Agrupador, Envio};
 pub use manifiesto::{Manifiesto, Tipo, API_VERSION};
+pub use oled::{Arbitro, Imagen};
+pub use peticion::{construye, construye_test, Peticion};
 pub use plantilla::{render, Contexto};
