@@ -79,6 +79,14 @@ function leerElectron() {
   return { version: version[1] };
 }
 
+// La vía Tauri no está en todas las ramas: es un port en marcha y en main
+// todavía no existe. Sin esta comprobación, el panel abierto en una rama sin
+// src-tauri enseñaría un error rojo en vez de decir simplemente que ahí no hay
+// esa vía.
+function hayTauri() {
+  return fs.existsSync(RUTAS.tauriConf) && fs.existsSync(RUTAS.cargoToml);
+}
+
 // Tauri lleva el número en dos sitios que tienen que decir lo mismo: el
 // tauri.conf.json (el que acaba en el instalador) y el Cargo.toml (el que
 // compila el binario). Se devuelven los dos para poder avisar si se han
@@ -358,6 +366,7 @@ module.exports = {
   RUTAS,
   leerFirmware,
   leerElectron,
+  hayTauri,
   leerTauri,
   leerFwRecomendado,
   leerInstalada,

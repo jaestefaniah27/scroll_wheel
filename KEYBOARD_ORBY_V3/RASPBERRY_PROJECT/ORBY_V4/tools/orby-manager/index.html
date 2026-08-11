@@ -870,6 +870,9 @@
       if (el) el.disabled = corriendo;
     });
     document.querySelectorAll('.btn-herramienta').forEach(function (b) { b.disabled = corriendo; });
+    // El bump de Tauri tiene además su propio motivo para estar deshabilitado
+    // (rama sin ese port), que el candado no puede pisar al soltarse.
+    if (ultimasVersiones.hayTauri === false) $('btn-bump-tauri').disabled = true;
     actualizarBotonCommitPush();
   }
 
@@ -892,7 +895,14 @@
     tarjeta.classList.remove('aviso', 'error');
     var val = tarjeta.querySelector('.valor');
     var detExistente = tarjeta.querySelector('.detalle');
-    if (v.appTauri && v.appTauriCargo && v.appTauri !== v.appTauriCargo) {
+    // El port de Tauri no está en todas las ramas (en main todavía no): eso no
+    // es un fallo que pintar en rojo, es que ahí esa vía no existe.
+    if (v.hayTauri === false) {
+      textoSeguro(val, '—');
+      if (!detExistente) { detExistente = crear('div', 'detalle'); tarjeta.appendChild(detExistente); }
+      textoSeguro(detExistente, 'esta rama no trae la vía Tauri');
+      $('btn-bump-tauri').disabled = true;
+    } else if (v.appTauri && v.appTauriCargo && v.appTauri !== v.appTauriCargo) {
       tarjeta.classList.add('error');
       textoSeguro(val, v.appTauri + ' / ' + v.appTauriCargo);
       if (!detExistente) { detExistente = crear('div', 'detalle'); tarjeta.appendChild(detExistente); }

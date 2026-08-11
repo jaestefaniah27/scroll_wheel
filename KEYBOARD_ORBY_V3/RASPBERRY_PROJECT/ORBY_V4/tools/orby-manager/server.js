@@ -145,18 +145,23 @@ function calcularAvisos(v) {
 
 async function construirEstado(forzarTeclado = false) {
   const v = {
-    firmwareRepo: null, appElectron: null, appTauri: null, appTauriCargo: null,
+    firmwareRepo: null, appElectron: null, appTauri: null, appTauriCargo: null, hayTauri: false,
     fwRecomendado: null, appInstalada: null, instaladaError: null, teclado: null,
   };
   const fallos = [];
 
   try { v.firmwareRepo = versiones.leerFirmware().version; } catch (err) { fallos.push(err.message); }
   try { v.appElectron = versiones.leerElectron().version; } catch (err) { fallos.push(err.message); }
-  try {
-    const tauri = versiones.leerTauri();
-    v.appTauri = tauri.version;
-    v.appTauriCargo = tauri.cargo;
-  } catch (err) { fallos.push(err.message); }
+  // En una rama sin el port de Tauri no hay nada que leer, y no es un fallo:
+  // se deja en null y la tarjeta lo dice.
+  v.hayTauri = versiones.hayTauri();
+  if (v.hayTauri) {
+    try {
+      const tauri = versiones.leerTauri();
+      v.appTauri = tauri.version;
+      v.appTauriCargo = tauri.cargo;
+    } catch (err) { fallos.push(err.message); }
+  }
   try { v.fwRecomendado = versiones.leerFwRecomendado(); } catch (err) { fallos.push(err.message); }
 
   const instalada = await versiones.leerInstalada();
