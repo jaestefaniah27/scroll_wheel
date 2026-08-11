@@ -87,13 +87,23 @@ Comprobado el 2026-08-11. **No hay que reimplementarlo.**
 | Fusión de configuración + valores por defecto | `.../src/config.rs` | Hecho, 5 tests |
 | Comparación de versiones de firmware | `.../src/fw.rs` | Hecho, 4 tests |
 | Saludo, `MACRO:<id>`, `CAMBIA_ALGO` | `.../src/protocolo.rs` | Hecho, 4 tests |
+| Costura del frontend (**Tarea 1 entera**) | `src/entry.js`, `src/tauri-main.js`, `src/tauri/orby-tauri.js`, `src/platform.js` | Hecho, con `test/superficie-orby.test.mjs` |
+| Manifiesto de complementos y descriptor | `.../src/plugins/manifiesto.rs` | Hecho, 18 tests |
+| Plantillas `{{...}}` | `.../src/plugins/plantilla.rs` | Hecho, 12 tests |
+| Agrupado de giros (`coalesce`) | `.../src/plugins/coalesce.rs` | Hecho, 8 tests |
+| Manifiesto de lampdesk en API 2 | `.../tests/fixtures/lampdesk-api2.plugin.json` | Escrito; la Tarea 10 lo pone en su sitio |
 
-Las 17 pruebas se contrastaron ejecutando las implementaciones JS actuales con las mismas
-entradas: coinciden caso por caso.
+Las pruebas del primer bloque se contrastaron ejecutando las implementaciones JS actuales
+con las mismas entradas: coinciden caso por caso. Y el descriptor de complementos se
+compara contra un fichero de referencia **generado desde el propio `electron/plugins.js`**,
+así que la igualdad con lo que ve hoy el renderer está comprobada, no supuesta.
 
 ```bash
 cd OrbyGUI/src-tauri/crates/orby-core && cargo test
-# Esperado: test result: ok. 17 passed
+# Esperado: 51 passed (lib) + 5 passed (descriptor_lampdesk)
+
+cd OrbyGUI && node --test test/*.mjs
+# Esperado: # pass 14
 ```
 
 ---
@@ -837,16 +847,24 @@ que un giro rápido son veinte disparos; agruparlos no es un lujo.
 - [ ] `test` con `retries: 1` reintenta **una vez y solo una**.
 - [ ] `run` **no reintenta nunca**: un incremento repetido se aplicaría dos veces.
 
-- [ ] **Paso 5: reescribir lampdesk**
+- [ ] **Paso 5: poner lampdesk en su sitio**
 
-Traducir `plugins/lampdesk/main.js` (227 líneas de JS) a un `plugin.json`. Las
-equivalencias de sus acciones: `toggle`→`on=toggle`, `on`→`on=1`, `off`→`on=0`,
-`brightness_delta`→`dbrightness={{value}}`, `color_delta`→`dcolor={{value}}`,
-`brightness_set`→`brightness={{value}}`, `color_set`→`color={{value}}`; los visores leen
-`/state` y sacan `brightness` y `color`. `timeoutMs: 4000`, `coalesce.ms: 120` en los dos
-`_delta`, `retries: 1` en `test`.
+**Ya está escrito**, en
+`src-tauri/crates/orby-core/tests/fixtures/lampdesk-api2.plugin.json`, y el test de
+descriptor lo usa. Está ahí y no en `plugins/lampdesk/` porque el de allí sigue siendo
+el de la API 1: **la app de Electron tiene que seguir funcionando** hasta la Tarea 13, y
+un mismo fichero no puede declarar las dos versiones.
 
-Su lista de `HOSTS_MUERTOS` **no se porta**: era un apaño de la época de desarrollo.
+Lo que toca aquí es: copiarlo a `plugins/lampdesk/plugin.json`, **borrar
+`plugins/lampdesk/main.js`** y cambiar en el test de descriptor el `include_str!` para
+que apunte al manifiesto de verdad en vez de a la copia.
+
+Ya está resuelto en él: `timeoutMs: 4000`, `coalesce.ms: 120` en los dos `_delta`,
+`retries: 1` en `test`, y las equivalencias `toggle`→`on=toggle`, `on`→`on=1`,
+`off`→`on=0`, `brightness_delta`→`dbrightness={{value}}`, `color_delta`→`dcolor={{value}}`,
+`brightness_set`→`brightness={{value}}`, `color_set`→`color={{value}}`, con los visores
+leyendo `/state`. Su lista de `HOSTS_MUERTOS` **no se portó**: era un apaño de la época
+de desarrollo.
 
 - [ ] **Paso 6: instalación**
 

@@ -1,0 +1,125 @@
+{
+  "id": "lampdesk",
+  "name": "Lámpara LampDesk",
+  "version": "2.0.0",
+  "description": "Enciende, apaga y regula una lámpara LampDesk por la red desde cualquier tecla o mando.",
+  "author": "Jorge Estefanía",
+  "icon": "sun",
+  "enabled": true,
+  "error": null,
+  "actions": [
+    {
+      "op": "toggle",
+      "label": "Encender / apagar",
+      "targets": [
+        "key",
+        "click"
+      ],
+      "step": 0,
+      "hint": "",
+      "value": null
+    },
+    {
+      "op": "on",
+      "label": "Encender",
+      "targets": [
+        "key",
+        "click"
+      ],
+      "step": 0,
+      "hint": "",
+      "value": null
+    },
+    {
+      "op": "off",
+      "label": "Apagar",
+      "targets": [
+        "key",
+        "click"
+      ],
+      "step": 0,
+      "hint": "",
+      "value": null
+    },
+    {
+      "op": "brightness_delta",
+      "label": "Brillo de la lámpara",
+      "targets": [
+        "turn"
+      ],
+      "step": 5,
+      "hint": "",
+      "value": null
+    },
+    {
+      "op": "color_delta",
+      "label": "Color de la lámpara",
+      "targets": [
+        "turn"
+      ],
+      "step": 5,
+      "hint": "",
+      "value": null
+    },
+    {
+      "op": "brightness_set",
+      "label": "Fijar brillo",
+      "targets": [
+        "key",
+        "click"
+      ],
+      "step": 0,
+      "hint": "",
+      "value": {
+        "min": 0,
+        "max": 100,
+        "step": 5,
+        "default": 50
+      }
+    },
+    {
+      "op": "color_set",
+      "label": "Fijar color",
+      "targets": [
+        "key",
+        "click"
+      ],
+      "step": 0,
+      "hint": "",
+      "value": {
+        "min": 0,
+        "max": 100,
+        "step": 5,
+        "default": 50
+      }
+    }
+  ],
+  "views": [
+    {
+      "op": "brightness_view",
+      "label": "Brillo actual",
+      "icon": "sun"
+    },
+    {
+      "op": "color_view",
+      "label": "Color actual",
+      "icon": "moon"
+    }
+  ],
+  "hasRead": true,
+  "settings": {
+    "description": "Dirección y puerto de la lámpara en la red. El 8080 lo sirve su firmware; el 80 lo ocupa HomeKit dentro de la propia lámpara. Las órdenes las manda el PC, así que OrbyGUI tiene que estar abierto.",
+    "hasTest": true,
+    "fields": [
+      {
+        "key": "host",
+        "label": "Dirección de la lámpara",
+        "type": "text",
+        "placeholder": "192.168.1.35:8080",
+        "hint": "",
+        "options": []
+      }
+    ]
+  },
+  "values": {}
+}

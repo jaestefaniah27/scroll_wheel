@@ -7,4 +7,5 @@
 pub mod config;
 pub mod fw;
 pub mod lines;
+pub mod plugins;
 pub mod protocolo;
