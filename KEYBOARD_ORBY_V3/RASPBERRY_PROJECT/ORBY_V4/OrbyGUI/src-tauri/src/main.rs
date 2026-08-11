@@ -9,6 +9,7 @@ mod config;
 mod dialog;
 mod firmware;
 mod foreground;
+mod log;
 mod macros;
 mod mouse;
 mod plugins;

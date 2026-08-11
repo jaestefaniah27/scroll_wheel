@@ -14,6 +14,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::log::log;
 use orby_core::lines::split_lines;
 use orby_core::protocolo::DeviceInfo;
 use orby_core::serie::{Evento, Maquina, Salida};
@@ -39,6 +40,20 @@ const TIC_MS: u64 = 20;
 
 /// Con el puerto cerrado no hay nada que leer y el pulso rápido no aporta nada.
 const REPOSO_MS: u64 = 200;
+
+/// Lo que se le da al teclado para tragar una escritura. Nada que ver con `TIC_MS`: el
+/// firmware se queda ~120 ms sin atender el USB cada vez que escribe en Flash (borrar y
+/// programar 8 KB, `write_oled_slice` en main.cpp), y con el plazo del pulso Windows
+/// devolvía ERROR_SEM_TIMEOUT y la conexión se caía sola. Con este margen ese caso deja
+/// de darse; si aun así se agota, es que el teclado está de verdad atascado.
+const ESCRITURA_MS: u64 = 2_000;
+
+/// Windows cuenta el plazo de escritura agotado como ERROR_SEM_TIMEOUT (121), no como un
+/// `TimedOut` de los que Rust clasifica. Sin mirar el número crudo se cuela por el mismo
+/// sitio que un desenchufado de verdad, que es lo que tiraba la conexión.
+fn es_plazo(e: &std::io::Error) -> bool {
+    e.kind() == ErrorKind::TimedOut || e.raw_os_error() == Some(121)
+}
 
 /// Lo que el hilo del puerto comparte con los comandos del renderer.
 #[derive(Default)]
@@ -112,6 +127,15 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
     let mut resto = String::new();
     let mut buf = [0u8; 1024];
 
+    // Todo lo que va al teclado pasa por aquí, venga del renderer o de la máquina de
+    // estados: un único escritor y una única cola. Antes la máquina escribía directa al
+    // puerto desde `aplicar`, y su `ACK\n` podía colarse en mitad de una línea larga que
+    // se hubiera quedado a medias (`OLED_CHUNK` son ~200 bytes y no siempre entran de una
+    // vez). El firmware la parseaba truncada: se veía como `OLED:OK:1:3:0:24` en vez de
+    // los 90 bytes del trozo. En bytes y no en líneas porque una escritura parcial corta
+    // por donde quiere, no por el salto de línea.
+    let mut por_escribir: VecDeque<u8> = VecDeque::new();
+
     let mut ultimo_tic = Instant::now();
     let mut proximo_rastreo = Instant::now();
     // Se rota entre los candidatos en vez de probar siempre el primero: con dos puertos
@@ -127,7 +151,7 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
         ultimo_tic = ahora;
         if delta > 0 {
             let salidas = maquina.al_pasar_tiempo(delta);
-            aplicar(salidas, &app, &compartido, &mut puerto, &mut resto, &ruta);
+            aplicar(salidas, &app, &compartido, &mut puerto, &mut por_escribir, &mut resto, &ruta);
         }
 
         // El botón «Reconectar» tiene que forzar un intento YA: el caso que cubre es
@@ -141,25 +165,69 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
             if puerto.is_some() {
                 puerto = None;
                 resto.clear();
+                por_escribir.clear();
                 let salidas = maquina.al_cerrarse();
-                aplicar(salidas, &app, &compartido, &mut puerto, &mut resto, &ruta);
+                aplicar(salidas, &app, &compartido, &mut puerto, &mut por_escribir, &mut resto, &ruta);
             }
             proximo_rastreo = ahora;
         }
 
         if let Some(p) = puerto.as_mut() {
-            // Lo que el renderer haya encolado desde la última vuelta.
-            let pendientes: Vec<String> = {
+            // Lo que el renderer haya encolado desde la última vuelta, al final de la cola
+            // de bytes: detrás de lo que la máquina de estados ya hubiera puesto y de lo
+            // que quedara a medias de la vuelta anterior.
+            {
                 let mut c = compartido.lock().unwrap();
-                c.salientes.drain(..).collect()
-            };
-            let mut se_rompio = false;
-            for linea in pendientes {
-                if p.write_all(linea.as_bytes()).is_err() {
-                    se_rompio = true;
-                    break;
+                for linea in c.salientes.drain(..) {
+                    por_escribir.extend(linea.as_bytes());
                 }
             }
+
+            let mut se_rompio = false;
+            // El plazo del puerto es el pulso del hilo (20 ms), y `serialport` lo usa para
+            // leer **y** para escribir: no se pueden separar por su API. Escribir con 20 ms
+            // es lo que tiraba la conexión, porque el firmware se queda ~120 ms sin atender
+            // el USB mientras escribe en Flash (`write_oled_slice`, main.cpp) y Windows
+            // devuelve entonces ERROR_SEM_TIMEOUT. Así que se alarga solo mientras se
+            // escribe y se vuelve a dejar corto para que la lectura siga marcando el pulso.
+            if !por_escribir.is_empty() {
+                let _ = p.set_timeout(Duration::from_millis(ESCRITURA_MS));
+            }
+            while !por_escribir.is_empty() {
+                // `as_slices().0` nunca está vacío si la cola no lo está.
+                let frente = por_escribir.as_slices().0;
+                match p.write(frente) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        por_escribir.drain(..n);
+                    }
+                    // Agotar el plazo tampoco ahora es un teclado desenchufado, solo uno que
+                    // no traga. Pero al fallar, `serialport` tira el número de bytes que sí
+                    // llegaron, así que no se puede reanudar por donde iba: reintentar
+                    // duplicaría lo ya enviado. Se abandona el comando hasta el salto de
+                    // línea, que deja el flujo cuadrado en la frontera siguiente; quien lo
+                    // pidió lo verá vencer y lo repetirá entero, que es lo correcto.
+                    Err(e) if es_plazo(&e) => {
+                        log!("[serie] {ruta} no traga: se abandona un comando ({e})");
+                        let corte = por_escribir.iter().position(|&b| b == b'\n');
+                        match corte {
+                            Some(i) => drop(por_escribir.drain(..=i)),
+                            None => por_escribir.clear(),
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        log!("[serie] {ruta} CAIDA por error de ESCRITURA: {e}");
+                        se_rompio = true;
+                        break;
+                    }
+                }
+            }
+
+            // Vuelta al plazo corto: es el que hace que el hilo duerma dentro del `read` en
+            // vez de girar en vacío, y con los 2 s de la escritura el bucle iría a paso de
+            // tortuga cada vez que el teclado no dijera nada.
+            let _ = p.set_timeout(Duration::from_millis(TIC_MS));
 
             if !se_rompio {
                 match p.read(&mut buf) {
@@ -170,7 +238,7 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
                         resto = nuevo;
                         for linea in lineas {
                             let salidas = maquina.al_recibir(&linea);
-                            aplicar(salidas, &app, &compartido, &mut puerto, &mut resto, &ruta);
+                            aplicar(salidas, &app, &compartido, &mut puerto, &mut por_escribir, &mut resto, &ruta);
                             // Una de esas líneas pudo hacer que se soltara el puerto.
                             if puerto.is_none() {
                                 break;
@@ -180,7 +248,7 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
                     // El plazo de lectura es el pulso del hilo: agotarlo es lo normal.
                     Err(e) if e.kind() == ErrorKind::TimedOut => {}
                     Err(e) => {
-                        eprintln!("[serie] {ruta} dejó de responder: {e}");
+                        log!("[serie] {ruta} CAIDA por error de LECTURA: {e}");
                         se_rompio = true;
                     }
                 }
@@ -192,8 +260,9 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
                 // queda un handle huérfano.
                 puerto = None;
                 resto.clear();
+                por_escribir.clear();
                 let salidas = maquina.al_cerrarse();
-                aplicar(salidas, &app, &compartido, &mut puerto, &mut resto, &ruta);
+                aplicar(salidas, &app, &compartido, &mut puerto, &mut por_escribir, &mut resto, &ruta);
                 proximo_rastreo = Instant::now() + Duration::from_millis(RASTREO_MS);
             }
         } else if ahora >= proximo_rastreo {
@@ -209,9 +278,12 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
                         eprintln!("[serie] probando {elegido}");
                         ruta = elegido;
                         resto.clear();
+                        // Lo que quedara a medias iba a la conexión anterior: mandarlo
+                        // ahora sería empezar la nueva con media línea sin sentido.
+                        por_escribir.clear();
                         puerto = Some(p);
                         let salidas = maquina.al_abrir();
-                        aplicar(salidas, &app, &compartido, &mut puerto, &mut resto, &ruta);
+                        aplicar(salidas, &app, &compartido, &mut puerto, &mut por_escribir, &mut resto, &ruta);
                         // El saludo empieza a contar ahora, no desde el rastreo.
                         ultimo_tic = Instant::now();
                     }
@@ -262,6 +334,7 @@ fn aplicar(
     app: &AppHandle,
     compartido: &Arc<Mutex<Compartido>>,
     puerto: &mut Option<Box<dyn SerialPort>>,
+    por_escribir: &mut VecDeque<u8>,
     resto: &mut String,
     ruta: &str,
 ) {
@@ -275,14 +348,20 @@ fn aplicar(
                 #[cfg(debug_assertions)]
                 eprintln!("[serie] >> {}", texto.trim_end());
 
-                if let Some(p) = puerto.as_mut() {
-                    let _ = p.write_all(texto.as_bytes());
+                // A la cola, no al puerto. Escribir aquí directamente metía estos cuatro
+                // bytes en mitad de la línea que el bucle tuviera a medias.
+                if puerto.is_some() {
+                    por_escribir.extend(texto.as_bytes());
                 }
             }
             Salida::SoltarPuerto => {
-                eprintln!("[serie] se suelta {ruta}");
+                // Lo pide la máquina de estados, no el puerto: o el vigilante dio la
+                // conexión por muerta (12 s de silencio + 4 s sin contestar al ACK), o el
+                // saludo se rindió. Se distingue de las dos caídas por E/S de arriba.
+                log!("[serie] {ruta} lo suelta la MAQUINA (vigilante o saludo)");
                 *puerto = None;
                 resto.clear();
+                por_escribir.clear();
                 let mut c = compartido.lock().unwrap();
                 c.conectado = false;
                 c.info = None;
@@ -302,8 +381,8 @@ fn emitir(app: &AppHandle, compartido: &Arc<Mutex<Compartido>>, evento: Evento, 
                 c.conectado = true;
                 c.info = Some(json.clone());
             }
-            eprintln!(
-                "[serie] teclado detectado: fw {} en {ruta}",
+            log!(
+                "[serie] CONECTADO: fw {} en {ruta}",
                 info.get("fw").unwrap_or("?")
             );
             let _ = app.emit("serial:connected", json);
@@ -316,6 +395,9 @@ fn emitir(app: &AppHandle, compartido: &Arc<Mutex<Compartido>>, evento: Evento, 
                 // Lo que quedara por mandar iba a un teclado que ya no está.
                 c.salientes.clear();
             }
+            // El motivo va en la línea de arriba (E/S de lectura, de escritura o la
+            // máquina): esta solo marca el momento en que la app lo dio por perdido.
+            log!("[serie] DESCONECTADO de {ruta}");
             let _ = app.emit("serial:disconnected", ());
         }
         Evento::Buscando => {
