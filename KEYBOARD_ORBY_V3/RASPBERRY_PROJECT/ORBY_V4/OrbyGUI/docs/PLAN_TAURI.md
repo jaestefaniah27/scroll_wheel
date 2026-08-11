@@ -990,14 +990,58 @@ P/Invoke contra `user32.dll`. En Rust son cuatro llamadas directas y desaparece 
 proceso hijo: `GetForegroundWindow`, `GetWindowThreadProcessId`, `GetWindowText` y
 `QueryFullProcessImageName`.
 
-- [ ] Sondeo cada **400 ms**, y emitir **solo cuando cambia** la ventana o el título.
-- [ ] Devolver `{process, title, path}`.
-- [ ] `foreground_available` da `true` en Windows.
-- [ ] Arrancar el vigilante al iniciar **solo si** `config.autoProfile.enabled`.
+- [x] Sondeo cada **400 ms**, y emitir **solo cuando cambia** la ventana o el título.
+- [x] Devolver `{process, title, path}`.
+- [x] `foreground_available` da `true` en Windows.
+- [x] Arrancar el vigilante al iniciar **solo si** `config.autoProfile.enabled`.
 
-- [ ] **Comprobación (Windows):** crear una regla que cambie de perfil al pasar a otro
-      programa; alternar entre dos programas y ver que el perfil cambia. Comprobar también
-      que con el vigilante parado no queda ningún proceso suelto.
+Cómo quedó, para no tener que releer el fichero:
+
+- **`process` es el nombre del ejecutable sin extensión**, sacado del tallo de la ruta que
+  da `QueryFullProcessImageNameW`. Es lo que daba `Get-Process.ProcessName` en Electron y
+  con lo que casan las reglas que el usuario ya tiene guardadas («altium», no
+  «altium.exe»). Ponerle la extensión las rompería todas de golpe y sin aviso.
+- **El proceso se abre con `PROCESS_QUERY_LIMITED_INFORMATION`**, no con
+  `PROCESS_QUERY_INFORMATION`: es el permiso que dejan pedir los procesos de más
+  integridad, así que la ruta también sale para lo que corra como administrador. Con el
+  otro, cualquier programa elevado aparecería sin nombre y sus reglas no encajarían nunca.
+- **Se compara por ventana y por título**, como el script de PowerShell. Dentro de un
+  navegador o de un editor el programa no cambia, cambia el título, y ahí encaja la mitad
+  de las reglas.
+- **Sin ventana con el foco no se emite nada.** Emitir un hueco al bloquear la pantalla
+  haría saltar el perfil de reserva, y el usuario se encontraría otro perfil al volver.
+- **La bandera de vida es un `Arc` por hilo, no un atómico global**: un `parar()` seguido
+  de un `arrancar()` deja al hilo viejo con su propia bandera, ya apagada, y se muere solo
+  sin que los dos se pisen. Y se vuelve a mirar justo antes de emitir: un cambio emitido
+  por un vigilante ya apagado le movería el perfil al teclado sin que nadie lo pida.
+- **El estado de comparación es del hilo**, así que parar y volver a arrancar re-emite la
+  ventana que haya delante. Es de lo que depende el botón «App en foco» del editor, que
+  arranca el vigilante y pregunta a los 300 ms.
+- **`foreground:error` no se emite nunca**, y no es un olvido: allí los errores eran del
+  proceso de PowerShell (no arrancaba, se moría, escupía por stderr) y ese proceso ya no
+  existe. Lo que puede fallar ahora —una ventana sin nombre resoluble— se resuelve
+  devolviendo campos vacíos, que es lo que hacía Electron también. El renderer sigue
+  suscrito porque el contrato es el suyo.
+
+- [x] **Comprobación (Windows, con teclado)** — hecha el 2026-08-11 sobre el teclado
+      (COM7, fw 4.6), conduciendo `window.orby` por el protocolo de depuración del webview
+      y moviendo el foco de verdad con `SetForegroundWindow` desde PowerShell.
+
+  - Alternando entre VS Code y el Bloc de notas llegan **tres** `foreground:change`: el de
+    VS Code, el del Bloc de notas y **un tercero con la misma ventana y otro título**
+    («Bloc de notas» → «Sin título: Bloc de notas»), que es la prueba de que se compara
+    también por título. Mientras nada cambia no llega nada.
+  - `{process, title, path}` con la forma exacta: `process: "Notepad"`,
+    `path: "C:\Program Files\WindowsApps\...\Notepad.exe"`.
+  - **La prueba de oro:** con la regla que ya tenía el usuario (`altium` → perfil 0) y el
+    teclado puesto a mano en el perfil 1, abrir un fichero llamado `altium.txt` en el Bloc
+    de notas devuelve el teclado al **perfil 0** solo. La cadena entera —vigilante,
+    `auto.js`, `SET_PROFILE`— funciona sin tocar el renderer.
+  - Tras `foreground.stop()`: cero eventos aunque cambie el foco, el recuento de hilos del
+    proceso baja de 15 a 14, **cero `powershell.exe`** en la máquina y `current()` sigue
+    devolviendo la última ventana vista, igual que el `this.current` de Electron.
+  - Arranque automático: reiniciada la app con `autoProfile.enabled` en `true`, `current()`
+    ya trae la ventana **sin que nadie haya llamado a `start()`**.
 
 - [ ] **Commit:** `git commit -am "feat(tauri): ventana en primer plano sin PowerShell"`
 
