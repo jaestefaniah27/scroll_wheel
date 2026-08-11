@@ -97,6 +97,9 @@ Comprobado el 2026-08-11. **No hay que reimplementarlo.**
 | Presupuesto de refresco de las OLED (**Tarea 11, paso 4**) | `.../src/plugins/oled.rs` | Hecho, 9 tests |
 | Filtrado de releases de firmware (**Tarea 9, paso 1**) | `.../src/releases.rs` | Hecho, 9 tests |
 | Crate de la app y ventana (**Tarea 2 entera**) | `src-tauri/{Cargo.toml,build.rs,tauri.conf.json,capabilities/,src/main.rs}` | Hecho, ventana comprobada a mano |
+| Traducción de teclas HID → Windows (**Tarea 6, paso 4**) | `.../src/teclas.rs` | Hecho, 7 tests |
+| Grabadora: filtrado, recorte y ritmo (**Tarea 7**) | `.../src/grabacion.rs` | Hecho, 10 tests |
+| Puente de códigos de tecla de uiohook (**Tarea 7**) | `.../src/uiohook.rs` | Hecho, 9 tests |
 
 Las pruebas del primer bloque se contrastaron ejecutando las implementaciones JS actuales
 con las mismas entradas: coinciden caso por caso. Y el descriptor de complementos se
@@ -105,7 +108,7 @@ así que la igualdad con lo que ve hoy el renderer está comprobada, no supuesta
 
 ```bash
 cd OrbyGUI/src-tauri/crates/orby-core && cargo test
-# Esperado: 100 passed (lib) + 5 passed (descriptor_lampdesk)
+# Esperado: 126 passed (lib) + 5 passed (descriptor_lampdesk)
 
 cd OrbyGUI && node --test test/*.mjs
 # Esperado: # pass 14
@@ -872,33 +875,104 @@ igual sea cual sea la distribución del teclado del usuario.
 **Comandos:** `recorder_toggle(id)`, `recorder_stop`, `recorder_status`.
 **Evento:** `recorder:state` con `{id, phase}`, donde `phase` es una **cadena**.
 
-- [ ] **Paso 1: la captura.** Ganchos de bajo nivel de Windows (`WH_KEYBOARD_LL` y
+> **El hallazgo que cambia el diseño** (2026-08-11): lo que hay guardado en `c` **no es
+> una tecla virtual de Windows**, es el código de `UiohookKey`. Electron capturaba con
+> uiohook-napi y reproducía con nut-js, y en el disco quedó el número del primero. Los
+> ganchos de bajo nivel dan teclas virtuales, así que hace falta un puente en los **dos**
+> sentidos: al grabar, para seguir escribiendo el mismo formato; al reproducir, para
+> entender las grabaciones que el usuario ya tiene. Sin él, una grabación vieja reproduce
+> teclas equivocadas y no hay ningún error que lo delate.
+>
+> Los códigos de uiohook son los scancodes del juego 1 con tres codificaciones:
+> `sc` a secas, `0xE00 | sc` para las extendidas, `0xE000 | sc` **solo para las flechas** y
+> `0xEE00 | sc` para el bloque numérico con Bloq Num apagado. La incoherencia entre
+> `0xE00` y `0xE000` es de libuiohook y se copia tal cual. La tabla está en
+> `orby-core/src/uiohook.rs`, sacada del volcado de `require('uiohook-napi').UiohookKey`
+> de esta misma instalación (124 entradas), y **no del enum de nut-js**: la traducción de
+> nut-js a teclas de Windows vive dentro de un `.node` compilado que no se distribuye.
+>
+> El puente se hace contra `(vkCode, LLKHF_EXTENDED)`, que es la pareja que sí distingue
+> el Inicio del 7 del numérico: comparten tecla virtual y solo se diferencian en esa
+> bandera.
+
+- [x] **Paso 1: la captura.** Ganchos de bajo nivel de Windows (`WH_KEYBOARD_LL` y
       `WH_MOUSE_LL`) en un **hilo propio con su bombeo de mensajes**: sin bombeo no llega
       ningún evento y el fallo es silencioso.
+      Se instalan al empezar a grabar y se quitan al parar, no al abrir la app: un gancho
+      de bajo nivel puesto siempre mete a este proceso en el camino de **cada** pulsación
+      del equipo. El hilo se para mandándole un `WM_QUIT` con `PostThreadMessageW`, y por
+      eso hay que guardar el identificador de hilo **de Windows** (`GetCurrentThreadId`),
+      que no es el `ThreadId` de Rust.
 
-- [ ] **Paso 2: forma de los eventos grabados.** Conservarla, que es lo que ya guarda la
-      configuración del usuario: `{k:'kdown'|'kup', c, t}`, `{k:'mdown'|'mup', b, x, y, t}`,
-      `{k:'wheel', r, d, t}`, `{k:'move', x, y, t}`.
+- [x] **Paso 2: forma de los eventos grabados.** Conservada tal cual, con sus tests de ida
+      y vuelta: `{k:'kdown'|'kup', c, t}`, `{k:'mdown'|'mup', b, x, y, t}`,
+      `{k:'wheel', r, d, t}`, `{k:'move', x, y, t}`. Un evento que no se entienda se
+      descarta **uno a uno**: si fallara la lista entera, una versión futura que añadiera
+      un tipo dejaría ilegibles todas las grabaciones al abrirlas con una versión vieja.
 
-- [ ] **Paso 3: filtrado del movimiento.** Un evento de movimiento como mucho cada
-      **16 ms** y si se ha movido **3 px** o más. Sin esto, un gesto de dos segundos son
-      miles de eventos.
+- [x] **Paso 3: filtrado del movimiento.** 16 ms y 3 px, con las comparaciones estrictas
+      del original y el umbral **por eje** (basta con que uno se mueva). Los clics no pasan
+      por el filtro.
 
-- [ ] **Paso 4: recortar el silencio inicial.** Al parar, restar a todos los tiempos el
-      del primer evento: si no, la reproducción empieza esperando lo que tardaste en
-      empezar a moverte.
+- [x] **Paso 4: recortar el silencio inicial.** Al parar, restando a todos los tiempos el
+      del primer evento.
 
-- [ ] **Paso 5: reproducción.** Modos `once`, `loop` y `hold`. `speed` **divide** los
-      tiempos. Antes de un clic, recolocar el ratón (un movimiento pudo caer en el
-      filtrado). Y lo importante: **llevar la cuenta de teclas y botones pulsados y
-      soltarlos siempre al terminar**, también si se para a mitad. Si no, te quedas con el
-      Ctrl pegado y el PC inservible hasta reiniciar.
+- [x] **Paso 5: reproducción.** Modos `once`, `loop` y `hold`; `speed` divide los tiempos y
+      el objetivo de cada evento se mide contra el arranque de **esa pasada**, no sumando
+      esperas. Antes de un clic se recoloca el ratón.
+      Las teclas y botones hundidos los suelta un `Drop`, que es el equivalente del
+      `finally` de Electron y cubre también el caso de que el hilo muera por pánico, que es
+      justo cuando peor viene quedarse con el Control pulsado.
+      La espera va troceada en 10 ms: sin eso, parar un bucle con un hueco de tres segundos
+      tardaría hasta tres segundos en obedecer, y en modo `hold` son tres segundos de
+      teclas cayendo después de soltar.
 
-- [ ] **Paso 6: apagado.** Parar los ganchos al cerrar la app o el proceso no termina.
+- [x] **Paso 6: apagado.** `recorder::apagar()` en `RunEvent::Exit`. Lo importante no es
+      que el proceso termine (los hilos de Rust no lo retienen), es **soltar lo que
+      estuviera hundido**: salir a mitad de una reproducción sin esto deja el Control
+      pulsado, y ahí ya no queda ninguna app viva que pueda arreglarlo.
 
-- [ ] **Comprobación (Windows):** grabar un gesto con clics y escritura; reproducir en los
-      tres modos; **parar a mitad de un bucle y comprobar que no queda ninguna tecla
-      pegada** (probar escribiendo en el bloc de notas después).
+**Cuatro desviaciones deliberadas respecto a Electron**, todas a mejor y todas comentadas
+en el código:
+
+1. **No se reproducen los botones laterales del ratón.** Electron los pasaba por
+   `BUTTON_TO_NUT[b] || 'LEFT'` y acababa haciendo un clic **izquierdo** donde el usuario
+   había pulsado el de «atrás». Un clic izquierdo que nadie pidió cae sobre lo que haya
+   debajo del puntero; no hacer nada, no.
+2. **Se ignoran los eventos inyectados mientras hay una reproducción en marcha.** Allí,
+   empezar a grabar con otra grabación en bucle se grababa a sí misma. Solo mientras
+   reproduce: por escritorio remoto **toda** la entrada llega marcada como inyectada, y
+   filtrar sin condición dejaría la grabadora muerta en esa sesión sin decir por qué.
+3. **El giro de la rueda se redondea a una muesca como mínimo.** Los ratones de precisión
+   mandan giros menores que `WHEEL_DELTA`; con una división a secas quedan en cero, y un
+   cero se toma como una muesca **hacia abajo**, así que el gesto salía del revés.
+4. **Un modo desconocido da una sola pasada.** Electron repetía con cualquier modo que no
+   fuera `'once'`, así que un valor raro en la configuración era un bucle infinito.
+
+- [x] **Comprobación (Windows)** — hecha el 2026-08-11, sobre la app y con el teclado
+      conectado (COM7, fw 4.6), sin necesidad de mirar la pantalla: se lanzó `tauri:dev`
+      con `--remote-debugging-port=9222` y se condujo `window.orby` por el protocolo de
+      depuración, generando entrada real con `SendInput` desde PowerShell (movimientos de
+      ratón y F15, que no hace nada en ninguna aplicación).
+
+  - Las **seis fases** salen y con el `id` que toca: `recording`, `saved`, `empty`,
+    `playing`, `idle` y `reset`.
+  - Grabado un gesto de 20 movimientos y una pulsación: quedan **22 eventos**, los
+    movimientos espaciados ~30 ms y ~8 px (el filtro deja pasar lo que debe), la tecla como
+    `c: 93` —que es F15 en la tabla de uiohook, o sea que el puente de códigos funciona— y
+    el primer evento en `t: 0`, que es el recorte del silencio inicial.
+  - Reproducida en `once`: el ratón recorre el camino grabado (de 860 a 1025) y el estado
+    vuelve a `playingId: null` solo.
+  - **La prueba que importa:** una grabación en bucle que hunde F15 y no la suelta.
+    Con la reproducción en marcha, `GetAsyncKeyState(0x7E)` da hundida; se corta a mitad
+    con `recorder.stop()` y pasa a **suelta**. No queda nada pegado.
+  - La tecla de borrado (`recording-reset`) avisa con el `id` de su `target`, no con el
+    suyo, y deja la grabación en cero eventos.
+  - La configuración se dejó como estaba: ninguna macro con eventos.
+
+- [ ] **Queda por comprobar a mano:** el corte de un `hold` por la telemetría del teclado
+      (`KEY_EV:…:0`), porque necesita una pulsación física en el Orby; y una grabación con
+      clics de verdad y rueda.
 
 - [ ] **Commit:** `git commit -am "feat(tauri): grabadora de ratón y teclado"`
 

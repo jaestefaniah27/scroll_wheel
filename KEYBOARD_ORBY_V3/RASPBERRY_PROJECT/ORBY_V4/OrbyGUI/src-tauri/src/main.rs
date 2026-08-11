@@ -9,6 +9,7 @@ mod config;
 mod dialog;
 mod macros;
 mod mouse;
+mod recorder;
 mod serial;
 mod window;
 
@@ -54,8 +55,19 @@ fn main() {
             backup::backup_load,
             dialog::dialog_pick_app_or_file,
             apps::apps_list_installed,
-            mouse::mouse_get_position
+            mouse::mouse_get_position,
+            recorder::recorder_toggle,
+            recorder::recorder_stop,
+            recorder::recorder_status
         ])
-        .run(tauri::generate_context!())
-        .expect("no se pudo arrancar la ventana de OrbyGUI");
+        .build(tauri::generate_context!())
+        .expect("no se pudo arrancar la ventana de OrbyGUI")
+        // Salir a mitad de la reproducción de una grabación dejaría hundidas las teclas
+        // que llevara pulsadas, y ahí ya no queda ninguna app viva que pueda soltarlas.
+        // `Exit` es el último punto en el que todavía se puede.
+        .run(|_app, evento| {
+            if let tauri::RunEvent::Exit = evento {
+                recorder::apagar();
+            }
+        });
 }

@@ -70,11 +70,14 @@ fn dormir(ms: u64) {
 
 // --- Envío de eventos a Windows ---
 
-fn enviar(entradas: &[INPUT]) {
+// Lo comparte `recorder.rs`: la reproducción de una grabación manda exactamente los
+// mismos eventos que un paso de secuencia, y tener dos formas de escribir un `INPUT` es
+// tener dos sitios donde se puede olvidar la bandera de extendida.
+pub(crate) fn enviar(entradas: &[INPUT]) {
     unsafe { SendInput(entradas, std::mem::size_of::<INPUT>() as i32) };
 }
 
-fn evento_tecla(tecla: Tecla, soltar: bool) -> INPUT {
+pub(crate) fn evento_tecla(tecla: Tecla, soltar: bool) -> INPUT {
     let mut flags = KEYBD_EVENT_FLAGS(0);
     if tecla.extendida {
         flags |= KEYEVENTF_EXTENDEDKEY;
@@ -120,14 +123,20 @@ fn evento_unicode(unidad: u16, soltar: bool) -> INPUT {
     }
 }
 
-fn evento_raton(flags: MOUSE_EVENT_FLAGS) -> INPUT {
+pub(crate) fn evento_raton(flags: MOUSE_EVENT_FLAGS) -> INPUT {
+    evento_raton_con_datos(flags, 0)
+}
+
+/// `datos` solo lo usa la rueda (`MOUSEEVENTF_WHEEL` y `MOUSEEVENTF_HWHEEL`), que lleva
+/// ahí el giro en unidades de `WHEEL_DELTA`. Para los botones va a cero.
+pub(crate) fn evento_raton_con_datos(flags: MOUSE_EVENT_FLAGS, datos: i32) -> INPUT {
     INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
             mi: MOUSEINPUT {
                 dx: 0,
                 dy: 0,
-                mouseData: 0,
+                mouseData: datos as u32,
                 dwFlags: flags,
                 time: 0,
                 dwExtraInfo: 0,
@@ -403,10 +412,18 @@ pub fn quizas_disparar(app: &AppHandle, linea: &str) {
     let Some(id) = orby_core::protocolo::macro_trigger(linea) else { return };
 
     let app = app.clone();
-    thread::spawn(move || ejecutar(&app, id));
+    thread::spawn(move || disparar(&app, id));
 }
 
-fn ejecutar(app: &AppHandle, id: u32) {
+/// La pulsación de una macro, venga del teclado o del editor.
+///
+/// Es el reparto que en Electron hacía `triggerMacro` (`electron/main.js:274`), y el orden
+/// de las comprobaciones importa: una tecla de borrado se reconoce **antes** que la
+/// grabación a la que apunta, y una grabación no llega nunca al ejecutor de pasos.
+///
+/// La parte de la grabadora se resuelve aquí mismo, sin salir a otro hilo, porque
+/// `recorder_toggle` lee el estado justo después de llamar y tiene que ver ya el cambio.
+pub fn disparar(app: &AppHandle, id: u32) {
     let config = crate::config::leer();
     let Some(macro_) = config
         .get("macros")
@@ -417,19 +434,27 @@ fn ejecutar(app: &AppHandle, id: u32) {
                 .find(|m| m.get("id").and_then(Value::as_u64) == Some(id as u64))
         })
     else {
+        // Una tecla que manda un id que la configuración no conoce es el síntoma de que
+        // apunta a una macro borrada, y sin esta traza no hay forma de verlo.
         eprintln!("[secuencias] disparo de la {id}, que no existe en la configuración");
         return;
     };
 
-    // Las grabaciones las lleva recorder.rs (Tarea 7), no este ejecutor.
     match macro_.get("kind").and_then(Value::as_str) {
-        Some("recording") | Some("recording-reset") => {
-            eprintln!("[secuencias] la {id} es una grabación: todavía sin portar");
-            return;
+        Some("recording-reset") => crate::recorder::reiniciar(app, macro_),
+        Some("recording") => crate::recorder::alternar(app, id, macro_),
+        _ => {
+            // Los pasos se van a su propio hilo: `disparar` también se llama desde el
+            // comando del editor, y una secuencia con un `delay` de diez segundos dejaría
+            // colgada la interfaz mientras tanto.
+            let app = app.clone();
+            let macro_ = macro_.clone();
+            thread::spawn(move || ejecutar_pasos(&app, &macro_));
         }
-        _ => {}
     }
+}
 
+fn ejecutar_pasos(app: &AppHandle, macro_: &Value) {
     let Some(acciones) = macro_.get("actions").and_then(Value::as_array) else { return };
 
     // Un paso que falla no aborta la secuencia: si el sexto de ocho no se puede hacer, los

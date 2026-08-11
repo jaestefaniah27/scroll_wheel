@@ -6,9 +6,11 @@
 
 pub mod config;
 pub mod fw;
+pub mod grabacion;
 pub mod lines;
 pub mod plugins;
 pub mod protocolo;
 pub mod releases;
 pub mod serie;
 pub mod teclas;
+pub mod uiohook;

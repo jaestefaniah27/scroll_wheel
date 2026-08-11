@@ -326,6 +326,9 @@ fn emitir(app: &AppHandle, compartido: &Arc<Mutex<Compartido>>, evento: Evento, 
             // renderer: `device.js` no distingue, y quitarle telemetría le rompería la
             // cola de peticiones.
             crate::macros::quizas_disparar(app, &linea);
+            // En modo `hold` la reproducción dura lo que la tecla siga pulsada, y eso solo
+            // se ve por la telemetría: el firmware no manda un segundo `MACRO:` al soltar.
+            crate::recorder::quizas_soltar_hold(&linea);
             let _ = app.emit("serial:data", linea);
         }
     }
