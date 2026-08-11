@@ -718,28 +718,60 @@ Un montón de piezas pequeñas, todas independientes.
 **Comandos:** `window_minimize`, `window_maximize`, `window_close`,
 `dialog_pick_app_or_file(kind)`, `apps_list_installed`, `mouse_get_position`.
 
-- [ ] **Ventana.** El marco lo dibuja la app (`decorations: false`), así que los tres
+- [x] **Ventana.** El marco lo dibuja la app (`decorations: false`), así que los tres
       botones llaman a la ventana de Tauri. **`close` no cierra: esconde a la bandeja**,
       igual que hoy. Cerrar de verdad solo desde el menú de la bandeja.
-- [ ] **Bandeja.** Icono con menú «Abrir OrbyGUI» / separador / «Salir». Clic simple
+      El cierre se intercepta **además** en `on_window_event`: Alt+F4 no pasa por el
+      comando, y sin eso se llevaría la app por delante con el teclado esperando que
+      ejecute secuencias. La bandera `SALIENDO` es lo que distingue esconder de salir de
+      verdad; sin ella, «Salir» de la bandeja tampoco podría cerrar.
+      La primera vez que se esconde se avisa por notificación («OrbyGUI sigue activo»),
+      una sola vez por sesión, igual que el globo de Electron.
+- [x] **Bandeja.** Icono con menú «Abrir OrbyGUI» / separador / «Salir». Clic simple
       alterna visibilidad; doble clic muestra.
-- [ ] **Diálogo de fichero.** Filtro `exe, lnk, bat, cmd` cuando `kind` no es `'file'`.
-- [ ] **Apps instaladas.** Recorre los dos menús de Inicio
+      El icono sale de `default_window_icon()`, **no** de `assets/orby-icon.png`: ese
+      fichero es un JPEG con extensión `.png` y no todos los cargadores se lo tragan.
+      Y `show_menu_on_left_click(false)`, o el clic izquierdo abriría el menú y no
+      quedaría forma de esconder la ventana desde la bandeja.
+- [x] **Diálogo de fichero.** Filtro `exe, lnk, bat, cmd` cuando `kind` no es `'file'`.
+      El **orden** de los filtros importa y cambia según `kind`: el primero es el que sale
+      preseleccionado, y pidiendo una aplicación con «todos los archivos» delante hay que
+      rebuscar el `.exe` entre todo lo demás.
+- [x] **Apps instaladas.** Recorre los dos menús de Inicio
       (`%ProgramData%\Microsoft\Windows\Start Menu\Programs` y el de `%APPDATA%`),
       recoge los `.lnk`, resuelve su destino con `IShellLink` (COM), descarta los que no
       apunten a un `.exe`, quita duplicados por destino en minúsculas, filtra los que
       casen con `uninstall|desinstal|read ?me|léeme|help|ayuda|website|sitio web|support|licen[cs]`
       y ordena con criterio español. Devuelve `[{name, target}]`.
-- [ ] **Posición del ratón.** Tiene que salir del **mismo espacio de coordenadas con DPI**
+      Tres detalles: el filtrado se hace con comparaciones literales en vez de traerse el
+      crate `regex`; **no** se llama a `IShellLink::Resolve`, que con un destino que ya no
+      existe se pone a buscarlo por disco y por red y convierte la lista en minutos; y el
+      orden se le pregunta a Windows con `CompareStringEx` en `es-ES`, porque comparar
+      bytes deja la «Ñ» y los acentos donde no toca.
+- [x] **Posición del ratón.** Tiene que salir del **mismo espacio de coordenadas con DPI**
       que usará la reproducción de la Tarea 7. Si la captura y la reproducción no
       coinciden, las secuencias con posiciones absolutas pinchan en sitios distintos en
       pantallas con escalado. Es el fallo más difícil de diagnosticar de toda la
       migración.
+      Resuelto usando `GetCursorPos`, que da píxeles físicos del escritorio virtual: el
+      mismo espacio en el que trabaja `SendInput` con coordenadas absolutas. **La Tarea 7
+      tiene que usar `SendInput` absoluto y no ninguna capa que hable en píxeles
+      lógicos.**
 
 - [ ] **Comprobación (Windows):** minimizar, maximizar, cerrar a bandeja y recuperar desde
       la bandeja; la pestaña «App» de una tecla lista programas de verdad; el botón
       «Posición de ratón» del editor de secuencias devuelve la posición correcta **en un
       monitor con escalado al 150 %**.
+
+  Comprobado el 2026-08-11 sin tocar la pantalla: `listInstalledApps()` devuelve **188**
+  programas con el destino resuelto (p. ej. `Altium Designer` →
+  `C:\Program Files\Altium\AD24\X2.EXE`) y ordenados; `getMousePosition()` devuelve
+  coordenadas del escritorio virtual, negativas incluidas, que es lo que hay que ver con
+  un monitor a la izquierda; y `orby.close()` deja el proceso vivo con la ventana en
+  `IsWindowVisible: False`.
+
+  Quedan por comprobar a mano: recuperar desde la bandeja (clic simple, doble clic y
+  menú), el diálogo de elegir programa, y el escalado al 150 %.
 
 - [ ] **Commit:** `git commit -am "feat(tauri): ventana, bandeja, diálogos y apps"`
 

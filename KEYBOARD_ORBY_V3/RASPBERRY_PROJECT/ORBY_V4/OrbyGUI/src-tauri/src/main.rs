@@ -3,50 +3,43 @@
 // teclado, el mismo papel que hoy hace electron/log.js.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod apps;
 mod backup;
 mod config;
+mod dialog;
+mod mouse;
 mod serial;
+mod window;
 
-// El marco de la ventana lo dibuja la propia app (`decorations: false`), así que estos
-// tres son la única forma de minimizar, maximizar y cerrar: sin ellos registrados la
-// ventana se abre y no hay manera de quitarla más que por el administrador de tareas.
-#[tauri::command]
-fn window_minimize(ventana: tauri::Window) {
-    let _ = ventana.minimize();
-}
-
-#[tauri::command]
-fn window_maximize(ventana: tauri::Window) {
-    // Alterna, como el botón de Electron: el renderer manda el mismo comando las dos
-    // veces y espera que la segunda restaure.
-    if ventana.is_maximized().unwrap_or(false) {
-        let _ = ventana.unmaximize();
-    } else {
-        let _ = ventana.maximize();
-    }
-}
-
-#[tauri::command]
-fn window_close(ventana: tauri::Window) {
-    // De momento cierra de verdad. En Electron esconde a la bandeja, pero la bandeja
-    // llega en la Tarea 5: esconderla ahora dejaría la app viva y sin forma de volver.
-    let _ = ventana.close();
-}
+use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        // El hilo del puerto arranca solo y no para: es lo que hace que el teclado se
-        // detecte al enchufarlo sin que el usuario toque nada.
         .setup(|app| {
+            // El hilo del puerto arranca solo y no para: es lo que hace que el teclado se
+            // detecte al enchufarlo sin que el usuario toque nada.
             serial::arrancar(app.handle().clone());
+            window::montar_bandeja(app.handle())?;
             Ok(())
         })
+        // Cerrar la ventana esconde a la bandeja en vez de cerrar. Se intercepta aquí y no
+        // solo en el comando `window_close` porque Alt+F4 no pasa por el comando, y sin
+        // esto se llevaría por delante la app con el teclado esperando que ejecute
+        // secuencias.
+        .on_window_event(|ventana, evento| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = evento {
+                if !window::saliendo() {
+                    api.prevent_close();
+                    window::esconder(ventana.app_handle());
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
-            window_minimize,
-            window_maximize,
-            window_close,
+            window::window_minimize,
+            window::window_maximize,
+            window::window_close,
             serial::serial_send,
             serial::serial_get_info,
             serial::serial_get_status,
@@ -54,7 +47,10 @@ fn main() {
             config::config_get,
             config::config_set,
             backup::backup_save,
-            backup::backup_load
+            backup::backup_load,
+            dialog::dialog_pick_app_or_file,
+            apps::apps_list_installed,
+            mouse::mouse_get_position
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo arrancar la ventana de OrbyGUI");

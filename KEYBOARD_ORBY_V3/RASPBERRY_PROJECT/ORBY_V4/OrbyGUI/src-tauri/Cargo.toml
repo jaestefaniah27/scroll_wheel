@@ -24,3 +24,15 @@ serialport = "4"
 # Solo para la marca de tiempo del nombre que propone el diálogo de copia de seguridad.
 # Ya venía en el árbol de Tauri, así que no añade descarga.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+# Win32 directo. Sustituye a nut-js (posición del ratón) y al PowerShell permanente que
+# hoy resuelve los accesos directos: son cuatro llamadas y desaparece el proceso hijo.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
