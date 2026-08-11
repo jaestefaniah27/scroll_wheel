@@ -1,0 +1,22 @@
+[package]
+name = "orby-app"
+version = "0.5.1"
+edition = "2021"
+description = "La cáscara de escritorio de OrbyGUI: ventana, puerto serie y todo lo que solo puede hacer el PC."
+
+# El espacio de trabajo se declara aquí y no en el crate de dentro: orby-core es una
+# biblioteca pura que también se compila sola en Linux, y quien manda sobre el lock y el
+# directorio target es la app.
+[workspace]
+members = ["crates/orby-core"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+orby-core = { path = "crates/orby-core" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

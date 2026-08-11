@@ -1,2 +1,5 @@
 # Artefactos de compilación de Rust.
 target/
+
+# Esquemas que tauri-build regenera en cada compilación a partir de capabilities/.
+gen/schemas/

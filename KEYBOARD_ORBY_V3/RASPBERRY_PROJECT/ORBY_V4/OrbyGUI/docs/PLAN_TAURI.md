@@ -96,6 +96,7 @@ Comprobado el 2026-08-11. **No hay que reimplementarlo.**
 | Montaje de peticiones de complemento | `.../src/plugins/peticion.rs` | Hecho, 14 tests |
 | Presupuesto de refresco de las OLED (**Tarea 11, paso 4**) | `.../src/plugins/oled.rs` | Hecho, 9 tests |
 | Filtrado de releases de firmware (**Tarea 9, paso 1**) | `.../src/releases.rs` | Hecho, 9 tests |
+| Crate de la app y ventana (**Tarea 2 entera**) | `src-tauri/{Cargo.toml,build.rs,tauri.conf.json,capabilities/,src/main.rs}` | Hecho, ventana comprobada a mano |
 
 Las pruebas del primer bloque se contrastaron ejecutando las implementaciones JS actuales
 con las mismas entradas: coinciden caso por caso. Y el descriptor de complementos se
@@ -381,7 +382,7 @@ git commit -m "feat(tauri): la tercera vía de arranque del frontend"
 - Modificar: `OrbyGUI/package.json` (scripts)
 - Modificar: `OrbyGUI/index.html` (solo la CSP)
 
-- [ ] **Paso 1: el crate**
+- [x] **Paso 1: el crate**
 
 `src-tauri/Cargo.toml` declara el paquete de la app y toma `orby-core` por ruta. Hay que
 **quitar** el `[workspace]` vacío de `crates/orby-core/Cargo.toml` y declarar aquí el
@@ -408,14 +409,32 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```
 
-- [ ] **Paso 2: la CSP de `index.html`**
+- [x] **Paso 1 bis: los permisos** *(no estaba en el plan; sin esto no arranca nada)*
+
+Tauri 2 deniega por defecto **hasta sus propios comandos**, los del núcleo incluidos. Sin
+`src-tauri/capabilities/default.json` las ocho suscripciones de `device.init()` se rechazan
+con `event.listen not allowed. Permissions associated with this command:
+core:event:allow-listen, core:event:default`, y la app se queda sorda a todo lo que emita
+el backend sin decir por qué (los rechazos son de promesa: no rompen el pintado).
+
+```json
+{
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default", "notification:default"]
+}
+```
+
+`"main"` es la etiqueta que Tauri le pone a la ventana cuando `tauri.conf.json` no le da una.
+
+- [x] **Paso 2: la CSP de `index.html`**
 
 Hoy la cabecera dice `default-src 'self'; script-src 'self'`. Tauri necesita poder hablar
 con su IPC. Añadir `ipc:` y `http://ipc.localhost` a `connect-src`. **No relajar
 `script-src`**: es lo que impide que un complemento o una respuesta de la red inyecte
 código en la interfaz.
 
-- [ ] **Paso 3: ventana en blanco**
+- [x] **Paso 3: ventana en blanco**
 
 `tauri.conf.json` con: `frontendDist` a `../dist`, `devUrl` a `http://localhost:5173`,
 ventana de 1280×820, mínimo 1024×700, `decorations: false` (el marco lo dibuja la app,
@@ -427,7 +446,7 @@ por qué: es el fallo más tonto y más caro de este plan.
 
 `src/main.rs` mínimo: `tauri::Builder::default().run(...)`.
 
-- [ ] **Paso 4: comprobación**
+- [x] **Paso 4: comprobación** — hecha el 2026-08-11
 
 En Windows:
 
@@ -438,6 +457,22 @@ cd OrbyGUI && npm run tauri:dev
 Esperado: abre una ventana y se ve la interfaz de OrbyGUI (sin teclado detectado, porque
 aún no hay puerto serie). En Linux **esto no compila** y es lo esperado: comprueba al
 menos que `cargo test -p orby-core` sigue en verde.
+
+Salió así: la interfaz se pinta entera y el aviso de "solo lectura" aparece. Lo que **no**
+funciona todavía es cualquier cosa que se pulse, porque no hay comandos registrados.
+
+Con `decorations: false` eso incluye **cerrar la ventana**: minimizar, maximizar y cerrar
+son `invoke('window_*')`, y sin ellos la única salida es el administrador de tareas. Por eso
+los tres se adelantan aquí desde la Tarea 5 (en `src/main.rs`). `window_close` de momento
+cierra de verdad; pasa a esconder a la bandeja cuando la Tarea 5 monte la bandeja.
+
+Cómo se leyó la consola del webview sin depender de que alguien mire la pantalla: WebView2
+acepta el protocolo de depuración de Chrome, así que
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` antes de `tauri dev`
+deja escuchar los errores y hasta capturar la ventana en PNG desde un script.
+
+**Toolchain**: no hacen falta las Build Tools de MSVC. Con
+`rustup ... --default-host x86_64-pc-windows-gnu` compila y enlaza (probado con 1.97.1).
 
 - [ ] **Paso 5: commit**
 
