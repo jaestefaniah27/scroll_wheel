@@ -1,0 +1,14 @@
+[package]
+name = "orby-core"
+version = "0.1.0"
+edition = "2021"
+description = "Lógica de OrbyGUI que no depende de la plataforma: protocolo serie, configuración local y complementos."
+
+# Crate propio, sin Tauri y sin nada de Windows, a propósito: es lo que permite
+# comprobar con `cargo test` en cualquier máquina la lógica que da miedo perder al
+# migrar. La cáscara que toca Win32 vive aparte y solo compila en Windows.
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
