@@ -1062,17 +1062,42 @@ donde `status` es `idle|checking|downloading|bootsel|flashing|done|error`.
       `fw-v`, **conservando las prereleases** (las de firmware se publican así a
       propósito) y descartando los borradores. Filtrar por `compare_fw(version, maxFw) <= 0`
       y ordenar de mayor a menor.
-- [ ] **Descargar** el `.uf2` con barra de progreso, validando el tamaño.
-- [ ] **Entrar en modo carga.** Si no hay unidad de arranque, mandar `BOOTSEL` por el
+- [x] **Descargar** el `.uf2` con barra de progreso, validando el tamaño. — hecho el
+      2026-08-11 en `src-tauri/src/firmware.rs`.
+- [x] **Entrar en modo carga.** Si no hay unidad de arranque, mandar `BOOTSEL` por el
       puerto y esperar a que aparezca la unidad (hasta 90 s, mirando cada 400 ms).
-- [ ] **Encontrar la unidad**: recorrer de `C:` a `Z:` buscando un `INFO_UF2.TXT` que
+- [x] **Encontrar la unidad**: recorrer de `C:` a `Z:` buscando un `INFO_UF2.TXT` que
       contenga `RP2`. **Por etiqueta no**: la letra la asigna Windows y cambia.
-- [ ] **Copiar el fichero y tragarse los errores** `EIO`, `EPERM`, `ENOENT`, `EBUSY` e
+- [x] **Copiar el fichero y tragarse los errores** `EIO`, `EPERM`, `ENOENT`, `EBUSY` e
       `EINVAL`. La Pico se reinicia a mitad de la copia y el volumen desaparece: **eso es
       el éxito**, no un fallo. Tratarlos como error es el fallo clásico aquí.
+      En Rust no hay código de error de libc que mirar: `std::io::copy` los traduce a
+      `ErrorKind`, así que se toleran `UnexpectedEof` (EIO), `PermissionDenied` (EPERM),
+      `NotFound` (ENOENT), `WouldBlock` (EBUSY) e `InvalidInput` (EINVAL).
+
+  Cómo quedó, para no tener que releer el fichero: el reqwest de descarga es el
+  **bloqueante** (`reqwest::blocking`), no el asíncrono, para no meter un runtime de tokio
+  en un comando que ya corre en su propio hilo — es el mismo estilo que `serial.rs` y
+  `recorder.rs`. El backend TLS es `rustls` y no `native-tls`: es TLS puro en Rust, sin
+  ningún componente en C que enlazar (`native-tls` sí lo necesitaría en otras
+  plataformas), lo que evita depender del toolchain de C del sistema — aunque
+  `aws-lc-sys`, el proveedor de criptografía por defecto de `rustls` en esta versión, sí
+  se compila con `cc`/`cmake`; compiló limpio en esta máquina pero **si algún día falla en
+  otra por falta de compilador de C, la salida es pasar a `rustls-no-provider` +
+  `rustls::crypto::ring::default_provider()`**, que es criptografía pura en Rust. El envío
+  del `BOOTSEL` reutiliza `serial::serial_send` llamándolo directamente (no por IPC): los
+  comandos de Tauri son funciones normales y `firmware.rs` puede pedir el `State<Serie>` al
+  `AppHandle` igual que hace el propio `main.rs`.
 
 - [ ] **Comprobación (Windows, con teclado):** actualizar por la vía `BOOTSEL` y por la
       manual. Confirmar que al acabar el teclado vuelve con la versión nueva.
+
+  Comprobado en seco el 2026-08-11: `cargo check` compila limpio con la dependencia nueva,
+  `cargo test -p orby-core` sigue en 127 pruebas verdes y el verificador del plan no
+  encuentra discrepancias. **Falta lo que solo se ve con el teclado delante**: descargar de
+  verdad, entrar en BOOTSEL (por comando y a mano) y comprobar que el teclado vuelve con la
+  versión nueva. No se ha ejecutado sobre hardware real en esta sesión porque flashear es
+  una operación que puede dejar el teclado a medias si algo va mal a mitad.
 
 - [ ] **Commit:** `git commit -am "feat(tauri): actualización del firmware"`
 

@@ -25,6 +25,12 @@ serialport = "4"
 # Solo para la marca de tiempo del nombre que propone el diálogo de copia de seguridad.
 # Ya venía en el árbol de Tauri, así que no añade descarga.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# Para consultar las releases de GitHub y descargar el .uf2 del firmware (Tarea 9). El
+# propio Tauri ya trae reqwest en el árbol, pero sin backend TLS: aquí hace falta hablar
+# HTTPS de verdad. `rustls` y no `native-tls`, porque es TLS puro en Rust sin ningún
+# componente en C que enlazar, y el toolchain de este proyecto es GNU sin las Build Tools
+# de MSVC.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
 
 # Win32 directo. Sustituye a nut-js (posición del ratón) y al PowerShell permanente que
 # hoy resuelve los accesos directos: son cuatro llamadas y desaparece el proceso hijo.

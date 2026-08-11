@@ -7,6 +7,7 @@ mod apps;
 mod backup;
 mod config;
 mod dialog;
+mod firmware;
 mod foreground;
 mod macros;
 mod mouse;
@@ -28,6 +29,7 @@ fn main() {
             // detecte al enchufarlo sin que el usuario toque nada.
             serial::arrancar(app.handle().clone());
             foreground::arrancar_si_procede(app.handle().clone());
+            firmware::iniciar(app.handle());
             window::montar_bandeja(app.handle())?;
             Ok(())
         })
@@ -64,7 +66,11 @@ fn main() {
             foreground::foreground_start,
             foreground::foreground_stop,
             foreground::foreground_current,
-            foreground::foreground_available
+            foreground::foreground_available,
+            firmware::firmware_get,
+            firmware::firmware_check,
+            firmware::firmware_update,
+            firmware::firmware_cancel
         ])
         .build(tauri::generate_context!())
         .expect("no se pudo arrancar la ventana de OrbyGUI")
