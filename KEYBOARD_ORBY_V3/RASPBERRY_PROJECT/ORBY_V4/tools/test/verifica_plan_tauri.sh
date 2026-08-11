@@ -99,6 +99,24 @@ chk "hasRead"  "hasRead"  electron/plugins.js
 chk "apiVersion" "apiVersion" electron/plugins.js
 chk_re "id de complemento" "a-z0-9" electron/plugins.js
 
+echo "== Costura de Tauri (Tarea 1) =="
+chk "entry.js detecta Tauri"        "__TAURI_INTERNALS__"  src/entry.js
+chk "orby-tauri usa el global"      "window.__TAURI__"     src/tauri/orby-tauri.js
+if grep -qE "^\s*import .*@tauri-apps|from .@tauri-apps" src/tauri/orby-tauri.js; then
+  mal "orby-tauri.js importa @tauri-apps/api: eso obliga a instalarlo para compilar tambien las otras dos vias"
+else
+  ok "orby-tauri.js no depende de ningun paquete npm nuevo"
+fi
+if grep -q "@tauri-apps" package.json; then
+  if grep -q "@tauri-apps" package-lock.json; then ok "package.json y el lock cuadran"
+  else mal "package.json declara @tauri-apps pero el lock no lo tiene: npm ci fallaria"; fi
+else
+  ok "package.json sin dependencias nuevas"
+fi
+
+echo "== Superficie: las tres vias tienen los mismos metodos =="
+node --test test/superficie-orby.test.mjs >/dev/null 2>&1 && ok "test de superficie en verde" || mal "test de superficie ROJO (node --test test/superficie-orby.test.mjs)"
+
 echo
 echo "=================================="
 if [ "$fallos" -eq 0 ]; then echo "TODO CUADRA: 0 discrepancias"; else echo "DISCREPANCIAS: $fallos"; fi

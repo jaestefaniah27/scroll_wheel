@@ -1,9 +1,12 @@
 // Dónde corre esta copia de la app y, por tanto, qué puede hacer.
 //
-// La app de escritorio tiene un proceso principal detrás: puede abrir programas,
-// mover el ratón, cargar complementos y vigilar qué ventana está en primer plano.
-// La versión de navegador no tiene nada de eso —solo el puerto serie del teclado—,
-// así que hay funciones del editor que ahí no van a funcionar.
+// Las dos vías de escritorio ('electron' y 'tauri') tienen un backend detrás: pueden
+// abrir programas, mover el ratón, cargar complementos y vigilar qué ventana está en
+// primer plano. La versión de navegador no tiene nada de eso —solo el puerto serie del
+// teclado—, así que hay funciones del editor que ahí no van a funcionar.
+//
+// Por eso la pregunta que se hace abajo es "¿es navegador?" y no "¿es Electron?": lo
+// que recorta funciones es la falta de backend, no cuál de los dos sea.
 //
 // La diferencia se pregunta SIEMPRE aquí. Repartir comprobaciones del tipo
 // "¿existe window.orby.recorder?" por las vistas es cómo se acaba con una función
@@ -17,6 +20,10 @@ export function setPlatform(name) {
 
 export function isWeb() {
   return current === 'web';
+}
+
+export function isTauri() {
+  return current === 'tauri';
 }
 
 // Lo que necesita un proceso con permisos de escritorio. Cada nombre es lo que

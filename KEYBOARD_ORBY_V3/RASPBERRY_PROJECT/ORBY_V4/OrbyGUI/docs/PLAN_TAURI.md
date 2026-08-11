@@ -303,10 +303,10 @@ Reglas al escribirlo:
 Estructura (abreviada; complétala con la tabla):
 
 ```js
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-
-const puente = (evento) => (cb) => { listen(evento, (e) => cb(e.payload)); };
+// La API sale del global que inyecta Tauri, no del paquete `@tauri-apps/api`.
+const { core, event } = window.__TAURI__ ?? {};
+const invoke = (cmd, args) => core.invoke(cmd, args);
+const puente = (evento) => (cb) => { event.listen(evento, (e) => cb(e.payload)); };
 
 export async function instalarOrbyTauri() {
   window.orby = {
@@ -327,6 +327,14 @@ export async function instalarOrbyTauri() {
   };
 }
 ```
+
+> **Por qué el global y no `import { invoke } from '@tauri-apps/api'`:** ese `import` lo
+> tendría que resolver vite en **los tres** builds, incluido el de navegador, así que una
+> dependencia que solo usa una de las vías obligaría a instalarla para compilar
+> cualquiera de las otras. Con el global, el frontend sigue compilando sin tocar
+> `package.json` ni el `package-lock.json`. **Exige `withGlobalTauri: true` en
+> `tauri.conf.json`** (Tarea 2); si se olvida, `window.__TAURI__` llega `undefined` y la
+> app arranca en blanco sin decir por qué.
 
 > **Sobre los nombres de comando:** Tauri no admite `:` en el nombre de un comando de
 > Rust, así que el **comando** se llama `serial_send` y el **evento** sigue llamándose
@@ -398,6 +406,10 @@ código en la interfaz.
 `tauri.conf.json` con: `frontendDist` a `../dist`, `devUrl` a `http://localhost:5173`,
 ventana de 1280×820, mínimo 1024×700, `decorations: false` (el marco lo dibuja la app,
 igual que hoy) y fondo `#0a0a0f` para que no pegue un fogonazo blanco al abrir.
+
+**Y `"withGlobalTauri": true`**, que es de lo que depende `src/tauri/orby-tauri.js`
+(Tarea 1) para tener `window.__TAURI__`. Sin esa línea la app abre en blanco y no dice
+por qué: es el fallo más tonto y más caro de este plan.
 
 `src/main.rs` mínimo: `tauri::Builder::default().run(...)`.
 
