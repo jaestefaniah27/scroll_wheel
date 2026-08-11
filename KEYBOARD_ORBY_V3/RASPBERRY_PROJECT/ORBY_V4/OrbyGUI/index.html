@@ -4,9 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- Sin recursos remotos: la app tiene que arrancar igual sin conexión.
-       Tipografía del sistema e iconos SVG en línea (src/icons.js). -->
+       Tipografía del sistema e iconos SVG en línea (src/icons.js).
+       `connect-src` deja pasar el IPC de Tauri, que es por donde va todo lo que en
+       Electron iba por preload. `script-src` NO se relaja: es lo que impide que un
+       complemento o una respuesta de la red inyecten código en la interfaz. -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost;" />
   <title>OrbyGUI - Panel de control Orby V4</title>
 
   <!-- Pantalla de carga.
@@ -327,10 +330,13 @@
                   <span data-icon="refresh" data-icon-size="16"></span> Buscar actualizaciones
                 </button>
                 <button class="primary-btn hidden" id="btn-install-update">
-                  <span data-icon="download" data-icon-size="16"></span> Instalar y reiniciar
+                  <span data-icon="download" data-icon-size="16"></span>
+                  <span id="btn-install-update-label">Instalar y reiniciar</span>
                 </button>
               </div>
-              <p class="setting-desc">
+              <!-- El texto de este botón y el de abajo los pone initAppCard: lo que pasa al
+                   pulsarlo depende de dónde corra la app (ver src/views/settings.js). -->
+              <p class="setting-desc" id="app-update-desc">
                 Se comprueba al arrancar y cada seis horas. La descarga es automática; instalarla
                 cierra OrbyGUI un momento.
               </p>

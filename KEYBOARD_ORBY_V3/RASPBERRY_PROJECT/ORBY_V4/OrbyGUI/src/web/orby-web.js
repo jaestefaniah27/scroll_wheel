@@ -61,6 +61,11 @@ export async function instalarOrbyWeb() {
       getSettings: async () => ({}),
       setSettings: async () => ({ ok: false }),
       test: async () => ({ ok: false, error: 'Los complementos necesitan la app de escritorio' }),
+      // Lo llama readView() en src/plugins.js para el visor en vivo de una tecla. Hoy
+      // live-oled.js ya se protege antes con platform.can('plugins'), así que no llega
+      // a pasar por aquí, pero sin este hueco la red de seguridad tiene un agujero:
+      // basta que alguien añada otra llamada sin la comprobación.
+      read: async () => ({ ok: false }),
       openFolder: async () => ({ ok: false }),
     },
 

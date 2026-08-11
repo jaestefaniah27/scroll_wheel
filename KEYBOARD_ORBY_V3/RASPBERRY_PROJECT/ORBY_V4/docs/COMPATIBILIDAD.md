@@ -100,6 +100,24 @@ app no se entera: lista `releases?per_page=50`, que las incluye.
 Si alguna vez se publica un firmware **sin** `--prerelease`, se arregla marcándolo
 después; no hace falta rehacer la release.
 
+### Y por qué las de la app NO van como prerelease, aunque el número diga «alpha»
+
+La `v1.0.0-alpha` se publicó como release normal a propósito. La bandera de
+GitHub y el número de versión son cosas distintas: marcarla como prerelease la
+sacaría de `releases/latest`, que es justo donde mira el avisador de la app
+(`OrbyGUI/src-tauri/src/updater.rs`), y nadie se enteraría de que existe. Lo de
+«alpha» va en el número, no en la bandera.
+
+> **Trampa de los sufijos.** La comparación de versiones
+> (`orby_core::fw::compare_fw`) parte por puntos y lee cada trozo como número, así
+> que de `1.0.0-alpha` saca `[1, 0, 0]`: **`1.0.0-alpha`, `1.0.0-beta` y `1.0.0`
+> le parecen la misma versión.** Eso está bien para lo que se escribió —firmware,
+> donde `4.10` tiene que ser posterior a `4.9`— pero significa que quien tenga
+> puesta la `1.0.0-alpha` **no verá** una `1.0.0` final: hay que subir la parte
+> numérica (`1.0.1`, `1.1.0`…). Si algún día hacen falta sufijos de verdad, el
+> sitio donde tocarlo es `compare_fw`, y hay que tener en cuenta que lo comparte
+> con las versiones de firmware.
+
 **Comprobar a mano lo que comprobaba el workflow:** que la etiqueta y
 `ORBY_FW_MINOR` dicen lo mismo. Nadie lo valida ya, y la app decide qué comandos
 manda mirando ese número: si el `.uf2` de `fw-v4.3` se presenta como 4.2, la app

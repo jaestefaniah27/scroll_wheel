@@ -1,11 +1,15 @@
 {
   "name": "orbygui",
-  "version": "0.5.2",
+  "version": "1.0.0-alpha",
   "description": "Orby V4 Macro Keyboard Companion App",
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"electron . --dev\"",
+    "dev:vite": "vite",
     "build": "vite build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "preview": "vite preview",
     "preview:web": "vite build && vite preview --port 5174",
     "start": "npm run build && electron .",
@@ -22,6 +26,7 @@
     "uiohook-napi": "^1.5.5"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.9.1",
     "concurrently": "^9.2.1",
     "electron": "^40.0.0",
     "electron-builder": "^24.13.3",
