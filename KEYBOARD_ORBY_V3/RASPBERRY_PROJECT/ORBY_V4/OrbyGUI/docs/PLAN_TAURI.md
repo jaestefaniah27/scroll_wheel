@@ -92,6 +92,7 @@ Comprobado el 2026-08-11. **No hay que reimplementarlo.**
 | Plantillas `{{...}}` | `.../src/plugins/plantilla.rs` | Hecho, 12 tests |
 | Agrupado de giros (`coalesce`) | `.../src/plugins/coalesce.rs` | Hecho, 8 tests |
 | Manifiesto de lampdesk en API 2 | `.../tests/fixtures/lampdesk-api2.plugin.json` | Escrito; la Tarea 10 lo pone en su sitio |
+| Máquina de estados del serie (**Tarea 3, paso 1**) | `.../src/serie.rs` | Hecho, 16 tests |
 
 Las pruebas del primer bloque se contrastaron ejecutando las implementaciones JS actuales
 con las mismas entradas: coinciden caso por caso. Y el descriptor de complementos se
@@ -100,7 +101,7 @@ así que la igualdad con lo que ve hoy el renderer está comprobada, no supuesta
 
 ```bash
 cd OrbyGUI/src-tauri/crates/orby-core && cargo test
-# Esperado: 51 passed (lib) + 5 passed (descriptor_lampdesk)
+# Esperado: 68 passed (lib) + 5 passed (descriptor_lampdesk)
 
 cd OrbyGUI && node --test test/*.mjs
 # Esperado: # pass 14
@@ -464,7 +465,15 @@ La tarea más importante del plan: con ella el editor ya sirve para algo.
 > que siga vivo y **reenvía todo**. Si te encuentras escribiendo lógica de `GET_PROFILE`
 > en Rust, te has salido del plan.
 
-- [ ] **Paso 1: la máquina de estados, en `orby-core` y con tests**
+- [x] **Paso 1: la máquina de estados, en `orby-core` y con tests** — **YA ESTÁ HECHO**
+      en `src-tauri/crates/orby-core/src/serie.rs`, con 16 pruebas. Léelo antes de seguir:
+      la interfaz real es la de abajo y los plazos ya están puestos.
+
+> **Dos correcciones deliberadas respecto a `electron/serial.js`**, y hay que conservarlas:
+> mientras se persigue el saludo por telemetría, **la cadena del saludo se aparta** (allí
+> las dos mandaban `ACK` a la vez), y **un puerto del que ha llegado telemetría no se
+> suelta nunca** (allí se soltaba a los 2,8 s, llevándose por delante la persecución que
+> estaba a punto de conectar). Las dos tienen su prueba.
 
 Va en `orby-core` **sin tocar el puerto**, para poder probarla sin hardware. Modela:
 
@@ -489,27 +498,28 @@ impl Maquina {
 El tiempo entra por parámetro (`al_pasar_tiempo`), **no** se lee del reloj: es lo que
 permite probar el watchdog en microsegundos en vez de esperar 16 segundos reales.
 
-Tests que hay que escribir **antes** de la implementación:
+Las pruebas que cubre (todas escritas ya):
 
-- [ ] Al abrir, manda `ACK` a los 400 ms; si no contesta, otro a los 1600 ms; si sigue sin
+- [x] Al abrir, manda `ACK` a los 400 ms; si no contesta, otro a los 1600 ms; si sigue sin
       contestar, `SoltarPuerto` y **no** emite `desconectado` (no llegó a estar conectado).
-- [ ] Con el saludo `ORBY_V4:FW=4.5:…:HOSTAPP=1`, emite `connected` con la info y manda
+- [x] Con el saludo `ORBY_V4:FW=4.5:…:HOSTAPP=1`, emite `connected` con la info y manda
       `HOST_APP:1`.
-- [ ] Con el saludo **sin** `HOSTAPP=1`, emite `connected` y **no** manda `HOST_APP:1`.
-- [ ] Estando conectado, a los 12 000 ms de silencio manda `ACK`; si contesta, sigue
+- [x] Con el saludo **sin** `HOSTAPP=1`, emite `connected` y **no** manda `HOST_APP:1`.
+- [x] Estando conectado, a los 12 000 ms de silencio manda `ACK`; si contesta, sigue
       conectado; y **vuelve a mandar `HOST_APP:1`** (el teclado lo caduca a los 25 s).
-- [ ] Estando conectado, 12 000 ms de silencio + 4 000 ms sin respuesta → emite
+- [x] Estando conectado, 12 000 ms de silencio + 4 000 ms sin respuesta → emite
       `disconnected` y vuelve a `Buscando`.
-- [ ] Toda línea recibida estando conectado se emite como `serial:data`, **incluidas**
+- [x] Toda línea recibida estando conectado se emite como `serial:data`, **incluidas**
       `KEY_EV:3:1`, `ENC:1:-2` y `EV:CTX:0:1:3`.
-- [ ] Si llega `KEY_EV:` o `ENC:` sin haber saludado, reintenta el `ACK` cuatro veces cada
+- [x] Si llega `KEY_EV:` o `ENC:` sin haber saludado, reintenta el `ACK` cuatro veces cada
       600 ms y luego se da por conectado con una identidad mínima
       (`device: "ORBY_V4"`, `keys: 12`, `oleds: 10`).
 
-- [ ] **Paso 2: ejecutar los tests y verlos fallar, luego implementar**
+- [x] **Paso 2: ejecutar los tests** — en verde:
 
 ```bash
-cd OrbyGUI/src-tauri && cargo test -p orby-core serie
+cd OrbyGUI/src-tauri/crates/orby-core && cargo test serie
+# Esperado: 16 passed
 ```
 
 - [ ] **Paso 3: el puerto de verdad, en `src-tauri/src/serial.rs`**

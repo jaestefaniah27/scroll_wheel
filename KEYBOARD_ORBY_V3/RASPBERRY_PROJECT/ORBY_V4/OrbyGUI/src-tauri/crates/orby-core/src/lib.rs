@@ -9,3 +9,4 @@ pub mod fw;
 pub mod lines;
 pub mod plugins;
 pub mod protocolo;
+pub mod serie;
