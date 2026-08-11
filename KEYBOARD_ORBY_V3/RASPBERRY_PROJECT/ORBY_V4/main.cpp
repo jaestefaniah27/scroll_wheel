@@ -387,6 +387,15 @@ volatile bool system_refresh_req = false;   // Flag para actualizar pantallas
 // flanco se pierde. Core 1 la copia al SSD1306.
 volatile uint16_t active_inversions = 0;
 
+// Pulsación corta de la tecla de menú: por debajo de esto es ruido, no un dedo.
+// Un toque humano no baja de 40 ms ni queriendo.
+#define MENU_TAP_MIN_MS 30
+
+// Cuántos pulsos demasiado cortos se han descartado en la tecla de menú. Es el
+// termómetro de la avería: si sube sola con el teclado quieto, la línea de la
+// tecla 10 está metiendo ruido y hay que mirar el hardware, no el firmware.
+volatile uint32_t menu_tap_glitches = 0;
+
 // --- Encendido de las pantallas (reposo) ---
 // Core 0 detecta la inactividad, pero quien manda al SSD1306 es Core 1: las
 // pantallas y el bus SPI tienen un único dueño. Construir un segundo
@@ -1751,9 +1760,11 @@ void wheel_accumulate(int32_t delta_counts) {
 // anuncia a mano con HOST_APP:1 y lo repite en cada presentación; si deja de
 // llegar, el aviso caduca.
 //
-// El plazo cubre de sobra al vigilante de la app, que pregunta con ACK tras 12 s
-// de silencio (electron/serial.js): con menos margen, un teclado callado y una
-// app quieta se tacharían las pantallas solas.
+// Quien lo renueva es el repetidor de electron/serial.js (`_renovarAnuncioApp`),
+// que manda HOST_APP:1 cada 8 s por su propio reloj. No vale colgarlo del ACK
+// del vigilante de la conexión: ese se dispara tras 12 s sin oír al *teclado*, y
+// mientras se usa el teclado hay telemetría continua, así que nunca llegaba a
+// saltar y el aviso caducaba con la app abierta y sana.
 #define HOST_APP_TIMEOUT_MS 25000
 
 static bool     host_app_announced = false;
@@ -2374,6 +2385,7 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:TIMEOUT:%d\n", (int)reposo_timeout_min);
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
+        cdc_printf("STATE:MENUGLITCH:%lu\n", (unsigned long)menu_tap_glitches);
         cdc_printf("STATE:PAGE:%d:%d:%d\n", (int)active_page,
                    (int)profiles[active_profile_idx].page_count, MAX_PAGES);
         send_scroll_state();
@@ -2912,13 +2924,23 @@ int main() {
     };
     bool last_key_state[12] = {false};
 
-    // Antirrebote de las doce teclas. Los pulsadores de los encoders ya tenían
-    // el suyo, pero las teclas se leían en crudo: un pulsador mecánico rebota
-    // entre 1 y 5 ms y el bucle gira cada 250 us, así que un solo toque podía
-    // colar hasta veinte flancos y repetir el atajo.
+    // Antirrebote de las doce teclas, por integración: un nivel nuevo solo se da
+    // por bueno cuando se ha leído igual durante KEY_DEBOUNCE_US seguidos.
     //
-    // Se acepta el primer flanco al instante (no añade ni un microsegundo de
-    // latencia) y se ignora lo que llegue durante los 5 ms siguientes.
+    // Antes era por bloqueo (se aceptaba el primer flanco al instante y se
+    // ignoraban los 5 ms siguientes). Eso filtra el rebote de un contacto sano,
+    // pero da por buena una pulsación entera a partir de ruido: basta un único
+    // muestreo distinto para dar la tecla por pulsada, y otro 5 ms después para
+    // darla por soltada. Con la tecla de menú, cuya pulsación corta cambia de
+    // página, cada pareja de picos así era un cambio de página, y como el cambio
+    // repinta las diez pantallas —y ese repintado es justo la fuente de ruido—
+    // se realimentaba: el teclado se quedaba pasando páginas a unas decenas por
+    // segundo sin que nadie lo tocara.
+    //
+    // Cuesta 5 ms de latencia en el flanco (antes, cero). Es lo que hace
+    // cualquier teclado y no se nota; la alternativa era seguir tragándose picos.
+    // key_edge_us[i] guarda desde cuándo el pin discrepa del estado filtrado: un
+    // solo muestreo que vuelva a coincidir pone el reloj a cero y el pico muere.
     #define KEY_DEBOUNCE_US 5000
     bool     key_stable[12]  = {false};
     uint32_t key_edge_us[12] = {0};
@@ -3289,8 +3311,9 @@ int main() {
             uint32_t now_us = time_us_32();
             for (int i = 0; i < 12; i++) {
                 bool raw = !gpio_get(key_pins[i]);
-                if (raw != key_stable[i] &&
-                    (uint32_t)(now_us - key_edge_us[i]) >= KEY_DEBOUNCE_US) {
+                if (raw == key_stable[i]) {
+                    key_edge_us[i] = now_us; // sigue como estaba: reloj a cero
+                } else if ((uint32_t)(now_us - key_edge_us[i]) >= KEY_DEBOUNCE_US) {
                     key_stable[i]  = raw;
                     key_edge_us[i] = now_us;
                 }
@@ -3371,11 +3394,21 @@ int main() {
                 menu_hold_start = 0;
             }
         } else {
-            // Al soltar: si no llegó al segundo, era una pulsación corta y toca
-            // pasar de página. El menú largo ya se ha encargado de lo suyo.
+            // Al soltar: si no llegó al tiempo del menú, era una pulsación corta
+            // y toca pasar de página. El menú largo ya se ha encargado de lo suyo.
+            //
+            // Segunda red bajo el antirrebote: por debajo de MENU_TAP_MIN_MS no
+            // hay dedo humano que valga, así que un pulso más corto es ruido y no
+            // pasa de página. Se cuentan para poder verlos con GET_STATE, porque
+            // el síntoma (páginas pasando solas) aparece justo con la app cerrada,
+            // que es cuando nadie está mirando el CDC.
             if (menu_hold_start != 0 && !menu_long_fired && current_mode == MODE_NORMAL) {
-                activity_detected = true;
-                next_page();
+                if ((uint32_t)(now - menu_hold_start) >= MENU_TAP_MIN_MS) {
+                    activity_detected = true;
+                    next_page();
+                } else {
+                    menu_tap_glitches++;
+                }
             }
             menu_hold_start = 0;
             menu_long_fired = false;

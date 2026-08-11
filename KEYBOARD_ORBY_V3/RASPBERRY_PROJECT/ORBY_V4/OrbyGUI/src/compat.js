@@ -24,7 +24,7 @@ export const FW_MIN = '2.0';
 
 // La que trae este repositorio (include/orby_version.h). Con una anterior la
 // app funciona recortada; con una posterior, la app es la vieja.
-export const FW_RECOMMENDED = '4.5';
+export const FW_RECOMMENDED = '4.6';
 
 // Qué versión hace falta para cada función, y qué bandera del handshake la
 // confirma cuando el firmware la anuncia.

@@ -181,9 +181,9 @@ class OrbySerial extends EventEmitter {
       // deduce de tener el puerto abierto —la WebGUI también lo abre y no puede
       // ejecutar nada—, así que hay que decírselo. Va en cada presentación, y no
       // solo en la primera, porque el aviso caduca en el teclado si deja de
-      // llegar: el ACK del vigilante lo renueva de paso.
+      // llegar; entre presentaciones lo repite _renovarAnuncioApp.
       if (this.deviceInfo?.hostapp === '1') {
-        this._sendRaw('HOST_APP:1\n');
+        this._anunciarApp();
         // Se registra solo la primera vez: con la conexión ya hecha esto pasa
         // cada pocos segundos y llenaría el log.
         if (!yaConectado) log('[serie] anunciada la app al teclado (HOST_APP:1)');
@@ -266,6 +266,8 @@ class OrbySerial extends EventEmitter {
       if (!this.isConnected || !this.port?.isOpen) return;
       const ahora = Date.now();
 
+      this._renovarAnuncioApp(ahora);
+
       if (this._pingAt) {
         if (this._lastLineAt > this._pingAt) { this._pingAt = 0; return; }  // contestó
         if (ahora - this._pingAt > RESPUESTA_MS) {
@@ -285,6 +287,29 @@ class OrbySerial extends EventEmitter {
     clearInterval(this._watchdog);
     this._watchdog = null;
     this._pingAt = 0;
+    this._hostAppAt = 0;
+  }
+
+  // El aviso de "la app está delante" caduca en el teclado a los 25 s, y solo lo
+  // renueva una línea que llegue del PC. Hay que repetirlo por nuestro propio
+  // reloj.
+  //
+  // Antes se colaba de gorra en el ACK del vigilante, y ese no mide lo mismo: se
+  // dispara tras 12 s sin oír al *teclado*. Justo mientras se usa el teclado hay
+  // telemetría continua (KEY_EV, WHEEL, ENC), así que el vigilante nunca veía
+  // silencio, nunca mandaba el ACK, y el aviso caducaba a los 25 s con la app
+  // abierta y sana: aparecían las barras de tachado. En cuanto se soltaba el
+  // teclado 12 s, el ACK las quitaba solo. Los dos relojes no tienen nada que ver.
+  _renovarAnuncioApp(ahora) {
+    const RENUEVO_MS = 8_000;  // holgura de sobra sobre los 25 s del teclado
+    if (this.deviceInfo?.hostapp !== '1') return;
+    if (ahora - (this._hostAppAt || 0) < RENUEVO_MS) return;
+    this._anunciarApp(ahora);
+  }
+
+  _anunciarApp(ahora = Date.now()) {
+    this._hostAppAt = ahora;
+    this._sendRaw('HOST_APP:1\n');
   }
 
   // Suelta la conexión y vuelve a buscar. Hace a mano lo que haría el evento

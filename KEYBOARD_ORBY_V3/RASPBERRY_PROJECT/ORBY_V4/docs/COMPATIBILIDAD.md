@@ -23,6 +23,7 @@ commit, más este documento.
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
 |---|---|---|
+| **4.6** | Sin funciones nuevas. Arregla el antirrebote de las teclas, que era por bloqueo y daba por buena una pulsación entera a partir de dos picos de ruido: en la tecla de menú eso salía como páginas pasando solas sin parar. Añade `STATE:MENUGLITCH:<n>` a `GET_STATE`, el contador de pulsos descartados por demasiado cortos | Cualquiera |
 | **4.5** | Comando `HOST_APP:<0\|1>` y bandera `HOSTAPP=1`: el teclado tacha con una barra diagonal las pantallas de las teclas que solo puede ejecutar la app de PC mientras esta no esté anunciada | OrbyGUI 0.4.x o posterior |
 | **4.4** | Icono propio por perfil, visible en el menú de perfiles del teclado | OrbyGUI 0.4.x o posterior |
 | **4.3** | Sin cambios de protocolo respecto a la 4.2. Es la primera versión que sale como release publicada, y por tanto la primera que se puede instalar desde la propia app | 0.4.1 o posterior |
