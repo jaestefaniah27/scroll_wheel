@@ -237,7 +237,7 @@ Electron y en navegador, y existe el esqueleto de la de Tauri.
 - Produce: `instalarOrbyTauri(): Promise<void>`, que deja `window.orby` montado.
 - Produce: `platform.isTauri(): boolean`.
 
-- [ ] **Paso 1: `src/platform.js`**
+- [x] **Paso 1: `src/platform.js`**
 
 Hoy `current` vale `'electron'` o `'web'`. Añadir `'tauri'`. La clave es que `can()`
 siga devolviendo `true` para todo salvo en navegador: Tauri aspira a paridad, así que
@@ -258,7 +258,7 @@ Y dejar `can()` exactamente como está: `return !isWeb() || !PC_ONLY.has(feature
 > añadir un `TAURI_PENDIENTE` (un `Set` como `PC_ONLY`) y consultarlo en `can()`. Se borra
 > en la Tarea 13. No esparcir comprobaciones por las vistas.
 
-- [ ] **Paso 2: `src/entry.js`**
+- [x] **Paso 2: `src/entry.js`**
 
 Tauri inyecta `window.__TAURI_INTERNALS__` antes de que corra ningún script de la página,
 igual que el preload de Electron inyecta `window.orby`. Queda:
@@ -285,7 +285,7 @@ if (window.__TAURI_INTERNALS__) {
 > `window.orby` propio, la rama de Electron se lo tragaría y arrancaría por la vía
 > equivocada sin decir nada.
 
-- [ ] **Paso 3: `src/tauri-main.js`**
+- [x] **Paso 3: `src/tauri-main.js`**
 
 Espejo de `web-main.js`:
 
@@ -302,7 +302,7 @@ await instalarOrbyTauri();
 await import('./main.js');
 ```
 
-- [ ] **Paso 4: `src/tauri/orby-tauri.js`**
+- [x] **Paso 4: `src/tauri/orby-tauri.js`**
 
 La superficie completa, sobre `invoke` y `listen`. Usa la tabla «Referencia: la
 superficie `window.orby`» de este documento: **los 39 canales, con sus nombres exactos**.
@@ -359,7 +359,7 @@ export async function instalarOrbyTauri() {
 > `serial:connected`. Los eventos sí admiten `:` y hay que conservarlos idénticos porque
 > son los que ya conoce el renderer.
 
-- [ ] **Paso 5: comprobar que no se ha roto nada**
+- [x] **Paso 5: comprobar que no se ha roto nada**
 
 ```bash
 cd OrbyGUI && node --test test/*.mjs && npx vite build
@@ -369,7 +369,7 @@ Esperado: `# pass 8`, y el build de vite termina sin error. Esto solo demuestra 
 JS es sintácticamente válido y que las otras dos vías siguen en pie; la vía de Tauri no
 arranca todavía porque no existe el backend.
 
-- [ ] **Paso 6: commit**
+- [x] **Paso 6: commit**
 
 ```bash
 git add OrbyGUI/src/entry.js OrbyGUI/src/platform.js OrbyGUI/src/tauri-main.js OrbyGUI/src/tauri/
@@ -477,7 +477,7 @@ deja escuchar los errores y hasta capturar la ventana en PNG desde un script.
 **Toolchain**: no hacen falta las Build Tools de MSVC. Con
 `rustup ... --default-host x86_64-pc-windows-gnu` compila y enlaza (probado con 1.97.1).
 
-- [ ] **Paso 5: commit**
+- [x] **Paso 5: commit**
 
 ```bash
 git add OrbyGUI/src-tauri OrbyGUI/package.json OrbyGUI/index.html
@@ -604,7 +604,7 @@ Cómo quedó, para no tener que releer el fichero:
   manda la máquina por su cuenta (`>> ACK`, `>> HOST_APP:1`): sin lo segundo no hay forma
   de ver que una conexión en reposo se está renovando en vez de estar a punto de caerse.
 
-- [ ] **Paso 4: comprobación sobre el teclado (Windows)** — parcial, 2026-08-11
+- [x] **Paso 4: comprobación sobre el teclado (Windows)** — completada el 2026-08-11
 
 - [x] Cierra la app de Electron antes (en Windows solo un proceso tiene el COM).
 - [x] `npm run tauri:dev` → detecta el teclado y la interfaz se puebla con los perfiles.
@@ -613,19 +613,28 @@ Cómo quedó, para no tener que releer el fichero:
       (`GET_HASH`, `GET_STATE`, `GET_PROFILE:0/1`, todos los `GET_OLED`/`GET_OLED_PG`).
       Que lleguen los 106 ya demuestra que las respuestas vuelven: la cola de `pending`
       de `device.js` habría abortado en el primero que no contestara.
-- [ ] Desenchufa el teclado: la interfaz pasa a «buscando» en menos de 20 s.
-- [ ] Vuelve a enchufarlo: reconecta solo, sin tocar nada.
-- [ ] Con la consola de la app abierta, gira el mando: se ven llegar líneas `ENC:`.
+- [x] Desenchufa el teclado: la interfaz pasa a «buscando» en menos de 20 s.
+      Salió mejor: `disconnected` y `searching` se emiten **en el mismo instante**, no a los
+      20 s. La cuenta atrás del vigilante no llega a correr porque desaparecer el puerto se
+      ve al leer, no al agotar el plazo.
+- [x] Vuelve a enchufarlo: reconecta solo, sin tocar nada. Tardó 40 s con el cable fuera y
+      volvió sin intervención.
+- [x] Con la consola de la app abierta, gira el mando: se ven llegar líneas `ENC:`.
+      Comprobado sobre la build de release: 24 líneas, `ENC:1:±1` y `ENC:2:±1`, los dos
+      mandos y los dos sentidos. Con ellas llegan también `KEY_EV:` (pares pulsar/soltar),
+      `MODE:MENU`/`MODE:NORMAL`, `EV:CTX:` y los `MACRO:<id>` de las teclas de PC.
 - [x] Déjala conectada **un minuto sin tocar nada**: no se desconecta (el watchdog está
       renovando bien). Este es el que más fallos pilla.
       Salió así: a los 12 s de silencio `>> ACK`, el teclado contesta con su presentación
       y se renueva `>> HOST_APP:1`, **sin** un segundo `teclado detectado` (no se
       re-anuncia una conexión que ya estaba) y sin desconexión.
 
-> Las tres casillas que quedan sin marcar necesitan una mano: desenchufar el cable y girar
-> el mando. Todo lo demás se comprobó sobre el teclado de verdad (COM7, firmware 4.6).
+> **Un `MACRO:` que no salta no siempre es un fallo.** Al comprobar esto se dio por perdida
+> una tecla que no disparaba su secuencia; lo que pasaba es que el teclado estaba en otro
+> **perfil**, donde esa misma tecla es una tecla normal. Antes de buscar el fallo en la app,
+> mirar el `EV:CTX:<perfil>:<pagina>:<total>` que hay justo antes en la traza.
 
-- [ ] **Paso 5: commit**
+- [x] **Paso 5: commit**
 
 ```bash
 git commit -am "feat(tauri): descubrimiento, handshake y vigilancia del puerto serie"
@@ -696,17 +705,39 @@ El diálogo contesta por callback desde otro hilo, así que los dos comandos son
 lo esperan por un canal: bloquear ahí colgaría la interfaz mientras el diálogo está
 abierto.
 
-- [ ] **Paso 3: la prueba de oro de la paridad (Windows, con teclado)**
+- [x] **Paso 3: la prueba de oro de la paridad (Windows, con teclado)** — pasada el
+      2026-08-11 sobre el teclado real (COM7, fw 4.5), con la build de **release** de Tauri
 
 Esta prueba vale por diez:
 
-- [ ] Con la app de **Electron**, haz una copia de seguridad.
-- [ ] Ciérrala. Abre la de **Tauri** y restaura esa copia.
-- [ ] Comprueba que los perfiles, etiquetas, atajos y mandos quedan igual.
-- [ ] Haz ahora una copia con la de Tauri y compárala con la de Electron: deben coincidir
+- [x] Con la app de **Electron**, haz una copia de seguridad.
+- [x] Ciérrala. Abre la de **Tauri** y restaura esa copia.
+- [x] Comprueba que los perfiles, etiquetas, atajos y mandos quedan igual.
+- [x] Haz ahora una copia con la de Tauri y compárala con la de Electron: deben coincidir
       salvo la marca de tiempo.
 
-- [ ] **Paso 4: commit**
+Las tres copias (una de Tauri, una de Electron y una de Tauri **después** de restaurar la
+de Electron) miden **54 122 bytes exactos** y tienen el mismo contenido: `orby-backup` v4,
+2 perfiles, 4 páginas y 20 iconos en el primero, iconos de perfil incluidos.
+
+**Una diferencia real que hay que conocer, y que no es un fallo:** las dos copias no son
+idénticas byte a byte. `serde_json` serializa los objetos con las **claves ordenadas
+alfabéticamente**, así que donde Electron escribe `{"modifier":1,"keycode":6}` Tauri escribe
+`{"keycode":6,"modifier":1}`. Mismos valores, mismo tamaño, orden distinto. Lo mismo le pasa
+a `deviceMirror` y al objeto de info del teclado. Comparar copias entre las dos vías exige
+normalizar el orden de las claves antes; un `diff` a secas marca las 80 entradas de
+`keys`+`rotary` de cada perfil y no significa nada.
+
+> **Trampa vivida al hacer esta prueba, y es de Electron.** Al cerrar la app de Tauri y
+> abrir la de Electron acto seguido, el primer intento de apertura de Electron pilla el
+> COM todavía ocupado, **se queda con el handle** y a partir de ahí registra
+> `no se pudo abrir COM7: Access denied` cada 3 s **contra sí mismo**, para siempre. Con
+> Electron corriendo, el puerto tampoco se abre desde PowerShell; al matarlo, se libera.
+> Es exactamente el fallo que la constante «nunca dejar abierto un puerto cuyo handshake
+> falló» manda evitar, y la máquina de estados de `serie.rs` sí lo hace. Al alternar entre
+> las dos apps hay que esperar a que el puerto quede libre de verdad.
+
+- [x] **Paso 4: commit**
 
 ```bash
 git commit -am "feat(tauri): configuración local y copias de seguridad"
@@ -761,10 +792,22 @@ Un montón de piezas pequeñas, todas independientes.
       tiene que usar `SendInput` absoluto y no ninguna capa que hable en píxeles
       lógicos.**
 
-- [ ] **Comprobación (Windows):** minimizar, maximizar, cerrar a bandeja y recuperar desde
+- [x] **Comprobación (Windows):** minimizar, maximizar, cerrar a bandeja y recuperar desde
       la bandeja; la pestaña «App» de una tecla lista programas de verdad; el botón
       «Posición de ratón» del editor de secuencias devuelve la posición correcta **en un
       monitor con escalado al 150 %**.
+
+  **Escalado al 150 %, comprobado el 2026-08-11** con el monitor principal a 144 DPI
+  (0,0–1920,1080) y el secundario a 96 DPI (−1920,98–0,1178). `getMousePosition()` devuelve
+  **exactamente** lo mismo que `GetCursorPos` en los cuatro puntos probados, incluidos los
+  bordes y el monitor de coordenadas negativas: `1700,900`, `50,50`, `1919,1079`,
+  `−1500,600` y `−1,1100`. Ni un píxel de diferencia: no hay virtualización de por medio.
+
+  > **Al comprobar esto, la sonda tiene que declararse consciente del DPI.** Un PowerShell
+  > normal **no** lo es, y Windows le virtualiza las coordenadas: en el monitor al 150 %
+  > lee 1280×720 donde de verdad hay 1920×1080, y `EnumDisplayMonitors` le dice que todo
+  > está al 100 %. Comparar eso contra la app —que sí es consciente— inventa una diferencia
+  > que no existe. Hay que llamar a `SetProcessDpiAwarenessContext(-4)` antes de nada.
 
   Comprobado el 2026-08-11 sin tocar la pantalla: `listInstalledApps()` devuelve **188**
   programas con el destino resuelto (p. ej. `Altium Designer` →
@@ -776,10 +819,18 @@ Un montón de piezas pequeñas, todas independientes.
   Comprobado a mano el 2026-08-11: la lista de programas instalados y el diálogo de elegir
   aplicación o archivo se comportan igual que en Electron.
 
-  Queda por comprobar a mano: recuperar desde la bandeja (clic simple, doble clic y menú) y
-  el escalado al 150 %.
+  **Bandeja, comprobada a mano el 2026-08-11 sobre la build de release**: el ciclo entero
+  (X → bandeja, clic simple para mostrar, clic simple para esconder, doble clic para
+  mostrar, y «Abrir OrbyGUI» del menú) funciona, con la notificación de «sigue activo» la
+  primera vez. Lo que importa medir de eso: el proceso **sigue vivo** y **el puerto serie
+  sobrevive** al ciclo — al volver, `getStatus()` da `connected` en COM7 sin reconectar.
+  La RAM pasa de 39,8 MB con la ventana abierta a 49,3 MB después de tres reconstrucciones
+  del WebView2, y los hilos de 20 a 27; el WebView2 se reconstruye entero cada vez, así que
+  los ganchos que hubiera puestos en la página se pierden (esperado, no es fuga de la app).
 
-- [ ] **Commit:** `git commit -am "feat(tauri): ventana, bandeja, diálogos y apps"`
+  Queda por comprobar a mano: el escalado al 150 %.
+
+- [x] **Commit:** `git commit -am "feat(tauri): ventana, bandeja, diálogos y apps"`
 
 ---
 
@@ -861,10 +912,17 @@ igual sea cual sea la distribución del teclado del usuario.
       programa, y una con posición absoluta de ratón **en un monitor con escalado**.
 
   Comprobado a mano el 2026-08-11 sobre el teclado: secuencias, abrir programas y elegir
-  ficheros se comportan igual que en Electron. Queda sin comprobar solo el caso del monitor
-  con escalado al 150 %.
+  ficheros se comportan igual que en Electron.
 
-- [ ] **Commit:** `git commit -am "feat(tauri): ejecución de secuencias en el PC"`
+  **El caso del escalado, cerrado el 2026-08-11** con el monitor principal al 150 %: se
+  grabó un recorrido que cruza los dos monitores y se reprodujo midiendo el cursor con una
+  sonda consciente del DPI. La x mínima grabada (**−1121**, en el monitor de la izquierda)
+  se reproduce **idéntica**, y el cursor arranca y acaba en `337,960`, que es exactamente la
+  coordenada del clic que se grabó. Las únicas diferencias están donde el gancho de bajo
+  nivel vio posiciones **fuera** del escritorio virtual (x=1970, y=−43): son las que Windows
+  recorta al borde al reproducir, y no son un desajuste de escala.
+
+- [x] **Commit:** `git commit -am "feat(tauri): ejecución de secuencias en el PC"`
 
 ---
 
@@ -970,11 +1028,37 @@ en el código:
     suyo, y deja la grabación en cero eventos.
   - La configuración se dejó como estaba: ninguna macro con eventos.
 
-- [ ] **Queda por comprobar a mano:** el corte de un `hold` por la telemetría del teclado
-      (`KEY_EV:…:0`), porque necesita una pulsación física en el Orby; y una grabación con
-      clics de verdad y rueda.
+- [x] **El corte de un `hold` por la telemetría del teclado** — comprobado el 2026-08-11
+      sobre la build de release, con una grabación temporal que hunde F15 y no la suelta,
+      colgada de una tecla física del Orby:
 
-- [ ] **Commit:** `git commit -am "feat(tauri): grabadora de ratón y teclado"`
+  | t | Qué pasa |
+  |---|---|
+  | 120,10 s | `KEY_EV:11:1` y `MACRO:140` |
+  | 120,12 s | `recorder {id:140, phase:"playing"}` — arranca en **20 ms** |
+  | 126,65 s | `KEY_EV:11:0` (soltada tras 6,5 s) |
+  | 126,66 s | `recorder {id:140, phase:"idle"}` — corta en **10 ms** |
+
+  Repetido con una pulsación corta (2,3 s), mismo resultado. Ni F15 ni Control quedan
+  hundidas después (`GetAsyncKeyState`).
+
+- [x] **Una grabación con clics de verdad y rueda** — comprobado el 2026-08-11: 437 eventos
+      (409 `move`, 3 `mdown`/3 `mup`, 10 `wheel`, 6 `kdown`/6 `kup`).
+  - Primer evento en `t = 0`: el recorte del silencio inicial funciona.
+  - Clics con su botón (`b=1` y `b=2`) y sus coordenadas, uno de ellos en **x = −284**:
+    escritorio virtual, con el monitor de la izquierda incluido.
+  - Rueda en los dos sentidos (`r=-1` y `r=1`) y **siempre** con `d=3`: nunca cae a cero,
+    que es la desviación deliberada nº 3.
+  - Huecos entre movimientos: mínimo y mediana **16 ms** clavados, que es el filtro.
+  - Reproducida, el cursor recorre de **x=−642 a x=1213**, cruzando los dos monitores: la
+    captura y la reproducción comparten espacio de coordenadas.
+
+  > **La reproducción dura un tercio de la grabación y está bien.** Una grabación de 38,8 s
+  > se reproduce en 13,6 s porque la velocidad por defecto es **3×**
+  > (`VELOCIDAD_POR_DEFECTO` en `recorder.rs`, `macro.speed || 3` en `electron/main.js:314`).
+  > Al medir tiempos de reproducción hay que dividir por ahí antes de gritar.
+
+- [x] **Commit:** `git commit -am "feat(tauri): grabadora de ratón y teclado"`
 
 ---
 
@@ -1043,7 +1127,7 @@ Cómo quedó, para no tener que releer el fichero:
   - Arranque automático: reiniciada la app con `autoProfile.enabled` en `true`, `current()`
     ya trae la ventana **sin que nadie haya llamado a `start()`**.
 
-- [ ] **Commit:** `git commit -am "feat(tauri): ventana en primer plano sin PowerShell"`
+- [x] **Commit:** `git commit -am "feat(tauri): ventana en primer plano sin PowerShell"`
 
 ---
 
@@ -1092,14 +1176,29 @@ donde `status` es `idle|checking|downloading|bootsel|flashing|done|error`.
 - [ ] **Comprobación (Windows, con teclado):** actualizar por la vía `BOOTSEL` y por la
       manual. Confirmar que al acabar el teclado vuelve con la versión nueva.
 
-  Comprobado en seco el 2026-08-11: `cargo check` compila limpio con la dependencia nueva,
-  `cargo test -p orby-core` sigue en 127 pruebas verdes y el verificador del plan no
-  encuentra discrepancias. **Falta lo que solo se ve con el teclado delante**: descargar de
-  verdad, entrar en BOOTSEL (por comando y a mano) y comprobar que el teclado vuelve con la
-  versión nueva. No se ha ejecutado sobre hardware real en esta sesión porque flashear es
-  una operación que puede dejar el teclado a medias si algo va mal a mitad.
+  - [x] **Vía `BOOTSEL`, hecha de verdad el 2026-08-11**: el teclado subió de la 4.5 a la
+        4.6 sobre la build de release, y volvió solo con `FW=4.6` y todas sus banderas
+        (`MACROS=1:MAXMACROS=64:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1`). La secuencia de
+        `firmware:state` fue `downloading` 0→100 % (0,3–0,9 s) → `bootsel` (0,9 s) →
+        `flashing` (1,8 s) → `done` (4,3 s) → recomprobación automática → `idle` (8,2 s).
+        Nadie tocó el teclado: ni desenchufarlo, ni el botón.
+  - [x] `firmware_check` con los dos topes: con `maxFw: '4.5'` devuelve `available: false`
+        y `latest: 4.5`; con `maxFw: '4.6'`, `available: true` y el asset correcto
+        (`ORBY_V4-fw-4.6.uf2`, 260 608 bytes, el mismo tamaño que publica GitHub).
+  - [ ] **Vía manual** (enchufar con BOOTSEL pulsado): sin comprobar.
 
-- [ ] **Commit:** `git commit -am "feat(tauri): actualización del firmware"`
+  > **Ojo con el tope de versión al probar esto en esta rama.** La rama de trabajo va por
+  > detrás de `main` en el firmware: aquí `orby_version.h` y `compat.js` dicen **4.5** y
+  > `main` dice **4.6**. Como el tope sale de `FW_RECOMMENDED`, la app en esta rama solo
+  > ofrece la 4.5, así que a un teclado con la 4.6 le diría «al día» y a uno con la 4.5 no
+  > le ofrecería nada. Para probar la subida de verdad se le pasó `maxFw: '4.6'` a
+  > `firmware.check` a mano, sin tocar el código. Al traer `main` esto se arregla solo.
+
+  Comprobado en seco antes, el 2026-08-11: `cargo check` compila limpio con la dependencia
+  nueva, `cargo test -p orby-core` sigue en 127 pruebas verdes y el verificador del plan no
+  encuentra discrepancias.
+
+- [x] **Commit:** `git commit -am "feat(tauri): actualización del firmware"`
 
 ---
 
@@ -1240,18 +1339,15 @@ filtrado a `.zip`/`.orbyplugin`.
 Los ajustes siguen viviendo en `config.plugins["<id>"]`, con la misma forma, para que
 sobrevivan a desinstalar y volver a instalar.
 
-- [ ] **Comprobación (Windows, con la lámpara):** instalar el `.zip`, ajustar la
+- [x] **Comprobación (Windows, con la lámpara):** instalar el `.zip`, ajustar la
       dirección, «Probar», asignar acciones a una tecla y a un mando, y **girar el mando
       rápido**: el brillo tiene que subir liso, sin tirones ni retraso acumulado.
 
-  No se ha podido hacer en esta sesión: hace falta la lámpara LampDesk encendida en la
-  red. El código compila limpio (`cargo check`), los 7 tests de `plugins.rs` pasan
-  (ejecución HTTP contra un servidor de mentira) y los 127 + 5 de `orby-core` también,
-  pero **nadie ha instalado un `.zip` de verdad ni ha girado un mando contra un
-  complemento real todavía**. Es justo lo que dice esta casilla que hay que comprobar;
-  no se puede dar por bueno sin la lámpara delante.
+  Comprobada por el usuario el 2026-08-11 contra la lámpara real: el complemento
+  declarativo funciona. Antes ya estaban en verde el `cargo check`, los 7 tests de
+  `plugins.rs` (ejecución HTTP contra un servidor de mentira) y los 127 + 5 de `orby-core`.
 
-- [ ] **Commit:** `git commit -am "feat(tauri): complementos declarativos"`
+- [x] **Commit:** `git commit -am "feat(tauri): complementos declarativos"`
 
 ---
 
@@ -1377,6 +1473,16 @@ Solo cuando **todo lo anterior** esté comprobado sobre el teclado.
       mismo teclado, anotar: tamaño del instalador, RAM en reposo y tiempo de arranque.
       Poner los números en el mensaje del commit.
 
+  Primeras medidas, tomadas el 2026-08-11 con las dos builds conectadas al mismo teclado
+  (COM7). Falta el tiempo de arranque:
+
+  | | Electron 0.5.2 | Tauri 0.5.1 |
+  |---|---|---|
+  | Instalador NSIS | **97,6 MB** | **7,5 MB** |
+  | Procesos | 4 | 1 |
+  | RAM con la ventana abierta | **616,6 MB** (310,4 + 133,3 + 121,0 + 51,9) | **39,8 MB** |
+  | RAM escondida en la bandeja | no medida | ~8 MB (ver commit `513e47d`) |
+
 - [ ] **Paso 2: quitar** `electron/`, las dependencias de Electron de `package.json`
       (`electron`, `electron-builder`, `electron-updater`, `serialport`, `uiohook-napi`,
       `@nut-tree-fork/nut-js`) y sus scripts. Borrar el `TAURI_PENDIENTE` de
@@ -1404,14 +1510,32 @@ Solo cuando **todo lo anterior** esté comprobado sobre el teclado.
 
 ## Repaso final antes de dar el trabajo por hecho
 
-- [ ] `cargo test` en verde, y **ningún test marcado como ignorado** sin explicar por qué.
-- [ ] `node --test test/*.mjs` en verde.
-- [ ] Los 39 comandos existen y ninguno devuelve un valor de mentira.
-- [ ] Ninguna vista, ni `device.js`, ni `store.js`, ni `compat.js` han cambiado.
-- [ ] La copia de seguridad hecha con Electron se restaura con Tauri sin perder nada.
-- [ ] La app aguanta **cinco minutos conectada sin tocarla** sin desconectarse.
-- [ ] Parar una reproducción a mitad no deja ninguna tecla pegada.
+Repasado el 2026-08-11 contra la build de **release** y el teclado real (COM7).
+
+- [x] `cargo test` en verde, y **ningún test marcado como ignorado** sin explicar por qué.
+      127 (orby-core) + 5 (descriptor de lampdesk) + 7 (orby-app), 0 fallos, 0 ignorados.
+- [x] `node --test test/*.mjs` en verde. 14 pruebas.
+- [x] Los 39 comandos existen y ninguno devuelve un valor de mentira.
+      `verifica_plan_tauri.sh`: **0 discrepancias**.
+- [x] Ninguna vista, ni `device.js`, ni `store.js`, ni `compat.js` han cambiado.
+- [x] La copia de seguridad hecha con Electron se restaura con Tauri sin perder nada.
+      Ver la prueba de oro de la Tarea 4: las tres copias, 54 122 bytes, mismo contenido.
+- [x] La app aguanta **cinco minutos conectada sin tocarla** sin desconectarse.
+      Aguantó **6,0 minutos**: cero `disconnected`, cero `searching`, cero errores y 45
+      renovaciones de `HOST_APP` por el camino.
+- [x] Parar una reproducción a mitad no deja ninguna tecla pegada.
+      Comprobado dos veces: cortando un `loop` con `recorder.stop()` y cortando un `hold`
+      soltando la tecla física. `GetAsyncKeyState` da F15 y Control sueltas después.
 - [ ] Los números de la mejora (tamaño, RAM, arranque) están medidos y escritos.
+      Instalador y RAM medidos (ver Tarea 13, paso 1). **Falta el tiempo de arranque.**
+
+**Lo único que queda sin comprobar sobre hardware**, a fecha del 2026-08-11:
+
+| Qué | Por qué sigue abierto |
+|---|---|
+| Firmware por la vía **manual** (enchufar con BOOTSEL pulsado) | La automática ya funciona; se decidió no repetir el flasheo |
+| Tiempo de arranque de las dos vías | No medido todavía |
+| Tareas 11 y 12 | La 11 está aplazada a propósito; la 12 no está implementada |
 
 ## Si algo no cuadra
 
