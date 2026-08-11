@@ -1486,31 +1486,46 @@ meterlos en un `TAURI_PENDIENTE`** (el `Set` que la Tarea 1 dejó previsto en
 - [ ] **Paso 3: empaquetado NSIS** con Tauri, conservando el nombre de producto
       `OrbyGUI` y el mismo identificador, para que actualice **sobre** la instalación
       existente en vez de dejar dos apps.
-      **Medio hecho:** el instalador ya sale de `npm run tauri:build` (7,5 MB) y los nombres
-      son los correctos. Lo que **no** se ha comprobado es lo único que importa de este
-      paso: que instalarlo encima de la versión de Electron la sustituya en vez de dejar
-      dos entradas en «Aplicaciones instaladas».
+      **Hecho, y el resto de este paso se descarta.** El instalador sale de
+      `npm run tauri:build` (7,5 MB) y los nombres son los correctos. Comprobar que instala
+      **encima** de la de Electron ya no aplica: ver el aviso de abajo.
 
-- [ ] **Paso 4: el relevo del actualizador.** Leer esto entero antes de tocar nada:
+- [ ] **Paso 4: el actualizador.**
 
-  Hoy los usuarios tienen `electron-updater` mirando las releases de GitHub. Si la app de
-  Tauri sale con su propio actualizador y ya está, **los que tengan la de Electron no se
-  enterarán nunca** y se quedan varados en la última versión de Electron.
+  Implementar `updater_get`, `updater_check` y `updater_install` sobre el actualizador de
+  Tauri, y decidir el formato de las releases de la app.
 
-  El orden correcto es:
-  1. Publicar una **última versión de Electron** cuya actualización instale la app de
-     Tauri.
-  2. Solo después, pasar las siguientes releases al formato del actualizador de Tauri.
+  Hay que **conservar** el apaño de que **las releases de firmware van como *prerelease***:
+  si una release `fw-v*` se publica como definitiva, pasa a ser `releases/latest`, que es
+  justo donde mira el actualizador de la app. Ya pasó una vez, está documentado en
+  `ORBY_V4/docs/COMPATIBILIDAD.md` (ojo: ese está un nivel por encima, en `ORBY_V4/docs/`,
+  no en `OrbyGUI/docs/` como los demás que cita este plan).
 
-  Y hay que **conservar** el apaño de que **las releases de firmware van como
-  *prerelease***: si una release `fw-v*` se publica como definitiva, pasa a ser
-  `releases/latest` y rompe la actualización de **todo** el parque instalado. Ya pasó una
-  vez, está documentado en `ORBY_V4/docs/COMPATIBILIDAD.md` (ojo: ese está un nivel por
-  encima, en `ORBY_V4/docs/`, no en `OrbyGUI/docs/` como los demás que cita este plan).
+> ### El relevo de Electron se descarta (decisión del 2026-08-11)
+>
+> Este plan se escribió suponiendo un parque de usuarios instalados con
+> `electron-updater` al que no se podía dejar tirado, y de ahí salían el puente («una
+> última versión de Electron cuya actualización instale la de Tauri») y la comprobación de
+> instalar una encima de la otra.
+>
+> **No hay tal parque: el único usuario es el autor**, que ya tiene la de Tauri instalada
+> a mano y la de Electron desinstalada. Así que:
+>
+> - **No se publica ninguna versión puente de Electron.**
+> - **No se comprueba** que las dos convivan ni que una sustituya a la otra: con una a la
+>   vez basta.
+> - La instalación se hace **a mano**, con el `.exe` que produce `npm run tauri:build`.
+>
+> Lo que sí sigue en pie de este paso es el actualizador en sí, si se quiere que la app
+> siga avisando de versiones nuevas. Si se decide que tampoco hace falta, la salida
+> limpia **no** es dejar los comandos sin registrar —que es lo que hay hoy y miente en la
+> interfaz— sino quitar el espacio `updater` de `src/tauri/orby-tauri.js` y meterlo en el
+> `TAURI_PENDIENTE` de `platform.js`, para que la tarjeta se esconda.
 
-- [ ] **Comprobación (Windows):** instalar la versión de Electron anterior, actualizar y
-      comprobar que queda la de Tauri, **con la configuración y los perfiles intactos**.
-      Activar el autoarranque, reiniciar sesión y comprobar que arranca escondida.
+- [ ] **Comprobación (Windows):** activar el autoarranque, cerrar sesión, volver a entrar y
+      comprobar que la app arranca **escondida en la bandeja**, con el teclado detectado y
+      sin ventana. Y que el interruptor de Ajustes refleja el estado real del registro
+      después de reiniciar (es donde se ve si se comparó la ruta sin los argumentos).
 
 - [ ] **Commit:** `git commit -am "feat(tauri): actualizador, autoarranque y empaquetado"`
 
@@ -1599,6 +1614,7 @@ a propósito y no bloquea nada; la 13 es retirar Electron y documentar, y va des
 |---|---|
 | Firmware por la vía **manual** (enchufar con BOOTSEL pulsado) | La vía automática funciona y es la que usa todo el mundo |
 | Tiempo de arranque de las dos vías | El tamaño del instalador y la RAM ya justifican la migración de sobra |
+| El **puente de Electron a Tauri** y que las dos convivan | No hay parque instalado que relevar: el único usuario ya tiene la de Tauri puesta a mano y la de Electron desinstalada. Ver la Tarea 12 |
 
 ## Si algo no cuadra
 
