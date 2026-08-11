@@ -3,6 +3,8 @@
 // teclado, el mismo papel que hoy hace electron/log.js.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backup;
+mod config;
 mod serial;
 
 // El marco de la ventana lo dibuja la propia app (`decorations: false`), así que estos
@@ -48,7 +50,11 @@ fn main() {
             serial::serial_send,
             serial::serial_get_info,
             serial::serial_get_status,
-            serial::serial_reconnect
+            serial::serial_reconnect,
+            config::config_get,
+            config::config_set,
+            backup::backup_save,
+            backup::backup_load
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo arrancar la ventana de OrbyGUI");

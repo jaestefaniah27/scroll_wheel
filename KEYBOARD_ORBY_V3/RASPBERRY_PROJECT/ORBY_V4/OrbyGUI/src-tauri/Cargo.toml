@@ -21,3 +21,6 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serialport = "4"
+# Solo para la marca de tiempo del nombre que propone el diálogo de copia de seguridad.
+# Ya venía en el árbol de Tauri, así que no añade descarga.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

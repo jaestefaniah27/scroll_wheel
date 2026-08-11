@@ -639,12 +639,36 @@ git commit -am "feat(tauri): descubrimiento, handshake y vigilancia del puerto s
 
 La lógica ya está hecha (`orby_core::config`). Aquí solo falta el fichero y los diálogos.
 
-- [ ] **Paso 1: el fichero**
+> **Síntoma que provoca no tener esto** (visto el 2026-08-11 con la Tarea 3 recién hecha):
+> el teclado guarda las acciones que no son teclas —abrir una app, un complemento, energía,
+> una secuencia— como un **puntero a macro**, y lo que significa cada puntero vive en el
+> PC. Sin `config_get`, la app abre, se conecta y pinta **todas** esas teclas como
+> secuencias vacías: parece que se ha perdido la configuración. No se pierde nada —el
+> autoguardado a Flash solo se dispara con ediciones explícitas, y aun así escribiría los
+> mismos punteros—, pero asusta y es indistinguible de una pérdida de verdad.
 
-`%APPDATA%\OrbyGUI\orby-config.json`, el **mismo** que usa Electron. En Tauri sale de
-`app.path().app_config_dir()`; comprueba que resuelve a esa ruta exacta y **no** a
-`OrbyGUI-tauri` ni similar: si cambia, se pierde la configuración del usuario al migrar.
-El `identifier` de `tauri.conf.json` es lo que manda ahí.
+- [x] **Paso 1: el fichero** — hecho el 2026-08-11
+
+`%APPDATA%\OrbyGUI\orby-config.json`, el **mismo** que usa Electron.
+
+**La ruta NO sale de `app.path().app_config_dir()`.** Ese resuelve a
+`%APPDATA%\<identifier>`, y el identificador es `com.orby.gui` —reverse-DNS, como piden
+los empaquetadores y como necesita el instalador de la Tarea 12—, así que dejaría la
+configuración en `%APPDATA%\com.orby.gui` y el usuario abriría la app nueva sin ninguna de
+sus secuencias. Se compone a mano desde `%APPDATA%`.
+
+Dos diferencias deliberadas con `electron/config.js`, las dos a mejor:
+
+- **Se escribe por fichero temporal y `rename`.** Electron escribe directo sobre el
+  original, que es lo único que hay: si la app muere a mitad, un `orby-config.json`
+  truncado se lleva por delante todas las secuencias del usuario.
+- **Hay un cerrojo alrededor de leer-fusionar-escribir.** Los comandos de Tauri pueden
+  correr a la vez en hilos distintos y dos guardados casi simultáneos se pisarían. En
+  Electron no podía pasar porque todo iba en un hilo.
+
+Y una diferencia a peor que no importa: Electron cachea la configuración en memoria y aquí
+se relee del disco en cada consulta. Son 160 KB, y a cambio un cambio hecho por fuera se ve
+sin reiniciar.
 
 - `config_get` lee, y ante cualquier error de lectura o de parseo devuelve
   `orby_core::config::defaults()`. Un JSON corrupto **no** puede impedir que la app abra.
@@ -652,12 +676,22 @@ El `identifier` de `tauri.conf.json` es lo que manda ahí.
   renderer se queda con lo devuelto).
 - Escribir con sangría, que estos ficheros se acaban leyendo a mano.
 
-- [ ] **Paso 2: las copias**
+- [x] **Paso 2: las copias** — hecho el 2026-08-11
 
 `backup_save` abre un diálogo de guardar (`tauri-plugin-dialog`) y escribe el JSON.
 `backup_load` abre uno de abrir y lo lee. Las dos formas de respuesta tienen que ser
 **exactamente** `{ok:true,path}` / `{ok:true,data}` / `{ok:false,canceled:true}` /
 `{ok:false,error}`, porque `src/backup.js` ya las distingue y es común a las tres vías.
+
+Detalles que sí importan y que se comprobaron contra `electron/main.js`: `src/backup.js`
+mira `canceled` **antes** que `ok`, así que cerrar el diálogo no puede devolver `error` o
+le echaría la bronca al usuario por cerrar una ventana; el nombre propuesto es
+`orby-backup-<AAAA-MM-DD-HH-MM>.json` en Documentos, con el filtro «Copia de seguridad
+Orby»; y `backup_load` devuelve el JSON **ya interpretado**, no el texto.
+
+El diálogo contesta por callback desde otro hilo, así que los dos comandos son `async` y
+lo esperan por un canal: bloquear ahí colgaría la interfaz mientras el diálogo está
+abierto.
 
 - [ ] **Paso 3: la prueba de oro de la paridad (Windows, con teclado)**
 
