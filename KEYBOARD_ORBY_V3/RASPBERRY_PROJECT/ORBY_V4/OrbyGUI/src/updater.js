@@ -1,13 +1,19 @@
 // Estado de las actualizaciones de la propia app.
 //
-// Copia local de lo que informa electron-updater en el proceso principal (ver
-// setupAutoUpdater en electron/main.js). Lo consumen dos sitios: el aviso de la
-// barra de título y la tarjeta "Aplicación" de Ajustes.
+// Copia local de lo que informa el proceso principal. Lo consumen dos sitios: el
+// aviso de la barra de título y la tarjeta "Aplicación" de Ajustes.
+//
+// Los dos backends no hacen lo mismo, y por eso hay dos estados finales distintos:
+// Electron descarga e instala él solo (`downloading` → `downloaded`, ver
+// setupAutoUpdater en electron/main.js), mientras que Tauri solo avisa y deja la
+// descarga en manos del usuario (`available`, ver src-tauri/src/updater.rs). Esta
+// capa no elige: pinta el estado que le llegue.
 
 const listeners = new Set();
 
 export const update = {
-  status: 'idle',   // 'dev' | 'idle' | 'checking' | 'downloading' | 'downloaded' | 'error'
+  // 'dev' | 'idle' | 'checking' | 'downloading' | 'downloaded' | 'available' | 'error'
+  status: 'idle',
   version: '',      // versión instalada
   newVersion: null, // versión que se está bajando o ya está lista
   percent: 0,
@@ -51,6 +57,7 @@ export function describe() {
     case 'checking':    return 'Comprobando…';
     case 'downloading': return `Descargando ${update.newVersion} (${update.percent}%)`;
     case 'downloaded':  return `${update.newVersion} lista para instalar`;
+    case 'available':   return `Hay una versión nueva: ${update.newVersion}`;
     case 'error':       return `Error: ${update.error}`;
     default:            return 'Estás en la última versión';
   }

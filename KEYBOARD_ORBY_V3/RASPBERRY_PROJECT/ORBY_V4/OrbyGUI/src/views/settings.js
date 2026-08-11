@@ -111,6 +111,16 @@ function initAppCard() {
   const install = document.getElementById('btn-install-update');
   if (!check || !install) return;
 
+  // El botón y la explicación se escriben aquí y no en index.html porque lo que hacen
+  // depende del backend: Electron descarga e instala él solo, y Tauri solo avisa y abre
+  // la página de la release para que la instales tú (ver src-tauri/src/updater.rs).
+  if (platform.isTauri()) {
+    document.getElementById('btn-install-update-label').textContent = 'Abrir la descarga';
+    document.getElementById('app-update-desc').textContent =
+      'Se comprueba al arrancar y cada seis horas. Avisa de las versiones nuevas, '
+      + 'pero no las instala: el botón abre la página de la release para descargarla.';
+  }
+
   check.addEventListener('click', async () => {
     if (updater.update.status === 'dev') {
       toast('En modo desarrollo no hay actualizaciones que buscar', 'info');
@@ -139,7 +149,10 @@ function renderAppCard() {
   version.textContent = updater.update.version || '—';
   status.textContent = updater.describe();
   status.style.color = updater.update.status === 'error' ? 'var(--danger)' : '';
-  install.classList.toggle('hidden', updater.update.status !== 'downloaded');
+  // 'downloaded' es de Electron (ya bajada) y 'available' de Tauri (solo se sabe que
+  // existe): en los dos hay algo que ofrecer, aunque el botón no haga lo mismo.
+  const estado = updater.update.status;
+  install.classList.toggle('hidden', estado !== 'downloaded' && estado !== 'available');
 }
 
 // ================= Firmware del teclado =================

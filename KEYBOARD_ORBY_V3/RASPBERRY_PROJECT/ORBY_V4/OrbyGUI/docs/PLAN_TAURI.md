@@ -1438,6 +1438,17 @@ que ya tiene la app instalada.
 > tareas están cerradas sobre el teclado real, salvo la 11 (aplazada a propósito) y la 13
 > (que va después). Esta es la que bloquea que Tauri pase a ser el modelo.
 
+> ### Hecha el 2026-08-12
+>
+> Los cinco comandos que faltaban están implementados y registrados: Rust registra ya los
+> **39 de 39**. Lo que se decidió y por qué está en los apartados de cada paso, más abajo.
+> Lo que **no** se hizo, a propósito: el actualizador que descarga e instala solo (ver
+> Paso 4).
+>
+> El instalador sigue costando lo mismo: **7 843 560 bytes (7,48 MB)**, 25 KB más que el del
+> 2026-08-11, que es lo que pesa `tauri-plugin-single-instance`. Frente a los 97,6 MB de
+> Electron, la comparación de la Tarea 13 no se mueve.
+
 ### Punto de partida, medido el 2026-08-11
 
 **Lo que ya está**: el empaquetado NSIS **funciona**. `npm run tauri:build` produce
@@ -1473,33 +1484,83 @@ Windows» y la tarjeta de actualización de la app como si funcionaran.
 
 Al implementarlo, la decisión que hay que tomar de paso: si `updater` se va a quedar sin
 implementar durante un tiempo, **quitar los dos espacios de nombres de `orby-tauri.js` y
-meterlos en un `TAURI_PENDIENTE`** (el `Set` que la Tarea 1 dejó previsto en
-`platform.js`), para que las tarjetas se escondan en vez de mentir.
+meterlos en un `TAURI_PENDIENTE`**, para que las tarjetas se escondan en vez de mentir.
+(El plan daba por hecho que la Tarea 1 había dejado ese `Set` previsto en `platform.js`;
+no está. Al implementar los cinco comandos dejó de hacer falta, pero si algún día se
+aparca una función de Tauri, hay que crearlo: `can()` solo pregunta por `isWeb()`.)
 
-- [ ] **Paso 1: autoarranque.** Entrada en el registro de usuario (clave `Run`) que
-      conserve el argumento `--hidden`. Y al **leerla**, comparar ruta **y argumentos**:
-      comparando solo la ruta siempre devuelve que está desactivado.
+- [x] **Paso 1: autoarranque.** `src-tauri/src/autostart.rs`, sobre la clave
+      `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con el crate `windows` que ya
+      estaba en el árbol. Sin plugin: la trampa de este paso está en cómo se **lee**, y
+      escribiendo la entrada uno mismo se controla la comparación.
 
-- [ ] **Paso 2: arranque escondido.** Con `--hidden` la app arranca sin mostrar la
-      ventana, solo el icono de la bandeja.
+      Lo que decide si está activado es la **ruta**, no los argumentos, al revés de lo que
+      pedía este plan. El motivo: una entrada sin `--hidden` arranca la app igual, así que
+      contestar «desactivado» es mentir tanto como contestar «activado» sin entrada. Esas
+      entradas a medias se **reparan** al arrancar (`normalizar()`), que es lo que hacía
+      también electron/main.js. Y la ruta se compara resuelta con `canonicalize`, porque
+      el mismo fichero escrito de dos formas (mayúsculas, enlaces, nombres 8.3) compararía
+      distinto como texto crudo y ahí sí saldría siempre «desactivado».
 
-- [ ] **Paso 3: empaquetado NSIS** con Tauri, conservando el nombre de producto
+- [x] **Paso 2: arranque escondido.** `main.rs` mira `--hidden` en los argumentos.
+
+      La ventana pasa a declararse `"visible": false` en `tauri.conf.json` y enseñarla es
+      un paso explícito del `setup`: dejarla visible y esconderla después la deja asomar un
+      instante al iniciar sesión. Con `--hidden` no solo no se enseña, se **destruye**
+      (`window::arrancar_en_bandeja`), por lo mismo que el cierre a la bandeja: si no, el
+      WebView2 se queda cargado toda la sesión sin que nadie lo mire.
+
+      De paso, `tauri-plugin-single-instance`. No estaba en el plan y lo trae este paso:
+      con el autoarranque puesto la app ya está corriendo escondida, y un doble clic en el
+      acceso directo abriría un segundo proceso que pelearía por el puerto COM con el
+      primero (en Windows solo lo puede tener abierto uno). Ahora ese segundo arranque solo
+      saca la ventana de la instancia que ya vive. Electron tenía lo mismo
+      (`requestSingleInstanceLock`) y por el mismo motivo.
+
+> **`tauri build` falla si la app está abierta.** Con un `orby-app.exe` corriendo —la build
+> anterior, lanzada a mano o dejada en la bandeja—, Cargo no puede sobrescribir
+> `target/release/orby-app.exe` y el error no dice cuál es el problema:
+> ```
+> error: failed to run custom build command for `orby-app v0.5.1`
+>   El proceso no tiene acceso al archivo porque está siendo utilizado por otro proceso. (os error 32)
+> ```
+> Ciérrala antes (menú de la bandeja → Salir, o `taskkill /PID <pid> /F`). Y ojo al
+> encadenar la salida por una tubería (`| tee`, `| grep`): el código de salida pasa a ser el
+> del último eslabón, así que un build fallido se lee como exitoso.
+
+- [x] **Paso 3: empaquetado NSIS** con Tauri, conservando el nombre de producto
       `OrbyGUI` y el mismo identificador, para que actualice **sobre** la instalación
       existente en vez de dejar dos apps.
       **Hecho, y el resto de este paso se descarta.** El instalador sale de
       `npm run tauri:build` (7,5 MB) y los nombres son los correctos. Comprobar que instala
       **encima** de la de Electron ya no aplica: ver el aviso de abajo.
 
-- [ ] **Paso 4: el actualizador.**
+- [x] **Paso 4: el actualizador. Avisa, no instala** (decisión del 2026-08-12).
 
-  Implementar `updater_get`, `updater_check` y `updater_install` sobre el actualizador de
-  Tauri, y decidir el formato de las releases de la app.
+  `src-tauri/src/updater.rs`. Los tres comandos existen y la tarjeta dice la verdad, pero
+  **no** sobre `tauri-plugin-updater`: se consulta `releases/latest` y, si hay versión más
+  nueva, el estado pasa a `available` y el botón abre la página de la release en el
+  navegador. La instalación sigue siendo a mano.
 
-  Hay que **conservar** el apaño de que **las releases de firmware van como *prerelease***:
-  si una release `fw-v*` se publica como definitiva, pasa a ser `releases/latest`, que es
-  justo donde mira el actualizador de la app. Ya pasó una vez, está documentado en
+  Por qué no el actualizador de verdad: cuesta un par de claves minisign, la privada
+  disponible al compilar y un `latest.json` firmado publicado **en cada release** además
+  del `setup.exe`. Saltárselo una vez deja el actualizador mudo sin que nadie se entere.
+  Para un único usuario que ya instala a mano no sale a cuenta. Si algún día hay a quién
+  actualizar, se cambia el interior de `updater.rs` y el frontend no se entera más que en
+  el texto del botón.
+
+  El apaño de las **releases de firmware como *prerelease*** sigue en pie y ahora tiene red:
+  si `releases/latest` devuelve una etiqueta `fw-v*` —es decir, si alguien publicó una de
+  firmware como definitiva—, el avisador no ofrece el `.uf2` como si fuera la app: da error
+  diciendo exactamente eso. Ya pasó una vez, está documentado en
   `ORBY_V4/docs/COMPATIBILIDAD.md` (ojo: ese está un nivel por encima, en `ORBY_V4/docs/`,
   no en `OrbyGUI/docs/` como los demás que cita este plan).
+
+  En el frontend esto es un estado nuevo, `available`, junto a los `downloading` /
+  `downloaded` de Electron. Lo pintan `src/updater.js` (texto), `src/main.js` (la insignia
+  de la barra) y `src/views/settings.js` (la tarjeta, que además reescribe el botón y su
+  explicación cuando corre sobre Tauri). Al revés que el de Electron, **funciona también en
+  desarrollo**: aquel necesitaba un instalador que sustituir, y este solo abre una página.
 
 > ### El relevo de Electron se descarta (decisión del 2026-08-11)
 >
@@ -1526,6 +1587,20 @@ meterlos en un `TAURI_PENDIENTE`** (el `Set` que la Tarea 1 dejó previsto en
       comprobar que la app arranca **escondida en la bandeja**, con el teclado detectado y
       sin ventana. Y que el interruptor de Ajustes refleja el estado real del registro
       después de reiniciar (es donde se ve si se comparó la ruta sin los argumentos).
+
+      **Pendiente: es lo único de esta tarea que no se puede comprobar sin cerrar sesión.**
+      Lo que sí está comprobado: `cargo test` y `node --test` en verde,
+      `verifica_plan_tauri.sh` con 0 discrepancias y los 39 comandos registrados, y el
+      instalador NSIS saliendo de `npm run tauri:build`. El aviso de versión nueva se puede
+      ver sin cerrar sesión: la app instalada es la 0.5.1 y en el repositorio está publicada
+      la release `v0.5.2`, así que la tarjeta de Ajustes tiene que decir «Hay una versión
+      nueva: 0.5.2» y el botón abrir su página.
+
+      Para ver el registro sin abrir regedit:
+      ```powershell
+      Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name OrbyGUI
+      # Esperado con el interruptor encendido: "...\OrbyGUI.exe" --hidden
+      ```
 
 - [ ] **Commit:** `git commit -am "feat(tauri): actualizador, autoarranque y empaquetado"`
 
@@ -1580,18 +1655,20 @@ Solo cuando **todo lo anterior** esté comprobado sobre el teclado.
 Repasado el 2026-08-11 contra la build de **release** y el teclado real (COM7).
 
 - [x] `cargo test` en verde, y **ningún test marcado como ignorado** sin explicar por qué.
-      127 (orby-core) + 5 (descriptor de lampdesk) + 7 (orby-app), 0 fallos, 0 ignorados.
+      127 (orby-core) + 5 (descriptor de lampdesk) + 9 (orby-app), 0 fallos, 0 ignorados.
+      Los dos nuevos de `orby-app` son de `autostart.rs`: sacar la ruta de la línea del
+      registro y reconocer `--hidden` sin tragarse `--hidden-cosas`.
 - [x] `node --test test/*.mjs` en verde. 14 pruebas.
-- [ ] Los 39 comandos existen y ninguno devuelve un valor de mentira.
-      **No.** Rust registra **34 de los 39**. Faltan los cinco de la Tarea 12:
-      `autostart_get`, `autostart_set`, `updater_get`, `updater_check` y `updater_install`.
-      Llamarlos devuelve `Command <nombre> not found`.
+- [x] Los 39 comandos existen y ninguno devuelve un valor de mentira.
+      Los cinco que faltaban se implementaron en la Tarea 12 el 2026-08-12: **39 de 39**.
 
-      > **`verifica_plan_tauri.sh` no sirve para comprobar esto y no hay que confiarse.**
-      > Su bloque «Los 39 canales del plan existen» los busca en **`electron/main.js`**, que
-      > es la *referencia* de la migración, no en `src-tauri/src/main.rs`. Por eso da
-      > «0 discrepancias» con cinco comandos sin implementar. La comprobación de verdad es
-      > mirar el `invoke_handler` de `main.rs`, o llamarlos desde la app.
+      > **`verifica_plan_tauri.sh` no comprobaba esto, y por eso se le añadió.** Su bloque
+      > «Los 39 canales del plan existen» los busca en **`electron/main.js`**, que es la
+      > *referencia* de la migración, no en `src-tauri/src/main.rs`: daba «0 discrepancias»
+      > con cinco comandos sin implementar. Ahora hay un segundo bloque, «Los mismos 39
+      > comandos existen en el invoke_handler de Rust», que lee el `generate_handler!` de
+      > `main.rs`, que es lo único que decide si un `invoke` existe. El de Electron se deja:
+      > sigue siendo la referencia de qué tiene que haber.
 - [x] Ninguna vista, ni `device.js`, ni `store.js`, ni `compat.js` han cambiado.
 - [x] La copia de seguridad hecha con Electron se restaura con Tauri sin perder nada.
       Ver la prueba de oro de la Tarea 4: las tres copias, 54 122 bytes, mismo contenido.
@@ -1604,9 +1681,12 @@ Repasado el 2026-08-11 contra la build de **release** y el teclado real (COM7).
 - [x] Los números de la mejora (tamaño y RAM) están medidos y escritos.
       Ver Tarea 13, paso 1.
 
-**Lo que queda para que Tauri pueda ser el modelo**, a fecha del 2026-08-11: **solo la
-Tarea 12**. Todo lo demás está comprobado sobre el teclado real. La Tarea 11 está aplazada
-a propósito y no bloquea nada; la 13 es retirar Electron y documentar, y va después.
+**Lo que queda para que Tauri pueda ser el modelo**, a fecha del 2026-08-12: la Tarea 12
+está escrita y compila, y falta **la única comprobación que no se puede hacer sin cerrar
+sesión**: activar el autoarranque, salir, volver a entrar y ver que arranca escondida en la
+bandeja con el teclado detectado, y que al abrir Ajustes el interruptor sigue encendido.
+La Tarea 11 está aplazada a propósito y no bloquea nada; la 13 es retirar Electron y
+documentar, y va después.
 
 **Descartado a propósito, no se va a hacer** (decisión del 2026-08-11):
 

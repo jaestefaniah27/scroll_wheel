@@ -288,7 +288,9 @@ fn accion_energia(modo: &str) {
     }
 }
 
-fn abrir(destino: &str) {
+/// Pública porque updater.rs abre con ella la página de la release: ShellExecuteW en un
+/// solo sitio, que es lo que hay que tocar si algún día hay que abrir de otra forma.
+pub fn abrir(destino: &str) {
     let ancho: Vec<u16> = destino.encode_utf16().chain(std::iter::once(0)).collect();
     let verbo: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
 

@@ -372,6 +372,12 @@ fn aplicar(
     }
 }
 
+// El evento `serial:error` no se emite nunca desde aquí y no es un olvido: en Electron lo
+// disparaba el módulo `serialport` cuando no cargaba el binario nativo o cuando el puerto
+// petaba, y el renderer solo lo usaba para enseñar un aviso. Aquí no hay binario que falte,
+// y un puerto que peta ya se cuenta como `Desconectado` —que es lo que la interfaz mira— con
+// el motivo en el registro. El renderer sigue suscrito porque el contrato es el de Electron
+// y no se toca.
 fn emitir(app: &AppHandle, compartido: &Arc<Mutex<Compartido>>, evento: Evento, ruta: &str) {
     match evento {
         Evento::Conectado(info) => {

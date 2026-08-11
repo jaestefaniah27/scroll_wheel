@@ -104,8 +104,14 @@ function initUpdateBadge() {
   const btn = document.getElementById('btn-update');
 
   btn.addEventListener('click', async () => {
-    if (updater.update.status !== 'downloaded') return;
-    if (!confirm(`Se instalará OrbyGUI ${updater.update.newVersion}.\n\n`
+    const { status, newVersion } = updater.update;
+
+    // 'available' solo abre la página de la release en el navegador (ver
+    // src-tauri/src/updater.rs): no cierra nada, así que no hay nada que preguntar.
+    if (status === 'available') { await updater.install(); return; }
+
+    if (status !== 'downloaded') return;
+    if (!confirm(`Se instalará OrbyGUI ${newVersion}.\n\n`
                + 'La app se cerrará y volverá a abrirse sola. ¿Continuar?')) return;
     await updater.install();
   });
@@ -122,10 +128,14 @@ function renderUpdateBadge() {
   const label = btn.querySelector('.update-label');
   const { status, newVersion, percent } = updater.update;
 
+  // Los dos estados en los que hay algo que hacer, según el backend: Electron acaba
+  // con la versión ya descargada, Tauri solo sabe que existe (ver src/updater.js).
+  const hayAlgoQueHacer = status === 'downloaded' || status === 'available';
+
   // 'checking' e 'idle' no se enseñan: comprobar sola cada seis horas no es
   // algo que el usuario tenga que ver, solo el resultado cuando hay versión.
-  btn.classList.toggle('hidden', status !== 'downloading' && status !== 'downloaded');
-  btn.classList.toggle('ready', status === 'downloaded');
+  btn.classList.toggle('hidden', status !== 'downloading' && !hayAlgoQueHacer);
+  btn.classList.toggle('ready', hayAlgoQueHacer);
 
   if (status === 'downloading') {
     label.textContent = `Descargando ${percent}%`;
@@ -133,6 +143,9 @@ function renderUpdateBadge() {
   } else if (status === 'downloaded') {
     label.textContent = `Actualizar a ${newVersion}`;
     btn.title = `OrbyGUI ${newVersion} lista: haz clic para instalarla`;
+  } else if (status === 'available') {
+    label.textContent = `Actualizar a ${newVersion}`;
+    btn.title = `OrbyGUI ${newVersion} publicada: haz clic para abrir su descarga`;
   }
 }
 

@@ -23,8 +23,14 @@ use orby_core::releases::candidatos;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
-const REPO: &str = "jaestefaniah27/scroll_wheel";
-const AGENTE: &str = "OrbyGUI";
+// Compartidos con updater.rs: la app y el firmware salen del mismo repositorio, y tener la
+// cadena escrita en dos sitios es cómo se acaba consultando releases distintas.
+pub const REPO: &str = "jaestefaniah27/scroll_wheel";
+pub const AGENTE: &str = "OrbyGUI";
+
+/// Cómo se distinguen las releases de firmware de las de la app. `orby_core::releases` usa
+/// esta misma cadena para quedarse con ellas; updater.rs, para descartarlas.
+pub const PREFIJO_FIRMWARE: &str = orby_core::releases::PREFIJO_ETIQUETA;
 
 /// Con el comando BOOTSEL son dos o tres segundos; el margen largo es para el camino
 /// manual, en el que hay que desenchufar el cable, buscar el botón y volver a enchufar.

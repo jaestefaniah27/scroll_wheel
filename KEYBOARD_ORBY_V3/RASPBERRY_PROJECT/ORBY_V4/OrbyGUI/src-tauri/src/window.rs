@@ -46,7 +46,10 @@ fn reconstruir(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     WebviewWindowBuilder::from_config(app, &conf)?.build()
 }
 
-fn mostrar(app: &AppHandle) {
+/// Pública porque el arranque normal también la usa: la ventana se declara `visible: false`
+/// en tauri.conf.json —si no, arrancar con `--hidden` la deja asomar un instante antes de
+/// que nadie pueda esconderla—, así que enseñarla es siempre un paso explícito.
+pub fn mostrar(app: &AppHandle) {
     let ventana = match app.get_webview_window("main") {
         Some(v) => v,
         None => match reconstruir(app) {
@@ -68,6 +71,14 @@ fn esconder_ventana(app: &AppHandle) {
     if let Some(ventana) = app.get_webview_window("main") {
         let _ = ventana.destroy();
     }
+}
+
+/// Arranque con `--hidden` (autoarranque con la sesión): se destruye la ventana que declara
+/// la configuración antes de que llegue a enseñarse. No basta con no llamar a `mostrar`:
+/// eso dejaría el WebView2 cargado y ocupando memoria toda la sesión, que es justo lo que
+/// se evita al irse a la bandeja.
+pub fn arrancar_en_bandeja(app: &AppHandle) {
+    esconder_ventana(app);
 }
 
 /// Esconde la ventana y, la primera vez, explica por qué la app sigue en la bandeja.

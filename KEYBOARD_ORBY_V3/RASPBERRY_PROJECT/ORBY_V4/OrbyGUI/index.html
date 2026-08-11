@@ -330,10 +330,13 @@
                   <span data-icon="refresh" data-icon-size="16"></span> Buscar actualizaciones
                 </button>
                 <button class="primary-btn hidden" id="btn-install-update">
-                  <span data-icon="download" data-icon-size="16"></span> Instalar y reiniciar
+                  <span data-icon="download" data-icon-size="16"></span>
+                  <span id="btn-install-update-label">Instalar y reiniciar</span>
                 </button>
               </div>
-              <p class="setting-desc">
+              <!-- El texto de este botón y el de abajo los pone initAppCard: lo que pasa al
+                   pulsarlo depende de dónde corra la app (ver src/views/settings.js). -->
+              <p class="setting-desc" id="app-update-desc">
                 Se comprueba al arrancar y cada seis horas. La descarga es automática; instalarla
                 cierra OrbyGUI un momento.
               </p>

@@ -85,6 +85,48 @@ for e in serial:connected serial:disconnected serial:error serial:searching seri
   grep -qF "'$e'" electron/main.js && ok "evento $e" || mal "evento $e NO ESTA en main.js"
 done
 
+echo "== Los mismos 39 comandos existen en el invoke_handler de Rust =="
+# Este bloque es la razón de que el de arriba no bastara: comprobar los canales solo en
+# electron/main.js daba "0 discrepancias" con cinco comandos sin registrar en Rust
+# (autostart_*, updater_*). La app no se rompía porque orby-tauri.js los declaraba igual,
+# así que platform.can() decía que sí y las tarjetas se pintaban muertas. Se busca en el
+# `generate_handler!` de main.rs, que es lo único que decide si un invoke existe.
+handler=$(sed -n '/generate_handler!/,/]);/p' src-tauri/src/main.rs)
+for c in updater_get updater_check updater_install firmware_get firmware_check \
+         firmware_update firmware_cancel serial_send serial_get_info serial_get_status \
+         serial_reconnect mouse_get_position config_get config_set plugins_list \
+         plugins_install plugins_uninstall plugins_set_enabled plugins_get_settings \
+         plugins_set_settings plugins_test plugins_read plugins_open_folder \
+         autostart_get autostart_set backup_save backup_load dialog_pick_app_or_file \
+         apps_list_installed recorder_toggle recorder_stop recorder_status \
+         foreground_start foreground_stop foreground_current foreground_available \
+         window_minimize window_maximize window_close; do
+  echo "$handler" | grep -qE "(^|[^a-z_])$c *,?$" && ok "comando $c" \
+    || mal "comando $c NO ESTA registrado en el invoke_handler de Rust"
+done
+
+echo "== Los 10 eventos, tambien en Rust =="
+# Ocho se emiten. Los otros dos no existen en esta vía a propósito, y lo que se comprueba
+# es que siga escrito por qué: una ausencia sin explicar es indistinguible de un olvido.
+for e in serial:connected serial:disconnected serial:searching serial:data \
+         firmware:state recorder:state updater:state foreground:change; do
+  grep -rqF "\"$e\"" src-tauri/src/ && ok "evento $e" || mal "evento $e NO SE EMITE en Rust"
+done
+chk "serial:error: ausencia justificada"     "El evento \`serial:error\`"     src-tauri/src/serial.rs
+chk "foreground:error: ausencia justificada" "El evento \`foreground:error\`" src-tauri/src/foreground.rs
+
+echo "== Autoarranque y avisador de versiones (Tarea 12) =="
+chk    "la entrada va en la clave Run"        "CurrentVersion\\Run"  src-tauri/src/autostart.rs
+chk    "y conserva --hidden"                  '--hidden'             src-tauri/src/autostart.rs
+chk    "main.rs lee el argumento"             "ARG_ESCONDIDO"        src-tauri/src/main.rs
+# Sin esto, arrancar por autoarranque enseña la ventana un instante antes de esconderla.
+chk    "la ventana nace invisible"            '"visible": false'     src-tauri/tauri.conf.json
+# Un segundo proceso pelearia por el COM con el que ya arrancó escondido.
+chk    "una sola instancia"                   "single_instance"      src-tauri/src/main.rs
+chk    "el avisador mira releases/latest"     "releases/latest"      src-tauri/src/updater.rs
+chk    "y descarta las de firmware"           "PREFIJO_FIRMWARE"     src-tauri/src/updater.rs
+chk_re "el frontend pinta el estado nuevo"    "case 'available'"     src/updater.js
+
 echo "== Superficie de preload.js =="
 for m in sendCommand getDeviceInfo getStatus reconnect onConnected onDisconnected \
          onData onError onSearching getMousePosition getConfig setConfig saveBackup \
