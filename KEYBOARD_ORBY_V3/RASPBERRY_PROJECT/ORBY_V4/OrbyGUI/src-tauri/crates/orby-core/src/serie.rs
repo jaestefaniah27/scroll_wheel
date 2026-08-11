@@ -56,7 +56,9 @@ pub enum Salida {
     Mandar(String),
     /// Avisar al renderer.
     Emitir(Evento),
-    /// Cerrar el puerto **sin** anunciar desconexión: nunca llegó a estar conectado.
+    /// Cerrar el puerto. Va sola cuando el saludo se rinde —nunca llegó a estar
+    /// conectado, así que no hay desconexión que anunciar— y acompañada de
+    /// `Desconectado` cuando el vigilante da por muerta una conexión que sí lo estuvo.
     SoltarPuerto,
 }
 
@@ -263,7 +265,14 @@ impl Maquina {
             }
             if self.ahora.saturating_sub(ping) > RESPUESTA_MS {
                 self.reiniciar();
+                // El puerto se suelta AQUÍ, y no solo se anuncia la desconexión: quien
+                // ejecuta las salidas únicamente toca el puerto cuando se lo piden, así
+                // que sin esto el handle se quedaba abierto para siempre con la máquina
+                // ya en «Buscando». El rastreo no vuelve a abrir nada mientras haya un
+                // puerto cogido, así que la app se quedaba encallada: el renderer
+                // enseñando «buscando» y nadie buscando de verdad.
                 return vec![
+                    Salida::SoltarPuerto,
                     Salida::Emitir(Evento::Desconectado),
                     Salida::Emitir(Evento::Buscando),
                 ];
@@ -462,6 +471,14 @@ mod tests {
         let salidas = m.al_pasar_tiempo(1);
         assert!(salidas.contains(&Salida::Emitir(Evento::Desconectado)));
         assert_eq!(m.estado(), Estado::Buscando);
+
+        // Y se suelta el puerto, no solo se anuncia. Quien ejecuta las salidas solo lo
+        // cierra cuando se lo piden, y el rastreo no abre nada mientras haya uno cogido:
+        // sin esto la app se queda enseñando «buscando» sin buscar.
+        assert!(
+            salidas.contains(&Salida::SoltarPuerto),
+            "una conexión muerta tiene que soltar su puerto"
+        );
     }
 
     #[test]

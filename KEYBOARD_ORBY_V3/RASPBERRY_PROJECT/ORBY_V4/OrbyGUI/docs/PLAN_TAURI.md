@@ -507,6 +507,13 @@ La tarea más importante del plan: con ella el editor ya sirve para algo.
       en `src-tauri/crates/orby-core/src/serie.rs`, con 16 pruebas. Léelo antes de seguir:
       la interfaz real es la de abajo y los plazos ya están puestos.
 
+> **Un fallo que solo salió al escribir el Paso 3** (corregido el 2026-08-11): cuando el
+> vigilante daba una conexión por muerta, emitía `Desconectado` y `Buscando` pero **no**
+> `SoltarPuerto`. Como la cáscara solo cierra el puerto cuando la máquina se lo pide, y el
+> rastreo no abre nada mientras haya uno cogido, la app se quedaba encallada enseñando
+> «buscando» sin buscar. No se veía con los 16 tests porque ninguno miraba esa salida:
+> ahora `si_no_contesta_al_vigilante_se_suelta_la_conexion` la comprueba.
+
 > **Dos correcciones deliberadas respecto a `electron/serial.js`**, y hay que conservarlas:
 > mientras se persigue el saludo por telemetría, **la cadena del saludo se aparta** (allí
 > las dos mandaban `ACK` a la vez), y **un puerto del que ha llegado telemetría no se
@@ -560,7 +567,7 @@ cd OrbyGUI/src-tauri/crates/orby-core && cargo test serie
 # Esperado: 16 passed
 ```
 
-- [ ] **Paso 3: el puerto de verdad, en `src-tauri/src/serial.rs`**
+- [x] **Paso 3: el puerto de verdad, en `src-tauri/src/serial.rs`** — hecho el 2026-08-11
 
 Solo fontanería alrededor de la máquina: un hilo que rastrea puertos cada 3 s con
 `serialport::available_ports()`, filtra por VID `0xCafe` (**cualquier PID**), abre a
@@ -575,15 +582,45 @@ Cuidado con esto, que son fallos ya vividos:
 - No hay «prueba con cualquier COM»: solo los que casan por VID. Probar a ciegas cuelga
   el hilo con puertos de otros cacharros.
 
-- [ ] **Paso 4: comprobación sobre el teclado (Windows)**
+Cómo quedó, para no tener que releer el fichero:
 
-- [ ] Cierra la app de Electron antes (en Windows solo un proceso tiene el COM).
-- [ ] `npm run tauri:dev` → detecta el teclado y la interfaz se puebla con los perfiles.
+- **Un solo hilo posee el puerto.** Los comandos del renderer no escriben en él: encolan
+  en `Compartido.salientes` y el hilo drena. Así no hay dos escritores sobre el mismo
+  handle ni hace falta duplicarlo con `try_clone`.
+- **El pulso del hilo es el plazo de la lectura** (20 ms): duerme dentro del `read` en vez
+  de girar en vacío, y esos 20 ms son la latencia máxima de un comando (frente a los 4 s
+  que espera `device.js`, no cuenta). Con el puerto cerrado el reposo sube a 200 ms.
+- **Se rota entre los candidatos** en vez de probar siempre el primero: con dos puertos del
+  mismo VID (una Pico de repuesto en modo carga), probar siempre el mismo dejaría el
+  teclado bueno sin abrir para siempre.
+- **El objeto de info se aplana** a la forma exacta de `_parseDeviceInfo`: claves en
+  minúscula + `device`, `raw` y `port`. `compat.js` y las vistas la leen así.
+- `serial_get_status` nunca devuelve `'disconnected'`: el hilo rastrea siempre mientras la
+  app vive. Se conserva en el contrato porque las otras dos vías sí lo usan.
+- En desarrollo salen por el terminal tanto los comandos del renderer (`> …`) como lo que
+  manda la máquina por su cuenta (`>> ACK`, `>> HOST_APP:1`): sin lo segundo no hay forma
+  de ver que una conexión en reposo se está renovando en vez de estar a punto de caerse.
+
+- [ ] **Paso 4: comprobación sobre el teclado (Windows)** — parcial, 2026-08-11
+
+- [x] Cierra la app de Electron antes (en Windows solo un proceso tiene el COM).
+- [x] `npm run tauri:dev` → detecta el teclado y la interfaz se puebla con los perfiles.
+      Traza: `probando COM7` → `>> ACK` → `teclado detectado: fw 4.6 en COM7` →
+      `>> HOST_APP:1`, y detrás los 106 comandos de la sincronización completa
+      (`GET_HASH`, `GET_STATE`, `GET_PROFILE:0/1`, todos los `GET_OLED`/`GET_OLED_PG`).
+      Que lleguen los 106 ya demuestra que las respuestas vuelven: la cola de `pending`
+      de `device.js` habría abortado en el primero que no contestara.
 - [ ] Desenchufa el teclado: la interfaz pasa a «buscando» en menos de 20 s.
 - [ ] Vuelve a enchufarlo: reconecta solo, sin tocar nada.
 - [ ] Con la consola de la app abierta, gira el mando: se ven llegar líneas `ENC:`.
-- [ ] Déjala conectada **un minuto sin tocar nada**: no se desconecta (el watchdog está
+- [x] Déjala conectada **un minuto sin tocar nada**: no se desconecta (el watchdog está
       renovando bien). Este es el que más fallos pilla.
+      Salió así: a los 12 s de silencio `>> ACK`, el teclado contesta con su presentación
+      y se renueva `>> HOST_APP:1`, **sin** un segundo `teclado detectado` (no se
+      re-anuncia una conexión que ya estaba) y sin desconexión.
+
+> Las tres casillas que quedan sin marcar necesitan una mano: desenchufar el cable y girar
+> el mando. Todo lo demás se comprobó sobre el teclado de verdad (COM7, firmware 4.6).
 
 - [ ] **Paso 5: commit**
 

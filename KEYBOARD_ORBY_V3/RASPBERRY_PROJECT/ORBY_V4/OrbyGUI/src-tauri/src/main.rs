@@ -3,6 +3,8 @@
 // teclado, el mismo papel que hoy hace electron/log.js.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod serial;
+
 // El marco de la ventana lo dibuja la propia app (`decorations: false`), así que estos
 // tres son la única forma de minimizar, maximizar y cerrar: sin ellos registrados la
 // ventana se abre y no hay manera de quitarla más que por el administrador de tareas.
@@ -33,10 +35,20 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // El hilo del puerto arranca solo y no para: es lo que hace que el teclado se
+        // detecte al enchufarlo sin que el usuario toque nada.
+        .setup(|app| {
+            serial::arrancar(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             window_minimize,
             window_maximize,
-            window_close
+            window_close,
+            serial::serial_send,
+            serial::serial_get_info,
+            serial::serial_get_status,
+            serial::serial_reconnect
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo arrancar la ventana de OrbyGUI");
