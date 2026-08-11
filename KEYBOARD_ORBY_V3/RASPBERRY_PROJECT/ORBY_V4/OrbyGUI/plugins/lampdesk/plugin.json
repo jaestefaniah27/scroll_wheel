@@ -1,14 +1,114 @@
 {
   "id": "lampdesk",
   "name": "Lámpara LampDesk",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Enciende, apaga y regula una lámpara LampDesk por la red desde cualquier tecla o mando.",
   "author": "Jorge Estefanía",
   "icon": "sun",
-  "apiVersion": 1,
-  "main": "main.js",
+  "apiVersion": 2,
+  "kind": "http",
+
   "legacy": {
     "stepType": "lamp",
     "configKey": "lamp"
+  },
+
+  "request": {
+    "base": "http://{{settings.host}}",
+    "_comment_timeout": "Cada escritura hace que la lámpara avise por HomeKit a los iPhone emparejados, y esa ida y vuelta le bloquea el bucle principal unos cientos de ms. Lo normal son 20-35 ms; el pico medido pasa de dos segundos.",
+    "timeoutMs": 4000
+  },
+
+  "settings": {
+    "description": "Dirección y puerto de la lámpara en la red. El 8080 lo sirve su firmware; el 80 lo ocupa HomeKit dentro de la propia lámpara. Las órdenes las manda el PC, así que OrbyGUI tiene que estar abierto.",
+    "fields": [
+      {
+        "key": "host",
+        "label": "Dirección de la lámpara",
+        "type": "text",
+        "placeholder": "192.168.1.35:8080",
+        "default": "192.168.1.35:8080"
+      }
+    ]
+  },
+
+  "_comment_incrementos": "Los incrementos se mandan como tales (dbrightness, dcolor) en vez de leer el estado, sumar y escribir el resultado: la lámpara resuelve la suma, y así el mando no se pelea con la app Casa ni con el panel de la bandeja por quién tenía el valor bueno.",
+
+  "actions": [
+    {
+      "op": "toggle",
+      "label": "Encender / apagar",
+      "targets": ["key", "click"],
+      "request": { "path": "/set", "query": { "on": "toggle" } }
+    },
+    {
+      "op": "on",
+      "label": "Encender",
+      "targets": ["key", "click"],
+      "request": { "path": "/set", "query": { "on": "1" } }
+    },
+    {
+      "op": "off",
+      "label": "Apagar",
+      "targets": ["key", "click"],
+      "request": { "path": "/set", "query": { "on": "0" } }
+    },
+
+    {
+      "op": "brightness_delta",
+      "label": "Brillo de la lámpara",
+      "targets": ["turn"],
+      "step": 5,
+      "_comment": "120 ms y no menos: la lámpara resuelve una petición suelta en unos 20 ms, pero encadenadas cada 60 ms se le acumulan y la mediana se va a 240 ms. Como el incremento se agrupa, esperar un poco más no pierde ninguna muesca.",
+      "coalesce": { "ms": 120, "mode": "sum" },
+      "request": { "path": "/set", "query": { "dbrightness": "{{value}}" } }
+    },
+    {
+      "op": "color_delta",
+      "label": "Color de la lámpara",
+      "targets": ["turn"],
+      "step": 5,
+      "coalesce": { "ms": 120, "mode": "sum" },
+      "request": { "path": "/set", "query": { "dcolor": "{{value}}" } }
+    },
+
+    {
+      "op": "brightness_set",
+      "label": "Fijar brillo",
+      "targets": ["key", "click"],
+      "value": { "min": 0, "max": 100, "step": 5, "default": 50 },
+      "request": { "path": "/set", "query": { "brightness": "{{value}}" } }
+    },
+    {
+      "op": "color_set",
+      "label": "Fijar color",
+      "targets": ["key", "click"],
+      "value": { "min": 0, "max": 100, "step": 5, "default": 50 },
+      "request": { "path": "/set", "query": { "color": "{{value}}" } }
+    }
+  ],
+
+  "views": [
+    {
+      "op": "brightness_view",
+      "label": "Brillo actual",
+      "icon": "sun",
+      "request": { "path": "/state" },
+      "value": "{{response.brightness}}"
+    },
+    {
+      "op": "color_view",
+      "label": "Color actual",
+      "icon": "moon",
+      "request": { "path": "/state" },
+      "value": "{{response.color}}"
+    }
+  ],
+
+  "test": {
+    "request": { "path": "/state" },
+    "_comment_retries": "Con un reintento porque leer es inofensivo: si la lámpara estaba ocupada avisando a HomeKit, el primer intento se queda sin respuesta y la tarjeta de ajustes diría 'no responde' con la lámpara perfectamente viva. Las escrituras NO se reintentan: un incremento repetido se aplicaría dos veces.",
+    "retries": 1,
+    "detail": "Responde: brillo {{response.brightness}} %"
   }
 }

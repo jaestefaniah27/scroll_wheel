@@ -1125,7 +1125,8 @@ Los complementos se reescriben de cero. Un complemento de tipo `http` es **un
 > `{op, label, targets, step, hint, value:{min,max,step,default}}` y `views[]` de forma
 > `{op, label, icon}`.
 
-- [ ] **Paso 1: el manifiesto y su validación (con tests)**
+- [x] **Paso 1: el manifiesto y su validación (con tests)** — ya estaba hecho (ver «Lo que
+      ya está hecho»): `crates/orby-core/src/plugins/manifiesto.rs`, 18 tests.
 
 Campos: `id` (contra `^[a-z0-9][a-z0-9-]{1,38}$`), `name`, `apiVersion` (debe ser `2`),
 `kind` (`"http"` o `"process"`), `version`, `description`, `author`, `icon`, `settings`,
@@ -1140,7 +1141,8 @@ Tests a escribir primero:
 - [ ] **El descriptor de lampdesk coincide campo a campo con el que produce hoy Electron.**
       Es la prueba de que el frontend no nota el cambio.
 
-- [ ] **Paso 2: las plantillas (con tests)**
+- [x] **Paso 2: las plantillas (con tests)** — ya estaba hecho:
+      `crates/orby-core/src/plugins/plantilla.rs`, 12 tests.
 
 Solo sustitución, sin expresiones ni lógica: `{{settings.x}}`, `{{value}}`,
 `{{response.x}}`.
@@ -1151,7 +1153,10 @@ Solo sustitución, sin expresiones ni lógica: `{{settings.x}}`, `{{value}}`,
       petición mal formada que el cacharro del otro lado interpreta como quiere.
 - [ ] La URL y la cadena de consulta se montan bien, con codificación incluida.
 
-- [ ] **Paso 3: agrupar los giros (`coalesce`), con tests**
+- [x] **Paso 3: agrupar los giros (`coalesce`), con tests** — ya estaba hecho:
+      `crates/orby-core/src/plugins/coalesce.rs`, 8 tests. Lo que faltaba de este paso era
+      engancharlo a algo que avance el reloj de verdad: eso se hizo en el paso 4 con el
+      «hilo del agrupador» de `src-tauri/src/plugins.rs`.
 
 `coalesce: {ms, mode:"sum"}`. El firmware manda un `MACRO:<id>` **por cada muesca**, así
 que un giro rápido son veinte disparos; agruparlos no es un lujo.
@@ -1161,25 +1166,54 @@ que un giro rápido son veinte disparos; agruparlos no es un lujo.
 - [ ] Una acción **sin** `coalesce` manda una petición por muesca (encender y apagar no se
       pueden fundir: dos pulsaciones son dos órdenes).
 
-- [ ] **Paso 4: peticiones, contra un servidor de mentira levantado en el propio test**
+- [x] **Paso 4: peticiones, contra un servidor de mentira levantado en el propio test** —
+      hecho el 2026-08-11 en `src-tauri/src/plugins.rs` (función `ejecutar`, tests en el
+      propio fichero contra un `TcpListener` de mentira: no hacía falta traerse un crate
+      de servidor HTTP para cuatro respuestas fijas).
 
-- [ ] `timeoutMs` corta de verdad. Sin él, un cacharro desenchufado deja la ejecución
+- [x] `timeoutMs` corta de verdad. Sin él, un cacharro desenchufado deja la ejecución
       colgada más de un minuto esperando a que agote el TCP.
-- [ ] Un `500` se reporta como error, no se propaga como pánico.
-- [ ] `test` con `retries: 1` reintenta **una vez y solo una**.
-- [ ] `run` **no reintenta nunca**: un incremento repetido se aplicaría dos veces.
+      Probado con un servidor que acepta la conexión y no contesta nunca: con
+      `timeout_ms: 500` en la `Peticion`, `ejecutar` corta en menos de 2 s de verdad
+      (`el_tiempo_maximo_corta_de_verdad`).
+- [x] Un `500` se reporta como error, no se propaga como pánico.
+- [x] `test` con `retries: 1` reintenta **una vez y solo una**
+      (`con_un_reintento_hace_como_mucho_dos_intentos`: dos peticiones, ni una ni tres).
+- [x] `run` **no reintenta nunca**: un incremento repetido se aplicaría dos veces
+      (`sin_reintentos_declarados_un_solo_intento`).
 
-- [ ] **Paso 5: poner lampdesk en su sitio**
+  Cómo quedó, para no tener que releer el fichero: `ejecutar()` usa `reqwest::blocking`
+  (el mismo backend que ya trajo la Tarea 9 para el firmware, con `rustls`) y no hay
+  hilo dedicado al puerto como en `serial.rs` — cada llamada abre su propio cliente con
+  el `timeout_ms` de la `Peticion` y se ejecuta en el hilo que la pidió (el de la tecla
+  pulsada, o uno del hilo del agrupador). El cuerpo se interpreta como JSON si se puede
+  y como `Value::Null` si no: no todos los cacharros contestan JSON a una escritura, y
+  no tener nada que leer no es un error.
 
-**Ya está escrito**, en
-`src-tauri/crates/orby-core/tests/fixtures/lampdesk-api2.plugin.json`, y el test de
-descriptor lo usa. Está ahí y no en `plugins/lampdesk/` porque el de allí sigue siendo
-el de la API 1: **la app de Electron tiene que seguir funcionando** hasta la Tarea 13, y
-un mismo fichero no puede declarar las dos versiones.
+  El agrupado de giros (paso 3) se engancha aquí: `plugins::iniciar` lanza un hilo que
+  cada 15 ms llama a `Agrupador::avanzar` y manda lo que venza, con la misma idea que el
+  «pulso» de `serial.rs`. `disparar_paso`, que es donde entra el paso `{type:"plugin"}`
+  de una secuencia (`macros.rs`), empuja al agrupador y solo dispara la petición al
+  momento si la acción no declara `coalesce`.
 
-Lo que toca aquí es: copiarlo a `plugins/lampdesk/plugin.json`, **borrar
-`plugins/lampdesk/main.js`** y cambiar en el test de descriptor el `include_str!` para
-que apunte al manifiesto de verdad en vez de a la copia.
+- [x] **Paso 5: poner lampdesk en su sitio** — hecho el 2026-08-11.
+
+  Copiado a `plugins/lampdesk/plugin.json` y borrado `plugins/lampdesk/main.js`. El test
+  de descriptor (`descriptor_lampdesk.rs`) ya no lee de `tests/fixtures/`: lee del
+  manifiesto de verdad con `include_str!("../../../../plugins/lampdesk/plugin.json")`,
+  así que no puede quedarse verde comparando un fichero que ya no es el que instala la
+  app. La copia en `tests/fixtures/lampdesk-api2.plugin.json` se queda donde estaba,
+  porque los tests de `peticion.rs` siguen leyendo de ahí.
+
+  **Aviso deliberado:** el lampdesk de la API 1 **deja de funcionar en la app de
+  Electron** a partir de este commit, porque su `main.js` ha desaparecido y su
+  `plugin.json` ahora declara `apiVersion: 2`, que el cargador de complementos de
+  Electron rechaza. Es una excepción consciente a la constante «Electron sigue
+  funcionando hasta la Tarea 13»: aplica a la app en general, no a este complemento de
+  ejemplo en concreto, y el propio texto de este paso ya avisaba de que «un mismo
+  fichero no puede declarar las dos versiones». Si hace falta seguir usando el lampdesk
+  desde la app de Electron mientras dura la migración, hay que recuperar la versión
+  anterior de `plugins/lampdesk/` de git.
 
 Ya está resuelto en él: `timeoutMs: 4000`, `coalesce.ms: 120` en los dos `_delta`,
 `retries: 1` en `test`, y las equivalencias `toggle`→`on=toggle`, `on`→`on=1`,
@@ -1188,16 +1222,34 @@ Ya está resuelto en él: `timeoutMs: 4000`, `coalesce.ms: 120` en los dos `_del
 leyendo `/state`. Su lista de `HOSTS_MUERTOS` **no se portó**: era un apaño de la época
 de desarrollo.
 
-- [ ] **Paso 6: instalación**
+- [x] **Paso 6: instalación** — hecho el 2026-08-11 en `src-tauri/src/plugins.rs`.
 
-Descomprimir con el crate `zip` (**no** con `Expand-Archive` de PowerShell). Un
-complemento `http` **se instala sin ningún aviso**: no hay programa que instalar. Los
-ajustes siguen viviendo en `config.plugins["<id>"]`, con la misma forma, para que
+Descomprimido con el crate `zip` (**no** con `Expand-Archive` de PowerShell), con
+`features = ["deflate"]` a propósito y sin los demás métodos de compresión del crate
+(bzip2, lzma, zstd): esos enlazan una librería en C, y el toolchain de este proyecto es
+GNU sin las Build Tools de MSVC. Un `.zip` puede traer el `plugin.json` en la raíz o
+dentro de una única carpeta, igual que admitía Electron. Se protege contra una entrada
+`../../algo` dentro del zip (`ruta_seria`), que Electron no comprobaba porque
+`Expand-Archive` ya lo hacía por dentro.
+
+Sin el diálogo de «¿zip o carpeta?» de Electron: un complemento `http` no ejecuta nada,
+así que no hay ningún permiso que pedir ni ninguna decisión de seguridad que el usuario
+tenga que tomar a propósito. `plugins_install` abre directamente el selector de fichero
+filtrado a `.zip`/`.orbyplugin`.
+
+Los ajustes siguen viviendo en `config.plugins["<id>"]`, con la misma forma, para que
 sobrevivan a desinstalar y volver a instalar.
 
 - [ ] **Comprobación (Windows, con la lámpara):** instalar el `.zip`, ajustar la
       dirección, «Probar», asignar acciones a una tecla y a un mando, y **girar el mando
       rápido**: el brillo tiene que subir liso, sin tirones ni retraso acumulado.
+
+  No se ha podido hacer en esta sesión: hace falta la lámpara LampDesk encendida en la
+  red. El código compila limpio (`cargo check`), los 7 tests de `plugins.rs` pasan
+  (ejecución HTTP contra un servidor de mentira) y los 127 + 5 de `orby-core` también,
+  pero **nadie ha instalado un `.zip` de verdad ni ha girado un mando contra un
+  complemento real todavía**. Es justo lo que dice esta casilla que hay que comprobar;
+  no se puede dar por bueno sin la lámpara delante.
 
 - [ ] **Commit:** `git commit -am "feat(tauri): complementos declarativos"`
 

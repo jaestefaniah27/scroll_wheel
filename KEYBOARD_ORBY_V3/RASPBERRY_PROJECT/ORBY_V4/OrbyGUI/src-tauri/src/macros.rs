@@ -395,9 +395,12 @@ fn ejecutar_accion(app: &AppHandle, accion: &Value) {
             }
         }
 
-        // Los complementos llegan en la Tarea 10. Hasta entonces se deja constancia en vez
-        // de fallar en silencio, que es lo que haría creer que la tecla no está asignada.
-        "plugin" => eprintln!("[secuencias] paso de complemento todavía sin portar"),
+        "plugin" => {
+            let Some(plugin) = accion.get("plugin").and_then(Value::as_str) else { return };
+            let op = accion.get("op").and_then(Value::as_str).unwrap_or("");
+            let valor = accion.get("value").and_then(Value::as_f64).unwrap_or(0.0);
+            crate::plugins::disparar_paso(app, plugin, op, valor);
+        }
 
         // Un tipo desconocido no hace nada, igual que en Electron: una secuencia guardada
         // por una versión más nueva no puede tumbar a la vieja.

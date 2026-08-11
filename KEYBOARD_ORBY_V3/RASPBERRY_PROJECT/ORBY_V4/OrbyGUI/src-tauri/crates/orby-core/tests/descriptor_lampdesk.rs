@@ -16,13 +16,13 @@
 use orby_core::plugins::Manifiesto;
 use serde_json::Value;
 
-// El manifiesto de la API 2 vive de momento aquí y no en `plugins/lampdesk/`, a
-// propósito: el que hay allí sigue siendo el de la API 1 porque **la app de Electron
-// tiene que seguir funcionando** hasta el final de la migración, y un mismo fichero no
-// puede declarar las dos versiones. La Tarea 10 del plan lo mueve a su sitio y borra el
-// `main.js` de al lado; hasta entonces, esto es lo que garantiza que ya está escrito y
-// que produce el descriptor correcto.
-const MANIFIESTO: &str = include_str!("fixtures/lampdesk-api2.plugin.json");
+// El manifiesto de verdad vive en `plugins/lampdesk/plugin.json` (Tarea 10, paso 5): se
+// lee de ahí y no de una copia en `fixtures/`, para que esta prueba no pueda quedarse
+// verde comparando un fichero que ya no es el que instala la app. El lampdesk de la API 1
+// dejó de funcionar en Electron al hacer este cambio: es una excepción deliberada a que
+// «Electron sigue funcionando hasta la Tarea 13», aceptada porque es solo el complemento
+// de ejemplo y Electron se retira igualmente pronto.
+const MANIFIESTO: &str = include_str!("../../../../plugins/lampdesk/plugin.json");
 const REFERENCIA: &str = include_str!("fixtures/descriptor-lampdesk-electron.json");
 
 fn descriptor_actual() -> Value {

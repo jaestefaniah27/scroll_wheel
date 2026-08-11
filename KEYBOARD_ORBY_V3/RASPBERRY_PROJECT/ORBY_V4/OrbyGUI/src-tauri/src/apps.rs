@@ -96,8 +96,9 @@ unsafe fn destino(lnk: &Path) -> Option<String> {
 }
 
 /// Ordena como `localeCompare(a, b, 'es')`: se lo pregunta a Windows en vez de comparar
-/// bytes, que dejaría «Ñ» y los acentos donde no toca.
-fn comparar_en_espanol(a: &str, b: &str) -> Ordering {
+/// bytes, que dejaría «Ñ» y los acentos donde no toca. `pub(crate)` porque `plugins.rs`
+/// ordena su lista con el mismo criterio.
+pub(crate) fn comparar_en_espanol(a: &str, b: &str) -> Ordering {
     const CSTR_LESS_THAN: i32 = 1;
     const CSTR_GREATER_THAN: i32 = 3;
 

@@ -20,7 +20,7 @@ chk_re() {
 
 echo "== Ficheros que el plan nombra =="
 for f in ../docs/COMPATIBILIDAD.md src/entry.js src/platform.js src/web/orby-web.js src/live-oled.js \
-         src/plugins.js src/device.js src/backup.js plugins/lampdesk/main.js \
+         src/plugins.js src/device.js src/backup.js \
          plugins/lampdesk/plugin.json electron/preload.js electron/serial.js \
          electron/macros.js electron/recorder.js electron/firmware.js \
          electron/foreground.js electron/apps.js electron/config.js \

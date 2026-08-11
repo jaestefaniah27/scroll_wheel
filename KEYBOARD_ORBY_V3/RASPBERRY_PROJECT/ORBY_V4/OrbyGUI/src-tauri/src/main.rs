@@ -11,6 +11,7 @@ mod firmware;
 mod foreground;
 mod macros;
 mod mouse;
+mod plugins;
 mod recorder;
 mod serial;
 mod window;
@@ -30,6 +31,7 @@ fn main() {
             serial::arrancar(app.handle().clone());
             foreground::arrancar_si_procede(app.handle().clone());
             firmware::iniciar(app.handle());
+            plugins::iniciar(app.handle());
             window::montar_bandeja(app.handle())?;
             Ok(())
         })
@@ -70,7 +72,16 @@ fn main() {
             firmware::firmware_get,
             firmware::firmware_check,
             firmware::firmware_update,
-            firmware::firmware_cancel
+            firmware::firmware_cancel,
+            plugins::plugins_list,
+            plugins::plugins_install,
+            plugins::plugins_uninstall,
+            plugins::plugins_set_enabled,
+            plugins::plugins_get_settings,
+            plugins::plugins_set_settings,
+            plugins::plugins_test,
+            plugins::plugins_read,
+            plugins::plugins_open_folder
         ])
         .build(tauri::generate_context!())
         .expect("no se pudo arrancar la ventana de OrbyGUI")

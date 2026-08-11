@@ -31,6 +31,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 # componente en C que enlazar, y el toolchain de este proyecto es GNU sin las Build Tools
 # de MSVC.
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
+# Descomprimir un complemento (Tarea 10). Solo `deflate`, que en `zip` tira de `flate2`
+# con su backend en Rust puro (`miniz_oxide`): los otros métodos de compresión (bzip2,
+# lzma, zstd) enlazan una librería en C, y aquí no hace falta ninguno de ellos.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Win32 directo. Sustituye a nut-js (posición del ratón) y al PowerShell permanente que
 # hoy resuelve los accesos directos: son cuatro llamadas y desaparece el proceso hijo.
