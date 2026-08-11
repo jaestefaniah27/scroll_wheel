@@ -7,6 +7,7 @@ mod apps;
 mod backup;
 mod config;
 mod dialog;
+mod macros;
 mod mouse;
 mod serial;
 mod window;
@@ -17,6 +18,9 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // Lo usa el paso de texto de una secuencia: por encima de cinco caracteres se pega
+        // en vez de teclearse.
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             // El hilo del puerto arranca solo y no para: es lo que hace que el teclado se
             // detecte al enchufarlo sin que el usuario toque nada.

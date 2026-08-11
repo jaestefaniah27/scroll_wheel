@@ -322,6 +322,10 @@ fn emitir(app: &AppHandle, compartido: &Arc<Mutex<Compartido>>, evento: Evento, 
             let _ = app.emit("serial:searching", ());
         }
         Evento::Datos(linea) => {
+            // El disparo de una secuencia se mira aquí, pero la línea se reenvía igual al
+            // renderer: `device.js` no distingue, y quitarle telemetría le rompería la
+            // cola de peticiones.
+            crate::macros::quizas_disparar(app, &linea);
             let _ = app.emit("serial:data", linea);
         }
     }

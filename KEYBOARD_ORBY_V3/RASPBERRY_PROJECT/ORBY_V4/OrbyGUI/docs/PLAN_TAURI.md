@@ -799,7 +799,12 @@ PC, los ejecuta la app.
 | `plugin` | `plugin, op, value` | Delegar en el complemento (Tarea 10) |
 | `center_mouse` | — | Legado: centro de la pantalla |
 
-- [ ] **Paso 1: la vía rápida del portapapeles**
+> **`mouse_move` no está en esta tabla y no es un olvido.** Aparece en configuraciones de
+> verdad, pero `runAction` de Electron **tampoco lo ejecuta**: es uno de los cuatro tipos
+> que hace el firmware por su cuenta (`DEVICE_STEP_TYPE` en `src/macros-store.js`), así que
+> nunca llega por `MACRO:<id>`. Implementarlo aquí lo ejecutaría dos veces.
+
+- [x] **Paso 1: la vía rápida del portapapeles** — hecho el 2026-08-11
 
 Un texto de **5 caracteres o más** no se teclea letra a letra: se guarda el portapapeles,
 se escribe el texto, se espera 30 ms, se manda `Ctrl+V`, se espera 120 ms y **se restaura
@@ -810,7 +815,16 @@ como pulsaciones de verdad, no como caracteres.
 > Perder la restauración del portapapeles es de los fallos que más molestan y que nadie
 > asocia con el teclado.
 
-- [ ] **Paso 2: acciones de energía** (`std::process::Command`, todas de Windows):
+Añadido que Electron no tenía: **un cerrojo alrededor del portapapeles**. Dos secuencias
+pueden solaparse —el teclado no espera a que acabe una para mandar la siguiente, y en
+Electron tampoco se esperaba—, pero el portapapeles es uno solo: sin el cerrojo la segunda
+lo pisa mientras la primera no ha pegado todavía y el usuario acaba con el texto
+equivocado **y** con el portapapeles de otro.
+
+Y las letras se escriben por `KEYEVENTF_UNICODE` en vez de por tecla virtual: así salen
+igual sea cual sea la distribución del teclado del usuario.
+
+- [x] **Paso 2: acciones de energía** (`std::process::Command`, todas de Windows) — hecho:
 
 | `mode` | Comando |
 |---|---|
@@ -821,17 +835,28 @@ como pulsaciones de verdad, no como caracteres.
 | `lock` | `rundll32.exe user32.dll,LockWorkStation` |
 | `logoff` | `shutdown /l` |
 
-- [ ] **Paso 3: retardos entre repeticiones.** Por defecto **20 ms** entre repeticiones.
+- [x] **Paso 3: retardos entre repeticiones.** Por defecto **20 ms** entre repeticiones.
       Y al escribir, poner el retardo automático de la librería de entrada **a cero**: los
       300/100 ms que traen por defecto añaden más de medio segundo por repetición.
+      Con `SendInput` esto último desaparece solo: no hay retardo automático que quitar,
+      los eventos salen cuando se mandan. Se conservan los 4 ms entre letras al teclear,
+      que sí hacen falta: con 0 hay aplicaciones que se comen caracteres sueltos.
 
-- [ ] **Paso 4: tests** de la traducción de códigos HID a teclas (tabla de la página de
+- [x] **Paso 4: tests** de la traducción de códigos HID a teclas (tabla de la página de
       uso `0x07`) y de los bits de modificador (`0x01..0x80` → Control/Shift/Alt/Super,
       izquierda y derecha). Van en `orby-core`, son puros.
+      Hechos en `orby-core/src/teclas.rs`, 7 pruebas. La que más vale es la de las teclas
+      **extendidas**: sin esa bandera, con Bloq Num puesto la flecha arriba escribe un 8, y
+      el Intro del numérico y el normal son el mismo código virtual —solo los distingue
+      esa bandera—.
 
 - [ ] **Comprobación (Windows):** una secuencia con texto largo (comprobar que el
       portapapeles vuelve a lo que había), otra con combinación, otra que abra un
       programa, y una con posición absoluta de ratón **en un monitor con escalado**.
+
+  Necesita pulsar teclas del teclado: no se puede disparar desde fuera, porque el único
+  camino a una secuencia es el `MACRO:<id>` que manda el propio teclado. **Sin comprobar
+  todavía.**
 
 - [ ] **Commit:** `git commit -am "feat(tauri): ejecución de secuencias en el PC"`
 

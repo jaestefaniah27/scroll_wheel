@@ -11,3 +11,4 @@ pub mod plugins;
 pub mod protocolo;
 pub mod releases;
 pub mod serie;
+pub mod teclas;
