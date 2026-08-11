@@ -730,7 +730,13 @@ function pipelineFlashear({ emisor }) {
           // -ExecutionPolicy Bypass porque el script no va firmado y la política
           // por defecto de Windows lo rechazaría; -NoProfile para no arrastrar el
           // perfil del usuario, que puede tardar segundos en cargar.
-          await ejecutar('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(RAIZ, 'flash.ps1')], {
+          //
+          // Se invoca con -Command y no con -File para poder poner antes la
+          // codificación de salida en UTF-8: por defecto PowerShell escribe en la
+          // página de códigos de la consola (cp850) y aquí se lee como UTF-8, así
+          // que los mensajes de flash.ps1 llegaban al log como «con Ǹxito».
+          const guion = `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; & '${path.join(RAIZ, 'flash.ps1')}'`;
+          await ejecutar('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', guion], {
             emisor,
             // El camino manual de flash.ps1 espera hasta 120 s a que aparezca la
             // unidad, y antes hay una compilación entera.
