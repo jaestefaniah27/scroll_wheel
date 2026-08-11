@@ -4,12 +4,19 @@
 // la derecha son comandos, no cosa de Windows. Y el de cerrar **no cierra**: esconde a la
 // bandeja, igual que hace Electron, porque la app tiene que seguir viva para ejecutar las
 // secuencias que el teclado le pide. Cerrar de verdad solo desde el menú de la bandeja.
+//
+// «Esconder» no es `hide()`: es `destroy()`. `hide()` deja el WebView2 cargado y pintando
+// de fondo, que es lo que gastaba RAM en segundo plano sin motivo — todo lo que sigue vivo
+// en la bandeja (puerto serie, macros, firmware, complementos) vive en `main.rs::setup` y
+// no toca la ventana para nada, así que no hace falta conservarla. Al volver a abrir se
+// reconstruye desde el mismo `WindowConfig` de `tauri.conf.json`, para no duplicar aquí
+// título, tamaño ni color de fondo.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_notification::NotificationExt;
 
 /// Distingue «esconder» de «salir de verdad». Sin esto, el manejador de cierre se comería
@@ -25,8 +32,28 @@ pub fn saliendo() -> bool {
     SALIENDO.load(Ordering::SeqCst)
 }
 
+/// Reconstruye la ventana «main» desde el `WindowConfig` de `tauri.conf.json`, porque
+/// `esconder_ventana` la destruye del todo en vez de solo esconderla.
+fn reconstruir(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    let conf = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|c| c.label == "main")
+        .expect("tauri.conf.json tiene que declarar la ventana «main»")
+        .clone();
+    WebviewWindowBuilder::from_config(app, &conf)?.build()
+}
+
 fn mostrar(app: &AppHandle) {
-    let Some(ventana) = app.get_webview_window("main") else { return };
+    let ventana = match app.get_webview_window("main") {
+        Some(v) => v,
+        None => match reconstruir(app) {
+            Ok(v) => v,
+            Err(_) => return,
+        },
+    };
     // Si estaba minimizada, `show()` sola la deja escondida en la barra de tareas.
     if ventana.is_minimized().unwrap_or(false) {
         let _ = ventana.unminimize();
@@ -35,11 +62,17 @@ fn mostrar(app: &AppHandle) {
     let _ = ventana.set_focus();
 }
 
+/// Destruye la ventana y el WebView2 que lleva dentro. El puerto serie, las macros, el
+/// firmware y los complementos siguen corriendo en el proceso: no dependen de la ventana.
+fn esconder_ventana(app: &AppHandle) {
+    if let Some(ventana) = app.get_webview_window("main") {
+        let _ = ventana.destroy();
+    }
+}
+
 /// Esconde la ventana y, la primera vez, explica por qué la app sigue en la bandeja.
 pub fn esconder(app: &AppHandle) {
-    if let Some(ventana) = app.get_webview_window("main") {
-        let _ = ventana.hide();
-    }
+    esconder_ventana(app);
 
     if !AVISO_ENSENADO.swap(true, Ordering::SeqCst) {
         let _ = app
@@ -89,9 +122,7 @@ pub fn montar_bandeja(app: &AppHandle) -> tauri::Result<()> {
                     if visible {
                         // Aquí se esconde sin el aviso: quien usa el icono de la bandeja
                         // ya sabe dónde está la app.
-                        if let Some(v) = app.get_webview_window("main") {
-                            let _ = v.hide();
-                        }
+                        esconder_ventana(app);
                     } else {
                         mostrar(app);
                     }

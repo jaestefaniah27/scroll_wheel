@@ -88,9 +88,16 @@ fn main() {
         // Salir a mitad de la reproducción de una grabación dejaría hundidas las teclas
         // que llevara pulsadas, y ahí ya no queda ninguna app viva que pueda soltarlas.
         // `Exit` es el último punto en el que todavía se puede.
-        .run(|_app, evento| {
-            if let tauri::RunEvent::Exit = evento {
-                recorder::apagar();
+        .run(|_app, evento| match evento {
+            tauri::RunEvent::Exit => recorder::apagar(),
+            // Sin esto, destruir la ventana al ir a la bandeja (ver `window::esconder`)
+            // se toma como «se cerró la última ventana» y tao apaga el proceso entero,
+            // llevándose por delante el puerto serie y el icono de la bandeja.
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                if !window::saliendo() {
+                    api.prevent_exit();
+                }
             }
+            _ => {}
         });
 }
