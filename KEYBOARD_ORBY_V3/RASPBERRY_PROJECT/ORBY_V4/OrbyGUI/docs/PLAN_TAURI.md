@@ -770,8 +770,11 @@ Un montón de piezas pequeñas, todas independientes.
   un monitor a la izquierda; y `orby.close()` deja el proceso vivo con la ventana en
   `IsWindowVisible: False`.
 
-  Quedan por comprobar a mano: recuperar desde la bandeja (clic simple, doble clic y
-  menú), el diálogo de elegir programa, y el escalado al 150 %.
+  Comprobado a mano el 2026-08-11: la lista de programas instalados y el diálogo de elegir
+  aplicación o archivo se comportan igual que en Electron.
+
+  Queda por comprobar a mano: recuperar desde la bandeja (clic simple, doble clic y menú) y
+  el escalado al 150 %.
 
 - [ ] **Commit:** `git commit -am "feat(tauri): ventana, bandeja, diálogos y apps"`
 
@@ -850,13 +853,13 @@ igual sea cual sea la distribución del teclado del usuario.
       el Intro del numérico y el normal son el mismo código virtual —solo los distingue
       esa bandera—.
 
-- [ ] **Comprobación (Windows):** una secuencia con texto largo (comprobar que el
+- [x] **Comprobación (Windows):** una secuencia con texto largo (comprobar que el
       portapapeles vuelve a lo que había), otra con combinación, otra que abra un
       programa, y una con posición absoluta de ratón **en un monitor con escalado**.
 
-  Necesita pulsar teclas del teclado: no se puede disparar desde fuera, porque el único
-  camino a una secuencia es el `MACRO:<id>` que manda el propio teclado. **Sin comprobar
-  todavía.**
+  Comprobado a mano el 2026-08-11 sobre el teclado: secuencias, abrir programas y elegir
+  ficheros se comportan igual que en Electron. Queda sin comprobar solo el caso del monitor
+  con escalado al 150 %.
 
 - [ ] **Commit:** `git commit -am "feat(tauri): ejecución de secuencias en el PC"`
 
