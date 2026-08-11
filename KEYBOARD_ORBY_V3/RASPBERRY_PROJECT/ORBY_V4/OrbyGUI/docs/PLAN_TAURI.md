@@ -95,6 +95,7 @@ Comprobado el 2026-08-11. **No hay que reimplementarlo.**
 | Máquina de estados del serie (**Tarea 3, paso 1**) | `.../src/serie.rs` | Hecho, 16 tests |
 | Montaje de peticiones de complemento | `.../src/plugins/peticion.rs` | Hecho, 14 tests |
 | Presupuesto de refresco de las OLED (**Tarea 11, paso 4**) | `.../src/plugins/oled.rs` | Hecho, 9 tests |
+| Filtrado de releases de firmware (**Tarea 9, paso 1**) | `.../src/releases.rs` | Hecho, 9 tests |
 
 Las pruebas del primer bloque se contrastaron ejecutando las implementaciones JS actuales
 con las mismas entradas: coinciden caso por caso. Y el descriptor de complementos se
@@ -103,7 +104,7 @@ así que la igualdad con lo que ve hoy el renderer está comprobada, no supuesta
 
 ```bash
 cd OrbyGUI/src-tauri/crates/orby-core && cargo test
-# Esperado: 91 passed (lib) + 5 passed (descriptor_lampdesk)
+# Esperado: 100 passed (lib) + 5 passed (descriptor_lampdesk)
 
 cd OrbyGUI && node --test test/*.mjs
 # Esperado: # pass 14
@@ -772,7 +773,7 @@ proceso hijo: `GetForegroundWindow`, `GetWindowThreadProcessId`, `GetWindowText`
 Estado: `{status, current, latest:{version,asset}, available, percent, manual, error}`,
 donde `status` es `idle|checking|downloading|bootsel|flashing|done|error`.
 
-- [ ] **Buscar versiones.** `GET https://api.github.com/repos/jaestefaniah27/scroll_wheel/releases?per_page=50`
+- [x] **Buscar versiones.** YA HECHO en `orby_core::releases` (9 tests). Aquí solo falta la llamada HTTP. `GET https://api.github.com/repos/jaestefaniah27/scroll_wheel/releases?per_page=50`
       con cabecera `User-Agent: OrbyGUI`. Quedarse con las etiquetas que empiecen por
       `fw-v`, **conservando las prereleases** (las de firmware se publican así a
       propósito) y descartando los borradores. Filtrar por `compare_fw(version, maxFw) <= 0`
