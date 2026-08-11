@@ -29,6 +29,14 @@ const ACKS_DE_SALUDO: u8 = 2;
 const SILENCIO_MS: u64 = 12_000;
 const RESPUESTA_MS: u64 = 4_000;
 
+/// El aviso HOST_APP:1 caduca en el teclado a los 25 s y solo lo renueva una línea que
+/// llegue del PC. No vale colgarlo del ACK del vigilante (`SILENCIO_MS`): ese mide otra
+/// cosa, 12 s sin oír al *teclado*, y mientras se usa el teclado hay telemetría continua
+/// (KEY_EV, WHEEL, ENC) que nunca deja pasar esos 12 s de silencio. El aviso caducaba con
+/// la app abierta y sana y aparecían las barras de tachado (electron/serial.js,
+/// `_renovarAnuncioApp`, commit 9780186). Se repite por su propio reloj.
+const RENUEVO_HOSTAPP_MS: u64 = 8_000;
+
 /// Cuando hay telemetría pero no saludo, se insiste antes de rendirse.
 const PERSECUCION_ACKS: u8 = 4;
 const PERSECUCION_CADA_MS: u64 = 600;
@@ -70,6 +78,10 @@ pub struct Maquina {
     ultima_linea_en: u64,
     ping_en: Option<u64>,
 
+    /// El teclado que está conectado ahora pide HOST_APP:1 (`HOSTAPP=1` en su saludo).
+    anuncia_host_app: bool,
+    ultimo_anuncio_en: u64,
+
     acks_enviados: u8,
     siguiente_ack_en: Option<u64>,
 
@@ -93,6 +105,8 @@ impl Maquina {
             info: None,
             ultima_linea_en: 0,
             ping_en: None,
+            anuncia_host_app: false,
+            ultimo_anuncio_en: 0,
             acks_enviados: 0,
             siguiente_ack_en: None,
             provisional: false,
@@ -143,6 +157,7 @@ impl Maquina {
         self.persecucion_en = None;
         self.persecucion_intentos = 0;
         self.acks_enviados = 0;
+        self.anuncia_host_app = false;
     }
 
     pub fn al_recibir(&mut self, linea: &str) -> Vec<Salida> {
@@ -188,14 +203,17 @@ impl Maquina {
         self.estado = Estado::Conectado;
         self.siguiente_ack_en = None;
         self.ping_en = None;
+        self.anuncia_host_app = anuncia_host_app;
 
         let mut salidas = Vec::new();
 
         // El teclado tacha en sus pantallas las teclas que solo puede ejecutar el PC. No
         // lo deduce de tener el puerto abierto —la WebGUI también lo abre y no ejecuta
         // nada—, así que hay que decírselo. Va en CADA presentación, no solo en la
-        // primera, porque el aviso caduca en el teclado: el ACK del vigilante lo renueva.
+        // primera, porque el aviso caduca en el teclado; entre presentaciones lo repite
+        // `tic_anuncio_hostapp` (ver RENUEVO_HOSTAPP_MS).
         if anuncia_host_app {
+            self.ultimo_anuncio_en = self.ahora;
             salidas.push(Salida::Mandar("HOST_APP:1\n".into()));
         }
 
@@ -216,7 +234,10 @@ impl Maquina {
 
         match self.estado {
             Estado::Saludando => salidas.extend(self.tic_saludo()),
-            Estado::Conectado => salidas.extend(self.tic_vigilante()),
+            Estado::Conectado => {
+                salidas.extend(self.tic_vigilante());
+                salidas.extend(self.tic_anuncio_hostapp());
+            }
             Estado::Buscando => {}
         }
 
@@ -286,6 +307,17 @@ impl Maquina {
         }
 
         Vec::new()
+    }
+
+    fn tic_anuncio_hostapp(&mut self) -> Vec<Salida> {
+        if !self.anuncia_host_app {
+            return Vec::new();
+        }
+        if self.ahora.saturating_sub(self.ultimo_anuncio_en) < RENUEVO_HOSTAPP_MS {
+            return Vec::new();
+        }
+        self.ultimo_anuncio_en = self.ahora;
+        vec![Salida::Mandar("HOST_APP:1\n".into())]
     }
 
     fn tic_persecucion(&mut self) -> Vec<Salida> {
@@ -432,7 +464,9 @@ mod tests {
     fn el_vigilante_pregunta_a_los_12_segundos_de_silencio() {
         let mut m = abierta();
         m.al_pasar_tiempo(400);
-        m.al_recibir(SALUDO);
+        // Sin HOSTAPP=1 para no mezclar el repetidor de HOST_APP:1 (otro reloj,
+        // otro test) con lo que este comprueba.
+        m.al_recibir(SALUDO_VIEJO);
 
         assert!(mando(&m.al_pasar_tiempo(12_000)).is_empty());
         assert_eq!(mando(&m.al_pasar_tiempo(1)), vec!["ACK\n"]);
@@ -455,8 +489,42 @@ mod tests {
         let reanuncia = salidas.iter().any(|s| matches!(s, Salida::Emitir(Evento::Conectado(_))));
         assert!(!reanuncia, "no debe re-anunciar una conexión que ya estaba");
 
-        assert!(m.al_pasar_tiempo(10_000).is_empty(), "la conexión debería seguir viva");
+        // Antes de los 8 s del repetidor de HOST_APP:1, nada.
+        assert!(
+            mando(&m.al_pasar_tiempo(7_999)).is_empty(),
+            "la conexión debería seguir viva"
+        );
         assert_eq!(m.estado(), Estado::Conectado);
+    }
+
+    #[test]
+    fn el_anuncio_de_host_app_se_repite_aunque_haya_telemetria_continua() {
+        // Corrección respecto al fallo que hubo en Electron (commit 9780186): con el
+        // teclado en uso hay telemetría continua y el vigilante (silencio de 12 s) no
+        // llega a disparar nunca el ACK que antes renovaba HOST_APP:1 de gorra. Sin un
+        // repetidor propio, el aviso caduca en el teclado a los 25 s con la app abierta
+        // y sana, y aparecen las barras de tachado.
+        let mut m = abierta();
+        m.al_pasar_tiempo(400);
+        m.al_recibir(SALUDO);
+
+        // Telemetría cada segundo: nunca hay 12 s de silencio para el vigilante.
+        let mut vistos_hostapp = 0;
+        for _ in 0..20 {
+            for salida in m.al_pasar_tiempo(1_000) {
+                if salida == Salida::Mandar("HOST_APP:1\n".into()) {
+                    vistos_hostapp += 1;
+                }
+            }
+            m.al_recibir("KEY_EV:3:1");
+        }
+
+        // En 20 s deberían haber salido al menos dos renovaciones (cada 8 s), muy por
+        // debajo del plazo de 25 s del teclado.
+        assert!(
+            vistos_hostapp >= 2,
+            "el aviso HOST_APP:1 no se repite: {vistos_hostapp}"
+        );
     }
 
     #[test]
@@ -492,8 +560,11 @@ mod tests {
         for _ in 0..30 {
             for salida in m.al_pasar_tiempo(10_000) {
                 if let Salida::Mandar(c) = salida {
-                    assert_eq!(c, "ACK\n");
-                    m.al_recibir(SALUDO); // el teclado siempre contesta al ACK
+                    match c.as_str() {
+                        "ACK\n" => { m.al_recibir(SALUDO); } // el teclado siempre contesta al ACK
+                        "HOST_APP:1\n" => {} // el repetidor de HOST_APP:1 no espera respuesta
+                        otro => panic!("mensaje inesperado del vigilante: {otro}"),
+                    }
                 }
             }
         }
