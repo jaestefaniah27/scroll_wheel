@@ -140,6 +140,12 @@ Ejemplo de referencia: `OrbyGUI/plugins/lampdesk`.
   con ficheros en uso, es sincronización, no un bug del código.
 - **VS Code filtra `ELECTRON_RUN_AS_NODE`.** Si Electron arranca como Node y no abre
   ventana, limpia esa variable antes de lanzar.
+- **`npm install` está roto de raíz.** `archiver@5.3.2`, peer de electron-builder, pide
+  `async@^0.0.1`, versión que no existe en npm: cualquier instalación limpia falla con
+  `ETARGET`. Con `--legacy-peer-deps` pasa; solo se queda fuera el árbol de
+  `electron-builder-squirrel-windows`, que no se usa (el target es nsis).
+- **`assets/orby-icon.png` es un JPEG** con extensión `.png`. Electron-builder lo traga;
+  el generador de iconos de Tauri no. Hay que convertirlo antes de dárselo.
 - **Rutas largas de Windows.** El repo está anidado y bajo OneDrive: operaciones de
   ficheros recursivas pueden fallar con "Filename too long". Usa el prefijo `\\?\`.
 - **La app de escritorio y la WebGUI no pueden usar el teclado a la vez.** En Windows

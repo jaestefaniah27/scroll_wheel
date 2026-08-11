@@ -4,7 +4,9 @@
 # El plan de Tauri cita constantes, rutas y nombres de canal del código actual. Si el
 # código deriva, el plan miente y quien lo ejecute se pierde. Este script lo comprueba.
 #   bash tools/test/verifica_plan_tauri.sh
-cd "/home/user/scroll_wheel/KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/OrbyGUI" || exit 1
+# Relativo al propio script: el repo se clona en sitios distintos (contenedor Linux,
+# Windows bajo OneDrive) y una ruta fija solo valía en la máquina donde se escribió.
+cd "$(dirname "$0")/../../OrbyGUI" || exit 1
 fallos=0
 ok()   { echo "  ok   $1"; }
 mal()  { echo "  MAL  $1"; fallos=$((fallos+1)); }
@@ -107,6 +109,7 @@ if grep -qE "^\s*import .*@tauri-apps|from .@tauri-apps" src/tauri/orby-tauri.js
 else
   ok "orby-tauri.js no depende de ningun paquete npm nuevo"
 fi
+chk "los permisos del nucleo estan concedidos" "core:default" src-tauri/capabilities/default.json
 if grep -q "@tauri-apps" package.json; then
   if grep -q "@tauri-apps" package-lock.json; then ok "package.json y el lock cuadran"
   else mal "package.json declara @tauri-apps pero el lock no lo tiene: npm ci fallaria"; fi
