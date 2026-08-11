@@ -1257,6 +1257,13 @@ sobrevivan a desinstalar y volver a instalar.
 
 ## Tarea 11: Complementos, tipo `process` (esqueleto)
 
+> **Aplazada a propósito (decisión del 2026-08-11).** No hay ningún complemento de
+> proceso que escribir todavía, así que construir el esqueleto ahora es trabajo sin
+> nadie que lo use. Se retoma cuando toque desarrollar de verdad el primero de la lista
+> del TODO (OBS, monitor de hardware, audio, Chrome o Altium): en ese momento el
+> protocolo se diseña **contra las necesidades reales de ese complemento concreto**, en
+> vez de a ciegas. Hasta entonces, **saltar directamente a la Tarea 12**.
+
 Aquí no se busca paridad con Electron —esto no existe hoy— sino **dejar la puerta
 abierta** a los complementos del TODO (OBS, monitor de hardware, audio, Chrome, Altium)
 para que se puedan escribir después **sin volver a tocar OrbyGUI**.
