@@ -1173,8 +1173,13 @@ donde `status` es `idle|checking|downloading|bootsel|flashing|done|error`.
   comandos de Tauri son funciones normales y `firmware.rs` puede pedir el `State<Serie>` al
   `AppHandle` igual que hace el propio `main.rs`.
 
-- [ ] **Comprobación (Windows, con teclado):** actualizar por la vía `BOOTSEL` y por la
-      manual. Confirmar que al acabar el teclado vuelve con la versión nueva.
+- [x] **Comprobación (Windows, con teclado):** actualizar por la vía `BOOTSEL`. Confirmar
+      que al acabar el teclado vuelve con la versión nueva.
+
+> **La vía manual (enchufar con BOOTSEL pulsado) se descarta a propósito**, decisión del
+> 2026-08-11. La automática funciona y es la que usa cualquiera con un firmware 4.2 o
+> posterior; la manual solo hace falta para recuperar un teclado que se quedó a medias, y
+> para eso está `flash.ps1`. Esta tarea se da por cerrada sin ella.
 
   - [x] **Vía `BOOTSEL`, hecha de verdad el 2026-08-11**: el teclado subió de la 4.5 a la
         4.6 sobre la build de release, y volvió solo con `FW=4.6` y todas sus banderas
@@ -1185,7 +1190,7 @@ donde `status` es `idle|checking|downloading|bootsel|flashing|done|error`.
   - [x] `firmware_check` con los dos topes: con `maxFw: '4.5'` devuelve `available: false`
         y `latest: 4.5`; con `maxFw: '4.6'`, `available: true` y el asset correcto
         (`ORBY_V4-fw-4.6.uf2`, 260 608 bytes, el mismo tamaño que publica GitHub).
-  - [ ] **Vía manual** (enchufar con BOOTSEL pulsado): sin comprobar.
+  - Vía manual (enchufar con BOOTSEL pulsado): **descartada**, ver el aviso de arriba.
 
   > **Ojo con el tope de versión al probar esto en esta rama.** La rama de trabajo va por
   > detrás de `main` en el firmware: aquí `orby_version.h` y `compat.js` dicen **4.5** y
@@ -1429,6 +1434,48 @@ para que se puedan escribir después **sin volver a tocar OrbyGUI**.
 **El punto más delicado de todo el plan.** Aquí es donde se puede dejar tirada a la gente
 que ya tiene la app instalada.
 
+> **Es lo único que le queda a la migración.** Comprobado el 2026-08-11: todas las demás
+> tareas están cerradas sobre el teclado real, salvo la 11 (aplazada a propósito) y la 13
+> (que va después). Esta es la que bloquea que Tauri pase a ser el modelo.
+
+### Punto de partida, medido el 2026-08-11
+
+**Lo que ya está**: el empaquetado NSIS **funciona**. `npm run tauri:build` produce
+`target/release/bundle/nsis/OrbyGUI_0.5.1_x64-setup.exe`, **7,5 MB** frente a los 97,6 MB
+del de Electron, con `identifier: com.orby.gui` y el nombre de producto `OrbyGUI`. El paso 3
+está, en la práctica, hecho: falta comprobar que instala **encima** de la versión existente
+en vez de dejar dos apps.
+
+**Lo que falta, y falla en caliente**: de los 39 comandos del contrato, Rust registra **34**.
+Los cinco que no existen son justo los de esta tarea:
+
+| Comando | Lo llama | Qué se ve hoy |
+|---|---|---|
+| `autostart_get` | `src/views/settings.js:244` | `Command autostart_get not found` |
+| `autostart_set` | `src/views/settings.js:247` | idem |
+| `updater_get` | `src/updater.js` (desde `init`) | `Command updater_get not found` |
+| `updater_check` | `src/views/settings.js:119` | idem |
+| `updater_install` | `src/views/settings.js:124` | idem |
+
+**Y no fallan de forma visible, que es lo peor.** Los dos sitios donde se usan están
+**declarados en `src/tauri/orby-tauri.js`**, así que `platform.can()` da `true` y
+`ocultarSiFalta` **no** esconde las tarjetas: el usuario ve el interruptor de «Arrancar con
+Windows» y la tarjeta de actualización de la app como si funcionaran.
+
+- El interruptor de autoarranque queda **muerto**: `initAutostart()` revienta en el
+  `await window.orby.autostart.get()` de su primera línea, que está **antes** del
+  `addEventListener`, así que el botón nunca llega a tener manejador. Se pulsa y no pasa
+  nada, sin ningún mensaje.
+- La insignia y la tarjeta de actualización se quedan en blanco: `updater.init()` se llama
+  igual (`src/main.js:101` solo se protege del caso navegador) y su promesa se rechaza.
+- Los rechazos son de promesa y nadie los espera, así que **no rompen el pintado** del resto
+  de Ajustes. Por eso esto ha llegado hasta aquí sin verse.
+
+Al implementarlo, la decisión que hay que tomar de paso: si `updater` se va a quedar sin
+implementar durante un tiempo, **quitar los dos espacios de nombres de `orby-tauri.js` y
+meterlos en un `TAURI_PENDIENTE`** (el `Set` que la Tarea 1 dejó previsto en
+`platform.js`), para que las tarjetas se escondan en vez de mentir.
+
 - [ ] **Paso 1: autoarranque.** Entrada en el registro de usuario (clave `Run`) que
       conserve el argumento `--hidden`. Y al **leerla**, comparar ruta **y argumentos**:
       comparando solo la ruta siempre devuelve que está desactivado.
@@ -1439,6 +1486,10 @@ que ya tiene la app instalada.
 - [ ] **Paso 3: empaquetado NSIS** con Tauri, conservando el nombre de producto
       `OrbyGUI` y el mismo identificador, para que actualice **sobre** la instalación
       existente en vez de dejar dos apps.
+      **Medio hecho:** el instalador ya sale de `npm run tauri:build` (7,5 MB) y los nombres
+      son los correctos. Lo que **no** se ha comprobado es lo único que importa de este
+      paso: que instalarlo encima de la versión de Electron la sustituya en vez de dejar
+      dos entradas en «Aplicaciones instaladas».
 
 - [ ] **Paso 4: el relevo del actualizador.** Leer esto entero antes de tocar nada:
 
@@ -1469,12 +1520,13 @@ que ya tiene la app instalada.
 
 Solo cuando **todo lo anterior** esté comprobado sobre el teclado.
 
-- [ ] **Paso 1: medir**, que es lo que justifica la migración. Con las dos builds contra el
-      mismo teclado, anotar: tamaño del instalador, RAM en reposo y tiempo de arranque.
-      Poner los números en el mensaje del commit.
+- [x] **Paso 1: medir**, que es lo que justifica la migración. Con las dos builds contra el
+      mismo teclado, anotar: tamaño del instalador y RAM en reposo. Poner los números en el
+      mensaje del commit.
 
-  Primeras medidas, tomadas el 2026-08-11 con las dos builds conectadas al mismo teclado
-  (COM7). Falta el tiempo de arranque:
+  Medido el 2026-08-11 con las dos builds conectadas al mismo teclado (COM7). **El tiempo
+  de arranque se descarta a propósito**: con un instalador trece veces menor y una décima
+  parte de RAM, no hay ninguna decisión que dependa de esa tercera cifra.
 
   | | Electron 0.5.2 | Tauri 0.5.1 |
   |---|---|---|
@@ -1515,8 +1567,16 @@ Repasado el 2026-08-11 contra la build de **release** y el teclado real (COM7).
 - [x] `cargo test` en verde, y **ningún test marcado como ignorado** sin explicar por qué.
       127 (orby-core) + 5 (descriptor de lampdesk) + 7 (orby-app), 0 fallos, 0 ignorados.
 - [x] `node --test test/*.mjs` en verde. 14 pruebas.
-- [x] Los 39 comandos existen y ninguno devuelve un valor de mentira.
-      `verifica_plan_tauri.sh`: **0 discrepancias**.
+- [ ] Los 39 comandos existen y ninguno devuelve un valor de mentira.
+      **No.** Rust registra **34 de los 39**. Faltan los cinco de la Tarea 12:
+      `autostart_get`, `autostart_set`, `updater_get`, `updater_check` y `updater_install`.
+      Llamarlos devuelve `Command <nombre> not found`.
+
+      > **`verifica_plan_tauri.sh` no sirve para comprobar esto y no hay que confiarse.**
+      > Su bloque «Los 39 canales del plan existen» los busca en **`electron/main.js`**, que
+      > es la *referencia* de la migración, no en `src-tauri/src/main.rs`. Por eso da
+      > «0 discrepancias» con cinco comandos sin implementar. La comprobación de verdad es
+      > mirar el `invoke_handler` de `main.rs`, o llamarlos desde la app.
 - [x] Ninguna vista, ni `device.js`, ni `store.js`, ni `compat.js` han cambiado.
 - [x] La copia de seguridad hecha con Electron se restaura con Tauri sin perder nada.
       Ver la prueba de oro de la Tarea 4: las tres copias, 54 122 bytes, mismo contenido.
@@ -1526,16 +1586,19 @@ Repasado el 2026-08-11 contra la build de **release** y el teclado real (COM7).
 - [x] Parar una reproducción a mitad no deja ninguna tecla pegada.
       Comprobado dos veces: cortando un `loop` con `recorder.stop()` y cortando un `hold`
       soltando la tecla física. `GetAsyncKeyState` da F15 y Control sueltas después.
-- [ ] Los números de la mejora (tamaño, RAM, arranque) están medidos y escritos.
-      Instalador y RAM medidos (ver Tarea 13, paso 1). **Falta el tiempo de arranque.**
+- [x] Los números de la mejora (tamaño y RAM) están medidos y escritos.
+      Ver Tarea 13, paso 1.
 
-**Lo único que queda sin comprobar sobre hardware**, a fecha del 2026-08-11:
+**Lo que queda para que Tauri pueda ser el modelo**, a fecha del 2026-08-11: **solo la
+Tarea 12**. Todo lo demás está comprobado sobre el teclado real. La Tarea 11 está aplazada
+a propósito y no bloquea nada; la 13 es retirar Electron y documentar, y va después.
 
-| Qué | Por qué sigue abierto |
+**Descartado a propósito, no se va a hacer** (decisión del 2026-08-11):
+
+| Qué | Por qué |
 |---|---|
-| Firmware por la vía **manual** (enchufar con BOOTSEL pulsado) | La automática ya funciona; se decidió no repetir el flasheo |
-| Tiempo de arranque de las dos vías | No medido todavía |
-| Tareas 11 y 12 | La 11 está aplazada a propósito; la 12 no está implementada |
+| Firmware por la vía **manual** (enchufar con BOOTSEL pulsado) | La vía automática funciona y es la que usa todo el mundo |
+| Tiempo de arranque de las dos vías | El tamaño del instalador y la RAM ya justifican la migración de sobra |
 
 ## Si algo no cuadra
 
