@@ -1,0 +1,1607 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orby Manager</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-panel: #101016;
+    --bg-card: #15151d;
+    --borde: #26262f;
+    --texto: #e4e4ec;
+    --texto-tenue: #8c8c9c;
+    --acento: #7c9eff;
+    --verde: #4ade80;
+    --ambar: #f5a623;
+    --rojo: #e35b5b;
+    --rojo-tenue: #b06a6a;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--texto);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 14px;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  header {
+    flex: 0 0 auto;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--borde);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  header h1 {
+    font-size: 16px;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  #banner-conexion {
+    display: none;
+    background: rgba(227, 91, 91, 0.15);
+    color: var(--rojo);
+    border: 1px solid var(--rojo);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 12px;
+  }
+  #banner-conexion.visible { display: inline-block; }
+
+  /* --- Layout general: dos columnas a pantalla completa, sin scroll en body.
+     La izquierda es el trabajo (secciones, cada una con su propio scroll si
+     hace falta desde la columna que las contiene); la derecha es actividad
+     en vivo (tarea en curso + log), siempre visible mientras se trabaja a la
+     izquierda. --- */
+  main {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+  }
+
+  #columna-izquierda {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  /* Ancho fijo salvo en pantallas estrechas, donde clamp() la baja hasta no
+     comerse más de un tercio del hueco; el mínimo de 340px es el punto en el
+     que la barra de progreso y los botones de la tarea dejan de caber. */
+  #columna-actividad {
+    flex: 0 0 clamp(340px, 33vw, 420px);
+    min-width: 340px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid var(--borde);
+    background: var(--bg-panel);
+  }
+
+  @media (max-width: 1100px) {
+    main { flex-direction: column; }
+    #columna-actividad {
+      flex: 0 0 auto;
+      max-height: 42vh;
+      min-width: 0;
+      border-left: none;
+      border-top: 1px solid var(--borde);
+    }
+  }
+
+  section {
+    background: var(--bg-panel);
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+
+  section > h2 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--texto);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  section > h2 .sub {
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--texto-tenue);
+  }
+
+  button {
+    background: var(--bg-card);
+    color: var(--texto);
+    border: 1px solid var(--borde);
+    border-radius: 6px;
+    padding: 7px 13px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--acento); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primario { border-color: var(--acento); color: var(--acento); }
+  button.peligro { border-color: var(--rojo); color: var(--rojo); }
+  button.pequeno { padding: 4px 9px; font-size: 12px; }
+
+  select, input[type=text], textarea {
+    background: var(--bg-card);
+    color: var(--texto);
+    border: 1px solid var(--borde);
+    border-radius: 6px;
+    padding: 6px 9px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+
+  label.check {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--texto-tenue);
+    cursor: pointer;
+  }
+
+  .nota-ayuda { font-size: 11px; color: var(--texto-tenue); }
+  .texto-tenue { color: var(--texto-tenue); font-size: 12.5px; }
+
+  /* --- Versiones --- */
+  .tarjetas {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .tarjeta {
+    background: var(--bg-card);
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .tarjeta .etiqueta {
+    font-size: 11px;
+    color: var(--texto-tenue);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+
+  .tarjeta .valor {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .tarjeta .detalle {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--texto-tenue);
+  }
+
+  .tarjeta.aviso .valor, .tarjeta.aviso .detalle { color: var(--ambar); }
+  .tarjeta.error .valor, .tarjeta.error .detalle { color: var(--rojo); }
+
+  .tarjeta .accion { margin-top: 8px; }
+
+  .avisos { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .aviso-linea {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    background: var(--bg-card);
+  }
+  .aviso-linea .punto {
+    flex: 0 0 auto;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-top: 4px;
+  }
+  .aviso-linea.ok .punto { background: var(--verde); }
+  .aviso-linea.aviso .punto { background: var(--ambar); }
+  .aviso-linea.error .punto { background: var(--rojo); }
+
+  /* --- Lanzar --- */
+  .fila-botones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  #proceso-info {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--texto-tenue);
+  }
+  #proceso-info.activo { color: var(--acento); }
+
+  /* --- Herramientas --- */
+  .grid-herramientas {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 8px;
+  }
+  .grid-herramientas button { width: 100%; }
+
+  /* --- Publicar --- */
+  .publicar-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 720px) { .publicar-grid { grid-template-columns: 1fr; } }
+
+  .bloque {
+    background: var(--bg-card);
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .bloque h3 {
+    margin: 0 0 4px 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .bloque .nota-ayuda { margin-bottom: 10px; }
+  .bloque .version-actual { font-size: 12px; color: var(--texto-tenue); margin-bottom: 10px; }
+  .campo { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .campo label { font-size: 12px; color: var(--texto-tenue); }
+  .campo textarea { min-height: 50px; resize: vertical; }
+
+  .resultado-bump { margin-top: 10px; display: none; }
+  .resultado-bump.visible { display: block; }
+  .resultado-bump .versiones-linea { font-size: 13px; margin-bottom: 6px; }
+  .resultado-bump .versiones-linea b { color: var(--acento); }
+  .resultado-bump ul { margin: 4px 0 8px 18px; padding: 0; font-size: 12px; color: var(--texto-tenue); }
+  .resultado-bump pre {
+    max-height: 260px;
+    overflow: auto;
+    background: var(--bg);
+    border: 1px solid var(--borde);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .release-fila { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+
+  /* --- Panel de tarea (columna de actividad) --- */
+  #tarea-panel {
+    display: none;
+    flex: 0 0 auto;
+    max-height: 45%;
+    overflow-y: auto;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--borde);
+  }
+  #tarea-panel.visible { display: block; }
+  #tarea-panel .titulo-tarea {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  #tarea-panel .titulo-tarea .badge-dry {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--ambar);
+    border: 1px solid var(--ambar);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+  .barra-progreso {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg);
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+  .barra-progreso .relleno {
+    height: 100%;
+    background: var(--acento);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  #tarea-panel .progreso-texto {
+    font-size: 11px;
+    color: var(--texto-tenue);
+    margin-bottom: 10px;
+  }
+  .lista-pasos { display: flex; flex-direction: column; gap: 4px; }
+  .paso-linea {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    padding: 4px 6px;
+    border-radius: 5px;
+  }
+  .paso-linea .estado-icono {
+    flex: 0 0 auto;
+    width: 14px;
+    text-align: center;
+  }
+  .paso-linea.pendiente { color: var(--texto-tenue); }
+  .paso-linea.corriendo { color: var(--acento); }
+  .paso-linea.ok { color: var(--verde); }
+  .paso-linea.aviso { color: var(--ambar); }
+  .paso-linea.error { color: var(--rojo); }
+
+  #tarea-fin {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    display: none;
+  }
+  #tarea-fin.visible.ok { display: block; background: rgba(74, 222, 128, 0.12); color: var(--verde); }
+  #tarea-fin.visible.error { display: block; background: rgba(227, 91, 91, 0.12); color: var(--rojo); }
+
+  #notas-bloque {
+    margin-top: 10px;
+    display: none;
+  }
+  #notas-bloque.visible { display: block; }
+  #notas-bloque pre {
+    max-height: 220px;
+    overflow: auto;
+    background: var(--bg);
+    border: 1px solid var(--borde);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* --- Git --- */
+  .git-cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    font-size: 13px;
+    color: var(--texto-tenue);
+    margin-bottom: 12px;
+  }
+  .git-cabecera b { color: var(--texto); font-weight: 600; }
+
+  .git-bloque-titulo {
+    font-size: 12px;
+    color: var(--texto-tenue);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin: 12px 0 6px 0;
+  }
+  .git-bloque-titulo:first-of-type { margin-top: 0; }
+
+  #git-cambios, #git-commits {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 220px;
+    overflow-y: auto;
+    margin-bottom: 6px;
+  }
+  .git-cambio-linea, .git-commit-linea {
+    display: flex;
+    gap: 8px;
+    font-size: 12.5px;
+    padding: 4px 6px;
+    border-radius: 5px;
+    background: var(--bg-card);
+  }
+  .git-cambio-linea.ajeno { opacity: 0.5; }
+  .git-cambio-estado {
+    flex: 0 0 auto;
+    width: 24px;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    color: var(--acento);
+  }
+  .git-commit-hash {
+    flex: 0 0 auto;
+    width: 58px;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    color: var(--acento);
+  }
+  .git-commit-fecha {
+    flex: 0 0 auto;
+    width: 82px;
+    color: var(--texto-tenue);
+  }
+
+  /* --- Releases --- */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  th { color: var(--texto-tenue); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr.completada td.veredicto { color: var(--verde); }
+  tr.incompleta td.veredicto { color: var(--ambar); }
+  .motivos { font-size: 11px; color: var(--texto-tenue); margin-top: 3px; }
+  .assets-lista { font-size: 11.5px; color: var(--texto-tenue); }
+
+  /* --- Errores --- */
+  #errores { display: flex; flex-direction: column; gap: 6px; }
+  .error-linea {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    background: rgba(227, 91, 91, 0.1);
+    border: 1px solid var(--rojo);
+    color: var(--rojo);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12.5px;
+  }
+  .error-linea button {
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    font-size: 11px;
+    border-color: var(--rojo);
+    color: var(--rojo);
+  }
+
+  /* --- Log --- */
+  #panel-log {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 10px 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  #panel-log .cabecera-log {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    flex: 0 0 auto;
+  }
+  #panel-log .cabecera-log h2 { margin: 0; font-size: 12px; color: var(--texto-tenue); font-weight: 600; }
+  #log {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #log .linea { display: block; }
+  #log .linea.salida { color: var(--texto); }
+  #log .linea.info { color: var(--acento); }
+  #log .linea.error { color: var(--rojo-tenue); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Orby Manager</h1>
+  <span id="banner-conexion">Sin conexión con el servidor</span>
+</header>
+
+<main>
+
+  <!-- Columna izquierda: el trabajo, con su propio scroll. -->
+  <div id="columna-izquierda">
+
+    <div id="errores"></div>
+
+    <!-- 1. Versiones -->
+    <section id="seccion-versiones">
+      <h2>Versiones
+        <button id="btn-recargar-versiones" class="pequeno">Recargar</button>
+      </h2>
+      <div class="tarjetas">
+        <div class="tarjeta" id="tarjeta-fw-repo">
+          <div class="etiqueta">Firmware en el repo</div>
+          <div class="valor">—</div>
+        </div>
+        <div class="tarjeta" id="tarjeta-app-electron">
+          <div class="etiqueta">Vía Electron</div>
+          <div class="valor">—</div>
+        </div>
+        <div class="tarjeta" id="tarjeta-app-tauri">
+          <div class="etiqueta">Vía Tauri</div>
+          <div class="valor">—</div>
+        </div>
+        <div class="tarjeta" id="tarjeta-app-instalada">
+          <div class="etiqueta">App instalada</div>
+          <div class="valor">—</div>
+        </div>
+        <div class="tarjeta" id="tarjeta-teclado">
+          <div class="etiqueta">Teclado conectado</div>
+          <div class="valor">—</div>
+          <div class="detalle"></div>
+          <div class="accion">
+            <button id="btn-flashear-teclado" class="pequeno candado-tarea">Flashear el teclado</button>
+          </div>
+        </div>
+      </div>
+      <div class="nota-ayuda">La vía navegador no tiene versión propia: sale del mismo build que la vía Electron y se sirve como ficheros estáticos, sin nada que instalar.</div>
+      <div class="avisos" id="avisos"></div>
+    </section>
+
+    <!-- 2. Lanzar -->
+    <section id="seccion-lanzar">
+      <h2>Lanzar</h2>
+      <div class="fila-botones">
+        <button class="btn-lanzar" data-modo="electron-dev">Electron (dev)</button>
+        <button class="btn-lanzar" data-modo="electron">Electron</button>
+        <button class="btn-lanzar" data-modo="tauri-dev">Tauri (dev)</button>
+        <button class="btn-lanzar" data-modo="tauri-build">Tauri (build)</button>
+        <button class="btn-lanzar" data-modo="web">Web</button>
+        <button id="btn-parar" class="peligro" disabled>Parar</button>
+      </div>
+      <div id="proceso-info">Nada en marcha.</div>
+    </section>
+
+    <!-- 3. Herramientas -->
+    <section id="seccion-herramientas">
+      <h2>Herramientas</h2>
+      <div class="grid-herramientas" id="grid-herramientas">
+        <div class="texto-tenue">Cargando…</div>
+      </div>
+    </section>
+
+    <!-- 4. Publicar -->
+    <section id="seccion-publicar">
+      <h2>Publicar</h2>
+
+      <div class="publicar-grid">
+        <div class="bloque">
+          <h3>Bump — Firmware</h3>
+          <div class="nota-ayuda">Solo edita ficheros y enseña el diff. No hace commit ni etiqueta.</div>
+          <div class="version-actual" id="publicar-actual-fw">Versión actual: —</div>
+          <div class="campo">
+            <label for="bump-fw-tipo">Tipo</label>
+            <select id="bump-fw-tipo">
+              <option value="major">major</option>
+              <option value="minor" selected>minor</option>
+            </select>
+          </div>
+          <div class="campo">
+            <label for="bump-fw-nota">Qué trajo esta versión</label>
+            <textarea id="bump-fw-nota" placeholder="Texto para la tabla de COMPATIBILIDAD.md"></textarea>
+          </div>
+          <button id="btn-bump-fw" class="primario">Bump</button>
+          <div class="resultado-bump" id="resultado-bump-fw">
+            <div class="versiones-linea"></div>
+            <ul class="lista-ficheros"></ul>
+            <pre class="diff"></pre>
+          </div>
+        </div>
+
+        <div class="bloque">
+          <h3>Bump — Vía Electron</h3>
+          <div class="nota-ayuda">Solo edita <code>package.json</code>. No hace commit ni etiqueta.</div>
+          <div class="version-actual" id="publicar-actual-electron">Versión actual: —</div>
+          <div class="campo">
+            <label for="bump-electron-tipo">Tipo</label>
+            <select id="bump-electron-tipo">
+              <option value="major">major</option>
+              <option value="minor">minor</option>
+              <option value="patch" selected>patch</option>
+            </select>
+          </div>
+          <button id="btn-bump-electron" class="primario">Bump</button>
+          <div class="resultado-bump" id="resultado-bump-electron">
+            <div class="versiones-linea"></div>
+            <ul class="lista-ficheros"></ul>
+            <pre class="diff"></pre>
+          </div>
+        </div>
+
+        <div class="bloque">
+          <h3>Bump — Vía Tauri</h3>
+          <div class="nota-ayuda">Edita <code>tauri.conf.json</code> y <code>Cargo.toml</code> a la vez. No hace commit ni etiqueta.</div>
+          <div class="version-actual" id="publicar-actual-tauri">Versión actual: —</div>
+          <div class="campo">
+            <label for="bump-tauri-tipo">Tipo</label>
+            <select id="bump-tauri-tipo">
+              <option value="major">major</option>
+              <option value="minor">minor</option>
+              <option value="patch" selected>patch</option>
+            </select>
+          </div>
+          <button id="btn-bump-tauri" class="primario">Bump</button>
+          <div class="resultado-bump" id="resultado-bump-tauri">
+            <div class="versiones-linea"></div>
+            <ul class="lista-ficheros"></ul>
+            <pre class="diff"></pre>
+          </div>
+        </div>
+
+        <div class="bloque">
+          <h3>Release — Firmware</h3>
+          <div class="nota-ayuda">Compila, empaqueta, etiqueta como <code>fw-vX.Y</code> y publica en GitHub como prerelease.</div>
+          <div class="release-fila">
+            <button id="btn-release-fw" class="primario">Publicar firmware</button>
+            <label class="check"><input type="checkbox" id="release-fw-dry" checked /> ensayo en seco</label>
+          </div>
+        </div>
+
+        <div class="bloque">
+          <h3>Release — App</h3>
+          <div class="nota-ayuda">Compila con <code>npm run release</code> y publica en GitHub como <code>vX.Y.Z</code>.</div>
+          <div class="release-fila">
+            <button id="btn-release-app" class="primario">Publicar app</button>
+            <label class="check"><input type="checkbox" id="release-app-dry" /> ensayo en seco</label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Git -->
+    <section id="seccion-git">
+      <h2>Git
+        <button id="btn-recargar-git" class="pequeno">Recargar</button>
+      </h2>
+
+      <div class="git-cabecera">
+        <span>Rama: <b id="git-rama">—</b></span>
+        <span>Remota: <b id="git-remoto">—</b></span>
+        <span id="git-adelante-atras">—</span>
+      </div>
+
+      <div class="git-bloque-titulo">Cambios sin commitear</div>
+      <div id="git-cambios"><div class="texto-tenue">Cargando…</div></div>
+
+      <div class="git-bloque-titulo">Últimos commits</div>
+      <div id="git-commits"><div class="texto-tenue">Cargando…</div></div>
+
+      <div class="bloque">
+        <h3>Commit y push</h3>
+        <div class="nota-ayuda">Solo se añade lo que cuelga de ORBY_V4, aunque el repositorio de git sea scroll_wheel entero.</div>
+        <div class="campo">
+          <label for="git-mensaje">Mensaje</label>
+          <textarea id="git-mensaje" placeholder="Mensaje del commit"></textarea>
+        </div>
+        <div class="campo">
+          <label for="git-bump-componente">Bump antes de commitear (opcional)</label>
+          <select id="git-bump-componente">
+            <option value="">Ninguno</option>
+            <option value="fw">Firmware</option>
+            <option value="electron">Vía Electron</option>
+            <option value="tauri">Vía Tauri</option>
+          </select>
+        </div>
+        <div class="campo" id="git-bump-tipo-campo" style="display:none;">
+          <label for="git-bump-tipo">Tipo</label>
+          <select id="git-bump-tipo"></select>
+        </div>
+        <div class="campo" id="git-bump-nota-campo" style="display:none;">
+          <label for="git-bump-nota">Qué trajo esta versión</label>
+          <textarea id="git-bump-nota" placeholder="Texto para la tabla de COMPATIBILIDAD.md"></textarea>
+        </div>
+        <button id="btn-commit-push" class="primario candado-tarea" disabled>Commit y push</button>
+      </div>
+    </section>
+
+    <!-- 6. Releases -->
+    <section id="seccion-releases">
+      <h2>Releases
+        <button id="btn-recargar-releases" class="pequeno">Recargar</button>
+      </h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Etiqueta</th>
+            <th>Fecha</th>
+            <th>Estado</th>
+            <th>Assets</th>
+            <th>Veredicto</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-releases">
+          <tr><td colspan="5" style="color:var(--texto-tenue);">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </div>
+
+  <!-- Columna de actividad: la tarea en curso (si hay) y el log, siempre
+       visibles pase lo que pase en la columna izquierda — cualquier sección
+       puede lanzar una tarea, no solo Publicar. -->
+  <aside id="columna-actividad">
+    <div id="tarea-panel">
+      <div class="titulo-tarea">
+        <span id="tarea-nombre">—</span>
+        <span class="badge-dry" id="tarea-badge-dry" style="display:none;">ensayo en seco</span>
+      </div>
+      <div class="barra-progreso"><div class="relleno" id="tarea-relleno"></div></div>
+      <div class="progreso-texto" id="tarea-progreso-texto"></div>
+      <div class="lista-pasos" id="tarea-pasos"></div>
+      <div id="tarea-fin"></div>
+      <div id="notas-bloque">
+        <button id="btn-copiar-notas" class="pequeno">Copiar notas</button>
+        <pre id="notas-texto"></pre>
+      </div>
+    </div>
+
+    <div id="panel-log">
+      <div class="cabecera-log">
+        <h2>Registro</h2>
+        <button id="btn-limpiar-log" class="pequeno">Limpiar</button>
+      </div>
+      <pre id="log"></pre>
+    </div>
+  </aside>
+
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------
+  // Estado local. El servidor es la fuente de verdad; aquí solo se
+  // guarda lo mínimo para no tener que releer el DOM al reaccionar
+  // a cada evento SSE (p.ej. los pasos de la tarea en curso).
+  // ---------------------------------------------------------------
+  var estadoTarea = null;   // último objeto "tarea" conocido (o null)
+  var estadoProceso = null; // último objeto "proceso" conocido (o null)
+  var pasosTarea = [];      // lista de pasos de la tarea en curso, indexada por "indice"
+  var intervaloReleases = null; // temporizador de autorefresco de la tabla de releases
+  var lineasLog = 0;
+  var LIMITE_LOG = 2000;
+  var ultimasVersiones = {};    // último objeto "versiones" del estado, para los textos de Publicar y el confirm() de flashear
+  var tareaCorriendo = false;   // candado global: hay una tarea en marcha, van deshabilitados bump/release/herramientas/flashear/commit
+  var herramientasRenderizadas = false; // la rejilla se construye una sola vez; el resto de refrescos solo tocan "disabled"
+
+  // ---------------------------------------------------------------
+  // Utilidades
+  // ---------------------------------------------------------------
+
+  function $(id) { return document.getElementById(id); }
+
+  function textoSeguro(el, texto) {
+    // Todo lo que venga del servidor pasa por aquí: nunca por innerHTML,
+    // porque el log y los mensajes de git o de la API de GitHub pueden traer
+    // caracteres arbitrarios.
+    el.textContent = texto;
+  }
+
+  function crear(tag, clase, texto) {
+    var el = document.createElement(tag);
+    if (clase) el.className = clase;
+    if (texto !== undefined) el.textContent = texto;
+    return el;
+  }
+
+  function mostrarError(texto) {
+    var cont = $('errores');
+    var linea = crear('div', 'error-linea');
+    var span = crear('span');
+    textoSeguro(span, texto);
+    var btn = crear('button', 'pequeno', 'Cerrar');
+    btn.addEventListener('click', function () { cont.removeChild(linea); });
+    linea.appendChild(span);
+    linea.appendChild(btn);
+    cont.appendChild(linea);
+    // Se retira sola pasado un rato para no llenar la pantalla de avisos viejos,
+    // pero el botón de cerrar la quita antes si hace falta leerla con calma.
+    setTimeout(function () {
+      if (linea.parentNode === cont) cont.removeChild(linea);
+    }, 12000);
+  }
+
+  function llamar(url, opciones) {
+    return fetch(url, opciones).then(function (res) {
+      if (res.ok) {
+        if (res.status === 204) return null;
+        return res.json();
+      }
+      return res.json().catch(function () { return {}; }).then(function (cuerpo) {
+        throw new Error(cuerpo.error || ('Error ' + res.status));
+      });
+    });
+  }
+
+  function formatoTamano(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function formatoFecha(iso) {
+    try {
+      var f = new Date(iso);
+      return f.toLocaleString('es-ES');
+    } catch (e) {
+      return iso;
+    }
+  }
+
+  // "4.10" es posterior a "4.9": comparar como decimal los pone al revés.
+  // Misma regla que comparar() de tools/orby-manager/server.js — se repite en
+  // el cliente porque el confirm() de flashear tiene que poder avisar de una
+  // bajada de versión antes de que el servidor mueva un dedo.
+  function compararVersiones(a, b) {
+    var partes = function (v) { return String(v == null ? '' : v).split('.').map(function (n) { return parseInt(n, 10) || 0; }); };
+    var x = partes(a);
+    var y = partes(b);
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var d = (x[i] || 0) - (y[i] || 0);
+      if (d) return d < 0 ? -1 : 1;
+    }
+    return 0;
+  }
+
+  // ---------------------------------------------------------------
+  // Candado global: mientras haya una tarea corriendo, la UI se adelanta al
+  // 409 del servidor deshabilitando de antemano lo que abriría otra.
+  // ---------------------------------------------------------------
+
+  function aplicarCandadoTarea(corriendo) {
+    tareaCorriendo = corriendo;
+    ['btn-bump-fw', 'btn-bump-electron', 'btn-bump-tauri', 'btn-release-fw', 'btn-release-app', 'btn-flashear-teclado'].forEach(function (id) {
+      var el = $(id);
+      if (el) el.disabled = corriendo;
+    });
+    document.querySelectorAll('.btn-herramienta').forEach(function (b) { b.disabled = corriendo; });
+    // El bump de Tauri tiene además su propio motivo para estar deshabilitado
+    // (rama sin ese port), que el candado no puede pisar al soltarse.
+    if (ultimasVersiones.hayTauri === false) $('btn-bump-tauri').disabled = true;
+    actualizarBotonCommitPush();
+  }
+
+  // ---------------------------------------------------------------
+  // Sección 1 — Versiones
+  // ---------------------------------------------------------------
+
+  function pintarTarjetaSimple(idTarjeta, valor) {
+    var tarjeta = $(idTarjeta);
+    tarjeta.classList.remove('aviso', 'error');
+    var v = tarjeta.querySelector('.valor');
+    textoSeguro(v, valor);
+  }
+
+  // La vía Tauri lleva el número en dos ficheros (tauri.conf.json y
+  // Cargo.toml): si se han desincronizado se enseñan los dos, porque decir
+  // solo uno escondería justo el problema que esta tarjeta tiene que avisar.
+  function pintarTarjetaTauri(v) {
+    var tarjeta = $('tarjeta-app-tauri');
+    tarjeta.classList.remove('aviso', 'error');
+    var val = tarjeta.querySelector('.valor');
+    var detExistente = tarjeta.querySelector('.detalle');
+    // El port de Tauri no está en todas las ramas (en main todavía no): eso no
+    // es un fallo que pintar en rojo, es que ahí esa vía no existe.
+    if (v.hayTauri === false) {
+      textoSeguro(val, '—');
+      if (!detExistente) { detExistente = crear('div', 'detalle'); tarjeta.appendChild(detExistente); }
+      textoSeguro(detExistente, 'esta rama no trae la vía Tauri');
+      $('btn-bump-tauri').disabled = true;
+    } else if (v.appTauri && v.appTauriCargo && v.appTauri !== v.appTauriCargo) {
+      tarjeta.classList.add('error');
+      textoSeguro(val, v.appTauri + ' / ' + v.appTauriCargo);
+      if (!detExistente) { detExistente = crear('div', 'detalle'); tarjeta.appendChild(detExistente); }
+      textoSeguro(detExistente, 'tauri.conf.json y Cargo.toml no coinciden');
+    } else {
+      textoSeguro(val, v.appTauri || '—');
+      if (detExistente) detExistente.remove();
+    }
+  }
+
+  function pintarVersiones(v) {
+    ultimasVersiones = v || {};
+    pintarTarjetaSimple('tarjeta-fw-repo', v.firmwareRepo || '—');
+    pintarTarjetaSimple('tarjeta-app-electron', v.appElectron || '—');
+    pintarTarjetaTauri(v);
+
+    var tarjetaInstalada = $('tarjeta-app-instalada');
+    tarjetaInstalada.classList.remove('aviso', 'error');
+    var valInstalada = tarjetaInstalada.querySelector('.valor');
+    if (v.instaladaError) {
+      tarjetaInstalada.classList.add('error');
+      textoSeguro(valInstalada, 'error');
+      var det = tarjetaInstalada.querySelector('.detalle');
+      if (!det) {
+        det = crear('div', 'detalle');
+        tarjetaInstalada.appendChild(det);
+      }
+      textoSeguro(det, v.instaladaError);
+    } else {
+      textoSeguro(valInstalada, v.appInstalada || '—');
+      var detExistente = tarjetaInstalada.querySelector('.detalle');
+      if (detExistente) detExistente.remove();
+    }
+
+    pintarTarjetaTeclado(v.teclado || {});
+    pintarActualesPublicar(v);
+  }
+
+  function pintarTarjetaTeclado(t) {
+    var tarjeta = $('tarjeta-teclado');
+    tarjeta.classList.remove('aviso', 'error');
+    var val = tarjeta.querySelector('.valor');
+    var det = tarjeta.querySelector('.detalle');
+
+    if (!t.disponible) {
+      textoSeguro(val, 'No disponible');
+      textoSeguro(det, t.error || 'Módulo serialport no cargado.');
+      return;
+    }
+    if (t.ocupado) {
+      tarjeta.classList.add('aviso');
+      textoSeguro(val, 'Puerto ocupado');
+      textoSeguro(det, 'Lo tiene cogido OrbyGUI de escritorio: ciérrala para leer el teclado.');
+      return;
+    }
+    if (t.error) {
+      tarjeta.classList.add('error');
+      textoSeguro(val, 'Sin respuesta');
+      textoSeguro(det, t.error);
+      return;
+    }
+    if (t.version) {
+      textoSeguro(val, t.version);
+      var extra = t.puerto || '';
+      if (t.cache) {
+        var seg = Math.round((t.leidoHace || 0) / 1000);
+        extra += (extra ? ' · ' : '') + 'caché, hace ' + seg + ' s';
+      }
+      textoSeguro(det, extra);
+      return;
+    }
+    textoSeguro(val, 'No detectado');
+    textoSeguro(det, '');
+  }
+
+  function pintarAvisos(lista) {
+    var cont = $('avisos');
+    cont.innerHTML = '';
+    (lista || []).forEach(function (a) {
+      var linea = crear('div', 'aviso-linea ' + a.nivel);
+      var punto = crear('span', 'punto');
+      var texto = crear('span');
+      textoSeguro(texto, a.texto);
+      linea.appendChild(punto);
+      linea.appendChild(texto);
+      cont.appendChild(linea);
+    });
+  }
+
+  function cargarVersiones(forzarTeclado) {
+    var url = '/api/estado' + (forzarTeclado ? '?teclado=1' : '');
+    return llamar(url).then(pintarEstadoCompleto).catch(function (e) {
+      mostrarError('No se ha podido leer el estado: ' + e.message);
+    });
+  }
+
+  $('btn-flashear-teclado').addEventListener('click', function () {
+    var v = ultimasVersiones || {};
+    var objetivo = v.firmwareRepo || '?';
+    var actual = (v.teclado && v.teclado.version) || null;
+
+    var texto = 'Se va a instalar el firmware ' + objetivo +
+      (actual ? (' sobre el ' + actual + ' que lleva el teclado ahora mismo.') : ' (no se ha podido leer qué firmware lleva el teclado ahora mismo).');
+    if (actual && compararVersiones(objetivo, actual) < 0) {
+      texto += '\n\nATENCIÓN: eso es BAJAR de versión.';
+    }
+    texto += '\n\n¿Continuar?';
+    if (!window.confirm(texto)) return;
+
+    llamar('/api/flashear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    }).catch(function (e) {
+      mostrarError('No se ha podido flashear: ' + e.message);
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // Sección 2 — Lanzar
+  // ---------------------------------------------------------------
+
+  function pintarProceso(proceso) {
+    estadoProceso = proceso;
+    var botones = document.querySelectorAll('.btn-lanzar');
+    var btnParar = $('btn-parar');
+    var info = $('proceso-info');
+
+    if (proceso) {
+      botones.forEach(function (b) { b.disabled = true; });
+      btnParar.disabled = false;
+      info.classList.add('activo');
+      textoSeguro(info, 'En marcha: ' + proceso.etiqueta + ' (PID ' + proceso.pid + ')');
+    } else {
+      botones.forEach(function (b) { b.disabled = false; });
+      btnParar.disabled = true;
+      info.classList.remove('activo');
+      textoSeguro(info, 'Nada en marcha.');
+    }
+  }
+
+  document.querySelectorAll('.btn-lanzar').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var modo = btn.getAttribute('data-modo');
+      llamar('/api/lanzar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modo: modo })
+      }).then(function () {
+        // El estado real (etiqueta + pid) llega por el evento SSE "estado";
+        // no hace falta pintarlo aquí a mano.
+      }).catch(function (e) {
+        mostrarError('No se ha podido lanzar: ' + e.message);
+      });
+    });
+  });
+
+  $('btn-parar').addEventListener('click', function () {
+    llamar('/api/parar', { method: 'POST' }).catch(function (e) {
+      mostrarError('No se ha podido parar el proceso: ' + e.message);
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // Sección 3 — Herramientas
+  // ---------------------------------------------------------------
+
+  // La lista sale de estado.herramientas: escribirla a mano aquí sería un
+  // tercer sitio que mantener sincronizado con tareas.js cada vez que se
+  // añada una. Se construye una sola vez porque no cambia mientras el
+  // servidor está arriba; los refrescos siguientes solo tocan "disabled".
+  function pintarHerramientas(lista) {
+    if (herramientasRenderizadas || !lista || !lista.length) return;
+    herramientasRenderizadas = true;
+    var cont = $('grid-herramientas');
+    cont.innerHTML = '';
+    lista.forEach(function (h) {
+      var btn = crear('button', 'btn-herramienta candado-tarea', h.nombre);
+      btn.disabled = tareaCorriendo;
+      btn.addEventListener('click', function () { ejecutarHerramienta(h.clave, h.nombre); });
+      cont.appendChild(btn);
+    });
+  }
+
+  function ejecutarHerramienta(clave, nombre) {
+    // La única destructiva de la lista: las demás compilan o leen, esta borra.
+    if (clave === 'limpiar-build' && !window.confirm('Esto borra la carpeta build/ entera. ¿Continuar?')) return;
+
+    llamar('/api/herramienta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clave: clave })
+    }).catch(function (e) {
+      mostrarError('No se ha podido lanzar «' + nombre + '»: ' + e.message);
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Sección 4 — Publicar: bump
+  // ---------------------------------------------------------------
+
+  var CONFIG_BUMP = {
+    fw: { tipoId: 'bump-fw-tipo', notaId: 'bump-fw-nota', botonId: 'btn-bump-fw', resultadoId: 'resultado-bump-fw' },
+    electron: { tipoId: 'bump-electron-tipo', notaId: null, botonId: 'btn-bump-electron', resultadoId: 'resultado-bump-electron' },
+    tauri: { tipoId: 'bump-tauri-tipo', notaId: null, botonId: 'btn-bump-tauri', resultadoId: 'resultado-bump-tauri' },
+  };
+  var NOMBRE_COMPONENTE = { fw: 'firmware', electron: 'la vía Electron', tauri: 'la vía Tauri' };
+
+  function pintarActualesPublicar(v) {
+    textoSeguro($('publicar-actual-fw'), 'Versión actual: ' + (v.firmwareRepo || '—'));
+    textoSeguro($('publicar-actual-electron'), 'Versión actual: ' + (v.appElectron || '—'));
+    textoSeguro($('publicar-actual-tauri'), 'Versión actual: ' + (v.appTauri || '—'));
+  }
+
+  function pedirBump(componente) {
+    var cfg = CONFIG_BUMP[componente];
+    var boton = $(cfg.botonId);
+    var tipo = $(cfg.tipoId).value;
+    var nota = cfg.notaId ? $(cfg.notaId).value : '';
+
+    boton.disabled = true;
+    llamar('/api/bump', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ componente: componente, tipo: tipo, nota: nota })
+    }).then(function (r) {
+      pintarResultadoBump(cfg.resultadoId, r);
+    }).catch(function (e) {
+      mostrarError('Bump fallido: ' + e.message);
+    }).then(function () {
+      boton.disabled = tareaCorriendo;
+    });
+  }
+
+  function pintarResultadoBump(idResultado, r) {
+    var cont = $(idResultado);
+    cont.classList.add('visible');
+
+    var linea = cont.querySelector('.versiones-linea');
+    linea.innerHTML = '';
+    var b1 = crear('b', null, r.anterior);
+    var b2 = crear('b', null, r.nueva);
+    linea.appendChild(document.createTextNode('Versión anterior: '));
+    linea.appendChild(b1);
+    linea.appendChild(document.createTextNode(' → nueva: '));
+    linea.appendChild(b2);
+
+    var lista = cont.querySelector('.lista-ficheros');
+    lista.innerHTML = '';
+    (r.ficheros || []).forEach(function (f) {
+      var li = crear('li');
+      textoSeguro(li, f);
+      lista.appendChild(li);
+    });
+
+    var pre = cont.querySelector('.diff');
+    textoSeguro(pre, r.diff || '(sin cambios)');
+  }
+
+  $('btn-bump-fw').addEventListener('click', function () { pedirBump('fw'); });
+  $('btn-bump-electron').addEventListener('click', function () { pedirBump('electron'); });
+  $('btn-bump-tauri').addEventListener('click', function () { pedirBump('tauri'); });
+
+  // ---------------------------------------------------------------
+  // Sección 4 — Publicar: release
+  // ---------------------------------------------------------------
+
+  var textoConfirmacion = {
+    fw: 'Vas a publicar una release de FIRMWARE de verdad: se creará la etiqueta ' +
+        'git, se empujará a origin y se publicará en GitHub como prerelease. ¿Continuar?',
+    app: 'Vas a publicar una release de APP de verdad: se compilará, se etiquetará ' +
+         'y se publicará en GitHub. ¿Continuar?'
+  };
+
+  function pedirRelease(componente) {
+    var dry = $(componente === 'fw' ? 'release-fw-dry' : 'release-app-dry').checked;
+    if (!dry && !window.confirm(textoConfirmacion[componente])) return;
+
+    llamar('/api/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ componente: componente, dry: dry })
+    }).catch(function (e) {
+      mostrarError('No se ha podido lanzar la release: ' + e.message);
+    });
+  }
+
+  $('btn-release-fw').addEventListener('click', function () { pedirRelease('fw'); });
+  $('btn-release-app').addEventListener('click', function () { pedirRelease('app'); });
+
+  var ICONOS_PASO = { pendiente: '○', corriendo: '◐', ok: '✓', aviso: '!', error: '✗' };
+
+  function pintarTarea(tarea) {
+    estadoTarea = tarea;
+    var panel = $('tarea-panel');
+
+    aplicarCandadoTarea(!!(tarea && tarea.estado === 'corriendo'));
+
+    if (!tarea) {
+      panel.classList.remove('visible');
+      pararAutorefrescoReleases();
+      return;
+    }
+
+    panel.classList.add('visible');
+    textoSeguro($('tarea-nombre'), tarea.nombre);
+    $('tarea-badge-dry').style.display = tarea.dry ? 'inline-block' : 'none';
+
+    var pct = Math.round((tarea.progreso || 0) * 100);
+    $('tarea-relleno').style.width = pct + '%';
+    textoSeguro($('tarea-progreso-texto'), pct + ' %');
+
+    pasosTarea = (tarea.pasos || []).slice();
+    pintarPasos();
+
+    var finDiv = $('tarea-fin');
+    if (tarea.estado === 'corriendo') {
+      finDiv.classList.remove('visible', 'ok', 'error');
+      iniciarAutorefrescoReleases();
+    } else {
+      pararAutorefrescoReleases();
+      // Aquí no se recarga la tabla de releases: el estado llega en cada evento
+      // (lanzar algo, un bump, un paso de otra tarea) y la tarea terminada sigue
+      // en el snapshot, así que recargar aquí gastaría una llamada a GitHub por
+      // cada cosa que pase. De eso ya se encarga el evento «fin», y el arranque
+      // de la página la pinta una vez.
+      // Si el panel se abre con una tarea ya terminada (recarga de página a
+      // mitad de una release), no hay un evento "fin" que vaya a llegar para
+      // explicarlo: se pinta un mensaje genérico con lo que hay en el snapshot.
+      if (!finDiv.classList.contains('visible')) {
+        finDiv.classList.add('visible', tarea.estado === 'ok' ? 'ok' : 'error');
+        finDiv.classList.remove(tarea.estado === 'ok' ? 'error' : 'ok');
+        textoSeguro(finDiv, tarea.estado === 'ok' ? 'Terminada.' : 'Ha fallado.');
+      }
+    }
+  }
+
+  function pintarPasos() {
+    var cont = $('tarea-pasos');
+    cont.innerHTML = '';
+    pasosTarea.forEach(function (p) {
+      var linea = crear('div', 'paso-linea ' + p.estado);
+      var icono = crear('span', 'estado-icono', ICONOS_PASO[p.estado] || '○');
+      var titulo = crear('span');
+      textoSeguro(titulo, p.titulo);
+      linea.appendChild(icono);
+      linea.appendChild(titulo);
+      cont.appendChild(linea);
+    });
+  }
+
+  function aplicarEventoPaso(datos) {
+    pasosTarea[datos.indice] = { titulo: datos.titulo, estado: datos.estado };
+    pintarPasos();
+  }
+
+  function aplicarEventoProgreso(datos) {
+    var pct = Math.round((datos.valor || 0) * 100);
+    $('tarea-relleno').style.width = pct + '%';
+    textoSeguro($('tarea-progreso-texto'), pct + ' % — ' + (datos.texto || ''));
+  }
+
+  function aplicarEventoFin(datos) {
+    var finDiv = $('tarea-fin');
+    finDiv.classList.add('visible', datos.estado === 'ok' ? 'ok' : 'error');
+    finDiv.classList.remove(datos.estado === 'ok' ? 'error' : 'ok');
+    textoSeguro(finDiv, datos.mensaje || (datos.estado === 'ok' ? 'Terminado.' : 'Ha fallado.'));
+
+    var extra = datos.extra || {};
+    var notasBloque = $('notas-bloque');
+    if (extra.notas) {
+      notasBloque.classList.add('visible');
+      var textoNotas = extra.notas + (extra.sha256 ? ('\n\nSHA256: ' + extra.sha256) : '');
+      textoSeguro($('notas-texto'), textoNotas);
+      $('btn-copiar-notas').onclick = function () {
+        navigator.clipboard.writeText(textoNotas).catch(function (e) {
+          mostrarError('No se han podido copiar las notas: ' + e.message);
+        });
+      };
+    } else {
+      notasBloque.classList.remove('visible');
+    }
+
+    // La tarea ha terminado: se refresca la tabla una última vez para que
+    // la release recién publicada (o el intento fallido) aparezca ya, y se
+    // relee git — un commit o un bump cambian lo que enseña esa sección.
+    pararAutorefrescoReleases();
+    cargarReleases();
+    cargarVersiones(false);
+    cargarGit();
+
+    // Si lo que acaba de terminar es un commit y push, el formulario que lo
+    // pidió ya no tiene sentido con el mensaje anterior delante.
+    if (extra.commit) {
+      $('git-mensaje').value = '';
+      $('git-bump-componente').value = '';
+      actualizarCamposBumpGit();
+      actualizarBotonCommitPush();
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Sección 5 — Git
+  // ---------------------------------------------------------------
+
+  var TIPOS_BUMP_GIT = { fw: ['major', 'minor'], electron: ['major', 'minor', 'patch'], tauri: ['major', 'minor', 'patch'] };
+
+  function pintarGit(g) {
+    textoSeguro($('git-rama'), g.rama || '—');
+    textoSeguro($('git-remoto'), g.remoto || 'sin rama remota: el push la creará');
+    textoSeguro($('git-adelante-atras'), g.adelante + ' por delante · ' + g.atras + ' por detrás');
+
+    var contCambios = $('git-cambios');
+    contCambios.innerHTML = '';
+    if (!g.cambios || !g.cambios.length) {
+      contCambios.appendChild(crear('div', 'texto-tenue', 'Sin cambios sin commitear.'));
+    } else {
+      g.cambios.forEach(function (c) {
+        var linea = crear('div', 'git-cambio-linea' + (c.delProyecto ? '' : ' ajeno'));
+        var estado = crear('span', 'git-cambio-estado');
+        textoSeguro(estado, c.estado);
+        var ruta = crear('span');
+        textoSeguro(ruta, c.ruta);
+        linea.appendChild(estado);
+        linea.appendChild(ruta);
+        contCambios.appendChild(linea);
+      });
+      if (g.cambios.some(function (c) { return !c.delProyecto; })) {
+        contCambios.appendChild(crear('div', 'nota-ayuda',
+          'El repositorio de git es scroll_wheel entero: lo atenuado no cuelga de ORBY_V4 y el commit de este panel no lo va a incluir.'));
+      }
+    }
+
+    var contCommits = $('git-commits');
+    contCommits.innerHTML = '';
+    if (!g.commits || !g.commits.length) {
+      contCommits.appendChild(crear('div', 'texto-tenue', 'Sin commits.'));
+    } else {
+      g.commits.forEach(function (c) {
+        var linea = crear('div', 'git-commit-linea');
+        var hash = crear('span', 'git-commit-hash');
+        textoSeguro(hash, c.hash);
+        var fecha = crear('span', 'git-commit-fecha');
+        textoSeguro(fecha, c.fecha);
+        var msg = crear('span');
+        textoSeguro(msg, c.mensaje);
+        linea.appendChild(hash);
+        linea.appendChild(fecha);
+        linea.appendChild(msg);
+        contCommits.appendChild(linea);
+      });
+    }
+  }
+
+  function cargarGit() {
+    return llamar('/api/git').then(pintarGit).catch(function (e) {
+      mostrarError('No se ha podido leer el estado de git: ' + e.message);
+    });
+  }
+
+  $('btn-recargar-git').addEventListener('click', cargarGit);
+
+  function actualizarCamposBumpGit() {
+    var comp = $('git-bump-componente').value;
+    var campoTipo = $('git-bump-tipo-campo');
+    var campoNota = $('git-bump-nota-campo');
+    var selTipo = $('git-bump-tipo');
+
+    if (!comp) {
+      campoTipo.style.display = 'none';
+      campoNota.style.display = 'none';
+      return;
+    }
+    campoTipo.style.display = '';
+    selTipo.innerHTML = '';
+    TIPOS_BUMP_GIT[comp].forEach(function (t) {
+      var opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = t;
+      selTipo.appendChild(opt);
+    });
+    // Solo el firmware lleva nota de "qué trajo esta versión" (va a la tabla
+    // de docs/COMPATIBILIDAD.md); la app no tiene un sitio así.
+    campoNota.style.display = comp === 'fw' ? '' : 'none';
+  }
+
+  $('git-bump-componente').addEventListener('change', actualizarCamposBumpGit);
+
+  function actualizarBotonCommitPush() {
+    var mensaje = $('git-mensaje').value.trim();
+    $('btn-commit-push').disabled = tareaCorriendo || !mensaje;
+  }
+
+  $('git-mensaje').addEventListener('input', actualizarBotonCommitPush);
+
+  $('btn-commit-push').addEventListener('click', function () {
+    var mensaje = $('git-mensaje').value.trim();
+    if (!mensaje) return;
+    if (!window.confirm('Se va a commitear y empujar (push) a la rama actual. ¿Continuar?')) return;
+
+    var comp = $('git-bump-componente').value;
+    var bump = comp ? {
+      componente: comp,
+      tipo: $('git-bump-tipo').value,
+      nota: comp === 'fw' ? $('git-bump-nota').value : ''
+    } : null;
+
+    llamar('/api/subir-cambios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mensaje: mensaje, bump: bump })
+    }).catch(function (e) {
+      mostrarError('No se ha podido commitear: ' + e.message);
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // Sección 6 — Releases
+  // ---------------------------------------------------------------
+
+  function pintarReleases(releases) {
+    var cuerpo = $('tabla-releases');
+    cuerpo.innerHTML = '';
+
+    if (!releases || releases.length === 0) {
+      var filaVacia = crear('tr');
+      var celda = crear('td', null, 'Sin releases publicadas.');
+      celda.colSpan = 5;
+      celda.style.color = 'var(--texto-tenue)';
+      filaVacia.appendChild(celda);
+      cuerpo.appendChild(filaVacia);
+      return;
+    }
+
+    releases.forEach(function (r) {
+      var completada = r.veredicto && r.veredicto.completada;
+      var fila = crear('tr', completada ? 'completada' : 'incompleta');
+
+      var tdTag = crear('td');
+      var enlace = crear('a', null, r.tag);
+      enlace.href = r.url;
+      enlace.target = '_blank';
+      enlace.rel = 'noopener noreferrer';
+      enlace.style.color = 'inherit';
+      tdTag.appendChild(enlace);
+      if (r.nombre && r.nombre !== r.tag) {
+        var sub = crear('div', 'motivos');
+        textoSeguro(sub, r.nombre);
+        tdTag.appendChild(sub);
+      }
+      fila.appendChild(tdTag);
+
+      var tdFecha = crear('td', null, formatoFecha(r.fecha));
+      fila.appendChild(tdFecha);
+
+      var tdEstado = crear('td', null, (r.draft ? 'draft' : (r.prerelease ? 'prerelease' : 'release')));
+      fila.appendChild(tdEstado);
+
+      var tdAssets = crear('td');
+      var listaAssets = crear('div', 'assets-lista');
+      textoSeguro(listaAssets, (r.assets || []).map(function (a) {
+        return a.nombre + ' (' + formatoTamano(a.tamano) + ')';
+      }).join(', ') || '—');
+      tdAssets.appendChild(listaAssets);
+      fila.appendChild(tdAssets);
+
+      var tdVeredicto = crear('td', 'veredicto', completada ? 'Completada' : 'Incompleta');
+      if (!completada && r.veredicto && r.veredicto.motivos && r.veredicto.motivos.length) {
+        var motivos = crear('div', 'motivos');
+        textoSeguro(motivos, r.veredicto.motivos.join('; '));
+        tdVeredicto.appendChild(motivos);
+      }
+      fila.appendChild(tdVeredicto);
+
+      cuerpo.appendChild(fila);
+    });
+  }
+
+  function cargarReleases() {
+    return llamar('/api/releases').then(function (r) {
+      pintarReleases(r.releases);
+    }).catch(function (e) {
+      mostrarError('No se ha podido leer la lista de releases: ' + e.message);
+    });
+  }
+
+  function iniciarAutorefrescoReleases() {
+    if (intervaloReleases) return;
+    intervaloReleases = setInterval(cargarReleases, 15000);
+  }
+
+  function pararAutorefrescoReleases() {
+    if (!intervaloReleases) return;
+    clearInterval(intervaloReleases);
+    intervaloReleases = null;
+  }
+
+  $('btn-recargar-releases').addEventListener('click', cargarReleases);
+  $('btn-recargar-versiones').addEventListener('click', function () { cargarVersiones(true); });
+
+  // ---------------------------------------------------------------
+  // Log
+  // ---------------------------------------------------------------
+
+  function estaAlFinalDelLog() {
+    var log = $('log');
+    // Margen de unos pocos píxeles: con scroll suave el navegador rara vez
+    // deja el valor exacto en el borde.
+    return log.scrollTop + log.clientHeight >= log.scrollHeight - 6;
+  }
+
+  function anadirLog(texto, flujo) {
+    var log = $('log');
+    var abajo = estaAlFinalDelLog();
+
+    var linea = crear('span', 'linea ' + (flujo || 'salida'));
+    textoSeguro(linea, texto);
+    log.appendChild(linea);
+    lineasLog++;
+
+    if (lineasLog > LIMITE_LOG) {
+      var primera = log.firstChild;
+      if (primera) log.removeChild(primera);
+      lineasLog--;
+    }
+
+    if (abajo) log.scrollTop = log.scrollHeight;
+  }
+
+  $('btn-limpiar-log').addEventListener('click', function () {
+    $('log').innerHTML = '';
+    lineasLog = 0;
+  });
+
+  // ---------------------------------------------------------------
+  // Estado completo (usado tanto al cargar como en el evento SSE "estado")
+  // ---------------------------------------------------------------
+
+  function pintarEstadoCompleto(estado) {
+    pintarVersiones(estado.versiones || {});
+    pintarAvisos(estado.avisos || []);
+    pintarProceso(estado.proceso || null);
+    pintarHerramientas(estado.herramientas || []);
+    pintarTarea(estado.tarea || null);
+  }
+
+  // ---------------------------------------------------------------
+  // SSE — un único EventSource para toda la vida de la página. El propio
+  // navegador reintenta la conexión solo; aquí solo se enseña el aviso
+  // de "sin conexión" mientras tanto.
+  // ---------------------------------------------------------------
+
+  function conectarEventos() {
+    var fuente = new EventSource('/api/eventos');
+    var banner = $('banner-conexion');
+
+    fuente.addEventListener('open', function () {
+      banner.classList.remove('visible');
+    });
+
+    fuente.addEventListener('error', function () {
+      banner.classList.add('visible');
+    });
+
+    fuente.addEventListener('log', function (ev) {
+      var datos = JSON.parse(ev.data);
+      anadirLog(datos.texto, datos.flujo);
+    });
+
+    fuente.addEventListener('paso', function (ev) {
+      aplicarEventoPaso(JSON.parse(ev.data));
+    });
+
+    fuente.addEventListener('progreso', function (ev) {
+      aplicarEventoProgreso(JSON.parse(ev.data));
+    });
+
+    fuente.addEventListener('estado', function (ev) {
+      pintarEstadoCompleto(JSON.parse(ev.data));
+    });
+
+    fuente.addEventListener('fin', function (ev) {
+      aplicarEventoFin(JSON.parse(ev.data));
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Arranque
+  // ---------------------------------------------------------------
+
+  actualizarCamposBumpGit();
+  actualizarBotonCommitPush();
+  cargarVersiones(false);
+  cargarReleases();
+  cargarGit();
+  conectarEventos();
+
+})();
+</script>
+
+</body>
+</html>
