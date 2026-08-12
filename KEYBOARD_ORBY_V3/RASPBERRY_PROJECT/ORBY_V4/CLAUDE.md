@@ -67,6 +67,10 @@ del handshake y el `bcdDevice` del USB. Lo que la app sabe usar está en
 La app degrada, no rompe. La tabla de qué trajo cada versión y cómo se publica
 una release de firmware: [docs/COMPATIBILIDAD.md](docs/COMPATIBILIDAD.md).
 
+La app se actualiza sola y en silencio, y el firmware también cuando el teclado lleva un
+rato sin usarse. Cómo se publica una versión —y lo que falta por hacer a mano para que eso
+funcione— está en [OrbyGUI/docs/PLAN_PUBLICAR.md](OrbyGUI/docs/PLAN_PUBLICAR.md).
+
 Las vistas preguntan por función (`compat.supports(info, 'macros')`), nunca por
 número de versión: cuando el handshake trae la bandera (`MACROS=1`, `HASH=1`,
 `MAXMACROS`), manda la bandera sobre la versión.

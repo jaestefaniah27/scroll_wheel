@@ -39,7 +39,8 @@ for f in ../docs/COMPATIBILIDAD.md src/entry.js src/platform.js src/web/orby-web
          src-tauri/src/autostart.rs src-tauri/crates/orby-core/src/serie.rs \
          src-tauri/crates/orby-core/src/grabacion.rs src-tauri/crates/orby-core/src/releases.rs \
          index.html vite.config.mjs \
-         docs/PLUGINS.md docs/WEBGUI.md docs/PUBLICACION.md docs/TODO.md; do
+         docs/PLUGINS.md docs/WEBGUI.md docs/PUBLICACION.md docs/TODO.md \
+         docs/PLAN_PUBLICAR.md; do
   [ -f "$f" ] && ok "$f" || mal "$f NO EXISTE"
 done
 
@@ -135,7 +136,7 @@ chk    "el actualizador declara su endpoint"  "latest.json"          src-tauri/t
 # la privada no puede vivir en el repositorio, asi que esto no se puede dejar hecho desde
 # aqui. Hasta entonces el actualizador automatico no funciona.
 if grep -q "PEGAR-AQUI-LA-CLAVE-PUBLICA" src-tauri/tauri.conf.json; then
-  pendiente "falta generar el par de claves del actualizador y pegar la publica en tauri.conf.json (docs/PUBLICACION.md, seccion 3)"
+  pendiente "falta generar el par de claves del actualizador y pegar la publica en tauri.conf.json (OrbyGUI/docs/PLAN_PUBLICAR.md, paso 1)"
 else
   ok "la clave publica del actualizador esta puesta"
 fi

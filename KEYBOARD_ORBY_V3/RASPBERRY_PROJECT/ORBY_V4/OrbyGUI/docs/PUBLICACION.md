@@ -160,6 +160,12 @@ Windows no reconoce.
 también actualizar a todo el mundo sin que nadie apriete nada. De ahí que este
 apartado tenga más ceremonia de la que parece merecer.
 
+> **Para la primera vez**, con las claves todavía sin generar, sigue
+> [PLAN_PUBLICAR.md](PLAN_PUBLICAR.md): lleva el orden exacto (las claves, la
+> comprobación sobre el teclado, la fusión a `main` y la publicación) y qué hacer
+> cuando algo falla. Lo de aquí abajo es la referencia del procedimiento; aquello
+> es el guion.
+
 ### Las claves de firma (una sola vez)
 
 ```powershell

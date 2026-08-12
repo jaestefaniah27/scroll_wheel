@@ -1761,11 +1761,21 @@ silenciosa eso pasa de molestia a fallo mudo: nadie mira la pantalla. Arreglado.
 
 ### Lo que queda por hacer a mano
 
-**Generar el par de claves minisign** (`npm run tauri signer generate`) y pegar la pública
-en `tauri.conf.json`. No se puede dejar hecho desde aquí: la privada no puede vivir en el
-repositorio. Hasta entonces `tauri.conf.json` lleva un marcador y
-`verifica_plan_tauri.sh` lo canta como **PENDIENTE** en cada ejecución. El procedimiento
-entero está en `docs/PUBLICACION.md`, sección 3.
+Tres cosas, y todas necesitan Windows y el teclado delante: **generar el par de claves
+minisign**, **comprobar sobre el teclado** que la app se actualiza sola y que el firmware
+se flashea estando ocioso, y **publicar** la primera release con los tres ficheros.
+
+**Está todo escrito paso a paso en [PLAN_PUBLICAR.md](PLAN_PUBLICAR.md)**, con los comandos
+exactos, lo que tiene que salir en cada uno y qué hacer si sale otra cosa. Ese documento es
+el que hay que seguir; esta sección solo dice por qué existe.
+
+Lo que no se pudo dejar hecho desde aquí es la clave: la privada no puede vivir en el
+repositorio. Hasta que se genere, `tauri.conf.json` lleva un marcador y
+`verifica_plan_tauri.sh` lo canta como **PENDIENTE** en cada ejecución.
+
+Y un aviso sobre el orden, que no es el obvio: **publicar exige estar en `main`** (el
+pipeline se niega en el primer paso), y `main` todavía no tiene la migración. Así que
+fusionar va **antes** de publicar y **después** de comprobarlo todo sobre el teclado.
 
 > **El riesgo que hay que decir en voz alta:** el instalador **no va firmado con
 > certificado de código**. La minisign protege la descarga, no la reputación del binario
