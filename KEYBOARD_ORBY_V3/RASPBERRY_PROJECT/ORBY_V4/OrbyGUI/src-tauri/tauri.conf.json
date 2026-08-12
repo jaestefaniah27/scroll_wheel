@@ -28,9 +28,21 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/jaestefaniah27/scroll_wheel/releases/latest/download/latest.json"
+      ],
+      "pubkey": "PEGAR-AQUI-LA-CLAVE-PUBLICA-DE-npm-run-tauri-signer-generate",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

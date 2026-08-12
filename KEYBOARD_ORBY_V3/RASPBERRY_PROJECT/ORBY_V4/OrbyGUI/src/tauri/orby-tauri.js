@@ -103,6 +103,7 @@ export async function instalarOrbyTauri() {
       get: () => invoke('updater_get'),
       check: () => invoke('updater_check'),
       install: () => invoke('updater_install'),
+      setAuto: (enabled) => invoke('updater_set_auto', { enabled }),
       onState: puente('updater:state'),
     },
 

@@ -1537,6 +1537,11 @@ aparca una función de Tauri, hay que crearlo: `can()` solo pregunta por `isWeb(
 
 - [x] **Paso 4: el actualizador. Avisa, no instala** (decisión del 2026-08-12).
 
+  > **Revertido el 2026-08-12, el mismo día**, a petición del autor: la app se actualiza
+  > sola y en silencio. Lo de abajo se deja como está porque explica lo que costaba y por
+  > qué se aplazó —que sigue siendo verdad y es justo lo que hubo que pagar—. Lo que se
+  > hizo en su lugar está al final de este documento, en «Actualizaciones automáticas».
+
   `src-tauri/src/updater.rs`. Los tres comandos existen y la tarjeta dice la verdad, pero
   **no** sobre `tauri-plugin-updater`: se consulta `releases/latest` y, si hay versión más
   nueva, el estado pasa a `available` y el botón abre la página de la release en el
@@ -1687,6 +1692,87 @@ Solo cuando **todo lo anterior** esté comprobado sobre el teclado.
     `process`+`socket` para Altium y Chrome).
 
 - [x] **Commit:** `git commit -am "feat(tauri): retirar Electron"`
+
+---
+
+## Actualizaciones automáticas y silenciosas (2026-08-12)
+
+Fuera del plan original: se pidió después de cerrar la Tarea 13. **La app y el firmware se
+instalan solos, sin intervención del usuario.** Las decisiones, tomadas con el autor:
+
+| Punto | Decisión |
+|---|---|
+| Canal de la app | `tauri-plugin-updater`, con claves minisign y `latest.json` firmado |
+| Publicación | **Manual desde el PC del autor**, documentada en `PUBLICACION.md`. Sin CI |
+| Momento | **Inmediato**: se descarga, se instala y la app se reinicia sola |
+| Firmware | Solo con el teclado **ocioso** (5 min sin actividad); nunca a media faena |
+| Teclados sin BOOTSEL por serie | **No existen**, así que el camino manual no lo contempla el automático |
+| Opt-out | Dos interruptores en Ajustes, encendidos de fábrica |
+
+### La app: `src-tauri/src/updater.rs`
+
+La forma exterior del estado **no cambia** —el renderer ya consumía
+`{status, version, newVersion, percent, error, url}`—, solo el interior. `percent` pasa de
+ser un campo que nadie movía a llevar la descarga de verdad.
+
+**Se consultan dos sitios, y no es redundancia.** El plugin pide el `latest.json` de la
+release, que es lo único que sabe firmar y verificar; pero eso no distingue «no hay nada
+nuevo» de «la última release es de firmware». Por eso antes se mira la etiqueta por la API
+de GitHub y se conserva la guarda de las `fw-v*`: si no, el fallo del `--prerelease` sale
+como un 404 que no explica nada.
+
+**Las guardas antes de reiniciar.** «Inmediato» no puede significar «a media faena»:
+no se reinicia con un firmware instalándose (dejaría el teclado a medias, y de ahí solo se
+sale con el botón BOOTSEL), ni con la grabadora grabando, ni con una secuencia en marcha.
+En esos casos se queda instalada en disco y espera, reintentando cada minuto.
+
+Y el reinicio **tiene que pasar por `window::marcar_saliendo()`**: `CloseRequested` está
+interceptado para el cierre a la bandeja, así que sin eso `app.restart()` se quedaría en un
+intento silencioso de esconder la ventana.
+
+`updater_check` deja de ser bloqueante: se iba hasta 20 s del hilo de comandos con la
+interfaz esperando el `invoke`, y con el automático encadenando descarga e instalación
+encima eso ya no valía.
+
+### El firmware: `src/firmware-auto.js`
+
+El motor ya estaba entero en `firmware.rs`. Lo único nuevo es **quién aprieta el botón y
+cuándo**, y vive en el renderer porque las condiciones solo se conocen ahí.
+
+La señal de ocio es `device.on('telemetry')`, que `device.js` ya separaba de `response`:
+solo cuenta lo que el teclado manda **por su cuenta**. Contando todo el tráfico, el latido
+`HOST_APP` de cada ocho segundos haría que no hubiera ocio jamás.
+
+Se flashea con teclado conectado, versión nueva disponible, **5 minutos sin telemetría**,
+sin cambios pendientes de Flash (el reinicio se lleva lo que solo esté en RAM: es el mismo
+motivo del aviso del botón manual) y sin grabación ni reproducción en marcha. Un fallo
+**no se reintenta en bucle**: se anota la versión y no se vuelve a intentar en esa sesión.
+
+El botón manual de Ajustes **se queda incluso con el automático puesto**, al revés que el
+de la app: reinstalar el mismo firmware es la forma de recuperar un teclado que se quedó a
+medias, y eso el automático no lo hará nunca porque para él ya está al día.
+
+### El fallo latente que había que arreglar antes
+
+`.github/workflows/firmware.yml` publicaba **sin `--prerelease`**, pese a que
+`COMPATIBILIDAD.md` dice que no es opcional. Cada firmware publicado por CI se convertía en
+`releases/latest` y dejaba el actualizador de la app en error. Con la actualización
+silenciosa eso pasa de molestia a fallo mudo: nadie mira la pantalla. Arreglado.
+
+### Lo que queda por hacer a mano
+
+**Generar el par de claves minisign** (`npm run tauri signer generate`) y pegar la pública
+en `tauri.conf.json`. No se puede dejar hecho desde aquí: la privada no puede vivir en el
+repositorio. Hasta entonces `tauri.conf.json` lleva un marcador y
+`verifica_plan_tauri.sh` lo canta como **PENDIENTE** en cada ejecución. El procedimiento
+entero está en `docs/PUBLICACION.md`, sección 3.
+
+> **El riesgo que hay que decir en voz alta:** el instalador **no va firmado con
+> certificado de código**. La minisign protege la descarga, no la reputación del binario
+> ante SmartScreen. Una actualización que se instala sola, con `installMode: passive` y sin
+> nadie mirando la pantalla, puede toparse con SmartScreen o con el antivirus y quedarse
+> ahí. Si la actualización silenciosa se queda muda, ese es el primer sitio donde mirar.
+> Lo barato que lo arreglaría está en `docs/TODO.md`: la cuenta de la Microsoft Store.
 
 ---
 

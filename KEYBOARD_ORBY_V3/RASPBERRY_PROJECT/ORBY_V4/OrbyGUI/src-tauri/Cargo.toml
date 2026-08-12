@@ -24,6 +24,11 @@ tauri-plugin-clipboard-manager = "2"
 # primero (en Windows solo lo puede tener abierto uno). El plugin redirige ese segundo
 # arranque a la ventana de la instancia que ya vive.
 tauri-plugin-single-instance = "2"
+# El actualizador de verdad: descarga el instalador, comprueba su firma minisign contra la
+# clave pública de tauri.conf.json y lo lanza. `tauri-plugin-process` es quien sabe
+# reiniciar la app después de instalarla.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serialport = "4"

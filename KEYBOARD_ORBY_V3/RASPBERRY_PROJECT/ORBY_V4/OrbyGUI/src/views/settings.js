@@ -111,15 +111,14 @@ function initAppCard() {
   const install = document.getElementById('btn-install-update');
   if (!check || !install) return;
 
-  // El botón y la explicación se escriben aquí y no en index.html porque lo que hacen
-  // depende del backend: Electron descarga e instala él solo, y Tauri solo avisa y abre
-  // la página de la release para que la instales tú (ver src-tauri/src/updater.rs).
-  if (platform.isTauri()) {
-    document.getElementById('btn-install-update-label').textContent = 'Abrir la descarga';
-    document.getElementById('app-update-desc').textContent =
-      'Se comprueba al arrancar y cada seis horas. Avisa de las versiones nuevas, '
-      + 'pero no las instala: el botón abre la página de la release para descargarla.';
-  }
+  const auto = document.getElementById('btn-auto-update');
+  auto?.addEventListener('click', async () => {
+    const activado = !auto.classList.contains('on');
+    await updater.setAuto(activado);
+    toast(activado
+      ? 'Las actualizaciones se instalarán solas'
+      : 'Las actualizaciones habrá que instalarlas a mano');
+  });
 
   check.addEventListener('click', async () => {
     if (updater.update.status === 'dev') {
@@ -131,6 +130,7 @@ function initAppCard() {
     toast('Buscando actualizaciones…', 'info');
   });
 
+  // Solo hace falta con el automático apagado; con él puesto el botón ni se pinta.
   install.addEventListener('click', () => updater.install());
 
   updater.onChange(renderAppCard);
@@ -149,10 +149,27 @@ function renderAppCard() {
   version.textContent = updater.update.version || '—';
   status.textContent = updater.describe();
   status.style.color = updater.update.status === 'error' ? 'var(--danger)' : '';
-  // 'downloaded' es de Electron (ya bajada) y 'available' de Tauri (solo se sabe que
-  // existe): en los dos hay algo que ofrecer, aunque el botón no haga lo mismo.
-  const estado = updater.update.status;
-  install.classList.toggle('hidden', estado !== 'downloaded' && estado !== 'available');
+
+  const { status: estado, auto } = updater.update;
+
+  const btnAuto = document.getElementById('btn-auto-update');
+  if (btnAuto) btnAuto.classList.toggle('on', auto !== false);
+
+  const desc = document.getElementById('app-update-desc');
+  if (desc) {
+    desc.textContent = auto
+      ? 'Se comprueba al arrancar y cada seis horas, y las versiones nuevas se instalan '
+        + 'solas: la app se reinicia sola cuando termina. Nunca a mitad de una grabación '
+        + 'ni de una actualización de firmware, que se esperan a que acaben.'
+      : 'Se comprueba al arrancar y cada seis horas, pero no se instala nada sin que lo '
+        + 'pidas: cuando haya una versión nueva, el botón la instala y reinicia la app.';
+  }
+
+  // Con el automático puesto no hay nada que pulsar: la tarjeta informa. Sin él, el
+  // botón sale cuando hay algo que instalar, ya esté solo publicado (`available`) o ya
+  // descargado y esperando el reinicio (`downloaded`).
+  const hayAlgoQueHacer = estado === 'downloaded' || estado === 'available';
+  install.classList.toggle('hidden', !hayAlgoQueHacer || auto);
 }
 
 // ================= Firmware del teclado =================
@@ -170,6 +187,27 @@ function initFirmwareCard() {
     card.classList.add('hidden');
     return;
   }
+
+  // El estado inicial sale de la configuración local, que es donde vive (`autoFirmware`).
+  // Se lee aquí y no en cada render porque leerlo es una ida y vuelta al backend, y
+  // renderFirmwareCard corre en cada notify().
+  const auto = document.getElementById('btn-auto-firmware');
+  window.orby.getConfig()
+    .then((cfg) => {
+      auto?.classList.toggle('on', cfg?.autoFirmware !== false);
+      pintarDescripcionFirmware(cfg?.autoFirmware !== false);
+    })
+    .catch(() => {});
+
+  auto?.addEventListener('click', async () => {
+    const activado = !auto.classList.contains('on');
+    auto.classList.toggle('on', activado);
+    await window.orby.setConfig({ autoFirmware: activado });
+    pintarDescripcionFirmware(activado);
+    toast(activado
+      ? 'El teclado se actualizará solo cuando lleve un rato sin usarse'
+      : 'El firmware habrá que actualizarlo a mano');
+  });
 
   document.getElementById('btn-fw-check').addEventListener('click', async () => {
     const st = await firmware.check();
@@ -215,6 +253,20 @@ function initFirmwareCard() {
   firmware.init().then(renderFirmwareCard);
 }
 
+// Lo que pasa con un firmware nuevo no es lo mismo con el automático puesto que sin él,
+// así que el texto de la tarjeta tampoco puede serlo.
+function pintarDescripcionFirmware(auto) {
+  const desc = document.getElementById('fw-desc');
+  if (!desc) return;
+  desc.textContent = auto
+    ? 'Se descarga de las publicaciones del proyecto y se instala solo cuando el teclado '
+      + 'lleva unos minutos sin usarse, nunca a media faena ni con cambios sin guardar. '
+      + 'Durante la copia el teclado aparece como una unidad USB y deja de funcionar unos '
+      + 'segundos: es normal.'
+    : 'Se descarga de las publicaciones del proyecto. Durante la copia el teclado aparece '
+      + 'como una unidad USB y deja de funcionar unos segundos: es normal.';
+}
+
 function renderFirmwareCard() {
   // render() se llama en cada notify(): sin firmwareUpdate estos elementos ni existen.
   if (!platform.can('firmwareUpdate')) return;
@@ -238,7 +290,10 @@ function renderFirmwareCard() {
 
   btnCheck.disabled = firmware.busy();
   btnCancel.classList.toggle('hidden', !['downloading', 'bootsel'].includes(st.status));
-  // Se ofrece cuando hay algo que instalar y hay teclado al que instalárselo.
+  // Se ofrece cuando hay algo que instalar y hay teclado al que instalárselo. **También
+  // con el automático puesto**, al revés que el botón de la app: reinstalar el mismo
+  // firmware es la forma de recuperar un teclado que se quedó a medias, y eso el
+  // automático no lo va a hacer nunca porque para él ya está al día.
   btnUpdate.classList.toggle('hidden', !st.latest || !state.connected || firmware.busy());
   // Solo la etiqueta: escribir sobre el botón entero se llevaría por delante el
   // <span data-icon>, que ya está hidratado y no se vuelve a pintar.

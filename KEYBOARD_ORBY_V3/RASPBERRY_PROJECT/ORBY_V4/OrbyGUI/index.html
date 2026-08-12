@@ -326,6 +326,12 @@
                 <li><span class="lbl">Actualizaciones</span><span class="val" id="app-update-status">—</span></li>
               </ul>
               <div class="row-inline mt-4">
+                <button class="switch" id="btn-auto-update" data-act="toggle" title="Activar o desactivar">
+                  <span class="switch-knob"></span>
+                </button>
+                <span class="switch-label">Instalar las actualizaciones automáticamente</span>
+              </div>
+              <div class="row-inline mt-4">
                 <button class="secondary-btn" id="btn-check-update">
                   <span data-icon="refresh" data-icon-size="16"></span> Buscar actualizaciones
                 </button>
@@ -334,11 +340,11 @@
                   <span id="btn-install-update-label">Instalar y reiniciar</span>
                 </button>
               </div>
-              <!-- El texto de este botón y el de abajo los pone initAppCard: lo que pasa al
-                   pulsarlo depende de dónde corra la app (ver src/views/settings.js). -->
+              <!-- El texto de aquí lo reescribe renderAppCard segun el interruptor: lo que
+                   pasa con una version nueva no es lo mismo con el automatico puesto que
+                   sin el (ver src/views/settings.js). -->
               <p class="setting-desc" id="app-update-desc">
-                Se comprueba al arrancar y cada seis horas. La descarga es automática; instalarla
-                cierra OrbyGUI un momento.
+                Se comprueba al arrancar y cada seis horas.
               </p>
             </div>
           </div>
@@ -373,6 +379,12 @@
                 <li><span class="lbl">Última compatible</span><span class="val" id="fw-latest">—</span></li>
                 <li><span class="lbl">Estado</span><span class="val" id="fw-status">—</span></li>
               </ul>
+              <div class="row-inline mt-4">
+                <button class="switch" id="btn-auto-firmware" data-act="toggle" title="Activar o desactivar">
+                  <span class="switch-knob"></span>
+                </button>
+                <span class="switch-label">Actualizar el teclado automáticamente</span>
+              </div>
               <div class="row-inline mt-4">
                 <button class="secondary-btn" id="btn-fw-check">
                   <span data-icon="refresh" data-icon-size="16"></span> Buscar firmware

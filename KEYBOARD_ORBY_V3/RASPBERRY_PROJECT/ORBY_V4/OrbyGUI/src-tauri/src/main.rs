@@ -40,6 +40,10 @@ fn main() {
             window::mostrar(app);
         }))
         .plugin(tauri_plugin_dialog::init())
+        // Los dos del actualizador: `updater` descarga y verifica la firma, `process`
+        // reinicia la app una vez instalada.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         // Lo usa el paso de texto de una secuencia: por encima de cinco caracteres se pega
         // en vez de teclearse.
@@ -119,7 +123,8 @@ fn main() {
             autostart::autostart_set,
             updater::updater_get,
             updater::updater_check,
-            updater::updater_install
+            updater::updater_install,
+            updater::updater_set_auto
         ])
         .build(tauri::generate_context!())
         .expect("no se pudo arrancar la ventana de OrbyGUI")

@@ -32,6 +32,14 @@ pub fn saliendo() -> bool {
     SALIENDO.load(Ordering::SeqCst)
 }
 
+/// Para quien sale de verdad sin pasar por el menú de la bandeja: hoy, el actualizador
+/// cuando reinicia para aplicar una versión nueva. Sin esto, `CloseRequested` cancelaría
+/// el cierre y escondería la ventana, y el reinicio se quedaría en nada sin dar ni un
+/// error.
+pub fn marcar_saliendo() {
+    SALIENDO.store(true, Ordering::SeqCst);
+}
+
 /// Reconstruye la ventana «main» desde el `WindowConfig` de `tauri.conf.json`, porque
 /// `esconder_ventana` la destruye del todo en vez de solo esconderla.
 fn reconstruir(app: &AppHandle) -> tauri::Result<WebviewWindow> {

@@ -22,6 +22,11 @@ pub fn defaults() -> Value {
         "macrosOnDevice": null,
         "plugins": {},
         "wheelDial": { "invert": true, "offsetDeg": 62, "marker": "dot" },
+        // Los dos automáticos van a `true`: quien no toca nada se actualiza solo, que es
+        // el objetivo. Viven aquí y no en memoria porque tienen que sobrevivir al
+        // reinicio que provoca la propia actualización de la app.
+        "autoUpdate": true,
+        "autoFirmware": true,
         "deviceMirror": null,
     })
 }

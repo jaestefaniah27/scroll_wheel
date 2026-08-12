@@ -14,6 +14,7 @@ import * as updater from './updater.js';
 import * as plugins from './plugins.js';
 import * as compat from './compat.js';
 import * as firmware from './firmware.js';
+import * as firmwareAuto from './firmware-auto.js';
 import * as platform from './platform.js';
 import * as liveOled from './live-oled.js';
 
@@ -91,6 +92,11 @@ function initChrome() {
 
   document.getElementById('btn-save-flash').addEventListener('click', saveToFlash);
   initUpdateBadge();
+  // El teclado también se actualiza solo, pero al revés que la app: no en cuanto hay
+  // versión, sino cuando lleva un rato sin que nadie lo toque. Durante la copia el teclado
+  // no existe, y hacerlo a mitad de un atajo sería peor que no hacerlo (ver
+  // src/firmware-auto.js).
+  firmwareAuto.init(toast);
 }
 
 // El aviso de actualización vive al lado del estado de conexión y del guardado:
@@ -103,16 +109,16 @@ function initUpdateBadge() {
 
   const btn = document.getElementById('btn-update');
 
+  // **Con el automático puesto la insignia no pregunta nada: informa.** El `confirm()`
+  // que había aquí sobraba en cuanto la app dejó de esperar permiso para instalarse, y
+  // dejarlo era peor que quitarlo: un diálogo modal que aparece solo mientras trabajas,
+  // para anunciar algo que va a pasar de todas formas.
+  //
+  // Sigue haciendo clic con el automático apagado, que es cuando el usuario mandó y sí
+  // hay algo que pedirle: ahí `install()` descarga, instala y reinicia sin más preguntas,
+  // porque el clic ya es la respuesta.
   btn.addEventListener('click', async () => {
-    const { status, newVersion } = updater.update;
-
-    // 'available' solo abre la página de la release en el navegador (ver
-    // src-tauri/src/updater.rs): no cierra nada, así que no hay nada que preguntar.
-    if (status === 'available') { await updater.install(); return; }
-
-    if (status !== 'downloaded') return;
-    if (!confirm(`Se instalará OrbyGUI ${newVersion}.\n\n`
-               + 'La app se cerrará y volverá a abrirse sola. ¿Continuar?')) return;
+    if (updater.update.auto) return;
     await updater.install();
   });
 
@@ -128,24 +134,29 @@ function renderUpdateBadge() {
   const label = btn.querySelector('.update-label');
   const { status, newVersion, percent } = updater.update;
 
-  // Los dos estados en los que hay algo que hacer, según el backend: Electron acaba
-  // con la versión ya descargada, Tauri solo sabe que existe (ver src/updater.js).
+  const { auto } = updater.update;
   const hayAlgoQueHacer = status === 'downloaded' || status === 'available';
 
   // 'checking' e 'idle' no se enseñan: comprobar sola cada seis horas no es
   // algo que el usuario tenga que ver, solo el resultado cuando hay versión.
   btn.classList.toggle('hidden', status !== 'downloading' && !hayAlgoQueHacer);
-  btn.classList.toggle('ready', hayAlgoQueHacer);
+  // La clase `ready` es la que la pinta de «púlsame». Con el automático puesto no hay
+  // nada que pulsar, así que se queda como aviso y no como botón.
+  btn.classList.toggle('ready', hayAlgoQueHacer && !auto);
 
   if (status === 'downloading') {
     label.textContent = `Descargando ${percent}%`;
     btn.title = `Bajando OrbyGUI ${newVersion}`;
   } else if (status === 'downloaded') {
-    label.textContent = `Actualizar a ${newVersion}`;
-    btn.title = `OrbyGUI ${newVersion} lista: haz clic para instalarla`;
+    label.textContent = auto ? `Instalando ${newVersion}` : `Actualizar a ${newVersion}`;
+    btn.title = auto
+      ? `OrbyGUI ${newVersion} instalada: la app se reiniciará sola`
+      : `OrbyGUI ${newVersion} lista: haz clic para instalarla`;
   } else if (status === 'available') {
-    label.textContent = `Actualizar a ${newVersion}`;
-    btn.title = `OrbyGUI ${newVersion} publicada: haz clic para abrir su descarga`;
+    label.textContent = auto ? `Actualizando a ${newVersion}` : `Actualizar a ${newVersion}`;
+    btn.title = auto
+      ? `OrbyGUI ${newVersion} publicada: se está instalando sola`
+      : `OrbyGUI ${newVersion} publicada: haz clic para instalarla`;
   }
 }
 
@@ -370,10 +381,14 @@ async function onDeviceConnected(info) {
   // Actualizar el firmware exige copiar un .uf2 en la unidad USB que aparece al
   // reiniciar en modo carga: eso el navegador no puede hacerlo.
   if (platform.can('firmwareUpdate')) {
-    firmware.check()?.then((st) => {
-      if (st?.available) {
-        toast(`Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
-      }
+    firmware.check()?.then(async (st) => {
+      if (!st?.available) return;
+      // Con el automático puesto no se manda a nadie a Ajustes: se instala solo en cuanto
+      // el teclado lleve un rato quieto (ver src/firmware-auto.js). El aviso sobraría —y
+      // sería mentira— porque para cuando el usuario llegase ya estaría hecho.
+      const cfg = await window.orby.getConfig().catch(() => null);
+      if (cfg?.autoFirmware !== false) return;
+      toast(`Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
     }).catch(() => {});
   }
 }

@@ -118,7 +118,15 @@ jobs:
                 "$PROYECTO/docs/COMPATIBILIDAD.md" | sed '1d;$d'
           } > notas.md
 
+          # --prerelease NO es opcional: comparte repositorio con las releases de la app
+          # y `releases/latest` de GitHub devuelve la más reciente **sin mirar la
+          # etiqueta**. Una release de firmware publicada como definitiva se convierte en
+          # «la última release» y el actualizador de OrbyGUI se queda buscando un
+          # latest.json que ahí no existe: todas las copias instaladas dejan de
+          # actualizarse, y ahora que lo hacen solas y en silencio, nadie se entera.
+          # Ya pasó una vez con la fw-v4.4; está contado en docs/COMPATIBILIDAD.md.
           gh release create "$GITHUB_REF_NAME" \
             --title "Firmware $fw" \
             --notes-file notas.md \
+            --prerelease \
             "$nombre" "$nombre.sha256"
