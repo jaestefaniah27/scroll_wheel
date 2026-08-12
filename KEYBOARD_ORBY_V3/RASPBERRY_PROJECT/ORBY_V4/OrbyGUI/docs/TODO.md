@@ -4,7 +4,7 @@
   y por lo que pagaría. Hace falta: que Windows no avise al instalar, que el teclado no se
   presente como un cacharro de pruebas al enchufarlo, y una web para venderlo.
   Evaluado el 2026-08-08 y partido en las tareas de abajo.
-  Guía operativa: [OrbyGUI/docs/PUBLICACION.md](OrbyGUI/docs/PUBLICACION.md).
+  Guía operativa: [PUBLICACION.md](PUBLICACION.md).
 
   **Se puede hacer ya, pero depende de terceros (0 €)**
 

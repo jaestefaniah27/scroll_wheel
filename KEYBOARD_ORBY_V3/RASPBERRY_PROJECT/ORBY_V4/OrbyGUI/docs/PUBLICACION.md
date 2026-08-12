@@ -5,7 +5,7 @@ Windows no avise al instalar la app, que el teclado se presente como un aparato
 con identidad propia, y que haya una página donde descargarlo.
 
 Este documento es la parte operativa del punto correspondiente de
-[TODO.md](../../TODO.md). Lo que ya está hecho está hecho; lo que queda son
+[TODO.md](TODO.md). Lo que ya está hecho está hecho; lo que queda son
 gestiones con terceros o cosas que cuestan dinero.
 
 ---

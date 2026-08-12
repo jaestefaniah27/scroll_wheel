@@ -18,6 +18,12 @@ Tareas completadas, extraídas del TODO.md
       las de la app y `releases/latest` devuelve la más reciente sea de lo que sea: la
       `fw-v4.4` dejó a todas las copias instaladas de OrbyGUI con "Cannot find latest.yml
       in the latest release artifacts" y sin poder actualizarse.
+   * **Estuvo a medias hasta el 2026-08-12**, y esta casilla mentía: la regla estaba
+     escrita en COMPATIBILIDAD.md pero `.github/workflows/firmware.yml` publicaba **sin**
+     `--prerelease`, así que cada firmware publicado por CI volvía a romper lo mismo. Se
+     descubrió al montar la actualización automática, donde ese fallo pasa de molestia a
+     fallo mudo. Ahora la bandera está en el workflow y `verifica_plan_tauri.sh` la
+     comprueba.
 * [x] Avisar de las teclas que no funcionan sin la app abierta, en los dos sitios:
    * [x] La parte de interfaz: la insignia en teclas y mandos de `src/views/profiles.js`
          que avisa cuando una acción necesita la app abierta.
@@ -71,3 +77,39 @@ permitiendo configurar el teclado sin instalar software en el PC host.
   tocar nada, queda como antes: abierto en `MODE_MENU_PERF` para elegir a
   mano. Se espera también a que se suelte la tecla del perfil elegido para que
   el bucle normal no la lea como una pulsación nueva y dispare su atajo.
+
+## Migración a Tauri (2026-08-12)
+
+* [x] **Tarea 13: retirar Electron.** Fuera `OrbyGUI/electron/` (11 ficheros, ~2 900
+      líneas), las cuatro dependencias de ejecución y el bloque de electron-builder.
+      Los números que la justificaban, medidos con las dos builds contra el mismo teclado:
+      instalador **97,6 MB → 7,5 MB**, procesos **4 → 1**, RAM con la ventana abierta
+      **616,6 MB → 39,8 MB** (y ~8 MB escondida en la bandeja).
+   * Hubo que reanclar antes `test/superficie-orby.test.mjs` y
+     `tools/test/verifica_plan_tauri.sh`, que leían `electron/` como *referencia* de la
+     migración. La referencia del contrato `window.orby` pasa a ser
+     `src/tauri/orby-tauri.js`.
+   * Y arreglar dos cosas que el plan no había mirado y tenían código vivo colgando de
+     Electron: `OrbyGUI.bat` y el panel `tools/orby-manager` (botones de lanzar, pipeline
+     de release y bump de versión).
+   * `docs/PLUGINS.md` reescrito entero: documentaba complementos como módulos de Node
+     cuando el real es declarativo desde la API 2.
+
+* [x] **La app se actualiza sola y en silencio** (`tauri-plugin-updater`), y **el firmware
+      también** cuando el teclado lleva cinco minutos sin usarse. Dos interruptores en
+      Ajustes para volver al modo manual, encendidos de fábrica.
+   * El reinicio pasa por `window::marcar_saliendo()`: sin eso, el cierre a la bandeja se
+     comía el `app.restart()` sin dar ningún error.
+   * No se reinicia con un firmware instalándose, ni grabando, ni con una secuencia en
+     marcha.
+   * La decisión de flashear vive aparte en `src/firmware-decide.mjs`, con sus pruebas:
+     valen por lo que impiden, porque un falso positivo ahí es un teclado que se muere a
+     mitad de un atajo.
+   * De paso, dos fallos mudos: `compare_fw` leía `1.0.0-alpha` como igual a `1.0.0` (la
+     versión instalada **es** una preversión, así que publicar la v1.0.0 no habría
+     disparado nada), y el bump del panel se negaba ante esa misma versión, o sea que no
+     había forma de publicar.
+
+* [ ] **Falta hacerlo a mano en Windows**: generar el par de claves de firma, comprobarlo
+      sobre el teclado y publicar la primera release. Guion paso a paso en
+      [PLAN_PUBLICAR.md](PLAN_PUBLICAR.md).

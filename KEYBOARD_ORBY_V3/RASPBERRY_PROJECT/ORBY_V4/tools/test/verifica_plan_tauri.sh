@@ -197,6 +197,28 @@ fi
 echo "== Superficie: las dos vias tienen los mismos metodos =="
 node --test test/superficie-orby.test.mjs >/dev/null 2>&1 && ok "test de superficie en verde" || mal "test de superficie ROJO (node --test test/superficie-orby.test.mjs)"
 
+echo "== Los enlaces de la documentacion apuntan a algo =="
+# Un enlace roto en un documento que manda hacer cosas --PLAN_PUBLICAR.md, PUBLICACION.md--
+# manda a quien lo siga a buscar un fichero que no existe. Se comprueban solo los relativos:
+# los http se caen por su cuenta y comprobarlos pediria red.
+rotos=0
+while IFS= read -r md; do
+  dir=$(dirname "$md")
+  # Enlaces markdown [texto](destino), quitando anclas y descartando urls y anclas puras.
+  grep -oE '\]\([^)# ]+' "$md" 2>/dev/null | sed 's/^](//' | while IFS= read -r destino; do
+    case "$destino" in http*|mailto:*) continue;; esac
+    [ -e "$dir/$destino" ] || echo "$md -> $destino"
+  done
+done < <(find .. -name '*.md' -not -path '*/node_modules/*' -not -path '*/target/*') > /tmp/enlaces-rotos.txt
+rotos=$(wc -l < /tmp/enlaces-rotos.txt)
+if [ "$rotos" -eq 0 ]; then
+  ok "ningun enlace relativo roto"
+else
+  mal "$rotos enlaces rotos en la documentacion:"
+  sed 's/^/         /' /tmp/enlaces-rotos.txt
+fi
+rm -f /tmp/enlaces-rotos.txt
+
 echo
 echo "=================================="
 if [ "$fallos" -eq 0 ]; then echo "TODO CUADRA: 0 discrepancias"; else echo "DISCREPANCIAS: $fallos"; fi
