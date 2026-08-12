@@ -1,4 +1,4 @@
-// El equivalente de electron/preload.js para el navegador.
+// El equivalente de src/tauri/orby-tauri.js para el navegador.
 //
 // El renderer entero está escrito contra window.orby: 55 llamadas repartidas por
 // quince ficheros. Reimplementar esa superficie sale infinitamente más barato que
@@ -14,7 +14,7 @@ import { initConfig, getConfig, setConfig } from './config-store.js';
 import { saveBackup, loadBackup } from './backup-file.js';
 import * as serie from './transport-serial.js';
 
-// Los eventos que en Electron llegan por ipcRenderer.on aquí son suscripciones al
+// Los eventos que en la vía de escritorio llegan del backend aquí son suscripciones al
 // transporte. La firma se mantiene: un único callback, sin objeto de evento.
 function puente(evento) {
   return (cb) => serie.on(evento, cb);

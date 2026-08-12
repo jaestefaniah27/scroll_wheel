@@ -1,32 +1,34 @@
 # OrbyGUI — panel de control del Orby V4
 
-Aplicación de escritorio (Electron + Vite) para configurar el teclado Orby V4 en
-caliente por USB CDC.
+Aplicación de escritorio (Tauri 2 + Vite: cáscara en Rust, interfaz en JS vanilla)
+para configurar el teclado Orby V4 en caliente por USB CDC.
 
 ---
 
 ## 1. Cómo abrir la app
 
-**La forma fácil: doble clic en `OrbyGUI.bat`.**
+**La forma fácil: instalarla.** El `.exe` que sale de `npm run tauri:build` (o el de
+la última release) la deja en el menú de inicio, y desde ahí se actualiza sola.
 
-Ese script instala las dependencias si faltan, compila la interfaz y abre la
-app. Si quieres un acceso directo en el escritorio, clic derecho sobre el `.bat`
-→ *Enviar a* → *Escritorio (crear acceso directo)*.
+Para tocar el código, doble clic en `OrbyGUI.bat`: instala las dependencias si
+faltan y arranca en modo desarrollo con recarga en caliente.
 
 Desde la terminal:
 
-| Comando         | Qué hace                                                          |
-|-----------------|-------------------------------------------------------------------|
-| `npm start`     | Compila y abre la app (equivalente al `.bat`)                      |
-| `npm run dev`   | Vite + Electron con recarga en caliente, para tocar el código      |
-| `npm run build` | Solo genera `dist/`                                                |
-| `npm run dist`  | Instalador NSIS para Windows en `release/`                         |
+| Comando               | Qué hace                                                    |
+|-----------------------|-------------------------------------------------------------|
+| `npm run tauri:dev`   | Vite + la cáscara de Rust, con recarga (equivalente al `.bat`) |
+| `npm run tauri:build` | Instalador NSIS en `src-tauri/target/release/bundle/nsis/`   |
+| `npm run build`       | Solo genera `dist/`                                          |
+| `npm test`            | Los tests del renderer y del contrato `window.orby`          |
 
-Requiere **Node.js 20.19 o superior** (Vite 7 no arranca por debajo). La primera
-vez, `npm install` también recompila `serialport` para la versión de Electron.
+Requiere **Node.js 20.19 o superior** (Vite 7 no arranca por debajo) y **Rust**
+(https://rustup.rs) para la cáscara. La primera compilación de Rust tarda varios
+minutos; las siguientes son incrementales.
 
-> `npm run dev` pasa `--dev` a Electron para que cargue desde el servidor de
-> Vite. Sin ese flag siempre se sirve `dist/`.
+> **`tauri build` falla si la app está abierta**, con un `os error 32` que no dice
+> cuál es el problema: Cargo no puede sobrescribir el `.exe`. Ciérrala antes desde
+> el menú de la bandeja.
 
 La app no descarga nada de internet: tipografía del sistema e iconos SVG
 incrustados. Funciona sin conexión.
@@ -312,10 +314,10 @@ detecta ninguna de las apps añadidas; también puede dejarse en «no cambiar».
 
 Detalles de implementación:
 
-- La ventana activa se consulta cada 400 ms desde un proceso de PowerShell que
-  llama a `GetForegroundWindow` por P/Invoke. **No hace falta ningún módulo
-  nativo**, que es lo que arrastran paquetes como `active-win` y hay que
-  recompilar por cada versión de Electron.
+- La ventana activa se consulta cada 400 ms llamando a `GetForegroundWindow` de
+  Win32 directamente desde Rust (`src-tauri/src/foreground.rs`). **No hace falta
+  ningún módulo nativo de Node** —lo que arrastran paquetes como `active-win`— ni
+  el proceso de PowerShell permanente que hacía esto antes.
 - Solo se manda `SET_PROFILE` cuando el perfil realmente cambia.
 - Las reglas se guardan en tu PC (`%APPDATA%\OrbyGUI\orby-config.json`), no en el
   teclado: **no** necesitan «Guardar en Flash».

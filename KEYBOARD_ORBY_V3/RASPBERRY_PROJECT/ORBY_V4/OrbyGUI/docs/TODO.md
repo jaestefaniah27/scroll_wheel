@@ -25,8 +25,12 @@
 
   * [ ] 💰 Cuenta de desarrollador de Microsoft Store: ~19 €, **pago único**. La Store firma
     con el certificado de Microsoft → cero SmartScreen, sin certificado propio. Requiere
-    empaquetar en MSIX (`electron-builder` ya trae target `appx`). Mejor relación
-    resultado/dinero de toda la lista.
+    empaquetar en MSIX; Tauri no lo trae de serie, hay que envolver el NSIS a mano
+    (`MakeAppx`) o añadir el target. Mejor relación resultado/dinero de toda la lista, y
+    **es lo que quitaría el único riesgo del actualizador silencioso**: hoy la
+    actualización se instala sola sobre un binario sin firmar, y si SmartScreen o el
+    antivirus se cruzan no hay nadie mirando la pantalla para darle a «Ejecutar de todas
+    formas».
   * [ ] 💰 Dominio propio, ~12 €/año.
 
   **💰 BLOQUEADO — sin presupuesto ahora mismo**
@@ -35,10 +39,11 @@
     tiene que vivir en hardware (FIPS 140-2 nivel 2): ya no vale un `.pfx` en disco.
     Azure Trusted Signing ~10 €/mes es lo barato; OV con token 250–400 €/año;
     EV 400–700 €/año. Todos exigen entidad legal verificada (autónomo vale).
-  * [ ] Subir `electron-builder` de 24.13.3 a 26 (soporte de `azureSignOptions`) y añadir
-    `win.publisherName` en `package.json`, que `electron-updater` lo necesita para validar
-    la firma de las actualizaciones. El trabajo es gratis pero no sirve de nada sin
-    certificado: hacerlo el mismo día que se contrate.
+  * [ ] Enganchar la firma Authenticode al bundle de Tauri (`bundle.windows.signCommand`
+    en `tauri.conf.json`). El trabajo es gratis pero no sirve de nada sin certificado:
+    hacerlo el mismo día que se contrate. Ojo: la firma minisign que ya lleva el
+    actualizador es otra cosa —protege la descarga, no la reputación del binario— y no
+    sustituye a esta.
   * [ ] Registrar la marca "Orby". La CA verifica el nombre legal al emitir el certificado, y
     si se vende conviene tenerla antes.
   * [ ] Marcado CE para vender el teclado en la UE: directiva EMC 2014/30/UE + RoHS. La
@@ -58,19 +63,26 @@
     * **Word/Excel (Office):** Windows ofrece la interfaz **COM (ActiveX)**. Se pueden usar scripts (PowerShell) o pequeños binarios C# que se conecten a la instancia de Word/Excel, lean el estado actual del documento e intercepten eventos.
     * **¿Integrados o separados?** Dado que requieren componentes de terceros (una extensión en la Chrome Web Store, una DLL compilada para Altium, interacciones COM), **es mejor mantenerlos como plugins separados**. Incluirlos en la app base aumentaría el peso, la probabilidad de falsos positivos en antivirus y la complejidad de mantenimiento. OrbyGUI debería ofrecer un sistema de "Marketplace" o descargas bajo demanda.
 
+> **Qué tipo de complemento le toca a cada uno** (ver [PLUGINS.md](PLUGINS.md)):
+> `http` para lo que sea una API REST o WebSocket sin nada que instalar;
+> `process` + `stdio` para OBS, el monitor de hardware y el audio, que necesitan un
+> ejecutable al lado; `process` + `socket` para Altium y Chrome, que viven *dentro* de
+> otro programa (una DLL del SDK de Altium, un Native Messaging Host de Chrome) y por
+> eso no los puede lanzar OrbyGUI: se conectan ellos.
+
 ### Ideas Estratégicas para la Tienda de Plugins (Marketplace)
 
 Para hacer que el ecosistema Orby resulte muy atractivo "out-of-the-box" aprovechando su hardware único (10 OLEDs, encoders rotativos, rueda magnética alta resolución), se priorizarán los siguientes plugins de terceros:
 
-* [ ] **Hardware Monitor (CPU / GPU / RAM):**
+* [ ] **Hardware Monitor (CPU / GPU / RAM)** — `process` + `stdio`:
 
   * Leer estadísticas vía API de Windows (WMI/LibreHardwareMonitor).
   * Aprovechar las pantallas OLED para dibujar gráficos de barras, porcentajes y temperaturas en tiempo real. Un "dashboard" de hardware autónomo.
-* [ ] **Control de Streaming (OBS Studio):**
+* [ ] **Control de Streaming (OBS Studio)** — `process` + `stdio`:
 
   * Conectarse vía WebSocket a OBS.
   * Actualizar texto/iconos OLED según las escenas disponibles. Feedback de luces intermitentes en la OLED al estar grabando (REC) o transmitiendo.
-* [ ] **Integración de Teletrabajo / Audio (Teams / Discord / Spotify):**
+* [ ] **Integración de Teletrabajo / Audio (Teams / Discord / Spotify)** — `process` + `stdio`:
 
   * Muteo universal a nivel de sistema/aplicación, con un icono en la OLED mostrando si el micrófono está capturando audio para dar seguridad.
   * Uso de los encoders para controlar los niveles de volumen de aplicaciones específicas de manera separada (audio routing).

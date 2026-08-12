@@ -16,7 +16,7 @@ import { applyKeymap } from './keys.js';
 
 // --- Pestaña "Grabar": capturar una operación y repetirla -------------------
 // A diferencia de una secuencia, aquí no se monta nada paso a paso: el proceso
-// principal engancha el ratón y el teclado del PC (electron/recorder.js) y
+// principal engancha el ratón y el teclado del PC (src-tauri/src/recorder.rs) y
 // guarda lo que el usuario haga, con sus tiempos. La tecla hace de interruptor:
 // pulsar empieza a grabar, pulsar otra vez para y guarda, y a partir de ahí
 // cada pulsación reproduce lo grabado.

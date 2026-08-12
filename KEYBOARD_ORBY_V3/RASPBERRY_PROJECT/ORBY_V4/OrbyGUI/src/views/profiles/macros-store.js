@@ -112,14 +112,14 @@ export function deviceMacroCapacity() {
   return Number.isFinite(n) && n > 0 ? n : MACRO_CAPACITY_FALLBACK;
 }
 // Acciones de energía del PC, elegibles desde la pestaña Multimedia (macro de
-// un único paso "system_power", ver electron/macros.js).
+// un único paso "system_power", ver src-tauri/src/macros.rs).
 export const POWER_MODE_LABELS = {
   sleep: 'Suspender', hibernate: 'Hibernar', restart: 'Reiniciar',
   shutdown: 'Apagar', lock: 'Bloquear pantalla', logoff: 'Cerrar sesión',
 };
 // Acciones de complemento. Mismo mecanismo que las acciones de energía: una
 // macro de un único paso que ejecuta el PC, aquí llamando al complemento
-// instalado que la ofrece (ver electron/plugins.js). La app base no conoce
+// instalado que la ofrece (ver src-tauri/src/plugins.rs). La app base no conoce
 // ninguna: la lista sale de lo que declare cada complemento.
 //
 // Cada complemento dice dónde encaja cada acción: las teclas y la pulsación de
@@ -128,7 +128,7 @@ export const POWER_MODE_LABELS = {
 // Hueco por defecto entre cada repetición de un mismo paso (tecla o clic
 // repetido, ver sameStep en macro-tabs.js): se usa mientras el paso no traiga
 // uno propio (el campo `gap`, editable a partir de 2 repeticiones). Debe
-// coincidir con el mismo nombre en electron/macros.js (ahí se usa para las
+// coincidir con el mismo nombre en src-tauri/src/macros.rs (ahí se usa para las
 // secuencias que corren por el camino del PC, no del teclado).
 export const DEFAULT_REPEAT_GAP_MS = 20;
 
@@ -282,7 +282,7 @@ export function isTextMacro(id) {
 // Igual que isAppMacro, pero para una acción de energía del PC (Suspender,
 // Apagar…). Vive en la pestaña Multimedia por ser también una sola pulsación
 // sin más ajustes que elegir cuál, aunque por dentro sea una macro de un paso
-// (el firmware no puede tocar esto: ver electron/macros.js).
+// (el firmware no puede tocar esto: ver src-tauri/src/macros.rs).
 export function isPowerMacro(id) {
   const acts = macroById(id)?.actions || [];
   return acts.length === 1 && acts[0].type === 'system_power';

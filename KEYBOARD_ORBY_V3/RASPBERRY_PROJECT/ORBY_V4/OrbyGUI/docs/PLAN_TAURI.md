@@ -1625,14 +1625,54 @@ Solo cuando **todo lo anterior** esté comprobado sobre el teclado.
   | RAM con la ventana abierta | **616,6 MB** (310,4 + 133,3 + 121,0 + 51,9) | **39,8 MB** |
   | RAM escondida en la bandeja | no medida | ~8 MB (ver commit `513e47d`) |
 
-- [ ] **Paso 2: quitar** `electron/`, las dependencias de Electron de `package.json`
+- [x] **Paso 2: quitar** `electron/`, las dependencias de Electron de `package.json`
       (`electron`, `electron-builder`, `electron-updater`, `serialport`, `uiohook-napi`,
-      `@nut-tree-fork/nut-js`) y sus scripts. Borrar el `TAURI_PENDIENTE` de
-      `platform.js` si quedó alguno.
+      `@nut-tree-fork/nut-js`) y sus scripts.
 
-- [ ] **Paso 3: `entry.js`** se queda con dos vías: Tauri y navegador.
+      **Hecho el 2026-08-12.** Fuera la carpeta entera (11 ficheros, ~2 900 líneas), el
+      `"main"`, los scripts `dev`/`start`/`dist`/`release`/`postinstall`, el bloque
+      `build` de electron-builder (ya duplicado en `tauri.conf.json`) y las cuatro
+      dependencias de ejecución: `dependencies` se queda **vacío** y `devDependencies`
+      en dos entradas. `concurrently` se va con `dev`, que era quien lo usaba.
+      `TAURI_PENDIENTE` **no existía**: nunca llegó a crearse porque los cinco comandos
+      que lo iban a necesitar se implementaron en la Tarea 12. `PC_ONLY` se queda, que es
+      de la vía navegador.
 
-- [ ] **Paso 4: documentación.**
+      **Antes de borrar hubo que reanclar dos cosas que leían `electron/` como fuente de
+      verdad**, o el commit habría dejado la suite en rojo:
+
+      - `test/superficie-orby.test.mjs` comparaba Tauri y navegador **contra
+        `electron/preload.js`**. La referencia pasa a ser `src/tauri/orby-tauri.js`, y con
+        ella se van los dos tests que solo tenían sentido con tres vías (14 → 12 pruebas).
+      - `tools/test/verifica_plan_tauri.sh` tenía ~90 comprobaciones apuntando a
+        `electron/`: las constantes de serie, secuencias, grabadora, firmware, primer
+        plano y apps, los 39 canales, la superficie del preload y el descriptor de
+        complementos. Todas reancladas a `src-tauri/src/*.rs` y a
+        `src-tauri/crates/orby-core/`. **Esto contradice lo que decía el repaso final de
+        este mismo plan** («el de Electron se deja: sigue siendo la referencia»): deja de
+        ser cierto aquí, porque la referencia ya no existe.
+
+      De propina, dos cosas que el plan no había mirado y que también dependían de
+      Electron en **código vivo**, no en comentarios:
+
+      - **`OrbyGUI.bat`** lanzaba `npx electron .`. Reescrito para arrancar `tauri:dev`.
+      - **`tools/orby-manager/`**, el panel de control: dos de sus cinco botones de lanzar
+        (`npm run dev`, `npm start`), el pipeline entero de release de la app
+        (electron-builder + `latest.yml`) y el bump de versión, que trataba «vía Electron»
+        y «vía Tauri» como dos números independientes. Ahora la app lleva **un** número en
+        tres ficheros (`tauri.conf.json`, `Cargo.toml`, `package.json`) y el bump los toca
+        a la vez o a ninguno. Y su lectura del teclado usaba `serialport` **prestado de
+        `OrbyGUI/node_modules`**, que ya no lo tiene: el panel pasa a declararlo en un
+        `package.json` propio.
+
+- [x] **Paso 3: `entry.js`** se queda con dos vías: Tauri y navegador.
+
+      Hecho. Fuera la rama `else if (window.orby)`; `platform.js` arranca en `'tauri'` en
+      vez de en `'electron'`. La pregunta de `can()` sigue siendo «¿es navegador?» y no
+      «¿es Tauri?»: lo que recorta funciones es la falta de backend, no cómo se llame
+      quien lo pone.
+
+- [x] **Paso 4: documentación.** Hecha el 2026-08-12.
   - `ORBY_V4/CLAUDE.md`: la tabla de arquitectura y los comandos.
   - `docs/WEBGUI.md`: la regla de «añadir a `PC_ONLY` y dar valor vacío» ahora tiene otro
     sitio donde mirar.
@@ -1646,7 +1686,7 @@ Solo cuando **todo lo anterior** esté comprobado sobre el teclado.
     (`http` para las API REST; `process`+`stdio` para OBS, hardware y audio;
     `process`+`socket` para Altium y Chrome).
 
-- [ ] **Commit:** `git commit -am "feat(tauri): retirar Electron"`
+- [x] **Commit:** `git commit -am "feat(tauri): retirar Electron"`
 
 ---
 

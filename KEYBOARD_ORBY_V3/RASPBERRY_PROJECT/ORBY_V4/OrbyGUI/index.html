@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- Sin recursos remotos: la app tiene que arrancar igual sin conexión.
        Tipografía del sistema e iconos SVG en línea (src/icons.js).
-       `connect-src` deja pasar el IPC de Tauri, que es por donde va todo lo que en
-       Electron iba por preload. `script-src` NO se relaja: es lo que impide que un
+       `connect-src` deja pasar el IPC de Tauri, que es por donde va todo lo que el
+       renderer le pide al backend. `script-src` NO se relaja: es lo que impide que un
        complemento o una respuesta de la red inyecten código en la interfaz. -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost;" />
@@ -430,7 +430,7 @@
 
   <!-- Pantalla de conexión de la versión de navegador. Vive aquí y no en un
        fichero aparte porque el index.html es el mismo para las dos plataformas;
-       en Electron nadie la desoculta nunca. -->
+       en la app de escritorio nadie la desoculta nunca. -->
   <div id="web-gate" class="web-gate hidden"></div>
 
   <script type="module" src="/src/entry.js"></script>

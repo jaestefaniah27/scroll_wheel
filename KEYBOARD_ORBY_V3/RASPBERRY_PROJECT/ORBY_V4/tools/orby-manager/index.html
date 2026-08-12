@@ -526,12 +526,8 @@
           <div class="etiqueta">Firmware en el repo</div>
           <div class="valor">—</div>
         </div>
-        <div class="tarjeta" id="tarjeta-app-electron">
-          <div class="etiqueta">Vía Electron</div>
-          <div class="valor">—</div>
-        </div>
         <div class="tarjeta" id="tarjeta-app-tauri">
-          <div class="etiqueta">Vía Tauri</div>
+          <div class="etiqueta">App en el repo</div>
           <div class="valor">—</div>
         </div>
         <div class="tarjeta" id="tarjeta-app-instalada">
@@ -547,7 +543,7 @@
           </div>
         </div>
       </div>
-      <div class="nota-ayuda">La vía navegador no tiene versión propia: sale del mismo build que la vía Electron y se sirve como ficheros estáticos, sin nada que instalar.</div>
+      <div class="nota-ayuda">La vía navegador no tiene versión propia: sale del mismo build que la app de escritorio y se sirve como ficheros estáticos, sin nada que instalar.</div>
       <div class="avisos" id="avisos"></div>
     </section>
 
@@ -555,8 +551,6 @@
     <section id="seccion-lanzar">
       <h2>Lanzar</h2>
       <div class="fila-botones">
-        <button class="btn-lanzar" data-modo="electron-dev">Electron (dev)</button>
-        <button class="btn-lanzar" data-modo="electron">Electron</button>
         <button class="btn-lanzar" data-modo="tauri-dev">Tauri (dev)</button>
         <button class="btn-lanzar" data-modo="tauri-build">Tauri (build)</button>
         <button class="btn-lanzar" data-modo="web">Web</button>
@@ -602,28 +596,8 @@
         </div>
 
         <div class="bloque">
-          <h3>Bump — Vía Electron</h3>
-          <div class="nota-ayuda">Solo edita <code>package.json</code>. No hace commit ni etiqueta.</div>
-          <div class="version-actual" id="publicar-actual-electron">Versión actual: —</div>
-          <div class="campo">
-            <label for="bump-electron-tipo">Tipo</label>
-            <select id="bump-electron-tipo">
-              <option value="major">major</option>
-              <option value="minor">minor</option>
-              <option value="patch" selected>patch</option>
-            </select>
-          </div>
-          <button id="btn-bump-electron" class="primario">Bump</button>
-          <div class="resultado-bump" id="resultado-bump-electron">
-            <div class="versiones-linea"></div>
-            <ul class="lista-ficheros"></ul>
-            <pre class="diff"></pre>
-          </div>
-        </div>
-
-        <div class="bloque">
-          <h3>Bump — Vía Tauri</h3>
-          <div class="nota-ayuda">Edita <code>tauri.conf.json</code> y <code>Cargo.toml</code> a la vez. No hace commit ni etiqueta.</div>
+          <h3>Bump — App</h3>
+          <div class="nota-ayuda">Edita <code>tauri.conf.json</code>, <code>Cargo.toml</code> y <code>package.json</code> a la vez, porque los tres tienen que decir lo mismo. No hace commit ni etiqueta.</div>
           <div class="version-actual" id="publicar-actual-tauri">Versión actual: —</div>
           <div class="campo">
             <label for="bump-tauri-tipo">Tipo</label>
@@ -691,7 +665,6 @@
           <select id="git-bump-componente">
             <option value="">Ninguno</option>
             <option value="fw">Firmware</option>
-            <option value="electron">Vía Electron</option>
             <option value="tauri">Vía Tauri</option>
           </select>
         </div>
@@ -865,7 +838,7 @@
 
   function aplicarCandadoTarea(corriendo) {
     tareaCorriendo = corriendo;
-    ['btn-bump-fw', 'btn-bump-electron', 'btn-bump-tauri', 'btn-release-fw', 'btn-release-app', 'btn-flashear-teclado'].forEach(function (id) {
+    ['btn-bump-fw', 'btn-bump-tauri', 'btn-release-fw', 'btn-release-app', 'btn-flashear-teclado'].forEach(function (id) {
       var el = $(id);
       if (el) el.disabled = corriendo;
     });
@@ -902,11 +875,12 @@
       if (!detExistente) { detExistente = crear('div', 'detalle'); tarjeta.appendChild(detExistente); }
       textoSeguro(detExistente, 'esta rama no trae la vía Tauri');
       $('btn-bump-tauri').disabled = true;
-    } else if (v.appTauri && v.appTauriCargo && v.appTauri !== v.appTauriCargo) {
+    } else if (v.appTauri && v.appTauriCargo && v.appPkg
+               && (v.appTauri !== v.appTauriCargo || v.appTauri !== v.appPkg)) {
       tarjeta.classList.add('error');
-      textoSeguro(val, v.appTauri + ' / ' + v.appTauriCargo);
+      textoSeguro(val, v.appTauri + ' / ' + v.appTauriCargo + ' / ' + v.appPkg);
       if (!detExistente) { detExistente = crear('div', 'detalle'); tarjeta.appendChild(detExistente); }
-      textoSeguro(detExistente, 'tauri.conf.json y Cargo.toml no coinciden');
+      textoSeguro(detExistente, 'tauri.conf.json, Cargo.toml y package.json no coinciden');
     } else {
       textoSeguro(val, v.appTauri || '—');
       if (detExistente) detExistente.remove();
@@ -916,7 +890,6 @@
   function pintarVersiones(v) {
     ultimasVersiones = v || {};
     pintarTarjetaSimple('tarjeta-fw-repo', v.firmwareRepo || '—');
-    pintarTarjetaSimple('tarjeta-app-electron', v.appElectron || '—');
     pintarTarjetaTauri(v);
 
     var tarjetaInstalada = $('tarjeta-app-instalada');
@@ -1106,14 +1079,12 @@
 
   var CONFIG_BUMP = {
     fw: { tipoId: 'bump-fw-tipo', notaId: 'bump-fw-nota', botonId: 'btn-bump-fw', resultadoId: 'resultado-bump-fw' },
-    electron: { tipoId: 'bump-electron-tipo', notaId: null, botonId: 'btn-bump-electron', resultadoId: 'resultado-bump-electron' },
     tauri: { tipoId: 'bump-tauri-tipo', notaId: null, botonId: 'btn-bump-tauri', resultadoId: 'resultado-bump-tauri' },
   };
-  var NOMBRE_COMPONENTE = { fw: 'firmware', electron: 'la vía Electron', tauri: 'la vía Tauri' };
+  var NOMBRE_COMPONENTE = { fw: 'firmware', tauri: 'la app' };
 
   function pintarActualesPublicar(v) {
     textoSeguro($('publicar-actual-fw'), 'Versión actual: ' + (v.firmwareRepo || '—'));
-    textoSeguro($('publicar-actual-electron'), 'Versión actual: ' + (v.appElectron || '—'));
     textoSeguro($('publicar-actual-tauri'), 'Versión actual: ' + (v.appTauri || '—'));
   }
 
@@ -1163,7 +1134,6 @@
   }
 
   $('btn-bump-fw').addEventListener('click', function () { pedirBump('fw'); });
-  $('btn-bump-electron').addEventListener('click', function () { pedirBump('electron'); });
   $('btn-bump-tauri').addEventListener('click', function () { pedirBump('tauri'); });
 
   // ---------------------------------------------------------------
@@ -1308,7 +1278,7 @@
   // Sección 5 — Git
   // ---------------------------------------------------------------
 
-  var TIPOS_BUMP_GIT = { fw: ['major', 'minor'], electron: ['major', 'minor', 'patch'], tauri: ['major', 'minor', 'patch'] };
+  var TIPOS_BUMP_GIT = { fw: ['major', 'minor'], tauri: ['major', 'minor', 'patch'] };
 
   function pintarGit(g) {
     textoSeguro($('git-rama'), g.rama || '—');

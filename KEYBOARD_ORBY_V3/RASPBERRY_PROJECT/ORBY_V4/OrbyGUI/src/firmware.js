@@ -1,6 +1,6 @@
 // Estado de la actualización del firmware del teclado.
 //
-// Espejo en el renderer de electron/firmware.js, igual que updater.js lo es de
+// Espejo en el renderer de src-tauri/src/firmware.rs, igual que updater.js lo es de
 // las actualizaciones de la propia app. Lo consume la tarjeta "Firmware del
 // teclado" de Ajustes.
 //

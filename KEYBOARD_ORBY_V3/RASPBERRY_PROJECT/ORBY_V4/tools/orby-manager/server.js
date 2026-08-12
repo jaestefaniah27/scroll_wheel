@@ -88,26 +88,25 @@ function comparar(a, b) {
 function calcularAvisos(v) {
   const avisos = [];
 
-  // ¿Hay que publicar? Se compara contra la vía Electron, que es la única que
-  // produce un instalador: la de Tauri lleva su propia versión y la de
-  // navegador no tiene ninguna.
-  if (!v.appElectron) {
-    avisos.push({ nivel: 'error', texto: 'No se ha podido leer la versión de la vía Electron en el repositorio' });
+  // ¿Hay que publicar? Contra la versión de la app en el repositorio, que es la
+  // que acaba en el instalador. La vía navegador no tiene número propio.
+  if (!v.appTauri) {
+    avisos.push({ nivel: 'error', texto: 'No se ha podido leer la versión de la app en el repositorio' });
   } else if (!v.appInstalada) {
-    avisos.push({ nivel: 'aviso', texto: `No hay OrbyGUI instalada en este PC (el repositorio va por la ${v.appElectron})` });
+    avisos.push({ nivel: 'aviso', texto: `No hay OrbyGUI instalada en este PC (el repositorio va por la ${v.appTauri})` });
   } else {
-    const d = comparar(v.appElectron, v.appInstalada);
+    const d = comparar(v.appTauri, v.appInstalada);
     if (d === 0) avisos.push({ nivel: 'ok', texto: `La app instalada (${v.appInstalada}) es la del repositorio` });
-    else if (d > 0) avisos.push({ nivel: 'aviso', texto: `El repositorio va por la ${v.appElectron} y aquí está instalada la ${v.appInstalada}: falta publicar o instalar` });
-    else avisos.push({ nivel: 'aviso', texto: `La app instalada (${v.appInstalada}) es más nueva que la del repositorio (${v.appElectron})` });
+    else if (d > 0) avisos.push({ nivel: 'aviso', texto: `El repositorio va por la ${v.appTauri} y aquí está instalada la ${v.appInstalada}: falta publicar o instalar` });
+    else avisos.push({ nivel: 'aviso', texto: `La app instalada (${v.appInstalada}) es más nueva que la del repositorio (${v.appTauri})` });
   }
 
-  // Los dos ficheros de la vía Tauri tienen que decir lo mismo: el
-  // tauri.conf.json acaba en el instalador y el Cargo.toml compila el binario.
-  // Que Tauri y Electron no coincidan entre sí es normal —van por separado— y
-  // no se avisa de ello.
-  if (v.appTauri && v.appTauriCargo && v.appTauri !== v.appTauriCargo) {
-    avisos.push({ nivel: 'error', texto: `La vía Tauri dice ${v.appTauri} en tauri.conf.json y ${v.appTauriCargo} en Cargo.toml: el instalador y el binario no coincidirían` });
+  // Los tres ficheros de la versión tienen que decir lo mismo: tauri.conf.json
+  // acaba en el instalador y en el latest.json que mira el actualizador,
+  // Cargo.toml compila el binario y package.json es el del frontend.
+  if (v.appTauri && v.appTauriCargo && v.appPkg
+      && (v.appTauri !== v.appTauriCargo || v.appTauri !== v.appPkg)) {
+    avisos.push({ nivel: 'error', texto: `La versión de la app no cuadra: ${v.appTauri} en tauri.conf.json, ${v.appTauriCargo} en Cargo.toml y ${v.appPkg} en package.json` });
   }
 
   // ¿Hay que flashear?
@@ -145,13 +144,12 @@ function calcularAvisos(v) {
 
 async function construirEstado(forzarTeclado = false) {
   const v = {
-    firmwareRepo: null, appElectron: null, appTauri: null, appTauriCargo: null, hayTauri: false,
+    firmwareRepo: null, appTauri: null, appTauriCargo: null, appPkg: null, hayTauri: false,
     fwRecomendado: null, appInstalada: null, instaladaError: null, teclado: null,
   };
   const fallos = [];
 
   try { v.firmwareRepo = versiones.leerFirmware().version; } catch (err) { fallos.push(err.message); }
-  try { v.appElectron = versiones.leerElectron().version; } catch (err) { fallos.push(err.message); }
   // En una rama sin el port de Tauri no hay nada que leer, y no es un fallo:
   // se deja en null y la tarjeta lo dice.
   v.hayTauri = versiones.hayTauri();
@@ -160,6 +158,7 @@ async function construirEstado(forzarTeclado = false) {
       const tauri = versiones.leerTauri();
       v.appTauri = tauri.version;
       v.appTauriCargo = tauri.cargo;
+      v.appPkg = tauri.pkg;
     } catch (err) { fallos.push(err.message); }
   }
   try { v.fwRecomendado = versiones.leerFwRecomendado(); } catch (err) { fallos.push(err.message); }
@@ -184,7 +183,7 @@ async function construirEstado(forzarTeclado = false) {
   };
 }
 
-const NOMBRE_COMPONENTE = { fw: 'firmware', electron: 'la vía Electron', tauri: 'la vía Tauri' };
+const NOMBRE_COMPONENTE = { fw: 'firmware', tauri: 'la app' };
 
 // Arrancar una tarea larga: se responde 202 al momento y el progreso viaja por
 // SSE. El candado es uno solo para todas (releases, flasheo, herramientas):
@@ -329,7 +328,6 @@ async function enrutar(req, res, url) {
     // artefacto diciendo una cosa y el repositorio otra.
     exigirSinTarea();
     const resultado = componente === 'fw' ? versiones.bumpFirmware(tipo, nota)
-      : componente === 'electron' ? versiones.bumpElectron(tipo)
       : componente === 'tauri' ? versiones.bumpTauri(tipo)
       : (() => { throw Object.assign(new Error(`Componente desconocido: ${componente}`), { codigo: 400 }); })();
 
@@ -441,7 +439,7 @@ servidor.listen(PUERTO, '127.0.0.1', () => {
   if (!github.hayToken()) console.log('Aviso: no hay GH_TOKEN en el entorno; las releases no podrán publicarse.');
 });
 
-// Cerrar el panel con el proceso lanzado vivo dejaría un vite y un electron
+// Cerrar el panel con el proceso lanzado vivo dejaría un vite y una cáscara
 // corriendo sin ventana desde la que pararlos.
 for (const senal of ['SIGINT', 'SIGTERM']) {
   process.on(senal, () => {

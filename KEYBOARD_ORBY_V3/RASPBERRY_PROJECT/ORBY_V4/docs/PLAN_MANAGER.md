@@ -63,7 +63,7 @@ versiones leídas. La UI es un cliente tonto que pinta lo que llega por `GET /ap
 |---|---|
 | `GET /api/estado` | versiones (repo fw, repo app, instalada, teclado), procesos vivos, tarea en curso |
 | `GET /api/eventos` | SSE: `log`, `paso`, `progreso`, `estado`, `fin` |
-| `POST /api/lanzar` | `{modo}`: `electron-dev`, `electron`, `tauri-dev`, `tauri-build`, `web` |
+| `POST /api/lanzar` | `{modo}`: `tauri-dev`, `tauri-build`, `web` |
 | `POST /api/parar` | mata el proceso lanzado (árbol entero) |
 | `POST /api/bump` | `{componente:'fw'\|'app', tipo, nota}` → edita ficheros, devuelve el diff |
 | `POST /api/release` | `{componente:'fw'\|'app'}` → pipeline con pasos |
@@ -71,20 +71,18 @@ versiones leídas. La UI es un cliente tonto que pinta lo que llega por `GET /ap
 
 ## 1. Lanzar OrbyGUI
 
-Cinco botones, todos `spawn` con `cwd: OrbyGUI/`, `shell: true` (son scripts de npm en
+Tres botones, todos `spawn` con `cwd: OrbyGUI/`, `shell: true` (son scripts de npm en
 Windows), salida por SSE a un panel de log:
 
 | Botón | Comando |
 |---|---|
-| Electron (dev) | `npm run dev` |
-| Electron | `npm start` |
 | Tauri (dev) | `npm run tauri:dev` |
 | Tauri (build) | `npm run tauri:build` |
 | Web | `npm run preview:web` + abrir `http://localhost:5174` |
 
 Un solo proceso lanzado a la vez, con botón de parar. Se mata el árbol entero
-(`taskkill /pid <pid> /T /F` en Windows): `npm run dev` arranca vite y electron con
-`concurrently` y matar solo el padre deja los hijos huérfanos.
+(`taskkill /pid <pid> /T /F` en Windows): `npm run tauri:dev` arranca vite y la
+cáscara de Rust, y matar solo el padre deja los hijos huérfanos.
 
 **Aviso en la UI, no en la consola**: mientras haya un OrbyGUI de escritorio corriendo,
 el puerto COM está cogido y la lectura del teclado (punto 4) falla. Es la trampa
@@ -120,12 +118,15 @@ Réplica exacta de los pasos de [docs/COMPATIBILIDAD.md](COMPATIBILIDAD.md#L63-L
 
 ### App (`vX.Y.Z`)
 
-1. **Comprobaciones**: árbol limpio, `GH_TOKEN` presente, versión de `package.json`.
-2. **Build + publicación**: `npm run release` (`vite build` + `electron-builder --publish always`).
-   `publish.releaseType` ya es `release` en [package.json](../OrbyGUI/package.json#L68-L73),
-   así que electron-builder crea y publica la release y sube `latest.yml` y el `.exe`.
-   `GH_TOKEN` se le pasa por entorno.
-3. **Huella**: SHA256 de `OrbyGUI/release/OrbyGUI-Setup-*.exe`, mostrado para pegarlo en
+1. **Comprobaciones**: árbol limpio, `GH_TOKEN` y `TAURI_SIGNING_PRIVATE_KEY`
+   presentes, versión de `tauri.conf.json`.
+2. **Build**: `npm run tauri:build`, con `TAURI_SIGNING_PRIVATE_KEY` en el entorno (sin
+   ella el build sale sin firmar y sin `latest.json`, y la release no serviría para
+   actualizar). Salen el `*-setup.exe`, su `.sig` y el `latest.json` en
+   `src-tauri/target/release/bundle/nsis/`.
+3. **Publicar**: se crea la release (`prerelease: false`) y se suben los tres ficheros.
+   `GH_TOKEN` va por entorno.
+4. **Huella**: SHA256 del `*-setup.exe`, mostrado para pegarlo en
    las notas ([PUBLICACION.md](../OrbyGUI/docs/PUBLICACION.md#L147-L172)). Botón de copiar el
    bloque de notas ya formateado, con el aviso de SmartScreen incluido.
 4. **Verificar**: la release `vX.Y.Z` existe, no es draft y lleva `latest.yml`.
@@ -162,11 +163,11 @@ Cuatro tarjetas, refrescadas al abrir y con botón de recargar:
 | Tarjeta | De dónde sale |
 |---|---|
 | Firmware en el repo | `include/orby_version.h` |
-| App en el repo | `OrbyGUI/package.json` |
+| App en el repo | `OrbyGUI/src-tauri/tauri.conf.json`, `Cargo.toml` y `package.json` (los tres tienen que decir lo mismo) |
 | App instalada | registro `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall`, entrada con `DisplayName` que contenga "Orby" → `DisplayVersion`. Comprobado: devuelve `0.5.2` |
 | Teclado conectado | CDC a 115200, se manda `ACK\n` y se espera una línea `ORBY_V4:FW=…`, 1,5 s de margen |
 
-La lectura del teclado replica lo que hace [electron/serial.js](../OrbyGUI/electron/serial.js#L458-L470):
+La lectura del teclado replica lo que hace [src-tauri/src/serial.rs](../OrbyGUI/src-tauri/src/serial.rs):
 puerto por VID `cafe` (cualquier PID) o fabricante que contenga "orby", `ACK\n`, parsear
 `ORBY_V4:FW=4.5:KEYS=12:…`. Se abre y se cierra al momento; el panel nunca se queda con el
 puerto cogido, o dejaría a OrbyGUI sin poder conectar.
@@ -219,11 +220,11 @@ sería desproporcionado. Se comprueba a mano, en este orden:
 1. `node tools/orby-manager/server.js` → abre en `http://localhost:7788`.
 2. **Versiones**: las cuatro tarjetas se rellenan. Con el teclado enchufado y OrbyGUI
    cerrada debe salir `4.5`. Con OrbyGUI abierta, debe decir "puerto ocupado" y no romper.
-3. **Lanzar**: cada uno de los cinco botones arranca lo suyo, el log corre, y "parar" deja
-   cero procesos `node`/`electron` colgando (`Get-Process node,electron`).
+3. **Lanzar**: cada uno de los tres botones arranca lo suyo, el log corre, y "parar" deja
+   cero procesos `node`/`orby-app` colgando (`Get-Process node,orby-app`).
 4. **Bump** (en una rama de usar y tirar): bump de firmware a 4.6 y `git diff` debe tocar
    exactamente `orby_version.h`, `compat.js` y `COMPATIBILIDAD.md`. Bump de app a 0.5.3 debe
-   tocar `package.json`, `tauri.conf.json` y `Cargo.toml`. `git checkout .` para revertir.
+   tocar `tauri.conf.json`, `Cargo.toml` y `package.json` a la vez. `git checkout .` para revertir.
 5. **Releases**: la tabla debe listar las `fw-v*` y `v*` reales, todas las de firmware
    marcadas como completadas.
 6. **Release de firmware**: es la prueba cara. Se hace **solo cuando toque publicar de
@@ -234,9 +235,9 @@ sería desproporcionado. Se comprueba a mano, en este orden:
 
 ## Riesgos conocidos
 
-- **`npm install` está roto de raíz** en este repositorio (`ETARGET` por `archiver`). No
-  afecta: el gestor no instala nada, y las dependencias ya están en `node_modules`.
-- **OneDrive** puede bloquear ficheros durante el build de Electron. El pipeline enseñará el
+- **OneDrive** puede bloquear ficheros durante el build. El pipeline enseñará el
   error tal cual; no es un fallo del gestor.
+- **`tauri build` falla si hay un OrbyGUI abierto**, con un `os error 32` que no explica
+  nada. El pipeline lo comprueba antes, pero solo sabe de lo que ha lanzado él.
 - **`git push` puede pedir credenciales**. Si el proceso se queda esperando en un prompt, el
   paso se corta por timeout (120 s) con un mensaje que lo explica, en vez de colgarse.

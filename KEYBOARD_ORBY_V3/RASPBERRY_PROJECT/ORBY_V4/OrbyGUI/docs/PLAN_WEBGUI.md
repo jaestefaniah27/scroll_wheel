@@ -1,5 +1,15 @@
 # Orby WebGUI — Plan de implementación
 
+> **Documento histórico.** Este plan se ejecutó entero cuando la app de escritorio era
+> de Electron, y por eso todo él habla de `electron/preload.js`, `electron/serial.js` y
+> `npm run dev`. Electron se retiró en la Tarea 13 del
+> [PLAN_TAURI.md](PLAN_TAURI.md): donde aquí ponga `electron/<algo>.js`, hoy es
+> `src-tauri/src/<algo>.rs`, y el puente que monta `window.orby` en la vía de escritorio
+> es `src/tauri/orby-tauri.js`. **La vía navegador que este plan construyó no ha
+> cambiado**, que es lo que se comprueba en `test/superficie-orby.test.mjs`. Se deja tal
+> cual se escribió: reescribirlo lo convertiría en una descripción del presente y dejaría
+> de explicar por qué se hizo así.
+
 > **Para quien lo ejecute (agente o persona):** usa `superpowers:executing-plans` o
 > `superpowers:subagent-driven-development` para ir tarea a tarea. Los pasos llevan
 > casilla (`- [ ]`) para ir marcándolos.

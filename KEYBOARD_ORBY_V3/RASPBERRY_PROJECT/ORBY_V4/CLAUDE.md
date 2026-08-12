@@ -3,7 +3,8 @@
 Teclado macro con rueda. Dos mitades que hablan por USB CDC:
 
 - **Firmware** — Raspberry Pi Pico (RP2040), C++17, Pico SDK 2.2.0 + TinyUSB. Raíz del proyecto.
-- **OrbyGUI** — app de escritorio (Electron + Vite, JS vanilla) que configura el teclado. `OrbyGUI/`.
+- **OrbyGUI** — app de escritorio (Tauri 2 + Vite, cáscara en Rust y renderer JS vanilla)
+  que configura el teclado. `OrbyGUI/`.
   La misma app corre también en el navegador (Chrome/Edge) por Web Serial, para
   equipos donde no se puede instalar nada: ver [docs/WEBGUI.md](OrbyGUI/docs/WEBGUI.md).
 
@@ -31,10 +32,10 @@ El volumen se busca por etiqueta `RPI-RP2` o por su `INFO_UF2.TXT`, no por letra
 ```bash
 cd OrbyGUI
 npm install
-npm run dev          # vite + electron en paralelo, con recarga
-npm start            # build + electron (sin recarga)
-npm run dist         # instalador NSIS en release/
-npm test             # node --test sobre los módulos puros de la vía navegador
+npm run tauri:dev    # vite + la cáscara de Rust, con recarga
+npm run tauri:build  # instalador NSIS en src-tauri/target/release/bundle/nsis/
+npm run build        # solo el frontend, a dist/
+npm test             # node --test sobre los módulos puros y el contrato window.orby
 npm run preview:web  # build + servidor local para probar la vía navegador en Chrome
 ```
 
@@ -70,22 +71,30 @@ Las vistas preguntan por función (`compat.supports(info, 'macros')`), nunca por
 número de versión: cuando el handshake trae la bandera (`MACROS=1`, `HASH=1`,
 `MAXMACROS`), manda la bandera sobre la versión.
 
-### OrbyGUI — proceso principal (`OrbyGUI/electron/`)
+### OrbyGUI — cáscara de escritorio (`OrbyGUI/src-tauri/`)
+Rust. El crate de la app es `src-tauri/src/`; lo que no depende de la plataforma vive
+aparte en `src-tauri/crates/orby-core/`, que compila solo y es donde están los tests.
+
 | Fichero | Qué hace |
 |---|---|
-| `main.js` | ventana, IPC, autoupdate (electron-updater) |
-| `serial.js` | descubre el puerto, reconecta, parte el flujo en líneas |
-| `preload.js` | única superficie expuesta al renderer: `window.orby` |
-| `macros.js` | ejecuta secuencias en el PC (nut-js) |
-| `recorder.js` | graba y reproduce ratón/teclado (uiohook-napi) |
-| `foreground.js` | ventana en primer plano → dispara variaciones por app |
-| `plugins.js` | carga, ajustes y ejecución de complementos |
-| `apps.js` | lista apps instaladas del menú Inicio |
-| `config.js` | configuración local del PC (no del firmware) |
-| `firmware.js` | actualiza el firmware del teclado: releases `fw-v*`, `BOOTSEL`, copia del `.uf2` |
-| `log.js` | registro del ciclo de vida de la conexión en `%APPDATA%\OrbyGUI\orby.log` |
+| `main.rs` | ventana, bandeja, una sola instancia y el `generate_handler!` con los 39 comandos |
+| `serial.rs` | descubre el puerto por VID, reconecta, parte el flujo en líneas |
+| `macros.rs` | ejecuta secuencias en el PC (Win32 directo: `SendInput`, portapapeles) |
+| `recorder.rs` | graba y reproduce ratón/teclado (ganchos de bajo nivel de Win32) |
+| `foreground.rs` | ventana en primer plano → dispara variaciones por app |
+| `plugins.rs` | carga, ajustes y ejecución de complementos declarativos |
+| `apps.rs` | lista apps instaladas del menú Inicio (`IShellLinkW` por COM) |
+| `config.rs` | configuración local del PC (no del firmware) |
+| `firmware.rs` | actualiza el firmware del teclado: releases `fw-v*`, `BOOTSEL`, copia del `.uf2` |
+| `updater.rs` | actualiza la propia app, sola y en silencio (`tauri-plugin-updater`) |
+| `autostart.rs` | entrada en la clave `Run` del registro, con `--hidden` |
+| `window.rs` | cierre a la bandeja, arranque escondido y salida de verdad |
+| `log.rs` | registro del ciclo de vida de la conexión en `%APPDATA%\OrbyGUI\orby.log` |
 
-Todo IPC va por `ipcMain.handle`; el renderer nunca toca Node directamente.
+Todo va por `#[tauri::command]` + `invoke`; el renderer no toca el sistema directamente.
+El contrato completo, con los nombres que ve el renderer, está en
+`OrbyGUI/src/tauri/orby-tauri.js`, y `test/superficie-orby.test.mjs` lo compara con la
+vía navegador.
 
 ### OrbyGUI — renderer (`OrbyGUI/src/`)
 JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
@@ -101,20 +110,21 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
   teclado: hay que revertir a base antes de escribir a Flash (`variants.withBase`).
 - `plugins.js` — espejo en renderer de la lista de complementos.
 - `compat.js` — qué firmware sabe usar esta app (`FW_MIN`, `FW_RECOMMENDED`, `FEATURES`).
-- `firmware.js` — espejo de `electron/firmware.js`; pone el tope de versión desde `compat.js`.
+- `firmware.js` — espejo de `src-tauri/src/firmware.rs`; pone el tope de versión desde `compat.js`.
+- `firmware-auto.js` — decide **cuándo** se puede flashear solo: solo con el teclado ocioso.
 
 ### OrbyGUI — versión de navegador
-`src/entry.js` arranca la vía Electron o la vía navegador según exista ya
-`window.orby`. En navegador lo monta `src/web/orby-web.js` (Web Serial + IndexedDB en
-vez de `electron/preload.js`), y `src/platform.js` es el único sitio donde se
+`src/entry.js` arranca la vía Tauri o la vía navegador según exista
+`window.__TAURI_INTERNALS__`. En navegador el puente lo monta `src/web/orby-web.js`
+(Web Serial + IndexedDB en vez del backend de Rust), y `src/platform.js` es el único sitio donde se
 pregunta dónde corre la app. Regla al añadir algo que necesite el proceso principal:
 tocar `PC_ONLY` en `src/platform.js` **y** darle un valor vacío en
 `src/web/orby-web.js`. Detalle completo en [docs/WEBGUI.md](OrbyGUI/docs/WEBGUI.md).
 
 ### Complementos
-Carpeta con `plugin.json` + `main.js` (CommonJS, Node). Se instalan en
-`%APPDATA%\OrbyGUI\plugins\<id>\`, fuera de la app, para sobrevivir actualizaciones.
-Corren **sin sandbox** dentro del proceso principal. Ver [docs/PLUGINS.md](OrbyGUI/docs/PLUGINS.md).
+Carpeta con un `plugin.json` **declarativo**: describe peticiones, no ejecuta código.
+Se instalan en `%APPDATA%\OrbyGUI\plugins\<id>\`, fuera de la app, para sobrevivir
+actualizaciones. Ver [docs/PLUGINS.md](OrbyGUI/docs/PLUGINS.md).
 Ejemplo de referencia: `OrbyGUI/plugins/lampdesk`.
 
 ## Convenciones
@@ -131,21 +141,23 @@ Ejemplo de referencia: `OrbyGUI/plugins/lampdesk`.
 
 ## Trampas conocidas
 
-- **No hay tests automatizados.** `tools/test/*.py` son comprobaciones sueltas
-  (descriptor USB, mapa de Flash, teclas) que se lanzan a mano.
+- **El firmware no tiene tests automatizados.** `tools/test/*.py` son comprobaciones
+  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano. OrbyGUI sí:
+  `cargo test` en `src-tauri/`, `npm test` en `OrbyGUI/`, y
+  `bash tools/test/verifica_plan_tauri.sh`, que comprueba que lo que dice
+  `OrbyGUI/docs/PLAN_TAURI.md` sigue existiendo en el código.
 - **La app instalada no tiene consola.** Cuando no detecta el teclado, el rastro
-  está en `%APPDATA%\OrbyGUI\orby.log` (`electron/log.js`). En desarrollo,
-  `npm run dev` saca además la consola del renderer y cada comando enviado.
-- **OneDrive bloquea `node_modules/electron`.** Si `npm install` o el arranque fallan
-  con ficheros en uso, es sincronización, no un bug del código.
-- **VS Code filtra `ELECTRON_RUN_AS_NODE`.** Si Electron arranca como Node y no abre
-  ventana, limpia esa variable antes de lanzar.
-- **`npm install` está roto de raíz.** `archiver@5.3.2`, peer de electron-builder, pide
-  `async@^0.0.1`, versión que no existe en npm: cualquier instalación limpia falla con
-  `ETARGET`. Con `--legacy-peer-deps` pasa; solo se queda fuera el árbol de
-  `electron-builder-squirrel-windows`, que no se usa (el target es nsis).
-- **`assets/orby-icon.png` es un JPEG** con extensión `.png`. Electron-builder lo traga;
-  el generador de iconos de Tauri no. Hay que convertirlo antes de dárselo.
+  está en `%APPDATA%\OrbyGUI\orby.log` (`src-tauri/src/log.rs`). En desarrollo,
+  `npm run tauri:dev` saca además la consola del renderer y cada comando enviado.
+- **`tauri build` falla si la app está abierta.** Cargo no puede sobrescribir
+  `target/release/orby-app.exe` y el error no dice cuál es el problema (`os error 32`).
+  Ciérrala antes: menú de la bandeja → Salir. Y ojo al encadenar la salida por una
+  tubería (`| tee`, `| grep`): el código de salida pasa a ser el del último eslabón, así
+  que un build fallido se lee como exitoso.
+- **`assets/orby-icon.png` es un JPEG** con extensión `.png`. El generador de iconos de
+  Tauri no lo traga: hay que convertirlo antes de dárselo.
+- **El toolchain de Rust es GNU, sin las Build Tools de MSVC.** Por eso `reqwest` va con
+  `rustls` y `zip` solo con `deflate`: nada que enlazar en C.
 - **Rutas largas de Windows.** El repo está anidado y bajo OneDrive: operaciones de
   ficheros recursivas pueden fallar con "Filename too long". Usa el prefijo `\\?\`.
 - **La app de escritorio y la WebGUI no pueden usar el teclado a la vez.** En Windows

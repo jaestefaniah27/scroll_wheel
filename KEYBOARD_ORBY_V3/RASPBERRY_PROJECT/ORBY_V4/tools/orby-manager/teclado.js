@@ -8,17 +8,18 @@ const path = require('path');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 
-// El módulo real solo se resuelve desde node_modules de OrbyGUI. Este panel no
-// lo declara como dependencia propia porque duplicar `serialport` —un binario
-// nativo compilado contra una versión concreta de Node/Electron— es la manera
-// más rápida de acabar con dos copias que no coinciden y un error de ABI: mejor
-// usar la que ya tiene que funcionar para que OrbyGUI arranque.
+// `serialport` es la única dependencia del panel, y la declara en su propio
+// package.json desde que OrbyGUI dejó de tenerla: la app abre el puerto desde
+// Rust y no necesita el binding de Node, así que ya no hay copia prestada de la
+// que tirar. Se sigue intentando la de OrbyGUI primero por si queda instalada de
+// antes, y así un `npm install` olvidado en esta carpeta no rompe la tarjeta.
 function cargarSerialPort() {
-  try {
-    return require(path.join(RAIZ, 'OrbyGUI', 'node_modules', 'serialport'));
-  } catch (err) {
-    return null;
+  for (const donde of [__dirname, path.join(RAIZ, 'OrbyGUI')]) {
+    try {
+      return require(path.join(donde, 'node_modules', 'serialport'));
+    } catch { /* se prueba el siguiente */ }
   }
+  return null;
 }
 
 function vacio(extra) {
@@ -35,7 +36,7 @@ function vacio(extra) {
 }
 
 // Trocea el handshake `ORBY_V4:FW=4.5:KEYS=12:...` en pares clave/valor, igual
-// que `_parseDeviceInfo` en electron/serial.js: el primer campo es el nombre
+// que `parsear_info` en src-tauri/src/serial.rs: el primer campo es el nombre
 // del dispositivo, no una clave, así que se descarta.
 function parsearHandshake(linea) {
   const partes = linea.split(':');
@@ -52,7 +53,7 @@ async function leerTeclado() {
   const sp = cargarSerialPort();
   if (!sp) {
     return vacio({
-      error: 'No se encuentra el módulo serialport (¿falta "npm install" en OrbyGUI?)',
+      error: 'No se encuentra el módulo serialport (falta "npm install" en tools/orby-manager)',
     });
   }
   const { SerialPort } = sp;
@@ -64,7 +65,7 @@ async function leerTeclado() {
     return vacio({ error: `No se pudieron listar los puertos serie: ${err.message}` });
   }
 
-  // Mismo criterio que el escaneo de OrbyGUI (electron/serial.js, ~línea 458):
+  // Mismo criterio que el escaneo de OrbyGUI (src-tauri/src/serial.rs):
   // VID cafe con cualquier PID, porque el firmware lo sube cada vez que cambia
   // un informe HID, y como red el fabricante conteniendo "orby".
   const candidato = puertos.find((p) => {

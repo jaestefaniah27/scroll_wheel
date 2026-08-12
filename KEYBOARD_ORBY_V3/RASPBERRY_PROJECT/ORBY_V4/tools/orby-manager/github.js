@@ -101,8 +101,8 @@ async function obtenerReleasePorTag(tag) {
 
 // `prerelease` llega tal cual desde quien orquesta el pipeline: el paso de
 // firmware siempre lo manda a `true` porque una release de firmware que no
-// sea prerelease rompe el autoupdate de la app (electron/firmware.js filtra
-// por ese prefijo de tag, no por el flag, así que el daño real es que
+// sea prerelease rompe el actualizador de la app (firmware.rs filtra por ese
+// prefijo de tag, no por el flag, así que el daño real es que
 // GET /repos/.../releases/latest —que sí mira el flag— empezaría a devolver
 // firmware en vez de la última versión de la app). Aquí no se fuerza nada:
 // decidir el valor es responsabilidad de quien llama.
@@ -187,10 +187,16 @@ function veredicto(release) {
   if (tag.startsWith('v')) {
     if (release.draft) motivos.push('la release está en borrador, no publicada');
     if (release.prerelease) motivos.push('está marcada como prerelease y una release de app no debería estarlo');
-    const yml = assets.find((a) => a.name === 'latest.yml');
+    // Los tres van juntos o la release no sirve: el actualizador pide el
+    // latest.json, ese apunta al .exe y comprueba su firma contra el .sig.
+    // Publicar el .exe solo deja a todo el parque sin actualizar y en silencio,
+    // que es el fallo más caro de esta lista porque nadie se entera.
+    const json = assets.find((a) => a.name === 'latest.json');
     const exe = assets.find((a) => a.name && a.name.endsWith('.exe'));
-    if (!yml) motivos.push('falta el asset latest.yml (electron-updater no la vería)');
+    const sig = assets.find((a) => a.name && a.name.endsWith('.exe.sig'));
+    if (!json) motivos.push('falta el asset latest.json (el actualizador no la vería)');
     if (!exe) motivos.push('falta el instalador .exe');
+    if (!sig) motivos.push('falta la firma .exe.sig (el actualizador rechazaría la descarga)');
     return { tipo: 'app', completada: motivos.length === 0, motivos };
   }
 

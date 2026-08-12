@@ -29,8 +29,8 @@ Todo esto necesita un proceso con permisos de escritorio, y el navegador no lo t
 - Actualizar la propia app o el firmware del teclado.
 - Capturar la posición del cursor dentro del editor de secuencias (el botón
   "Posición de ratón", `src/views/profiles/sequence-editor.js`): queda
-  deshabilitado porque `getMousePosition()` devuelve `null` sin el proceso de
-  Electron detrás. Es distinto del módulo de grabación de ratón/teclado del punto
+  deshabilitado porque `getMousePosition()` devuelve `null` sin el backend de
+  escritorio detrás. Es distinto del módulo de grabación de ratón/teclado del punto
   anterior — este es un botón concreto dentro del editor de una secuencia.
 
 ## Qué sí puede hacer
@@ -41,8 +41,9 @@ seguridad, y las secuencias que el propio teclado sabe tocar sin el PC
 
 ## Cómo está montada
 
-- `src/entry.js` es el único punto de entrada: si `window.orby` ya existe (lo montó
-  `electron/preload.js`) arranca la vía Electron; si no, carga `src/web-main.js`.
+- `src/entry.js` es el único punto de entrada: si existe `window.__TAURI_INTERNALS__`
+  arranca la vía Tauri (`src/tauri-main.js`); si no, la de navegador
+  (`src/web-main.js`). Las dos montan `window.orby` antes de cargar el renderer.
 - `src/web/orby-web.js` monta a mano ese mismo `window.orby` para el navegador, con
   Web Serial (`src/web/transport-serial.js`) como transporte e IndexedDB
   (`src/web/config-store.js`) como configuración local.

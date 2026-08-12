@@ -10,7 +10,8 @@ repositorio, cuál está instalada y cuál lleva el teclado enchufado.
 
 Es una herramienta de desarrollo local, no un sustituto de nada. No toca el firmware,
 ni OrbyGUI, ni `flash.ps1`: llama a los mismos scripts y comandos que ya existían
-(`cmake`, `flash.ps1`, `npm run dev`, `npm run release`, `git`, la API de GitHub). Si
+(`cmake`, `flash.ps1`, `npm run tauri:dev`, `npm run tauri:build`, `git`, la API de
+GitHub). Si
 algo falla aquí, falla igual a mano.
 
 Se publica a mano porque GitHub Actions está bloqueado por facturación en esta cuenta
@@ -47,21 +48,20 @@ puerto está ocupado (`EADDRINUSE`) y lo dice por consola.
 
 ## Requisitos
 
-- **Node** (el mismo que usa OrbyGUI). El panel no tiene `package.json` propio ni
-  dependencias que instalar: `http`, `child_process`, `fs`, `crypto` y `https` son de
-  Node y no hace falta `npm install` en esta carpeta.
+- **Node** (el mismo que usa OrbyGUI), y un `npm install` en esta carpeta. Todo lo
+  demás que usa el panel (`http`, `child_process`, `fs`, `crypto`, `https`) es de
+  Node.
 - **`GH_TOKEN` en el entorno**, para leer y publicar releases. `github.js` es el único
   módulo que lo lee (`process.env.GH_TOKEN`); no se guarda en disco, no se registra en
   el log y no se enseña en la UI. Sin él, el panel funciona igual salvo para publicar:
   el semáforo de Versiones lo avisa en rojo al abrir y el primer paso de cada pipeline
   de release corta con un mensaje claro.
-- **`serialport` resuelto desde `OrbyGUI/node_modules`**, para leer el firmware del
-  teclado por CDC. El panel no lo declara como dependencia propia a propósito:
-  duplicar un binario nativo compilado contra una versión concreta de Node es la
-  manera más rápida de acabar con dos copias que no coinciden y un error de ABI, así
-  que usa la copia que ya tiene que funcionar para que OrbyGUI arranque. Si no está
-  (por ejemplo, un `npm install` de OrbyGUI que nunca se hizo), la tarjeta del teclado
-  dice que no está disponible y el resto del panel sigue funcionando.
+- **`serialport`**, su única dependencia, para leer el firmware del teclado por CDC.
+  La tenía prestada de `OrbyGUI/node_modules` mientras OrbyGUI era una app de Node;
+  ahora la app abre el puerto desde Rust y ya no la instala, así que el panel la
+  declara en su propio `package.json`. Sigue intentando primero la de OrbyGUI por si
+  quedó instalada de antes. Si no encuentra ninguna, la tarjeta del teclado dice que
+  no está disponible y el resto del panel sigue funcionando.
 
 ## Layout
 
@@ -89,27 +89,25 @@ Cinco tarjetas, refrescadas al abrir y con botón «Recargar»:
 | Tarjeta | De dónde sale |
 |---|---|
 | Firmware en el repo | `include/orby_version.h` (`ORBY_FW_MAJOR`/`ORBY_FW_MINOR`) |
-| Vía Electron | `OrbyGUI/package.json` |
-| Vía Tauri | `OrbyGUI/src-tauri/tauri.conf.json` y `OrbyGUI/src-tauri/Cargo.toml`; si los dos ficheros no coinciden, la tarjeta enseña los dos valores separados por «/» y se marca en rojo, en vez de elegir uno y callarse el otro |
+| App en el repo | `OrbyGUI/src-tauri/tauri.conf.json`, `OrbyGUI/src-tauri/Cargo.toml` y `OrbyGUI/package.json`; si los tres ficheros no coinciden, la tarjeta enseña los tres valores separados por «/» y se marca en rojo, en vez de elegir uno y callarse los otros |
 | App instalada | Registro de Windows, `HKCU\...\Uninstall`, la entrada cuyo `DisplayName` contiene «Orby» |
 | Teclado conectado | Handshake por CDC (`ACK\n` → `ORBY_V4:FW=…`), abriendo y cerrando el puerto al momento. Lleva el botón «Flashear el teclado» (ver más abajo) |
 
-La app tiene tres vías y cada una se publica cuando le toca, así que cada una
-lleva su número por separado: la vía Electron es la que produce instalador y
-la única desde la que se publica una release de la app; la de Tauri lleva el
-suyo en dos ficheros que tienen que decir lo mismo (uno acaba en el
-instalador, el otro compila el binario); la de navegador no tiene versión
-propia a propósito, sale del mismo `vite build` que Electron y se sirve como
-ficheros estáticos. Que Electron y Tauri no coincidan entre sí es normal —van
-por separado— y no se avisa de ello.
+La app lleva un solo número, repartido en tres ficheros que tienen que decir
+lo mismo: `tauri.conf.json` (el que acaba en el instalador y en el
+`latest.json` que mira el actualizador), `Cargo.toml` (el que compila el
+binario) y `package.json` (el del frontend). La vía navegador no tiene versión
+propia a propósito: sale del mismo `vite build` y se sirve como ficheros
+estáticos, sin nada que instalar ni que actualizar.
 
 Debajo, un semáforo con los desfases que importan, cada uno con nivel
 ok/aviso/error:
 
-- **Repo vs. instalada** — se compara la vía Electron (la única con
-  instalador) contra lo que hay instalado: ¿hay que publicar o instalar?
-- **`tauri.conf.json` vs. `Cargo.toml`** — si se han desincronizado, es un
-  error: el instalador y el binario compilado dirían versiones distintas.
+- **Repo vs. instalada** — la versión del repositorio contra lo que hay
+  instalado: ¿hay que publicar o instalar?
+- **Los tres ficheros de versión entre sí** — si se han desincronizado, es un
+  error: el instalador, el binario compilado y el frontend dirían versiones
+  distintas.
 - **Teclado vs. `FW_RECOMMENDED`** (de `OrbyGUI/src/compat.js`) — ¿hay que flashear
   este teclado?
 - **`orby_version.h` vs. `FW_RECOMMENDED`** — ¿se olvidó `compat.js` en el último
@@ -147,13 +145,11 @@ que usa el semáforo).
 
 ### Lanzar
 
-Cinco botones, uno a la vez, todos `spawn` con `cwd: OrbyGUI/` y salida en vivo al
+Tres botones, uno a la vez, todos `spawn` con `cwd: OrbyGUI/` y salida en vivo al
 panel de log:
 
 | Botón | Comando |
 |---|---|
-| Electron (dev) | `npm run dev` |
-| Electron | `npm start` |
 | Tauri (dev) | `npm run tauri:dev` |
 | Tauri (build) | `npm run tauri:build` |
 | Web | `npm run preview:web`, con el navegador abierto solo a los 6 s (margen para que vite esté escuchando) |
@@ -161,7 +157,7 @@ panel de log:
 Solo puede haber un proceso lanzado a la vez: lanzar un segundo modo con otro ya
 corriendo falla con un mensaje que dice cuál es. «Parar» mata el árbol de procesos
 entero (`taskkill /pid <pid> /T /F` en Windows), no solo el proceso hijo directo:
-`npm run dev` levanta vite y electron con `concurrently`, y matar solo al padre deja
+`npm run tauri:dev` levanta vite y la cáscara de Rust, y matar solo al padre deja
 los dos corriendo por detrás, con el puerto COM del teclado cogido y sin ventana
 desde la que cerrarlos.
 
@@ -197,10 +193,8 @@ lío que luego no hay forma de leer en el log.
 
 ### Publicar
 
-Bump de versión —por separado para firmware, vía Electron y vía Tauri— y
-release —por separado para firmware y app—. El bump se cubre en su propia
-sección más abajo, que explica por qué hay tres bloques de bump y solo dos de
-release.
+Bump de versión y release, cada uno por separado para firmware y para la app.
+El bump se cubre en su propia sección más abajo.
 
 La release corre como un `Pipeline` con pasos declarados de antemano: una barra de
 progreso (`pasos hechos / pasos totales`) y, dentro de cada paso, el log línea a
@@ -222,7 +216,7 @@ Los cambios sin commitear marcan cuáles cuelgan de `ORBY_V4/` y cuáles no
 UI — lo que no es de este proyecto sale atenuado, con una nota explicándolo.
 
 **Commit y push** — `POST /api/subir-cambios {mensaje, bump}`. Con `bump`
-opcional (`{componente: 'fw'|'electron'|'tauri', tipo, nota}`), la secuencia
+opcional (`{componente: 'fw'|'tauri', tipo, nota}`), la secuencia
 es: bump (si lo hay) → `git add -A` limitado a la carpeta de `ORBY_V4` →
 commit → `git push -u origin <rama actual>`. Dos motivos para que el bump
 vaya en el mismo paso que el commit y no sea otro botón aparte:
@@ -262,18 +256,16 @@ hay algo más corriendo.
   tabla, entre los marcadores `<!-- tabla:inicio -->` y `<!-- tabla:fin -->`; el
   texto de «qué trajo» lo escribe quien pide el bump, en un campo del formulario.
 
-**Vía Electron** — `major`, `minor` o `patch`:
-- `OrbyGUI/package.json` → `version`
-
-**Vía Tauri** — `major`, `minor` o `patch`, los dos ficheros a la vez o ninguno:
+**App** — `major`, `minor` o `patch`, los tres ficheros a la vez o ninguno:
 - `OrbyGUI/src-tauri/tauri.conf.json` → `version`
 - `OrbyGUI/src-tauri/Cargo.toml` → `version` del paquete, y solo dentro del bloque
   `[package]` (más abajo en el mismo fichero hay una `version` por cada dependencia,
   y tocar una de esas rompe el build)
+- `OrbyGUI/package.json` → `version`
 
-Uno de esos dos ficheros acaba en el instalador y el otro compila el binario,
-así que si se separan el bump ya no sabría a cuál hacerle caso: si al empezar
-el bump esos dos ficheros no coinciden entre sí, se niega y pide igualarlos a
+Uno acaba en el instalador, otro compila el binario y el tercero es el del
+frontend, así que si se separan el bump ya no sabría a cuál hacerle caso: si al
+empezar el bump los tres no coinciden entre sí, se niega y pide igualarlos a
 mano en vez de elegir por su cuenta cuál era el bueno. El mismo desfase lo
 avisa el semáforo de Versiones.
 
@@ -281,8 +273,8 @@ avisa el semáforo de Versiones.
 y editarlo a mano es la vía rápida a un lock incoherente con lo que de verdad se
 compiló.
 
-Los ficheros de cada bump (tres para firmware, uno para la vía Electron, dos
-para la vía Tauri) se validan y calculan antes de escribir ninguno: si un
+Los ficheros de cada bump (tres para firmware, tres para la app) se validan y
+calculan antes de escribir ninguno: si un
 patrón no encaja, no se toca nada. Un bump a medias dejaría el repositorio con
 dos números de versión distintos y sin forma fácil de saber cuál manda.
 
@@ -310,10 +302,11 @@ delante.
 5. **Publicar la release** — `POST /repos/jaestefaniah27/scroll_wheel/releases` con
    **`prerelease: true`**. No es un parámetro que se pueda desmarcar en la UI: va
    escrito en el código porque `releases/latest` de GitHub devuelve la más reciente
-   sin mirar la etiqueta, y electron-updater pregunta justo por ahí. Una release de
-   firmware que no sea prerelease deja a todas las copias instaladas de OrbyGUI
-   buscando un `latest.yml` que no existe en esa release y sin poder actualizarse —ya
-   pasó una vez, es el fallo documentado en COMPATIBILIDAD.md.
+   sin mirar la etiqueta, y el actualizador de la app pregunta justo por ahí. Una
+   release de firmware que no sea prerelease deja a todas las copias instaladas de
+   OrbyGUI buscando un `latest.json` que no existe en esa release y sin poder
+   actualizarse —ya pasó una vez, es el fallo documentado en COMPATIBILIDAD.md.
+   El workflow `firmware.yml` publica con `--prerelease` por lo mismo.
 6. **Subir los ficheros** — el `.uf2` y su `.sha256` al `upload_url` de la release, con
    progreso por bytes leídos del fichero (no por bytes confirmados por GitHub, que
    Node no expone sin esperar a que termine la subida entera).
@@ -321,20 +314,27 @@ delante.
    que su tamaño coincide con el local (una subida cortada deja un asset del tamaño
    que sea, no del que debería).
 
-### App (`vX.Y.Z`), 4 pasos
+### App (`vX.Y.Z`), 6 pasos
 
-1. **Comprobaciones** — `GH_TOKEN` presente, árbol de git limpio, rama `main`, y que
-   la etiqueta `vX.Y.Z` no exista ya como release en GitHub (aquí no se mira la
-   etiqueta local: la crea `electron-builder`, no el panel).
-2. **Compilar y publicar** — `npm run release` (`vite build` + `electron-builder
-   --publish always`). `publish.releaseType` ya es `release` en
-   `OrbyGUI/package.json`, así que `electron-builder` crea la release, la publica y
-   sube `latest.yml` y el instalador `.exe` él solo. `GH_TOKEN` viaja por entorno.
-3. **Huella del instalador** — SHA256 del `OrbyGUI-Setup-*.exe` más reciente en
-   `OrbyGUI/release/`, y las notas de versión ya formateadas (con el aviso de
-   SmartScreen) para pegar en GitHub con el botón «Copiar notas».
-4. **Verificar** — relee la release por su etiqueta y aplica el mismo veredicto de
-   «completada» que la tabla de Releases.
+1. **Comprobaciones** — `GH_TOKEN` presente, **`TAURI_SIGNING_PRIVATE_KEY` presente**,
+   árbol de git limpio, rama `main`, y que la etiqueta `vX.Y.Z` no exista ya como
+   release en GitHub. Lo de la clave se comprueba antes de compilar a propósito: sin
+   ella `tauri build` termina bien pero no firma ni genera el `latest.json`, y sale
+   un `.exe` perfecto con una release que ningún actualizador va a ver.
+2. **Compilar el instalador** — `npm run tauri:build`. Se niega si hay un OrbyGUI
+   lanzado desde el panel: Cargo no puede sobrescribir su propio `.exe` y el error
+   (`os error 32`) no dice cuál es el problema.
+3. **Reunir los ficheros** — el `*-setup.exe` más reciente de
+   `src-tauri/target/release/bundle/nsis/`, su `.sig` y el `latest.json`. Si falta
+   alguno de los dos últimos, se corta: los tres van juntos o la release no sirve.
+   Calcula además el SHA256 y las notas ya formateadas (con el aviso de SmartScreen)
+   para el botón «Copiar notas».
+4. **Crear la release** — `POST /repos/.../releases` con `prerelease: false`, al revés
+   que el firmware: esta *es* la que tiene que salir por `releases/latest`.
+5. **Subir los ficheros** — los tres al `upload_url`, con progreso por bytes.
+6. **Verificar** — relee la release por su etiqueta y aplica el mismo veredicto de
+   «completada» que la tabla de Releases, que ahora exige `.exe`, `.exe.sig` y
+   `latest.json`.
 
 ## El ensayo en seco
 
@@ -383,11 +383,11 @@ delante cualquier cambio a medias que hubiera en un subproyecto hermano.
 
 | Ruta | Qué hace |
 |---|---|
-| `GET /api/estado` | versiones (`firmwareRepo`, `appElectron`, `appTauri`, `appTauriCargo`, `fwRecomendado`, `appInstalada`, teclado), proceso lanzado, tarea en curso, lista de herramientas, si hay `GH_TOKEN` |
+| `GET /api/estado` | versiones (`firmwareRepo`, `appTauri`, `appTauriCargo`, `appPkg`, `fwRecomendado`, `appInstalada`, teclado), proceso lanzado, tarea en curso, lista de herramientas, si hay `GH_TOKEN` |
 | `GET /api/eventos` | SSE: `estado`, `log`, `paso`, `progreso`, `fin` |
-| `POST /api/lanzar` | `{modo}` — uno de `electron-dev`, `electron`, `tauri-dev`, `tauri-build`, `web` |
+| `POST /api/lanzar` | `{modo}` — uno de `tauri-dev`, `tauri-build`, `web` |
 | `POST /api/parar` | mata el árbol del proceso lanzado |
-| `POST /api/bump` | `{componente:'fw'\|'electron'\|'tauri', tipo, nota}` → edita ficheros y devuelve `{anterior, nueva, ficheros, diff}` |
+| `POST /api/bump` | `{componente:'fw'\|'tauri', tipo, nota}` → edita ficheros y devuelve `{anterior, nueva, ficheros, diff}` |
 | `POST /api/release` | `{componente:'fw'\|'app', dry}` → arranca el pipeline; responde `202` de inmediato y el progreso va por SSE |
 | `POST /api/flashear` | arranca el pipeline de flasheo del teclado (sin `dry`: no tiene ensayo en seco) |
 | `POST /api/herramienta` | `{clave}` — una de las claves de `HERRAMIENTAS` en `tareas.js` |
@@ -396,10 +396,9 @@ delante cualquier cambio a medias que hubiera en un subproyecto hermano.
 | `GET /api/releases` | últimas 20 releases de GitHub con su veredicto |
 
 `componente` en el bump y en la release **no es el mismo conjunto de
-valores**: el bump distingue las tres vías (`fw`/`electron`/`tauri`) porque
-cada una edita ficheros distintos; la release solo conoce `fw`/`app` porque
-solo hay dos pipelines de publicación (el de la app sigue siendo el de la vía
-Electron, la única que produce un instalador).
+valores**: el bump usa `fw`/`tauri` y la release `fw`/`app`. Nombran lo mismo
+—el firmware y la app— y la discrepancia es histórica, de cuando había dos
+vías de escritorio con número propio.
 
 Los errores de validación (mensaje de commit vacío, herramienta o componente
 que no existe) devuelven **400**, no 500. Un fallo dentro de un pipeline ya
@@ -413,13 +412,11 @@ que el pipeline corriera.
   teclado lo dice como aviso, no como fallo: es el comportamiento esperado de
   Windows (solo un proceso puede tener el puerto abierto a la vez), no un problema
   del panel.
-- **`npm install` está roto de raíz en este repositorio** (`archiver@5.3.2` pide
-  `async@^0.0.1`, que no existe en npm, así que cualquier instalación limpia falla
-  con `ETARGET`). Da igual para el panel: no instala nada, ni tiene dependencias
-  propias que instalar.
-- **OneDrive puede bloquear ficheros durante el build de Electron.** El pipeline no
-  lo detecta ni lo repara: enseña el error de `npm run release` tal cual salga, en el
-  log.
+- **OneDrive puede bloquear ficheros durante el build.** El pipeline no lo detecta
+  ni lo repara: enseña el error de `npm run tauri:build` tal cual salga, en el log.
+- **`tauri build` falla si hay un OrbyGUI corriendo**, con un `os error 32` que no
+  explica nada. El pipeline lo comprueba antes, pero solo sabe de los procesos que
+  ha lanzado él: una app abierta a mano o dejada en la bandeja se le escapa.
 - **Un `git push` que se queda esperando credenciales.** Los comandos de git tienen
   un tope de 120 s; si se cortan por eso, el mensaje lo dice explícitamente y sugiere
   ejecutar el `git push` una vez a mano en una consola, para que Windows guarde las
@@ -427,12 +424,13 @@ que el pipeline corriera.
 
 ## Comprobado a mano
 
-- Las tarjetas de Versiones leen fw 4.5, Electron 0.5.1, Tauri 0.5.1/0.5.1,
-  instalada 0.5.2 y el teclado real en COM7 con la 4.6.
+- Las tarjetas de Versiones leen fw 4.5, app 0.5.1/0.5.1/0.5.1, instalada 0.5.2
+  y el teclado real en COM7 con la 4.6. (Medido antes de retirar Electron: la
+  tarjeta de la app enseñaba entonces dos vías separadas.)
 - `GET /api/git` devuelve rama, adelanto y cambios correctos.
 - La herramienta `git-fetch` corre entera por el pipeline y termina en «hecho».
-- El bump de la vía Tauri toca exactamente `tauri.conf.json` y `Cargo.toml`
-  (y **no** `package.json`), revertido después.
+- El bump de la app toca exactamente `tauri.conf.json`, `Cargo.toml` y
+  `package.json`, revertido después.
 - Los errores de validación devuelven 400.
 - Lo que ya estaba comprobado de antes sigue en pie: los bumps, lanzar/parar,
   el ensayo en seco y la tabla de releases.

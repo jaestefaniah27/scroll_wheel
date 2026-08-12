@@ -64,33 +64,24 @@ function leerFirmware() {
   return { major: majorNum, minor: minorNum, version: `${majorNum}.${minorNum}` };
 }
 
-// La app tiene tres vías (Electron, Tauri y navegador) y cada una se publica
-// cuando le toca, así que llevan la versión por separado. La vía navegador no
-// tiene número propio a propósito: sale del mismo `vite build` que Electron y
-// se sirve como ficheros estáticos, sin nada que instalar ni que actualizar.
-function leerElectron() {
-  const contenido = fs.readFileSync(RUTAS.packageJson, 'utf8');
-  const version = contenido.match(/"version"\s*:\s*"([^"]+)"/);
-  if (!version) {
-    throw new Error(
-      `No se encontró la clave "version" en ${relativa(RUTAS.packageJson)}`
-    );
-  }
-  return { version: version[1] };
-}
-
-// La vía Tauri no está en todas las ramas: es un port en marcha y en main
-// todavía no existe. Sin esta comprobación, el panel abierto en una rama sin
-// src-tauri enseñaría un error rojo en vez de decir simplemente que ahí no hay
-// esa vía.
+// La vía Tauri no está en todas las ramas: hasta que se fusione la migración,
+// main no tiene src-tauri. Sin esta comprobación, el panel abierto en una rama
+// sin esa carpeta enseñaría un error rojo en vez de decir simplemente que ahí
+// no está.
 function hayTauri() {
   return fs.existsSync(RUTAS.tauriConf) && fs.existsSync(RUTAS.cargoToml);
 }
 
-// Tauri lleva el número en dos sitios que tienen que decir lo mismo: el
-// tauri.conf.json (el que acaba en el instalador) y el Cargo.toml (el que
-// compila el binario). Se devuelven los dos para poder avisar si se han
-// separado, en vez de enseñar uno y callarse el otro.
+// La app lleva su número en TRES ficheros que tienen que decir lo mismo:
+// tauri.conf.json (el que acaba en el instalador y en el latest.json que mira el
+// actualizador), Cargo.toml (el que compila el binario) y package.json (el del
+// frontend). Se devuelven los tres para poder avisar si se han separado, en vez
+// de enseñar uno y callarse los otros: con tauri.conf.json y Cargo.toml en
+// desacuerdo, el .exe dice una versión y el binario otra, y eso no se ve hasta
+// tenerlo delante.
+//
+// La vía navegador no tiene número propio a propósito: sale del mismo
+// `vite build` y se sirve como ficheros estáticos, sin nada que actualizar.
 function leerTauri() {
   const conf = fs.readFileSync(RUTAS.tauriConf, 'utf8');
   const enConf = conf.match(/"version"\s*:\s*"([^"]+)"/);
@@ -102,7 +93,12 @@ function leerTauri() {
   if (!enCargo) {
     throw new Error(`No se encontró "version" dentro de [package] en ${relativa(RUTAS.cargoToml)}`);
   }
-  return { version: enConf[1], cargo: enCargo[1] };
+  const pkg = fs.readFileSync(RUTAS.packageJson, 'utf8');
+  const enPkg = pkg.match(/"version"\s*:\s*"([^"]+)"/);
+  if (!enPkg) {
+    throw new Error(`No se encontró la clave "version" en ${relativa(RUTAS.packageJson)}`);
+  }
+  return { version: enConf[1], cargo: enCargo[1], pkg: enPkg[1] };
 }
 
 function leerFwRecomendado() {
@@ -310,31 +306,15 @@ function subirSemver(version, tipo, donde) {
   return `${major}.${minor}.${patch}`;
 }
 
-// Vía Electron: solo package.json. Es el número que usa electron-builder para
-// la etiqueta y el instalador, y desde el que se publica la release de la app.
-function bumpElectron(tipo) {
-  const actual = leerElectron();
-  const nueva = subirSemver(actual.version, tipo, relativa(RUTAS.packageJson));
-
-  const pkgContenido = fs.readFileSync(RUTAS.packageJson, 'utf8');
-  const patronVersionJson = /"version"\s*:\s*"[^"]+"/;
-  if (!patronVersionJson.test(pkgContenido)) {
-    throw new Error(`No se encontró la clave "version" en ${relativa(RUTAS.packageJson)}`);
-  }
-  fs.writeFileSync(RUTAS.packageJson, pkgContenido.replace(patronVersionJson, `"version": "${nueva}"`), 'utf8');
-
-  return { anterior: actual.version, nueva, ficheros: [relativa(RUTAS.packageJson)] };
-}
-
-// Vía Tauri: los dos ficheros a la vez, o ninguno. Si se sube uno solo, el
-// instalador y el binario dicen versiones distintas y nadie se entera hasta
-// tener el .exe delante.
+// Los tres ficheros a la vez, o ninguno. Si se sube uno solo, el instalador y el
+// binario dicen versiones distintas y nadie se entera hasta tener el .exe delante.
 function bumpTauri(tipo) {
   const actual = leerTauri();
-  if (actual.version !== actual.cargo) {
+  if (actual.version !== actual.cargo || actual.version !== actual.pkg) {
     throw new Error(
-      `tauri.conf.json dice ${actual.version} y Cargo.toml dice ${actual.cargo}: ` +
-      'iguálalos a mano antes de subir la versión, o el bump elegiría por ti cuál era la buena.'
+      `tauri.conf.json dice ${actual.version}, Cargo.toml dice ${actual.cargo} y ` +
+      `package.json dice ${actual.pkg}: iguálalos a mano antes de subir la versión, ` +
+      'o el bump elegiría por ti cuál era la buena.'
     );
   }
   const nueva = subirSemver(actual.version, tipo, relativa(RUTAS.tauriConf));
@@ -349,15 +329,22 @@ function bumpTauri(tipo) {
   const cargoContenido = fs.readFileSync(RUTAS.cargoToml, 'utf8');
   const cargoNuevo = sustituirVersionCargoPackage(cargoContenido, nueva);
 
-  // Las dos sustituciones encajan: ahora sí se escribe. Cargo.lock no se toca:
+  const pkgContenido = fs.readFileSync(RUTAS.packageJson, 'utf8');
+  if (!patronVersionJson.test(pkgContenido)) {
+    throw new Error(`No se encontró la clave "version" en ${relativa(RUTAS.packageJson)}`);
+  }
+  const pkgNuevo = pkgContenido.replace(patronVersionJson, `"version": "${nueva}"`);
+
+  // Las tres sustituciones encajan: ahora sí se escribe. Cargo.lock no se toca:
   // cargo lo pone al día solo en el siguiente build.
   fs.writeFileSync(RUTAS.tauriConf, tauriNuevo, 'utf8');
   fs.writeFileSync(RUTAS.cargoToml, cargoNuevo, 'utf8');
+  fs.writeFileSync(RUTAS.packageJson, pkgNuevo, 'utf8');
 
   return {
     anterior: actual.version,
     nueva,
-    ficheros: [relativa(RUTAS.tauriConf), relativa(RUTAS.cargoToml)],
+    ficheros: [relativa(RUTAS.tauriConf), relativa(RUTAS.cargoToml), relativa(RUTAS.packageJson)],
   };
 }
 
@@ -365,12 +352,10 @@ module.exports = {
   RAIZ,
   RUTAS,
   leerFirmware,
-  leerElectron,
   hayTauri,
   leerTauri,
   leerFwRecomendado,
   leerInstalada,
   bumpFirmware,
-  bumpElectron,
   bumpTauri,
 };

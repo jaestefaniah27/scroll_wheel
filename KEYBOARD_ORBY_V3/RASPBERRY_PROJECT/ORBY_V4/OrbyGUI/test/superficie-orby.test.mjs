@@ -1,10 +1,15 @@
 // La superficie `window.orby` es EL contrato entre el renderer y quien haya detrás.
-// Hay tres implementaciones (Electron, Tauri y navegador) y el renderer no distingue:
-// si una se deja un método, la vista que lo llame revienta solo en esa vía, y encima
-// tarde, cuando el usuario pulsa el botón concreto.
+// Hay dos implementaciones (Tauri y navegador) y el renderer no distingue: si una se
+// deja un método, la vista que lo llame revienta solo en esa vía, y encima tarde, cuando
+// el usuario pulsa el botón concreto.
 //
-// Este test las compara entre sí leyendo el código, sin arrancar ninguna: no hay forma
-// de importar el preload de Electron fuera de Electron ni el de Tauri fuera de Tauri.
+// **La referencia es `src/tauri/orby-tauri.js`**, y lo es desde que se retiró Electron
+// (Tarea 13): antes lo era `electron/preload.js`, que era de donde venía el contrato.
+// Al borrarlo hubo que reanclar esto y `tools/test/verifica_plan_tauri.sh`, que leían
+// aquella carpeta como fuente de verdad.
+//
+// Este test las compara leyendo el código, sin arrancar ninguna: no hay forma de importar
+// el puente de Tauri fuera de Tauri.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,54 +51,40 @@ function superficie(codigo) {
   return nombres;
 }
 
-const electron = superficie(lee('electron/preload.js'));
 const tauri = superficie(lee('src/tauri/orby-tauri.js'));
 const web = superficie(lee('src/web/orby-web.js'));
 
-test('la superficie de Electron es la que se espera', () => {
-  // Red de seguridad: si alguien añade un método al preload sin tocar las otras vías,
+test('la superficie de Tauri es la que se espera', () => {
+  // Red de seguridad: si alguien añade un método al puente sin tocar la vía navegador,
   // este número cambia y el test de abajo dice exactamente cuál falta.
-  assert.ok(electron.has('sendCommand'), 'debería tener sendCommand');
-  assert.ok(electron.has('plugins.list'), 'debería tener plugins.list');
-  assert.ok(electron.has('firmware.onState'), 'debería tener firmware.onState');
-  assert.ok(electron.size > 40, `esperaba más de 40 métodos, hay ${electron.size}`);
+  assert.ok(tauri.has('sendCommand'), 'debería tener sendCommand');
+  assert.ok(tauri.has('plugins.list'), 'debería tener plugins.list');
+  assert.ok(tauri.has('firmware.onState'), 'debería tener firmware.onState');
+  assert.ok(tauri.size > 40, `esperaba más de 40 métodos, hay ${tauri.size}`);
 });
 
-test('Tauri implementa toda la superficie de Electron', () => {
-  const faltan = [...electron].filter((m) => !tauri.has(m));
-  assert.deepEqual(faltan, [], `a orby-tauri.js le faltan: ${faltan.join(', ')}`);
-});
-
-test('Tauri no inventa métodos que Electron no tiene', () => {
-  // Un método de más es tan malo como uno de menos: alguna vista acabaría usándolo y
-  // dejaría de funcionar en las otras dos vías.
-  const sobran = [...tauri].filter((m) => !electron.has(m));
-  assert.deepEqual(sobran, [], `orby-tauri.js tiene de más: ${sobran.join(', ')}`);
-});
-
-test('el navegador sigue cubriendo la superficie de Electron', () => {
-  // No es cosa de esta migración, pero si se rompe conviene enterarse aquí y no por un
-  // usuario con la WebGUI abierta.
-  const faltan = [...electron].filter((m) => !web.has(m));
+test('el navegador cubre la superficie de Tauri', () => {
+  // La vía navegador puede *no poder* hacer algo (ver PC_ONLY en platform.js), pero el
+  // método tiene que existir igual y devolver vacío: si falta, la vista revienta al
+  // llamarlo en vez de esconder el botón.
+  const faltan = [...tauri].filter((m) => !web.has(m));
   assert.deepEqual(faltan, [], `a orby-web.js le faltan: ${faltan.join(', ')}`);
 });
 
-test('las tres vías declaran su plataforma', () => {
-  assert.match(lee('electron/preload.js'), /platform:\s*'electron'/);
+test('las dos vías declaran su plataforma', () => {
   assert.match(lee('src/tauri/orby-tauri.js'), /platform:\s*'tauri'/);
   assert.match(lee('src/web/orby-web.js'), /platform:\s*'web'/);
 });
 
-test('entry.js comprueba Tauri antes que Electron', () => {
-  // Si se invirtiera el orden y Tauri montara algún día su propio window.orby, la rama
-  // de Electron se lo tragaría y arrancaría por la vía equivocada en silencio.
+test('entry.js reparte entre las dos vías que quedan', () => {
   // Sin los comentarios: la cabecera del fichero nombra las dos cosas al explicarlo.
   const codigo = lee('src/entry.js')
     .split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
 
-  const posTauri = codigo.indexOf('__TAURI_INTERNALS__');
-  const posOrby = codigo.indexOf('window.orby');
-  assert.ok(posTauri !== -1, 'entry.js debería detectar Tauri');
-  assert.ok(posOrby !== -1, 'entry.js debería detectar Electron');
-  assert.ok(posTauri < posOrby, 'la comprobación de Tauri debe ir antes que la de Electron');
+  assert.ok(codigo.includes('__TAURI_INTERNALS__'), 'entry.js debería detectar Tauri');
+  assert.ok(codigo.includes('tauri-main.js'), 'entry.js debería arrancar la vía Tauri');
+  assert.ok(codigo.includes('web-main.js'), 'entry.js debería arrancar la vía navegador');
+  // Electron se retiró en la Tarea 13: si esta rama vuelve, es que alguien la resucitó
+  // a medias.
+  assert.ok(!codigo.includes('window.orby'), 'ya no debería quedar rama de Electron');
 });

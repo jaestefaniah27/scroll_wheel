@@ -41,7 +41,7 @@ export const FEATURES = {
   hostApp:    { since: '4.5', label: 'tachar en las pantallas las teclas que necesitan la app', flag: 'hostapp' },
 };
 
-// Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y
+// Quien manda el HOST_APP:1 es src-tauri/src/serial.rs, en el proceso principal, y
 // allí no se puede importar este fichero: mira la bandera `hostapp` del
 // handshake a pelo. Es la misma regla de siempre —la bandera manda—, solo que
 // escrita dos veces.

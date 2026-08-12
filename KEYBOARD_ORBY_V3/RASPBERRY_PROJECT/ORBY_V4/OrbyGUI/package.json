@@ -2,9 +2,7 @@
   "name": "orbygui",
   "version": "1.0.0-alpha",
   "description": "Orby V4 Macro Keyboard Companion App",
-  "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"vite\" \"electron . --dev\"",
     "dev:vite": "vite",
     "build": "vite build",
     "tauri": "tauri",
@@ -12,64 +10,14 @@
     "tauri:build": "tauri build",
     "preview": "vite preview",
     "preview:web": "vite build && vite preview --port 5174",
-    "start": "npm run build && electron .",
     "pack:plugins": "node scripts/pack-plugins.js",
-    "dist": "npm run build && electron-builder --win --publish never",
-    "release": "npm run build && electron-builder --win --publish always",
-    "test": "node --test test/",
-    "postinstall": "electron-builder install-app-deps"
-  },
-  "dependencies": {
-    "@nut-tree-fork/nut-js": "^4.2.6",
-    "electron-updater": "^6.8.9",
-    "serialport": "^12.0.0",
-    "uiohook-napi": "^1.5.5"
+    "test": "node --test \"test/**/*.test.mjs\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.1",
-    "concurrently": "^9.2.1",
-    "electron": "^40.0.0",
-    "electron-builder": "^24.13.3",
     "vite": "^7.3.1"
   },
   "engines": {
     "node": ">=20.19.0"
-  },
-  "build": {
-    "appId": "com.orby.gui",
-    "productName": "OrbyGUI",
-    "directories": {
-      "output": "release",
-      "buildResources": "assets"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "assets/**/*",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/orby-icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "OrbyGUI"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "jaestefaniah27",
-      "repo": "scroll_wheel",
-      "releaseType": "release"
-    }
   }
 }

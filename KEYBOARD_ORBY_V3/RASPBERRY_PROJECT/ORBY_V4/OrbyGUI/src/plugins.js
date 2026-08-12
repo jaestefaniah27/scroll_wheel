@@ -1,7 +1,7 @@
 // Copia en el renderer de los complementos instalados.
 //
 // El código de los complementos corre en el proceso principal (ver
-// electron/plugins.js): aquí solo llega su descripción —qué acciones ofrecen y
+// src-tauri/src/plugins.rs): aquí solo llega su descripción —qué acciones ofrecen y
 // qué ajustes piden— para poder pintar los botones del editor de perfiles y las
 // tarjetas de Ajustes. Se guarda en memoria porque el editor la consulta en
 // cada repintado y no puede esperar a una llamada asíncrona por botón.

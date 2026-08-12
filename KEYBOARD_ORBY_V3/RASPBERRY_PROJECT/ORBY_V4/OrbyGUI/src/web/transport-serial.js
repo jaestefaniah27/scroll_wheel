@@ -1,4 +1,4 @@
-// Web Serial: el mismo CDC que abre electron/serial.js, pero desde el navegador.
+// Web Serial: el mismo CDC que abre src-tauri/src/serial.rs, pero desde el navegador.
 //
 // El teclado no necesita nada nuevo. Expone un CDC ACM y habla por líneas de texto,
 // así que aquí basta con abrir el puerto, ponerle las señales y trocear el flujo.
@@ -8,7 +8,7 @@ import { splitLines } from './split-lines.mjs';
 
 // El VID de los ejemplos de TinyUSB, en decimal: Web Serial pide números, no las
 // cadenas hexadecimales que devuelve serialport. Debe seguir a KNOWN_IDS de
-// electron/serial.js. No se filtra por PID a propósito: el firmware lo sube cada vez
+// src-tauri/src/serial.rs. No se filtra por PID a propósito: el firmware lo sube cada vez
 // que cambia la estructura de un informe HID, y filtrarlo dejaría fuera a los
 // teclados con firmware anterior.
 export const ORBY_USB_VID = 0xCafe;
@@ -58,7 +58,7 @@ export function info() {
 
 // --- Identidad -------------------------------------------------------------
 
-// Misma forma que _parseDeviceInfo en electron/serial.js: compat.js y macros-store.js
+// Misma forma que _parseDeviceInfo en src-tauri/src/serial.rs: compat.js y macros-store.js
 // leen estas claves en minúscula, y una identidad con otra forma haría que la app
 // tratara a un teclado 4.3 como si fuera anterior a las páginas y las huellas.
 function parsearIdentidad(linea) {

@@ -425,9 +425,10 @@ function wireDevice() {
   });
 }
 
-// main.js llega tanto por <script type="module"> directo (Electron, si algún día
-// se deja de pasar por entry.js) como por import() dinámico desde entry.js/web-main.js
-// después de montar window.orby en el navegador. En ese segundo camino el documento
+// main.js llega siempre por import() dinámico desde entry.js —tauri-main.js o
+// web-main.js—, después de montar window.orby, y podría llegar además por un
+// <script type="module"> directo si algún día se deja de pasar por entry.js. Por el
+// camino dinámico, que es el de siempre, el documento
 // ya ha disparado DOMContentLoaded para cuando este módulo se evalúa: escuchar el
 // evento sin más deja el arranque colgado para siempre, pantalla de carga incluida.
 function arrancarApp() {

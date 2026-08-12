@@ -117,7 +117,7 @@ export function setAppKind(kind) {
 // --- Pestaña "Texto": una tecla que escribe un texto tal cual --------------
 // Mismo mecanismo que "App" (MACRO_MODIFIER + id, un único paso), aquí de tipo
 // "text". Lo mete el PC por el camino unicode del sistema (ver typeText en
-// electron/macros.js), no el teclado: el firmware solo sabe mandar usages HID,
+// src-tauri/src/macros.rs), no el teclado: el firmware solo sabe mandar usages HID,
 // que dependen de la distribución que tenga puesta el usuario.
 export function currentTextStep() {
   const id = currentMacroId();
@@ -326,7 +326,7 @@ export async function pickAppFocus() {
 }
 
 // Apps instaladas para el buscador de la pestaña "App": se piden una vez al
-// proceso principal (recorre el menú Inicio, ver electron/apps.js) y se
+// proceso principal (recorre el menú Inicio, ver src-tauri/src/apps.rs) y se
 // guardan en memoria; no cambian mientras la app sigue abierta.
 export let installedApps = [];
 export let installedAppsLoading = false;
@@ -573,7 +573,7 @@ export function startPositionCapture(editIndex = null) {
       lastMousePos = p;
       const el = document.getElementById('seq-live-pos');
       if (el) el.textContent = `(${p.x}, ${p.y}) — mueve el ratón y pulsa Esc para fijarla`;
-    } catch { /* sin Electron (dev en navegador suelto): no hay nada que sondear */ }
+    } catch { /* sin backend (la interfaz abierta en un navegador suelto): nada que sondear */ }
   }, 80);
 }
 

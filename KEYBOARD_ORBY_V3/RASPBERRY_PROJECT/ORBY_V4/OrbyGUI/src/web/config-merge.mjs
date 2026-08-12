@@ -1,6 +1,6 @@
 // Los valores por defecto de la configuración local y cómo se fusiona un parche.
 //
-// Es la misma lógica que electron/config.js, repetida porque aquel es CommonJS del
+// Es la misma lógica que src-tauri/src/config.rs, repetida porque aquel es CommonJS del
 // proceso principal y este es ESM que corre en el navegador. Doce líneas duplicadas
 // salen más baratas que un módulo neutro que carguen los dos mundos. Al tocar
 // REPLACE_WHOLE o DEFAULTS aquí, hay que tocarlo también allí.

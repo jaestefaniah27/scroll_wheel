@@ -1,13 +1,13 @@
 // Empaqueta cada complemento de plugins/ en un .zip listo para repartir.
 //
-// Los complementos NO van dentro del instalador de OrbyGUI (mira "files" en
-// package.json: solo entran dist, electron, assets y el propio package.json).
-// Se reparten aparte y se instalan desde Ajustes → Complementos, que es justo
-// lo que los hace opcionales.
+// Los complementos NO van dentro del instalador de OrbyGUI: el bundle solo lleva
+// `dist/` y los iconos (ver `bundle` en src-tauri/tauri.conf.json). Se reparten
+// aparte y se instalan desde Ajustes → Complementos, que es justo lo que los hace
+// opcionales.
 //
-// Comprime con Compress-Archive en vez de con una dependencia de npm: es lo
-// mismo que ya usa el anfitrión para descomprimir (ver electron/plugins.js) y
-// no añade nada al árbol de dependencias por un script que se ejecuta a mano.
+// Comprime con Compress-Archive en vez de con una dependencia de npm: descomprimir
+// ya lo hace el anfitrión por su cuenta (ver src-tauri/src/plugins.rs) y esto no
+// añade nada al árbol de dependencias por un script que se ejecuta a mano.
 
 const fs = require('fs');
 const path = require('path');

@@ -87,7 +87,7 @@ que haya un asset `.uf2`. Todo lo demás son notas para quien las lea.
 ### Por qué las releases de firmware van como prerelease
 
 Porque comparten repositorio con las de la app, y `releases/latest` de GitHub
-devuelve la más reciente **sin mirar la etiqueta**. electron-updater pregunta por
+devuelve la más reciente **sin mirar la etiqueta**. El actualizador de la app pregunta por
 ahí: publicada la `fw-v4.4` dos minutos después de la `v0.5.0`, todas las copias
 instaladas de OrbyGUI se quedaron mostrando
 
@@ -135,7 +135,7 @@ recomendado: `flash.ps1` solo hace falta para probar una compilación local.
 repositorio, se queda con la más alta que no pase de `FW_RECOMMENDED` (nunca
 ofrece un firmware que ella no sabría manejar), la descarga y la instala.
 
-Por dentro, en [`OrbyGUI/electron/firmware.js`](../OrbyGUI/electron/firmware.js):
+Por dentro, en [`OrbyGUI/src-tauri/src/firmware.rs`](../OrbyGUI/src-tauri/src/firmware.rs):
 
 1. Descarga el `.uf2` a un temporal y **comprueba el tamaño**. Una descarga
    cortada sigue siendo un fichero válido para el cargador: copiaría medio

@@ -55,8 +55,9 @@ teclado:
 
 1. `src/usb_descriptors.c` → `ORBY_USB_VID` a `0x2E8Au` y `ORBY_USB_PID` al
    asignado.
-2. `OrbyGUI/electron/serial.js` → añadir la entrada al array `KNOWN_IDS`,
-   **sin quitar** la de `cafe`: los teclados ya flasheados siguen ahí fuera.
+2. `OrbyGUI/src-tauri/src/serial.rs` → aceptar el VID nuevo junto a
+   `VID_TECLADO`, **sin quitar** el `0xCAFE`: los teclados ya flasheados siguen
+   ahí fuera.
 
 Ojo con una consecuencia: Windows cachea el *report descriptor* HID por VID/PID.
 Al cambiar el VID, el host trata el teclado como un aparato nuevo y vuelve a
@@ -102,7 +103,7 @@ Se pide en `signpath.org` (sección Foundation / open source). Borrador:
 >
 > I maintain ORBY V4, an open-source macro keyboard built on the RP2040. The
 > project has two parts: the firmware for the keyboard itself (C++, Pico SDK)
-> and OrbyGUI, an Electron desktop app that configures it.
+> and OrbyGUI, a Tauri desktop app that configures it.
 >
 > I would like to apply for a free code signing certificate for the OrbyGUI
 > Windows installer. Right now it ships unsigned, and every user has to click
@@ -111,9 +112,8 @@ Se pide en `signpath.org` (sección Foundation / open source). Borrador:
 >
 > - Repository: https://github.com/jaestefaniah27/scroll_wheel
 > - What gets signed: the NSIS installer and the app executable, both produced
->   by electron-builder.
-> - Build: GitHub Actions, from public sources, reproducible from a tagged
->   commit.
+>   by the Tauri bundler.
+> - Build: from public sources, reproducible from a tagged commit.
 >
 > One question before I apply formally: I am considering selling optional
 > profile packs for the app in the future, while the app and firmware stay
@@ -131,28 +131,90 @@ app es un reparto habitual. **No está decidido: hay que elegir a mano.**
 
 ### Cuando haya certificado
 
-En `OrbyGUI/package.json`:
+Enganchar la herramienta de firma al empaquetador, en `src-tauri/tauri.conf.json`:
 
-1. Subir `electron-builder` de 24.13.3 a 26 o superior (el soporte de Azure
-   Trusted Signing, `azureSignOptions`, llegó ahí).
-2. Añadir `win.publisherName` con el nombre exacto del certificado.
-   `electron-updater` lo usa para validar la firma del instalador que descarga;
-   sin él, la actualización automática no comprueba nada.
+```jsonc
+"bundle": {
+  "windows": {
+    "signCommand": "signtool sign /fd sha256 /tr http://timestamp.digicert.com %1"
+  }
+}
+```
 
-Hacer las dos cosas el mismo día que se contrate: el trabajo es gratis pero no
-sirve de nada suelto.
+Hacerlo el mismo día que se contrate: el trabajo es gratis pero no sirve de nada
+suelto.
+
+**Ojo: la firma Authenticode y la firma del actualizador son cosas distintas** y
+no se sustituyen. La minisign de la sección 3 protege la *descarga* —que el
+`.exe` que se instala solo es el que publicamos—; la Authenticode protege la
+*reputación* ante SmartScreen y el antivirus. Hoy está la primera y falta la
+segunda, y eso es justo lo que hace que la actualización silenciosa tenga un
+riesgo: se instala sola, sin nadie mirando la pantalla, sobre un binario que
+Windows no reconoce.
 
 ---
 
 ## 3. Publicar una versión
 
-Mientras no haya firma, la huella es lo único que distingue nuestro instalador
-de cualquier otro fichero con el mismo nombre. Hay que publicarla siempre.
+**La app se actualiza sola y en silencio**, así que publicar una versión es
+también actualizar a todo el mundo sin que nadie apriete nada. De ahí que este
+apartado tenga más ceremonia de la que parece merecer.
+
+### Las claves de firma (una sola vez)
 
 ```powershell
 cd OrbyGUI
-npm run dist
-Get-FileHash .\release\OrbyGUI-Setup-*.exe -Algorithm SHA256
+npm run tauri signer generate -- -w "$env:USERPROFILE\.tauri\orby.key"
+```
+
+Salen dos: la **pública**, que va escrita en `src-tauri/tauri.conf.json`
+(`plugins.updater.pubkey`), y la **privada** con su contraseña, que **no entra
+nunca en el repositorio**. Sin la privada no se puede firmar una actualización;
+si se pierde, hay que publicar una clave nueva y todas las copias instaladas
+dejan de poder actualizarse solas hasta que alguien las reinstale a mano.
+
+### Cada versión
+
+Primero el número de versión, en `tauri.conf.json`, `Cargo.toml` y
+`package.json`, que tienen que decir lo mismo. El panel Orby Manager los toca de
+una (`tools/orby-manager`, bump de la app) y avisa si se han separado.
+
+```powershell
+cd OrbyGUI
+$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$env:USERPROFILE\.tauri\orby.key" -Raw
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<la contraseña>"
+npm run tauri:build
+```
+
+Salen tres ficheros en `src-tauri/target/release/bundle/nsis/`:
+
+| Fichero | Para qué |
+|---|---|
+| `OrbyGUI_X.Y.Z_x64-setup.exe` | El instalador |
+| `OrbyGUI_X.Y.Z_x64-setup.exe.sig` | Su firma minisign |
+| `latest.json` | Lo que consulta el actualizador: versión, notas, URL y firma |
+
+**Los tres van a la release, o la release no sirve.** El actualizador pide el
+`latest.json`, ese apunta al `.exe` y comprueba su firma contra el `.sig`.
+
+> **Si el build corre sin `TAURI_SIGNING_PRIVATE_KEY`, no avisa: compila igual,
+> pero sin firma y sin `latest.json`.** Sale un `.exe` perfecto y una release
+> que ningún actualizador va a ver, y nadie se entera hasta que alguien pregunta
+> por qué su OrbyGUI sigue en la versión de hace tres meses. El pipeline del
+> panel Orby Manager comprueba la variable **antes** de compilar justo por eso.
+
+Y la etiqueta, `vX.Y.Z`, **sin `--prerelease`**: la app pregunta por
+`releases/latest`, y una release marcada como prerelease no sale por ahí. Es la
+regla contraria a la del firmware, que sí va siempre como prerelease (ver
+[COMPATIBILIDAD.md](../../docs/COMPATIBILIDAD.md)).
+
+### La huella, en las notas
+
+Mientras no haya firma Authenticode, la huella es lo único que distingue nuestro
+instalador de cualquier otro fichero con el mismo nombre:
+
+```powershell
+Get-FileHash .\src-tauri\target\release\bundle\nsis\OrbyGUI_*-setup.exe -Algorithm SHA256
 ```
 
 En las notas de la versión, pegar la salida y el recordatorio del aviso:

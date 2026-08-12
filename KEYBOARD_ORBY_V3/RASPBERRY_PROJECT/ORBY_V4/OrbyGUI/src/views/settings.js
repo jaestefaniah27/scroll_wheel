@@ -271,7 +271,7 @@ async function initAutostart() {
 //
 // Las acciones de los complementos no pasan por esta vista: las dispara el
 // firmware con MACRO:<id> y las ejecuta el proceso principal (ver
-// electron/plugins.js).
+// src-tauri/src/plugins.rs).
 function initPlugins() {
   const install = document.getElementById('btn-plugin-install');
   const folder = document.getElementById('btn-plugin-folder');

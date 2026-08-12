@@ -1,16 +1,13 @@
 @echo off
-REM Lanzador de OrbyGUI. Doble clic y listo.
-REM Instala dependencias la primera vez, recompila si el codigo cambio y abre la app.
+REM Lanzador de OrbyGUI en modo desarrollo. Doble clic y listo.
+REM Instala dependencias la primera vez y arranca la app de Tauri con recarga.
+REM
+REM Para el uso normal esto no hace falta: la app se instala con el .exe que produce
+REM `npm run tauri:build` y se abre desde el menu de inicio. Esto es para tocar el codigo.
 
 setlocal
 cd /d "%~dp0"
-title OrbyGUI
-
-REM VS Code y otras apps Electron exportan estas variables a sus terminales.
-REM Si se heredan, electron.exe arranca como Node pelado y main.js revienta con
-REM "Cannot read properties of undefined (reading 'handle')". Se limpian siempre.
-set "ELECTRON_RUN_AS_NODE="
-set "NODE_OPTIONS="
+title OrbyGUI (desarrollo)
 
 where node >nul 2>nul
 if errorlevel 1 (
@@ -21,9 +18,18 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM Se comprueba cli.js y no solo la carpeta: una instalacion interrumpida deja
-REM node_modules\electron a medias, la carpeta existe pero la app no arranca.
-if not exist "node_modules\electron\cli.js" (
+where cargo >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] No se encuentra Cargo en el PATH.
+  echo         La cascara de la app es Rust: instala Rust desde https://rustup.rs
+  echo.
+  pause
+  exit /b 1
+)
+
+REM Se comprueba el binario del CLI y no solo la carpeta: una instalacion interrumpida
+REM deja node_modules a medias, la carpeta existe pero nada arranca.
+if not exist "node_modules\.bin\tauri.cmd" (
   echo Instalando dependencias, esto tarda un rato la primera vez...
   call npm install
   if errorlevel 1 (
@@ -36,16 +42,9 @@ if not exist "node_modules\electron\cli.js" (
   )
 )
 
-echo Compilando interfaz...
-call npx vite build
-if errorlevel 1 (
-  echo.
-  echo [ERROR] Fallo la compilacion.
-  pause
-  exit /b 1
-)
-
-echo Abriendo OrbyGUI...
-call npx electron .
+REM `tauri dev` levanta Vite el solo (beforeDevCommand en tauri.conf.json) y compila
+REM la cascara de Rust. La primera vez tarda varios minutos.
+echo Arrancando OrbyGUI...
+call npm run tauri:dev
 
 endlocal

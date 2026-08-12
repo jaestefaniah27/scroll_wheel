@@ -1,0 +1,9 @@
+{
+  "name": "orby-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Panel local de control para ORBY_V4: versiones, lanzar la app y publicar releases.",
+  "dependencies": {
+    "serialport": "^12.0.0"
+  }
+}

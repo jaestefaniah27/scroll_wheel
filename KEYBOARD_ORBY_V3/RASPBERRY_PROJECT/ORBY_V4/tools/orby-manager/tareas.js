@@ -103,9 +103,9 @@ function ejecutar(cmd, args, opciones = {}) {
   });
 }
 
-// Matar solo al padre deja los hijos huérfanos: `npm run dev` arranca vite y
-// electron con concurrently, y sin /T se quedan los dos corriendo con el puerto
-// COM cogido y sin ventana que cerrar.
+// Matar solo al padre deja los hijos huérfanos: `npm run tauri:dev` arranca vite
+// y la cáscara de Rust, y sin /T se quedan los dos corriendo con el puerto COM
+// cogido y sin ventana que cerrar.
 function matarArbol(pid) {
   if (!pid) return;
   if (process.platform !== 'win32') {
@@ -129,8 +129,6 @@ async function leer(cmd, args, opciones = {}) {
 // ---------------------------------------------------------------------------
 
 const MODOS = {
-  'electron-dev': { etiqueta: 'Electron (dev)', args: ['run', 'dev'] },
-  'electron':     { etiqueta: 'Electron', args: ['start'] },
   'tauri-dev':    { etiqueta: 'Tauri (dev)', args: ['run', 'tauri:dev'] },
   'tauri-build':  { etiqueta: 'Tauri (build)', args: ['run', 'tauri:build'] },
   'web':          { etiqueta: 'Web', args: ['run', 'preview:web'], url: 'http://localhost:5174' },
@@ -486,7 +484,7 @@ function pipelineFirmware({ dry, emisor }) {
             // prerelease no es negociable y por eso va aquí escrito y no en un
             // parámetro: releases/latest de GitHub devuelve la más reciente sin
             // mirar la etiqueta, y una release de firmware que no sea prerelease
-            // deja a electron-updater buscando latest.yml donde no lo hay.
+            // deja al actualizador de la app buscando el latest.json donde no lo hay.
             ctx.release = await github.crearRelease({
               tag,
               nombre: `Firmware ${fw.version}`,
@@ -565,13 +563,18 @@ function notasFirmware(version, huella, nombreUf2) {
 
 // --- App --------------------------------------------------------------------
 
-// La release de la app es la de la vía Electron: es la que produce un
-// instalador y la que mira electron-updater. La vía Tauri lleva su propia
-// versión y todavía no se publica; la de navegador no tiene número.
+// La release de la app: compila el instalador con Tauri y lo publica junto a su
+// firma y al `latest.json`. Los TRES ficheros o ninguno — el actualizador pide el
+// latest.json, ese apunta al .exe y comprueba la firma contra el .sig; publicar
+// solo el .exe deja a todo el parque sin actualizar y en silencio.
+//
+// Al revés que el pipeline de firmware, aquí la release se crea a mano (no la crea
+// el empaquetador) porque `tauri build` solo produce ficheros: subirlos es cosa
+// nuestra.
 function pipelineApp({ dry, emisor }) {
-  const app = versiones.leerElectron();
+  const app = versiones.leerTauri();
   const tag = `v${app.version}`;
-  const carpetaRelease = path.join(ORBYGUI, 'release');
+  const carpetaBundle = path.join(ORBYGUI, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
 
   return new Pipeline({
     nombre: `Release de la app ${app.version}`,
@@ -582,17 +585,25 @@ function pipelineApp({ dry, emisor }) {
         titulo: 'Comprobaciones',
         async ejecutar(ctx) {
           ctx.tag = tag;
-          emisor.log(`OrbyGUI/package.json dice ${app.version} → etiqueta ${tag}`, 'info');
+          emisor.log(`La app va por la ${app.version} → etiqueta ${tag}`, 'info');
           const problemas = [];
           await comprobar(problemas, () => {
-            if (!github.hayToken()) throw new Error('Falta GH_TOKEN en el entorno: electron-builder no podría publicar');
+            if (!github.hayToken()) throw new Error('Falta GH_TOKEN en el entorno: no se podría publicar');
+          });
+          // Sin la clave privada, `tauri build` compila igual pero NO firma ni
+          // genera el latest.json, y el fallo es mudo: sale un .exe perfecto y una
+          // release que ningún actualizador va a ver. Se corta antes de compilar.
+          await comprobar(problemas, () => {
+            if (!process.env.TAURI_SIGNING_PRIVATE_KEY) {
+              throw new Error(
+                'Falta TAURI_SIGNING_PRIVATE_KEY en el entorno: el build saldría sin firmar '
+                + 'y sin latest.json, y las copias instaladas no verían la actualización. '
+                + 'Ver OrbyGUI/docs/PUBLICACION.md.'
+              );
+            }
           });
           await comprobar(problemas, () => exigirArbolLimpio(emisor));
           await comprobar(problemas, () => exigirRamaMain(emisor));
-
-          // Aquí no se comprueba la etiqueta local: la crea electron-builder al
-          // publicar, no nosotros. Lo que sí duele es encontrarse la release ya
-          // hecha de un intento anterior a medias.
           await comprobar(problemas, async () => {
             const previa = await github.obtenerReleasePorTag(tag);
             if (previa) {
@@ -607,44 +618,98 @@ function pipelineApp({ dry, emisor }) {
         },
       },
       {
-        titulo: 'Compilar y publicar (electron-builder)',
+        titulo: 'Compilar el instalador (tauri build)',
         async ejecutar(ctx) {
-          await ensayado(ctx, 'npm run release (vite build + electron-builder --publish always)', async () => {
-            // publish.releaseType ya es `release` en package.json: electron-builder
-            // crea la release, la publica y sube latest.yml y el .exe. GH_TOKEN va
-            // por entorno porque es lo único que mira.
-            await ejecutar('npm', ['run', 'release'], {
+          await ensayado(ctx, 'npm run tauri:build', async () => {
+            // `tauri build` falla con un `os error 32` que no dice cuál es el
+            // problema si hay un orby-app.exe corriendo: Cargo no puede
+            // sobrescribir su propio binario. Se dice antes de gastar el build.
+            if (procesoActual) {
+              throw new Error(
+                `Hay ${procesoActual.etiqueta} corriendo y el build no podría sobrescribir el .exe. ` +
+                'Párala antes (botón «Parar» de la sección Lanzar).'
+              );
+            }
+            await ejecutar('npm', ['run', 'tauri:build'], {
               cwd: ORBYGUI,
               shell: true,
               emisor,
-              timeout: 1800000,
-              env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN },
+              timeout: 3600000,
+              env: process.env,
             });
           });
         },
       },
       {
-        titulo: 'Huella del instalador',
+        titulo: 'Reunir los ficheros',
         async ejecutar(ctx) {
-          // Lectura pura: en ensayo se calcula igual si hay un .exe de un build
-          // anterior, y así se ve el bloque de notas que se publicaría.
-          if (!fs.existsSync(carpetaRelease)) {
-            if (ctx.dry) { emisor.log('[ensayo] no hay OrbyGUI/release/: nada que medir', 'info'); return; }
-            throw new Error('No existe OrbyGUI/release/: electron-builder no ha dejado nada');
+          if (!fs.existsSync(carpetaBundle)) {
+            if (ctx.dry) { emisor.log('[ensayo] todavía no hay bundle/nsis: nada que medir', 'info'); return; }
+            throw new Error(`No existe ${path.relative(RAIZ, carpetaBundle)}: tauri build no ha dejado nada`);
           }
-          const exe = fs.readdirSync(carpetaRelease)
-            .filter((n) => /^OrbyGUI-Setup-.*\.exe$/i.test(n))
-            .map((n) => ({ n, m: fs.statSync(path.join(carpetaRelease, n)).mtimeMs }))
+          const nombres = fs.readdirSync(carpetaBundle);
+          const exe = nombres.filter((n) => /-setup\.exe$/i.test(n))
+            .map((n) => ({ n, m: fs.statSync(path.join(carpetaBundle, n)).mtimeMs }))
             .sort((a, b) => b.m - a.m)[0];
           if (!exe) {
-            if (ctx.dry) { emisor.log('[ensayo] no hay ningún OrbyGUI-Setup-*.exe todavía', 'info'); return; }
-            throw new Error('No hay ningún OrbyGUI-Setup-*.exe en OrbyGUI/release/');
+            if (ctx.dry) { emisor.log('[ensayo] no hay ningún *-setup.exe todavía', 'info'); return; }
+            throw new Error(`No hay ningún *-setup.exe en ${path.relative(RAIZ, carpetaBundle)}`);
           }
-          const huella = sha256DeFichero(path.join(carpetaRelease, exe.n));
-          ctx.extra.sha256 = huella;
-          ctx.extra.notas = notasApp(app.version, huella);
-          emisor.log(`${exe.n} · SHA256 ${huella}`, 'info');
+          const sig = `${exe.n}.sig`;
+          if (!fs.existsSync(path.join(carpetaBundle, sig))) {
+            throw new Error(
+              `Está el ${exe.n} pero no su ${sig}: el build ha corrido sin la clave de firma. `
+              + 'Exporta TAURI_SIGNING_PRIVATE_KEY y vuelve a compilar.'
+            );
+          }
+          // El latest.json lo genera el empaquetador con la URL del asset ya
+          // dentro, apuntando a la release que todavía no existe. Funciona porque
+          // la URL de descarga de GitHub es predecible a partir del tag.
+          const json = path.join(carpetaBundle, 'latest.json');
+          if (!fs.existsSync(json)) {
+            throw new Error(
+              'No hay latest.json: falta el bloque `plugins.updater` en tauri.conf.json '
+              + 'o el build no lo ha generado. Sin él la release no sirve para actualizar.'
+            );
+          }
+
+          ctx.ficheros = [path.join(carpetaBundle, exe.n), path.join(carpetaBundle, sig), json];
+          ctx.extra.sha256 = sha256DeFichero(path.join(carpetaBundle, exe.n));
+          ctx.extra.notas = notasApp(app.version, ctx.extra.sha256);
+          emisor.log(`${exe.n} · SHA256 ${ctx.extra.sha256}`, 'info');
           emisor.log('Las notas de la versión ya formateadas están en el botón «Copiar notas».', 'info');
+        },
+      },
+      {
+        titulo: 'Crear la release',
+        async ejecutar(ctx) {
+          await ensayado(ctx, `POST /repos/${github.REPO}/releases con tag ${tag}`, async () => {
+            // prerelease:false, al revés que el firmware: esta ES la que tiene que
+            // salir por releases/latest, que es donde mira el actualizador.
+            ctx.release = await github.crearRelease({
+              tag,
+              nombre: `OrbyGUI ${app.version}`,
+              notas: ctx.extra.notas,
+              prerelease: false,
+            });
+            emisor.log(`Release creada: ${ctx.release.html_url}`, 'info');
+          });
+        },
+      },
+      {
+        titulo: 'Subir los ficheros',
+        async ejecutar(ctx) {
+          const nombres = (ctx.ficheros || []).map((f) => path.basename(f)).join(', ');
+          await ensayado(ctx, `subir ${nombres || 'los tres ficheros'}`, async () => {
+            for (const fichero of ctx.ficheros) {
+              const nombre = path.basename(fichero);
+              emisor.log(`Subiendo ${nombre}…`, 'info');
+              await github.subirAsset(ctx.release.upload_url, fichero, (subidos, total) => {
+                emisor.progreso(total ? subidos / total : 0, `${nombre} · ${Math.round(subidos / 1024)} KB de ${Math.round(total / 1024)} KB`);
+              });
+              emisor.log(`${nombre} subido`, 'info');
+            }
+          });
         },
       },
       {
@@ -878,7 +943,6 @@ function pipelineSubirCambios({ mensaje, bump, emisor }) {
       titulo: `Bump de ${bump.componente}`,
       async ejecutar(ctx) {
         const resultado = bump.componente === 'fw' ? versiones.bumpFirmware(bump.tipo, bump.nota)
-          : bump.componente === 'electron' ? versiones.bumpElectron(bump.tipo)
           : bump.componente === 'tauri' ? versiones.bumpTauri(bump.tipo)
           : (() => { throw new Error(`Componente desconocido: ${bump.componente}`); })();
         ctx.extra.bump = resultado;

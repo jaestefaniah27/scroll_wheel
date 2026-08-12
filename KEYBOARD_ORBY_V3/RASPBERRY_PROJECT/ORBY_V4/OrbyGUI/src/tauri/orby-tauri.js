@@ -1,25 +1,25 @@
-// El equivalente de electron/preload.js para Tauri.
+// El puente entre el renderer y la cáscara de Tauri: **este fichero es EL contrato.**
 //
-// Tercera implementación de la misma superficie: escritorio con Electron, navegador con
-// Web Serial (src/web/orby-web.js) y esto. El renderer entero está escrito contra
-// `window.orby`, así que reimplementar el objeto sale infinitamente más barato que
-// reescribir las vistas, y sobre todo evita tener interfaces que divergen.
+// Una de las dos implementaciones de la misma superficie; la otra es el navegador con Web
+// Serial (src/web/orby-web.js). El renderer entero está escrito contra `window.orby`, así
+// que reimplementar el objeto sale infinitamente más barato que reescribir las vistas, y
+// sobre todo evita tener interfaces que divergen. Antes había una tercera, el preload de
+// Electron, y era ella la referencia; al retirarla (Tarea 13) el papel pasó a este fichero,
+// y es contra él contra el que compara test/superficie-orby.test.mjs.
 //
-// Los nombres de los EVENTOS se conservan con dos puntos (`serial:connected`) porque son
-// los que ya conoce el renderer. Los nombres de los COMANDOS no pueden llevarlos —Rust
-// no admite `:` en un identificador— y van en snake_case. Es la única diferencia con
-// Electron, y queda encerrada en este fichero.
+// Los nombres de los EVENTOS llevan dos puntos (`serial:connected`); los de los COMANDOS
+// no pueden —Rust no admite `:` en un identificador— y van en snake_case. Esa asimetría
+// queda encerrada aquí dentro.
 
 // La API se coge del global que Tauri inyecta (`withGlobalTauri: true` en
 // tauri.conf.json) en vez de del paquete `@tauri-apps/api`. A propósito: un `import` de
-// ese paquete lo tendría que resolver vite **en los tres builds**, incluido el de
+// ese paquete lo tendría que resolver vite **en los dos builds**, incluido el de
 // navegador, así que una dependencia que solo usa una de las vías obligaría a instalarla
-// para compilar cualquiera de las otras. Así el frontend sigue compilando sin nada nuevo.
+// para compilar la otra. Así el frontend sigue compilando sin nada nuevo.
 const { core, event } = window.__TAURI__ ?? {};
 
-// Los `on*` de Electron entregan solo la carga, nunca el objeto de evento, y no tienen
-// forma de darse de baja. Se replica igual: inventar aquí un `off` daría una interfaz
-// que las otras dos vías no tienen.
+// Los `on*` entregan solo la carga, nunca el objeto de evento, y no tienen forma de darse
+// de baja. Inventar aquí un `off` daría una interfaz que la vía navegador no tiene.
 function puente(evento) {
   return (cb) => { event.listen(evento, (e) => cb(e.payload)); };
 }
