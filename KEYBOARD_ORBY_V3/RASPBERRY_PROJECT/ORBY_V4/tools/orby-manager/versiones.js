@@ -291,18 +291,41 @@ function sustituirVersionCargoPackage(contenido, nueva) {
   return contenido.slice(0, inicioPackage) + bloqueNuevo + contenido.slice(finPackage);
 }
 
+// Sube una versión semver, **entendiendo las preversiones**.
+//
+// Antes no las entendía y se negaba: con la app en `1.0.0-alpha`, cualquier bump moría con
+// «no tiene forma x.y.z» y no había forma de publicar nada desde el panel. No era un caso
+// raro — era la versión que había puesta.
+//
+// La regla: a una preversión no se le suma, **se gradúa**. `1.0.0-alpha` con `patch` da
+// `1.0.0`, que es exactamente lo que semver dice que viene después; con `minor` da `1.1.0`
+// y con `major`, `2.0.0`. En los tres casos la etiqueta desaparece: el panel publica
+// releases definitivas (el pipeline de la app las crea con `prerelease: false`), así que
+// una preversión solo puede ser el punto de partida, nunca el destino.
 function subirSemver(version, tipo, donde) {
   if (tipo !== 'major' && tipo !== 'minor' && tipo !== 'patch') {
     throw new Error(`Tipo de bump inválido: "${tipo}" (solo "major", "minor" o "patch")`);
   }
-  const partes = version.split('.').map(Number);
+
+  // Se corta por el primer guion: lo de después es la etiqueta de preversión. Los
+  // metadatos de build (`+algo`) tampoco cuentan para ordenar, así que se tiran igual.
+  const sinMeta = version.split('+')[0].trim();
+  const guion = sinMeta.indexOf('-');
+  const nucleo = guion === -1 ? sinMeta : sinMeta.slice(0, guion);
+  const preversion = guion !== -1;
+
+  const partes = nucleo.split('.').map(Number);
   if (partes.length !== 3 || partes.some((n) => Number.isNaN(n))) {
     throw new Error(`La versión en ${donde} no tiene forma x.y.z: "${version}"`);
   }
+
   let [major, minor, patch] = partes;
   if (tipo === 'major') { major += 1; minor = 0; patch = 0; }
   else if (tipo === 'minor') { minor += 1; patch = 0; }
-  else { patch += 1; }
+  // Graduar una preversión ES el bump: `1.0.0-alpha` ya «vale» 1.0.0 menos un pelo, y
+  // sumarle uno se saltaría la 1.0.0 sin haberla publicado nunca.
+  else if (!preversion) { patch += 1; }
+
   return `${major}.${minor}.${patch}`;
 }
 
@@ -358,4 +381,8 @@ module.exports = {
   leerInstalada,
   bumpFirmware,
   bumpTauri,
+  // Se exporta solo para poder probarlo: es la función que decide el número de todas las
+  // publicaciones, y estuvo negándose a subir una preversión sin que nadie lo notara
+  // porque el error solo salía al pulsar el botón.
+  subirSemver,
 };

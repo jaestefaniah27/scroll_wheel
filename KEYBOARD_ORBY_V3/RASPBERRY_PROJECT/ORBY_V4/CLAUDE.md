@@ -142,10 +142,13 @@ Ejemplo de referencia: `OrbyGUI/plugins/lampdesk`.
 ## Trampas conocidas
 
 - **El firmware no tiene tests automatizados.** `tools/test/*.py` son comprobaciones
-  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano. OrbyGUI sí:
-  `cargo test` en `src-tauri/`, `npm test` en `OrbyGUI/`, y
-  `bash tools/test/verifica_plan_tauri.sh`, que comprueba que lo que dice
-  `OrbyGUI/docs/PLAN_TAURI.md` sigue existiendo en el código.
+  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano. Lo demás sí:
+  `cargo test` en `OrbyGUI/src-tauri/`, `npm test` en `OrbyGUI/` y en
+  `tools/orby-manager/`, y `bash tools/test/verifica_plan_tauri.sh`, que comprueba que
+  lo que dice `OrbyGUI/docs/PLAN_TAURI.md` sigue existiendo en el código.
+- **`cargo test` solo corre entero en Windows.** El crate `orby-app` es Win32 puro y en
+  Linux ni compila; ahí se usa `cargo test -p orby-core` (la lógica sin plataforma) y
+  `cargo check --target x86_64-pc-windows-gnu` para comprobar el resto.
 - **La app instalada no tiene consola.** Cuando no detecta el teclado, el rastro
   está en `%APPDATA%\OrbyGUI\orby.log` (`src-tauri/src/log.rs`). En desarrollo,
   `npm run tauri:dev` saca además la consola del renderer y cada comando enviado.

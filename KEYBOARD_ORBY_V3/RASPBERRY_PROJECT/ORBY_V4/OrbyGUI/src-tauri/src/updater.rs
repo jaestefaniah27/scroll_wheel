@@ -310,8 +310,10 @@ fn consultar(app: &AppHandle) -> Value {
         return set(app, json!({ "status": "error", "error": "La última release no tiene etiqueta" }));
     }
 
-    // compare_fw compara por partes, no como decimal: "0.10.0" es posterior a "0.9.0".
-    let hay_nueva = orby_core::fw::compare_fw(ultima, &actual) == std::cmp::Ordering::Greater;
+    // `compare_app` y NO `compare_fw`: aquel trocea por puntos y no entiende las
+    // preversiones, así que leía `1.0.0-alpha` como igual a `1.0.0` y publicar la v1.0.0
+    // no habría disparado nada. Con todo el proceso en silencio, ese fallo no lo ve nadie.
+    let hay_nueva = orby_core::fw::compare_app(ultima, &actual) == std::cmp::Ordering::Greater;
 
     if hay_nueva {
         set(

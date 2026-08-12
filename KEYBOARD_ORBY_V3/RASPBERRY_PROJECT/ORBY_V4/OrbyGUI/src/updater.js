@@ -14,7 +14,7 @@ const listeners = new Set();
 export const update = {
   // 'dev' | 'idle' | 'checking' | 'downloading' | 'downloaded' | 'available' | 'error'
   status: 'idle',
-  version: '',      // versión instalada
+  version: '',      // versión instalada (puede ser una preversión: «1.0.0-alpha»)
   newVersion: null, // versión que se está bajando o ya está lista
   percent: 0,
   error: null,

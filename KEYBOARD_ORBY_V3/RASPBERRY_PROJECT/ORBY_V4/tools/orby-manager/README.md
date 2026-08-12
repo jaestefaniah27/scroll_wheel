@@ -50,7 +50,8 @@ puerto está ocupado (`EADDRINUSE`) y lo dice por consola.
 
 - **Node** (el mismo que usa OrbyGUI), y un `npm install` en esta carpeta. Todo lo
   demás que usa el panel (`http`, `child_process`, `fs`, `crypto`, `https`) es de
-  Node.
+  Node. `npm test` corre las pruebas de `subirSemver`, que es de donde sale el número
+  de todas las publicaciones.
 - **`GH_TOKEN` en el entorno**, para leer y publicar releases. `github.js` es el único
   módulo que lo lee (`process.env.GH_TOKEN`); no se guarda en disco, no se registra en
   el log y no se enseña en la UI. Sin él, el panel funciona igual salvo para publicar:
@@ -256,7 +257,15 @@ hay algo más corriendo.
   tabla, entre los marcadores `<!-- tabla:inicio -->` y `<!-- tabla:fin -->`; el
   texto de «qué trajo» lo escribe quien pide el bump, en un campo del formulario.
 
-**App** — `major`, `minor` o `patch`, los tres ficheros a la vez o ninguno:
+**App** — `major`, `minor` o `patch`, los tres ficheros a la vez o ninguno.
+**A una preversión no se le suma: se gradúa.** `1.0.0-alpha` con `patch` da `1.0.0`,
+que es lo que semver dice que viene después; con `minor` da `1.1.0` y con `major`,
+`2.0.0`. En los tres casos la etiqueta desaparece, porque el panel solo publica
+releases definitivas. Antes esto ni siquiera se intentaba: el bump se negaba con «no
+tiene forma x.y.z» y **no había forma de publicar nada** estando en `1.0.0-alpha`, que
+era justo la versión que había puesta.
+
+Los ficheros:
 - `OrbyGUI/src-tauri/tauri.conf.json` → `version`
 - `OrbyGUI/src-tauri/Cargo.toml` → `version` del paquete, y solo dentro del bloque
   `[package]` (más abajo en el mismo fichero hay una `version` por cada dependencia,

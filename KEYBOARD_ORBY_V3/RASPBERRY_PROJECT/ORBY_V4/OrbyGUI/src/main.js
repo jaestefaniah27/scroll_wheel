@@ -132,9 +132,7 @@ function renderUpdateBadge() {
 
   const btn = document.getElementById('btn-update');
   const label = btn.querySelector('.update-label');
-  const { status, newVersion, percent } = updater.update;
-
-  const { auto } = updater.update;
+  const { status, newVersion, percent, auto } = updater.update;
   const hayAlgoQueHacer = status === 'downloaded' || status === 'available';
 
   // 'checking' e 'idle' no se enseñan: comprobar sola cada seis horas no es

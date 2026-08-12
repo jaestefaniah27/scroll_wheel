@@ -28,15 +28,16 @@
 // eso las guardas son conservadoras y por eso un fallo **no se reintenta en bucle**: se
 // deja anotado, la tarjeta de Ajustes recupera su botón manual y se vuelve a intentar en la
 // siguiente comprobación, que es al reconectar el teclado.
+//
+// Y por eso **la decisión en sí vive aparte**, en `firmware-decide.mjs`: es pura, no lee el
+// reloj ni el DOM, y así se puede probar entera sin teclado y sin esperar cinco minutos
+// (ver `test/firmware-decide.test.mjs`). Aquí solo queda recoger el estado y disparar.
 
 import * as device from './device.js';
 import * as firmware from './firmware.js';
 import { state } from './store.js';
 import * as platform from './platform.js';
-
-// Cuánto tiene que llevar el teclado sin actividad. Cinco minutos no es un número
-// afinado: es «se ha ido a por café», que es exactamente el momento que se busca.
-const OCIO_MS = 5 * 60 * 1000;
+import { porQueNo } from './firmware-decide.mjs';
 
 // Cada cuánto se mira si ya se dan las condiciones. Un minuto: esto no tiene ninguna
 // prisa, y sondear más a menudo solo gastaría vueltas para llegar a la misma respuesta.
@@ -67,55 +68,54 @@ async function automatico() {
   }
 }
 
-// Lo mismo que `malMomento`, pero para lo que hay que preguntarle al backend. Se separa
-// porque es asíncrono y `malMomento` se usa también para releer justo antes de disparar.
-///
-// La grabadora se pregunta al proceso principal y no a `store.js` porque es él quien
-// tiene los ganchos del ratón y el teclado puestos: es el único que sabe de verdad si hay
-// una captura en marcha o una secuencia reproduciéndose.
-async function malMomentoAsync() {
-  try {
-    const grabadora = await window.orby.recorder.status();
-    if (grabadora?.recording) return 'la grabadora está grabando';
-    if (grabadora?.playingId != null) return 'hay una secuencia reproduciéndose';
-  } catch {
-    return 'no se pudo consultar la grabadora';
-  }
-  if (!(await automatico())) return 'el automático está apagado';
-  return null;
-}
-
-// Por qué **no** se puede flashear ahora, o `null` si se puede.
-///
-// Devuelve el motivo en texto y no un booleano porque acaba en la consola: con algo que
-// pasa solo, «no ha pasado» sin explicación es imposible de diagnosticar.
-function malMomento() {
-  if (!state.connected || !state.deviceInfo) return 'no hay teclado conectado';
-  if (!firmware.fw.available || !firmware.fw.latest) return 'no hay firmware nuevo';
-  if (firmware.busy()) return 'ya hay algo en marcha';
-  if (firmware.fw.latest.version === versionFallida) return 'esta versión ya falló en esta sesión';
-
-  // El reinicio en el cargador se lleva por delante lo que solo esté en RAM, y las
-  // variaciones por aplicación viven exactamente ahí (ver variants.js). Es el mismo motivo
-  // por el que el botón manual de Ajustes obliga a guardar antes.
-  if (state.dirty) return 'hay cambios sin guardar en Flash';
-
-  const quieto = Date.now() - ultimaActividad;
-  if (quieto < OCIO_MS) {
-    return `el teclado se ha usado hace ${Math.round(quieto / 1000)} s`;
-  }
-  return null;
+// Reúne lo que `porQueNo` necesita saber. Todo lo que sale del backend —la grabadora, el
+// interruptor— se pasa ya resuelto: la decisión en sí es síncrona y pura, y por eso se
+// puede probar sin navegador y sin esperar cinco minutos de reloj (ver
+// test/firmware-decide.test.mjs).
+//
+// La grabadora se pregunta al proceso principal y no a `store.js` porque es él quien tiene
+// los ganchos del ratón y el teclado puestos: es el único que sabe de verdad si hay una
+// captura en marcha o una secuencia reproduciéndose.
+function foto({ grabando = false, reproduciendo = false, automatico: auto = true } = {}) {
+  return {
+    conectado: state.connected,
+    deviceInfo: state.deviceInfo,
+    disponible: firmware.fw.available,
+    ultimaVersion: firmware.fw.latest?.version ?? null,
+    ocupado: firmware.busy(),
+    versionFallida,
+    automatico: auto,
+    sinGuardar: state.dirty,
+    grabando,
+    reproduciendo,
+    quietoMs: Date.now() - ultimaActividad,
+  };
 }
 
 async function vuelta() {
   if (enMarcha) return;
 
-  if (malMomento()) return;
-  if (await malMomentoAsync()) return;
+  // Primera pasada con lo que se sabe sin preguntar a nadie: descarta la mayoría de las
+  // vueltas sin gastar dos idas y vueltas al backend.
+  if (porQueNo(foto())) return;
 
-  // Se relee después de los `await`: mientras se consultaba el backend el usuario ha
-  // podido ponerse a teclear, y entonces el momento ya no es bueno.
-  if (malMomento()) return;
+  let grabadora;
+  try {
+    grabadora = await window.orby.recorder.status();
+  } catch {
+    // Sin saber si la grabadora está en marcha no se toca el teclado.
+    return;
+  }
+  const auto = await automatico();
+
+  // Se rehace la foto después de los `await`: mientras se consultaba el backend el usuario
+  // ha podido ponerse a teclear, y entonces el momento ya no es bueno.
+  const motivo = porQueNo(foto({
+    grabando: Boolean(grabadora?.recording),
+    reproduciendo: grabadora?.playingId != null,
+    automatico: auto,
+  }));
+  if (motivo) return;
 
   const version = firmware.fw.latest.version;
   enMarcha = true;
@@ -153,11 +153,4 @@ export function init(notificar) {
 
   tocado();
   temporizador = setInterval(() => { vuelta().catch(() => {}); }, SONDEO_MS);
-}
-
-// Solo para los tests y para el interruptor: si se apaga el automático, no hace falta
-// seguir sondeando.
-export function stop() {
-  if (temporizador) clearInterval(temporizador);
-  temporizador = null;
 }

@@ -147,9 +147,15 @@ chk    "el reinicio marca la salida de verdad" "marcar_saliendo"     src-tauri/s
 # La guarda que impide reiniciar a mitad de un flasheo, que es lo que dejaria el teclado
 # sin firmware.
 chk    "no se reinicia a mitad de un flasheo" "fn mal_momento"       src-tauri/src/updater.rs
-chk    "el firmware se instala solo si hay ocio" "OCIO_MS"           src/firmware-auto.js
+chk    "el firmware se instala solo si hay ocio" "OCIO_MS"           src/firmware-decide.mjs
 # `telemetry` y no `rx`: el latido HOST_APP cada 8 s haria que nunca hubiera ocio.
 chk    "y el ocio se mide con la telemetria"  "'telemetry'"          src/firmware-auto.js
+# La decision de flashear es lo unico que puede dejar un teclado a medias: va aparte y con
+# sus propias pruebas.
+chk    "la decision de flashear esta probada" "porQueNo"             test/firmware-decide.test.mjs
+# `compare_fw` trocea por puntos y leia "1.0.0-alpha" como igual a "1.0.0": con la version
+# instalada siendo una preversion, publicar la v1.0.0 no habria disparado nada.
+chk    "las versiones de la app se comparan con preversiones" "compare_app" src-tauri/src/updater.rs
 chk    "los dos automaticos se pueden apagar" "autoFirmware"         src-tauri/crates/orby-core/src/config.rs
 # Cuatro niveles arriba: el repositorio de git es scroll_wheel entero y este proyecto vive
 # anidado dentro.
