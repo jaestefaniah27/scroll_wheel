@@ -111,15 +111,15 @@ function initAppCard() {
   const install = document.getElementById('btn-install-update');
   if (!check || !install) return;
 
-  // El botón y la explicación se escriben aquí y no en index.html porque lo que hacen
-  // depende del backend: Electron descarga e instala él solo, y Tauri solo avisa y abre
-  // la página de la release para que la instales tú (ver src-tauri/src/updater.rs).
-  if (platform.isTauri()) {
-    document.getElementById('btn-install-update-label').textContent = 'Abrir la descarga';
-    document.getElementById('app-update-desc').textContent =
-      'Se comprueba al arrancar y cada seis horas. Avisa de las versiones nuevas, '
-      + 'pero no las instala: el botón abre la página de la release para descargarla.';
-  }
+  // La explicación se escribe aquí y no en index.html porque hubo un tiempo en que las
+  // dos vías no hacían lo mismo (Tauri solo avisaba y abría la página de la release).
+  // Desde que las actualizaciones van firmadas, las dos descargan e instalan solas y el
+  // texto es el mismo; se deja escrito desde el código para que no vuelva a haber dos
+  // versiones del mismo párrafo que se contradigan.
+  document.getElementById('app-update-desc').textContent =
+    'Se comprueba al arrancar y cada seis horas. Las versiones nuevas se descargan e '
+    + 'instalan solas: la app se cierra un momento y vuelve a abrirse sola. Si hay '
+    + 'cambios sin guardar en la Flash del teclado, espera a que se guarden.';
 
   check.addEventListener('click', async () => {
     if (updater.update.status === 'dev') {

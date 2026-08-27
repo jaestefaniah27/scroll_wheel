@@ -146,13 +146,71 @@ sirve de nada suelto.
 
 ## 3. Publicar una versión
 
-Mientras no haya firma, la huella es lo único que distingue nuestro instalador
-de cualquier otro fichero con el mismo nombre. Hay que publicarla siempre.
+> **La app se actualiza sola, y eso convierte este apartado en obligatorio.**
+> `tauri-plugin-updater` pide el `latest.json` de la última release y rechaza
+> cualquier instalador cuya firma no cuadre con la clave pública que lleva
+> dentro. Una release **sin `latest.json`, o con una firma que no case, deja
+> mudo al actualizador de todo el parque instalado y no avisa de nada**: la app
+> sigue funcionando y nadie se entera de que dejó de actualizarse.
+
+### La clave de firma
+
+El par se generó una vez con `npm run tauri signer generate` y **no se puede
+sustituir sin romper las instalaciones existentes**: cada copia instalada lleva
+la clave pública compilada dentro y rechaza lo que venga firmado con otra.
+
+| Qué | Dónde |
+|---|---|
+| Clave privada | `%USERPROFILE%\.tauri\orby.key` — **fuera del repositorio**, sin contraseña: el fichero *es* el secreto |
+| Clave pública | `src-tauri/tauri.conf.json`, en `plugins.updater.pubkey` |
+
+**Si se pierde la privada, no hay arreglo remoto**: hay que publicar una versión
+con una clave nueva y que cada usuario la instale a mano. Merece una copia de
+seguridad en el gestor de contraseñas o donde vayan las cosas que no se pueden
+volver a generar.
+
+### Los pasos
 
 ```powershell
 cd OrbyGUI
-npm run dist
-Get-FileHash .\release\OrbyGUI-Setup-*.exe -Algorithm SHA256
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\orby.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+npm run tauri:build
+```
+
+Con esas dos variables puestas, el empaquetado deja **dos** ficheros en
+`src-tauri/target/release/bundle/nsis/`: el `OrbyGUI_<version>_x64-setup.exe` y
+su `OrbyGUI_<version>_x64-setup.exe.sig`. Sin ellas el `.sig` no se genera y la
+release nace rota.
+
+Con el `.sig` se compone el `latest.json`, que es lo que el actualizador lee:
+
+```json
+{
+  "version": "1.0.2",
+  "notes": "…",
+  "pub_date": "2026-08-28T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "<el contenido entero del fichero .sig>",
+      "url": "https://github.com/jaestefaniah27/scroll_wheel/releases/download/v1.0.2/OrbyGUI_1.0.2_x64-setup.exe"
+    }
+  }
+}
+```
+
+**Los tres ficheros van como assets de la release**: el `.exe`, el `.sig` y el
+`latest.json`. El endpoint que consulta la app es
+`releases/latest/download/latest.json`, así que la release tiene que ser la
+última **y no ir marcada como prerelease** — que es justo el motivo por el que
+las de firmware sí lo van.
+
+La huella SHA256 sigue publicándose para quien instale a mano: mientras no haya
+certificado, es lo único que distingue nuestro instalador de cualquier otro
+fichero con el mismo nombre.
+
+```powershell
+Get-FileHash .\src-tauri\target\release\bundle\nsis\OrbyGUI_*_x64-setup.exe -Algorithm SHA256
 ```
 
 En las notas de la versión, pegar la salida y el recordatorio del aviso:

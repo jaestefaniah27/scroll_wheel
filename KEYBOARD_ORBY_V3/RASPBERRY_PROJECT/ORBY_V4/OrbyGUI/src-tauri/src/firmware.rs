@@ -28,9 +28,11 @@ use tauri::{AppHandle, Emitter, Manager};
 pub const REPO: &str = "jaestefaniah27/scroll_wheel";
 pub const AGENTE: &str = "OrbyGUI";
 
-/// Cómo se distinguen las releases de firmware de las de la app. `orby_core::releases` usa
-/// esta misma cadena para quedarse con ellas; updater.rs, para descartarlas.
-pub const PREFIJO_FIRMWARE: &str = orby_core::releases::PREFIJO_ETIQUETA;
+// Cómo se distinguen las releases de firmware de las de la app (`fw-v`) vive en
+// `orby_core::releases::PREFIJO_ETIQUETA`, que es quien filtra por él. Aquí hubo una
+// constante que lo repetía para que updater.rs pudiera descartar esas releases; ya no hace
+// falta, porque el actualizador de la app no lee la lista de releases: pide el
+// `latest.json` de la última directamente.
 
 /// Con el comando BOOTSEL son dos o tres segundos; el margen largo es para el camino
 /// manual, en el que hay que desenchufar el cable, buscar el botón y volver a enchufar.

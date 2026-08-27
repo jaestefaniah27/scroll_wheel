@@ -100,6 +100,13 @@ app no se entera: lista `releases?per_page=50`, que las incluye.
 Si alguna vez se publica un firmware **sin** `--prerelease`, se arregla marcándolo
 después; no hace falta rehacer la release.
 
+Desde OrbyGUI 1.0.2 hay un motivo más, y más grave: la app **se actualiza sola**
+(`tauri-plugin-updater`) pidiendo el `latest.json` de `releases/latest`. Una
+release de firmware publicada sin `--prerelease` pasa a ser la última, no lleva
+ese fichero, y todo el parque instalado se queda sin actualizarse **sin decir
+nada**. El actualizador detecta ese caso concreto y lo nombra en el mensaje de
+error, pero solo lo ve quien abra Ajustes.
+
 ### Y por qué las de la app NO van como prerelease, aunque el número diga «alpha»
 
 La `v1.0.0-alpha` se publicó como release normal a propósito. La bandera de

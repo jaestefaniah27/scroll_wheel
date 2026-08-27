@@ -94,8 +94,11 @@ function initChrome() {
 }
 
 // El aviso de actualización vive al lado del estado de conexión y del guardado:
-// es lo que el usuario ya mira, y sin él la versión descargada se quedaría
-// esperando a un cierre real de la app que puede no llegar nunca.
+// es lo que el usuario ya mira.
+//
+// En el camino normal esta insignia no llega a verse: la app descarga e instala sola.
+// Aparece cuando el actualizador se ha retirado porque había cambios sin escribir en la
+// Flash del teclado (ver updater.rs), y sirve para forzar la instalación ahora mismo.
 function initUpdateBadge() {
   // Sin autoactualización no hay insignia que pintar, y updater.init() llamaría a
   // un window.orby.updater que en navegador no hace nada.
@@ -105,12 +108,9 @@ function initUpdateBadge() {
 
   btn.addEventListener('click', async () => {
     const { status, newVersion } = updater.update;
-
-    // 'available' solo abre la página de la release en el navegador (ver
-    // src-tauri/src/updater.rs): no cierra nada, así que no hay nada que preguntar.
-    if (status === 'available') { await updater.install(); return; }
-
     if (status !== 'downloaded') return;
+    // Se pregunta porque este camino es el de los cambios sin guardar: aceptar aquí
+    // es aceptar perder la escritura a Flash que estuviera pendiente.
     if (!confirm(`Se instalará OrbyGUI ${newVersion}.\n\n`
                + 'La app se cerrará y volverá a abrirse sola. ¿Continuar?')) return;
     await updater.install();
@@ -128,24 +128,18 @@ function renderUpdateBadge() {
   const label = btn.querySelector('.update-label');
   const { status, newVersion, percent } = updater.update;
 
-  // Los dos estados en los que hay algo que hacer, según el backend: Electron acaba
-  // con la versión ya descargada, Tauri solo sabe que existe (ver src/updater.js).
-  const hayAlgoQueHacer = status === 'downloaded' || status === 'available';
-
   // 'checking' e 'idle' no se enseñan: comprobar sola cada seis horas no es
   // algo que el usuario tenga que ver, solo el resultado cuando hay versión.
-  btn.classList.toggle('hidden', status !== 'downloading' && !hayAlgoQueHacer);
-  btn.classList.toggle('ready', hayAlgoQueHacer);
+  btn.classList.toggle('hidden', status !== 'downloading' && status !== 'downloaded');
+  btn.classList.toggle('ready', status === 'downloaded');
 
   if (status === 'downloading') {
     label.textContent = `Descargando ${percent}%`;
     btn.title = `Bajando OrbyGUI ${newVersion}`;
   } else if (status === 'downloaded') {
     label.textContent = `Actualizar a ${newVersion}`;
-    btn.title = `OrbyGUI ${newVersion} lista: haz clic para instalarla`;
-  } else if (status === 'available') {
-    label.textContent = `Actualizar a ${newVersion}`;
-    btn.title = `OrbyGUI ${newVersion} publicada: haz clic para abrir su descarga`;
+    btn.title = `OrbyGUI ${newVersion} descargada. Se instalará sola en cuanto se guarden `
+              + 'los cambios en la Flash; haz clic para instalarla ahora';
   }
 }
 

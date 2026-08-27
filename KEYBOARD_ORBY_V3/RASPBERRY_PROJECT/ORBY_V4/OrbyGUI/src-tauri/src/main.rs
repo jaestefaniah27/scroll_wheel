@@ -44,6 +44,10 @@ fn main() {
         // Lo usa el paso de texto de una secuencia: por encima de cinco caracteres se pega
         // en vez de teclearse.
         .plugin(tauri_plugin_clipboard_manager::init())
+        // La app se descarga e instala sus propias versiones nuevas (ver updater.rs). El
+        // plugin solo aporta el motor: quién comprueba y cuándo se instala lo decide
+        // `updater::iniciar`, más abajo.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             // El hilo del puerto arranca solo y no para: es lo que hace que el teclado se
             // detecte al enchufarlo sin que el usuario toque nada.
@@ -119,7 +123,8 @@ fn main() {
             autostart::autostart_set,
             updater::updater_get,
             updater::updater_check,
-            updater::updater_install
+            updater::updater_install,
+            updater::updater_ocupado
         ])
         .build(tauri::generate_context!())
         .expect("no se pudo arrancar la ventana de OrbyGUI")

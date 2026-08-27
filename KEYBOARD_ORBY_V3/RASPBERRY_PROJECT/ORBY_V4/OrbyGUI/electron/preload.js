@@ -78,6 +78,12 @@ contextBridge.exposeInMainWorld('orby', {
     get: () => ipcRenderer.invoke('updater:get'),
     check: () => ipcRenderer.invoke('updater:check'),
     install: () => ipcRenderer.invoke('updater:install'),
+    // Si hay cambios sin escribir en la Flash del teclado. Lo necesita la vía de Tauri,
+    // que instala sola en cuanto termina de descargar y tiene que retirarse mientras el
+    // guardado automático esté a medias. Aquí no hay a quién retirar —Electron solo
+    // instala cuando el usuario pulsa, o al cerrar la app de verdad—, pero la superficie
+    // `window.orby` es la misma en las tres vías a propósito (ver test/superficie-orby).
+    ocupado: () => {},
     onState: (cb) => ipcRenderer.on('updater:state', (_e, st) => cb(st)),
   },
 

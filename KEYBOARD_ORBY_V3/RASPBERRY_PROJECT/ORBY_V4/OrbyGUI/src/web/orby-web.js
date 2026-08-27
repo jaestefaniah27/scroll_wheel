@@ -94,6 +94,7 @@ export async function instalarOrbyWeb() {
       get: async () => ({ status: 'idle' }),
       check: async () => null,
       install: async () => false,
+      ocupado: () => {},
       onState: () => {},
     },
 

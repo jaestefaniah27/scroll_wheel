@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OrbyGUI",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "identifier": "com.orby.gui",
   "build": {
     "frontendDist": "../dist",
@@ -36,6 +36,18 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5QUQxMUNDMTExMjcyRUQKUldUdGNoSVJ6Qkd0K1FrTHVyR3VFdGJqaGxHbFNxN3Y1bHR5b3luV1d5Vnc0WEM5OEtNV3pFeEQK",
+      "endpoints": [
+        "https://github.com/jaestefaniah27/scroll_wheel/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

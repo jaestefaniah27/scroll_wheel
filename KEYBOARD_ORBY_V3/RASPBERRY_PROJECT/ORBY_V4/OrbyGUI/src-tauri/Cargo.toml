@@ -1,6 +1,6 @@
 [package]
 name = "orby-app"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 description = "La cáscara de escritorio de OrbyGUI: ventana, puerto serie y todo lo que solo puede hacer el PC."
 
@@ -24,6 +24,15 @@ tauri-plugin-clipboard-manager = "2"
 # primero (en Windows solo lo puede tener abierto uno). El plugin redirige ese segundo
 # arranque a la ventana de la instancia que ya vive.
 tauri-plugin-single-instance = "2"
+# La app se actualiza sola: descarga el instalador nuevo y lo lanza sin que nadie pulse
+# nada. Exige que cada release vaya firmada con la clave minisign del proyecto (ver
+# docs/PUBLICACION.md): sin firma válida el plugin rechaza la actualización, que es
+# justamente lo que impide que un tercero sirva un .exe cualquiera desde el endpoint.
+tauri-plugin-updater = "2"
+# Solo por el temporizador del repaso de versiones (updater.rs). El actualizador es async
+# y ahí no vale `std::thread::sleep`: bloquearía un hilo del reactor que Tauri comparte con
+# todo lo demás. Tokio ya viene en el árbol de Tauri, así que no añade descarga.
+tokio = { version = "1", default-features = false, features = ["time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serialport = "4"
