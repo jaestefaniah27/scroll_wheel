@@ -61,6 +61,13 @@ pub fn mostrar(app: &AppHandle) {
     if ventana.is_minimized().unwrap_or(false) {
         let _ = ventana.unminimize();
     }
+    // La versión de Electron abría siempre maximizada; el port a Tauri se dejó el
+    // 1280x820 de `tauri.conf.json`. Se maximiza aquí y no con `"maximized": true`
+    // en la config porque la ventana nace `visible: false` (y además se destruye y
+    // se reconstruye al esconderla a la bandeja): en ese camino la bandera de la
+    // config no se aplica de forma fiable, y hacerlo antes de `show()` evita el
+    // parpadeo de verla pequeña un instante.
+    let _ = ventana.maximize();
     let _ = ventana.show();
     let _ = ventana.set_focus();
 }

@@ -1,6 +1,6 @@
 [package]
 name = "orby-app"
-version = "1.0.0-alpha"
+version = "1.0.1"
 edition = "2021"
 description = "La cáscara de escritorio de OrbyGUI: ventana, puerto serie y todo lo que solo puede hacer el PC."
 
