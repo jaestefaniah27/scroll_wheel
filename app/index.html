@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Sin recursos remotos: la app tiene que arrancar igual sin conexión.
+       Tipografía del sistema e iconos SVG en línea (src/icons.js).
+       `connect-src` deja pasar el IPC de Tauri, que es por donde va todo lo que en
+       Electron iba por preload. `script-src` NO se relaja: es lo que impide que un
+       complemento o una respuesta de la red inyecten código en la interfaz. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost;" />
+  <title>OrbyGUI - Panel de control Orby V4</title>
+
+  <!-- Pantalla de carga.
+       Va EN LÍNEA y no en src/styles/index.css a propósito: esa hoja la importa
+       el módulo de JavaScript, así que llega después del primer pintado y hasta
+       entonces se veía el esqueleto sin estilo (peor todavía en desarrollo, con
+       Vite sirviendo los módulos de uno en uno). Esto lo pinta el navegador con
+       el propio HTML, tapa el arranque entero y se quita cuando la interfaz ya
+       está montada y el teclado ha tenido su oportunidad de contestar
+       (ver src/splash.js). -->
+  <style>
+    html, body { background: #0a0a0f; }
+    #app-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: radial-gradient(circle at 50% 40%, #16162a 0%, #0a0a0f 70%);
+      font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+      color: #f8fafc;
+      opacity: 1;
+      transition: opacity .28s ease;
+    }
+    #app-splash.gone { opacity: 0; pointer-events: none; }
+    .splash-logo {
+      width: 78px;
+      height: 78px;
+      border-radius: 22px;
+      background: linear-gradient(135deg, #8b5cf6, #6366f1);
+      box-shadow: 0 0 42px rgba(139, 92, 246, .45);
+      animation: splash-pulse 1.8s ease-in-out infinite;
+    }
+    .splash-name { font-size: 20px; font-weight: 600; letter-spacing: 1px; }
+    .splash-msg {
+      font-size: 13px;
+      color: #94a3b8;
+      min-height: 18px;
+      /* El texto cambia varias veces durante el arranque (copia del PC,
+         teclado, perfiles): sin ancho fijo el bloque saltaría a cada cambio. */
+      text-align: center;
+    }
+    .splash-bar {
+      width: 168px;
+      height: 3px;
+      border-radius: 2px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, .08);
+    }
+    .splash-bar::after {
+      content: '';
+      display: block;
+      width: 40%;
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #8b5cf6, #6366f1);
+      animation: splash-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes splash-pulse {
+      0%, 100% { transform: scale(1);    box-shadow: 0 0 42px rgba(139, 92, 246, .45); }
+      50%      { transform: scale(1.06); box-shadow: 0 0 60px rgba(139, 92, 246, .65); }
+    }
+    @keyframes splash-slide {
+      0%   { transform: translateX(-110%); }
+      100% { transform: translateX(360%); }
+    }
+    /* Sin animaciones si el sistema las tiene desactivadas. */
+    @media (prefers-reduced-motion: reduce) {
+      .splash-logo, .splash-bar::after { animation: none; }
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-CXRZnhuD.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/preload-helper-PPVm8Dsz.js">
+</head>
+<body>
+  <!-- Tapa el arranque entero: la hoja de estilos llega con el módulo de
+       JavaScript y hasta entonces lo de debajo es HTML sin estilar. Lo quita
+       src/splash.js cuando la interfaz está montada. -->
+  <div id="app-splash">
+    <div class="splash-logo"></div>
+    <div class="splash-name">OrbyGUI</div>
+    <div class="splash-bar"></div>
+    <div class="splash-msg" id="splash-msg">Iniciando…</div>
+  </div>
+
+  <div class="titlebar">
+    <div class="titlebar-drag-region"></div>
+    <div class="titlebar-left">
+      <div class="app-logo"></div>
+      <span class="app-title">OrbyGUI</span>
+    </div>
+    <div class="titlebar-center">
+      <div id="connection-status-badge" class="status-badge disconnected">
+        <span class="status-dot"></span>
+        <span class="status-text">Desconectado</span>
+      </div>
+      <button class="save-flash-btn" id="btn-save-flash" title="Escribe la configuración actual en la memoria no volátil">
+        <span data-icon="save" data-icon-size="15"></span>
+        <span class="save-label">Guardado</span>
+      </button>
+      <!-- Solo aparece cuando hay una versión nueva: la app vive en la bandeja
+           y puede pasar semanas sin cerrarse, así que la actualización tiene
+           que poder instalarse desde aquí (ver src/updater.js). -->
+      <button class="update-badge hidden" id="btn-update">
+        <span data-icon="download" data-icon-size="14"></span>
+        <span class="update-label">Actualizar</span>
+      </button>
+    </div>
+    <div class="titlebar-controls">
+      <button class="window-btn" id="btn-minimize" data-icon="minus"></button>
+      <button class="window-btn" id="btn-maximize" data-icon="square"></button>
+      <button class="window-btn close" id="btn-close" data-icon="close"></button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- La barra lateral es el título de cada vista: plegada enseña solo los
+         iconos y al pasar el ratón se despliega por encima del contenido (sin
+         desplazarlo) para leer el nombre. Así ninguna vista gasta alto en una
+         cabecera con su propio título.
+         El icono va en un `<span>` aparte porque hydrateIcons() sustituye el
+         innerHTML del elemento con data-icon, y se llevaría la etiqueta por
+         delante si estuvieran en el mismo nodo.
+         Sin `title=`: el globo del sistema taparía la etiqueta que se acaba de
+         desplegar, y esta ya dice lo mismo. -->
+    <nav class="sidebar">
+      <div class="sidebar-rail">
+        <button class="nav-item active" data-target="view-dashboard">
+          <span class="nav-icon" data-icon="dashboard" data-icon-size="22"></span>
+          <span class="nav-label">Dashboard</span>
+        </button>
+        <button class="nav-item" data-target="view-profiles">
+          <span class="nav-icon" data-icon="profiles" data-icon-size="22"></span>
+          <span class="nav-label">Perfiles y macros</span>
+        </button>
+        <!-- El editor de iconos no tiene entrada propia: se abre siempre desde la
+             tecla que se esté configurando en Perfiles, y edita solo ese icono. -->
+        <button class="nav-item" data-target="view-auto">
+          <span class="nav-icon" data-icon="bolt" data-icon-size="22"></span>
+          <span class="nav-label">Cambio automático</span>
+        </button>
+        <button class="nav-item" data-target="view-settings">
+          <span class="nav-icon" data-icon="settings" data-icon-size="22"></span>
+          <span class="nav-label">Ajustes</span>
+        </button>
+        <div class="sidebar-spacer"></div>
+        <button class="nav-item" data-target="view-console">
+          <span class="nav-icon" data-icon="console" data-icon-size="22"></span>
+          <span class="nav-label">Consola serie</span>
+        </button>
+      </div>
+    </nav>
+
+    <main class="content-area">
+
+      <!-- Dashboard -->
+      <section id="view-dashboard" class="view active">
+        <div class="dashboard-grid">
+          <div class="hardware-preview-card glass-panel">
+            <h2>Dispositivo</h2>
+            <div id="keyboard-visualizer"></div>
+          </div>
+          <div class="status-panel glass-panel">
+            <h2>Estado actual</h2>
+            <div class="status-items">
+              <div class="status-item">
+                <span class="label">Perfil activo</span>
+                <span class="value highlight" id="lbl-active-profile">--</span>
+              </div>
+              <!-- Solo aparece con un firmware que tenga páginas: con uno
+                   anterior al 4.0 no hay más que una y no dice nada. -->
+              <div class="status-item" id="row-active-page" hidden>
+                <span class="label">Página</span>
+                <span class="value" id="lbl-active-page">--</span>
+              </div>
+              <div class="status-item">
+                <span class="label">Modo</span>
+                <span class="value" id="lbl-active-mode">NORMAL</span>
+              </div>
+              <div class="status-item">
+                <span class="label">Capa SUPER</span>
+                <span class="value" id="lbl-super-state">Inactiva</span>
+              </div>
+              <div class="status-item">
+                <span class="label">Scroll</span>
+                <span class="value" id="lbl-scroll-mode">--</span>
+              </div>
+            </div>
+          </div>
+          <div class="telemetry-panel glass-panel">
+            <h2>Último evento</h2>
+            <div class="event-feed" id="live-event-feed">
+              <div class="empty-state">Esperando actividad…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Perfiles (renderizado por src/views/profiles.js) -->
+      <section id="view-profiles" class="view">
+        <div id="profiles-body"></div>
+      </section>
+
+      <!-- Iconos OLED (renderizado por src/views/oled.js) -->
+      <section id="view-oled" class="view"></section>
+
+      <!-- Cambio automático (renderizado por src/views/auto.js) -->
+      <section id="view-auto" class="view"></section>
+
+      <!-- Ajustes -->
+      <section id="view-settings" class="view">
+        <div class="settings-grid">
+          <div class="settings-card glass-panel">
+            <div class="card-header">
+              <span data-icon="moon" data-icon-size="22"></span>
+              <h2>Reposo automático</h2>
+            </div>
+            <div class="setting-body">
+              <div class="timeout-selector" id="timeout-selector">
+                <button class="opt-btn" data-val="1">1 MIN</button>
+                <button class="opt-btn active" data-val="5">5 MIN</button>
+                <button class="opt-btn" data-val="10">10 MIN</button>
+                <button class="opt-btn" data-val="0">OFF</button>
+              </div>
+              <p class="setting-desc">Inactividad antes de apagar las pantallas para proteger los diodos.</p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel" id="settings-autostart">
+            <div class="card-header">
+              <span data-icon="plug" data-icon-size="22"></span>
+              <h2>Autoarranque</h2>
+            </div>
+            <div class="setting-body">
+              <div class="row-inline">
+                <button class="switch" id="btn-autostart" data-act="toggle" title="Activar o desactivar">
+                  <span class="switch-knob"></span>
+                </button>
+                <span class="switch-label">Abrir OrbyGUI al iniciar sesión en Windows</span>
+              </div>
+              <p class="setting-desc">
+                Arranca minimizado en la bandeja del sistema, listo para ejecutar secuencias sin
+                tener que abrirlo a mano.
+              </p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel" id="settings-plugins">
+            <div class="card-header">
+              <span data-icon="plug" data-icon-size="22"></span>
+              <h2>Complementos</h2>
+            </div>
+            <div class="setting-body">
+              <p class="setting-desc">
+                Amplían el teclado para que pueda controlar cosas que OrbyGUI no conoce de serie:
+                una lámpara de la red, un programa concreto, lo que haga falta. Sus acciones
+                aparecen luego en la pestaña <em>Multimedia</em> de una tecla y en el tipo de acción
+                de un mando.
+              </p>
+              <div id="plugin-list"></div>
+              <div class="row-inline">
+                <button class="primary-btn" id="btn-plugin-install">
+                  <span data-icon="download" data-icon-size="16"></span> Instalar complemento
+                </button>
+                <button class="secondary-btn" id="btn-plugin-folder">
+                  <span data-icon="upload" data-icon-size="16"></span> Abrir carpeta
+                </button>
+              </div>
+              <p class="setting-desc">
+                Un complemento se ejecuta dentro de OrbyGUI con tus mismos permisos: puede leer tus
+                archivos, salir a internet y abrir programas. Instala solo los que vengan de un
+                origen que conozcas. Para escribir uno, mira <code>docs/PLUGINS.md</code>.
+              </p>
+            </div>
+          </div>
+
+          <!-- Una tarjeta por complemento con ajustes propios (la pinta
+               src/views/settings.js). display:contents las deja caer en la
+               misma rejilla que las demás. -->
+          <div id="plugin-settings-cards" class="settings-card-host"></div>
+
+          <div class="settings-card glass-panel">
+            <div class="card-header">
+              <span data-icon="save" data-icon-size="22"></span>
+              <h2>Copia de seguridad</h2>
+            </div>
+            <div class="setting-body">
+              <p class="setting-desc">
+                Guarda perfiles, atajos, mandos giratorios e <strong>iconos OLED</strong> en un
+                archivo del PC. Es el único respaldo que sobrevive a un cambio de formato en la
+                memoria del teclado, así que conviene hacerlo antes de flashear.
+              </p>
+              <div class="row-inline">
+                <button class="primary-btn" id="btn-backup-save">
+                  <span data-icon="download" data-icon-size="16"></span> Guardar copia
+                </button>
+                <button class="secondary-btn" id="btn-backup-load">
+                  <span data-icon="upload" data-icon-size="16"></span> Restaurar
+                </button>
+              </div>
+              <p class="setting-desc" id="backup-status"></p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel" id="settings-app">
+            <div class="card-header">
+              <span data-icon="info" data-icon-size="22"></span>
+              <h2>Aplicación</h2>
+            </div>
+            <div class="setting-body">
+              <ul class="info-list">
+                <li><span class="lbl">Versión instalada</span><span class="val" id="app-version">—</span></li>
+                <li><span class="lbl">Actualizaciones</span><span class="val" id="app-update-status">—</span></li>
+              </ul>
+              <div class="row-inline mt-4">
+                <button class="secondary-btn" id="btn-check-update">
+                  <span data-icon="refresh" data-icon-size="16"></span> Buscar actualizaciones
+                </button>
+                <button class="primary-btn hidden" id="btn-install-update">
+                  <span data-icon="download" data-icon-size="16"></span>
+                  <span id="btn-install-update-label">Instalar y reiniciar</span>
+                </button>
+              </div>
+              <!-- El texto de este botón y el de abajo los pone initAppCard: lo que pasa al
+                   pulsarlo depende de dónde corra la app (ver src/views/settings.js). -->
+              <p class="setting-desc" id="app-update-desc">
+                Se comprueba al arrancar y cada seis horas. La descarga es automática; instalarla
+                cierra OrbyGUI un momento.
+              </p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel device-info">
+            <div class="card-header">
+              <span data-icon="info" data-icon-size="22"></span>
+              <h2>Información del dispositivo</h2>
+            </div>
+            <div class="setting-body">
+              <ul class="info-list" id="device-info-list">
+                <li><span class="lbl">Estado</span><span class="val">Desconectado</span></li>
+              </ul>
+              <div class="row-inline mt-4">
+                <button class="secondary-btn" id="btn-reconnect"><span data-icon="plug" data-icon-size="16"></span> Reconectar</button>
+                <button class="secondary-btn" id="btn-resync"><span data-icon="refresh" data-icon-size="16"></span> Releer config</button>
+              </div>
+              <button class="secondary-btn danger full mt-4" id="btn-factory-reset">
+                <span data-icon="reset" data-icon-size="16"></span> Restaurar valores de fábrica
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel" id="settings-firmware">
+            <div class="card-header">
+              <span data-icon="download" data-icon-size="22"></span>
+              <h2>Firmware del teclado</h2>
+            </div>
+            <div class="setting-body">
+              <ul class="info-list">
+                <li><span class="lbl">Versión en el teclado</span><span class="val" id="fw-current">—</span></li>
+                <li><span class="lbl">Última compatible</span><span class="val" id="fw-latest">—</span></li>
+                <li><span class="lbl">Estado</span><span class="val" id="fw-status">—</span></li>
+              </ul>
+              <div class="row-inline mt-4">
+                <button class="secondary-btn" id="btn-fw-check">
+                  <span data-icon="refresh" data-icon-size="16"></span> Buscar firmware
+                </button>
+                <button class="primary-btn hidden" id="btn-fw-update">
+                  <span data-icon="download" data-icon-size="16"></span> <span id="fw-update-label">Actualizar teclado</span>
+                </button>
+                <button class="secondary-btn danger hidden" id="btn-fw-cancel">Cancelar</button>
+              </div>
+              <p class="setting-desc" id="fw-desc">
+                Se descarga de las publicaciones del proyecto. Durante la copia el teclado
+                aparece como una unidad USB y deja de funcionar unos segundos: es normal.
+              </p>
+            </div>
+          </div>
+
+          <div class="settings-card glass-panel" id="settings-wheel-calib">
+            <div class="card-header">
+              <span data-icon="wheel" data-icon-size="22"></span>
+              <h2>Calibración de la rueda</h2>
+            </div>
+            <div class="setting-body" id="settings-wheel-calib-body"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Consola -->
+      <section id="view-console" class="view">
+        <div class="console-wrapper glass-panel">
+          <div class="console-toolbar">
+            <input type="text" id="console-filter" class="text-input compact" placeholder="Filtrar (ej. WHEEL)" spellcheck="false">
+            <button class="tool-btn" id="btn-pause-console" title="Pausar" data-icon="minus" data-icon-size="16"></button>
+            <button class="tool-btn danger" id="btn-clear-console" title="Limpiar" data-icon="trash" data-icon-size="16"></button>
+          </div>
+          <div class="console-output" id="console-output"></div>
+          <div class="console-input-area">
+            <span class="prompt">&gt;</span>
+            <input type="text" id="console-input" placeholder="Comando manual (↑ historial) — ej. SET_SCROLL:60" spellcheck="false" autocomplete="off">
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Sin el Orby delante la app enseña la copia local del PC, pero no deja
+       tocarla: si se pudiera editar sin él, al reconectar habría dos versiones
+       distintas de la misma configuración y alguien tendría que perder sus
+       cambios. Ver src/mirror.js.
+       Va fijo abajo a la izquierda para no pelearse con los avisos, que salen
+       por la derecha, ni robarle alto a la vista. -->
+  <div class="readonly-banner hidden" id="readonly-banner">
+    <span data-icon="lock" data-icon-size="15"></span>
+    <span>Solo lectura: conecta el Orby por USB para editar la configuración</span>
+  </div>
+
+  <!-- Pantalla de conexión de la versión de navegador. Vive aquí y no en un
+       fichero aparte porque el index.html es el mismo para las dos plataformas;
+       en Electron nadie la desoculta nunca. -->
+  <div id="web-gate" class="web-gate hidden"></div>
+
+</body>
+</html>

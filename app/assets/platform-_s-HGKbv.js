@@ -1,0 +1,1 @@
+let t="electron";function o(e){t=e}function r(){return t==="web"}const n=new Set(["openApp","text","power","recorder","plugins","autoProfile","autostart","appUpdate","firmwareUpdate","windowChrome","pcSequences"]);function a(e){return!r()||!n.has(e)}export{a as c,o as s};
