@@ -66,7 +66,7 @@ export const OLED_FRAME_BYTES = 360;
 // en los encoders baja el giro antihorario, y en la rueda el "hacia abajo"
 // (WHEEL_CW, ver WHEEL_GROUP), que es el sentido en el que se baja cualquier
 // otra cosa. Si el encoder está montado del revés, el botón "Invertir giro" del
-// inspector le da la vuelta al par entero (ver invertirGiroPlugin en macro-tabs.js).
+// inspector le da la vuelta al par entero (ver invertirGiroPar en macro-tabs.js).
 export const ROTARY_DOWN_SLOTS = new Set([
   ROTARY_SLOTS.ENC1_CCW, ROTARY_SLOTS.ENC2_CCW, ROTARY_SLOTS.WHEEL_CW,
 ]);
