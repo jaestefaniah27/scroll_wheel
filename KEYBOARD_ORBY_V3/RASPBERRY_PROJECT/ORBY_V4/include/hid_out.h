@@ -62,6 +62,14 @@ namespace HidOut
     static inline uint8_t q_next(uint8_t i) { return (uint8_t)((i + 1) % HID_QUEUE); }
     static inline bool q_empty() { return q_head == q_tail; }
 
+    // Huecos libres en la cola. `push` la deja llena en HID_QUEUE-1 (nunca al
+    // tope): un hueco se guarda siempre vacío para distinguir "llena" de
+    // "vacía" sin un contador aparte, y por eso se resta aquí también.
+    static inline uint8_t room() {
+        uint8_t used = (uint8_t)((q_head - q_tail + HID_QUEUE) % HID_QUEUE);
+        return (uint8_t)(HID_QUEUE - 1 - used);
+    }
+
     // Recompone el informe a partir de los huecos ocupados. Recalcular en vez de ir
     // sumando y restando es lo que hace que soltar una tecla no arrastre a las
     // demás, y que dos teclas con el mismo modificador no se pisen.

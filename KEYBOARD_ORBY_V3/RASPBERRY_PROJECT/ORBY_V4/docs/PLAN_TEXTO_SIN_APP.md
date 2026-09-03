@@ -175,23 +175,52 @@ inventa otro.
 
 ### Fase 1 — Firmware (lo que hace que funcione)
 
-- [ ] **1. Región de textos en Flash.** `FLASH_TEXTS_OFFSET`, cabecera con magia,
-      versión y distribución, `load_texts()` / `save_texts()` por sector, búfer de
-      preparación de 512 bytes. Los `static_assert` de siempre para que no se pise nada.
-      *Verificación:* `tools/test/` ya tiene comprobaciones del mapa de Flash; añadir
-      la región nueva ahí.
-- [ ] **2. Tablas de distribución.** `include/layout_es.h` e `include/layout_us.h`, más
-      un `layout_lookup(cp)` que devuelva `{mod, usage, muerta}` o "no mapeable".
-- [ ] **3. Reproductor de texto.** `text_player` con contrapresión real contra la cola
-      de `HidOut` (añadir `HidOut::room()`), retardo entre caracteres, teclas muertas,
-      Intro y Tab, aborto y tope de duración.
-- [ ] **4. Comandos nuevos.** `SET_TEXT`, `TEXT_END`, `GET_TEXT`, `TEXT_CLEAR`,
+- [x] **1. Región de textos en Flash.** `FLASH_TEXTS_HEADER_OFFSET`/`FLASH_TEXTS_DATA_OFFSET`,
+      cabecera con magia y distribución en su propio sector, `load_texts()` / `save_texts()`
+      con búfer de preparación de un sector entero (8 textos, patrón `oled_staging`). Los
+      `static_assert` de siempre para que no se pise nada.
+      *Verificación:* no se tocó `tools/test/check_flash_map.py` —su `define()` solo sabe
+      leer literales, y estos offsets se derivan de otros `#define` (`FLASH_MACROS_OFFSET +
+      FLASH_MACROS_BYTES`)—, pero **sí hay toolchain real en este entorno**: firmware
+      compilado y enlazado de punta a punta con Pico SDK 2.2.0 + TinyUSB (`cmake --build`),
+      limpio con `-Wall -Wextra` salvo dos avisos preexistentes ajenos a este cambio. Los
+      `static_assert` de disposición de Flash pasaron al compilar, que es una comprobación
+      más fuerte que la que haría un script en Python sin compilador delante.
+      **Trampa real que se cazó así, no a mano:** la Flash borrada de fábrica lee `0xFF`,
+      no `0`. Sin nada más, un hueco de texto nunca escrito habría dado `len=0xFFFF` —un
+      texto fantasma de 65535 bytes tecleando lo que hubiera en la Flash de ahí en
+      adelante—. `load_texts()` graba la región de datos entera a ceros la primera vez
+      que arranca este firmware (borrar sola no basta, deja `0xFF`), y dispara con un
+      hueco fuera de rango en `MSTEP_TEXT` de una secuencia corrupta (igual que ya se
+      recorta `MSTEP_MOVE`).
+- [x] **2. Tablas de distribución.** `include/layout.h` (tipos comunes), `layout_us.h`
+      (reutiliza `HID_ASCII_TO_KEYCODE` de TinyUSB tal cual, cero tablas propias) y
+      `layout_es.h` (hereda de la US para letras/dígitos/espacio —posición física
+      idéntica— y solo redefine lo que cambia de verdad: fila de símbolos con Mayús,
+      ñ/Ñ, ¿¡, vocales con tilde y ü vía tecla muerta, y AltGr). Comprobado con un
+      programa suelto (no entra en el firmware) que no hay duplicados en las tablas y
+      que ES y US coinciden carácter a carácter en todo lo que tienen que coincidir.
+      Los símbolos de AltGr (`@ # ~ € \ | [ ] {`) llevan su propio aviso en el fichero:
+      la posición es la esperable, pero sin teclado delante no se pueden jurar — es
+      justo lo que la Tarea 8 existe para comprobar. `^ \` }` se dejan fuera a
+      propósito (no mapeables) en vez de arriesgar una posición inventada.
+- [x] **3. Reproductor de texto.** `text_player_tick` con contrapresión real contra la
+      cola de `HidOut` (`HidOut::room()`, nuevo), retardo entre caracteres (8 ms), teclas
+      muertas (dos pulsaciones reales, comprobando hueco para las dos a la vez), Intro y
+      Tab, y tope de duración total (30 s). **Sin implementar:** abortar al pulsar una
+      tecla física — necesita enganchar el detector de pulsaciones del núcleo 1, y se ha
+      preferido dejarlo pendiente antes que meter un enganche a medio entender en el
+      pipeline de entrada. El tope de 30 s acota el peor caso mientras tanto.
+- [x] **4. Comandos nuevos.** `SET_TEXT`, `TEXT_END`, `GET_TEXT`, `TEXT_CLEAR`,
       `SET_LAYOUT` en el dispatch de `process_command`; `TEXT=1`, `MAXTEXT` y `LAYOUT`
       en el handshake y en `GET_STATE`; `MSTEP_TEXT = 6` en `MacroStepType` y en
       `macro_player_tick`. Y `save_texts()` colgado del comando `SAVE`.
-- [ ] **5. El reparto.** `trigger_macro` aprende la regla de la tabla del apartado 1, y
-      `key_needs_app` aprende exactamente la misma (o vuelve el tachado en teclas que
-      ya funcionan).
+- [x] **5. El reparto.** `trigger_macro` prefiere el PC solo cuando la macro lleva texto
+      Y la app está anunciada; sin ella, siempre el teclado. `key_needs_app` **no cambia
+      de lógica** —sigue preguntando solo si el teclado tiene copia jugable—, pero su
+      comentario sí: ya no es "espejo exacto" de `trigger_macro`, porque una macro con
+      texto SIEMPRE hace algo (aproximado sin app, exacto con ella) y por tanto nunca se
+      tacha, aunque `trigger_macro` decida mandarla al PC por tenerlo más a mano.
 
 ### Fase 2 — App
 

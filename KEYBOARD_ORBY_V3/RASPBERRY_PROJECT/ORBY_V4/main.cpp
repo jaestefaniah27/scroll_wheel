@@ -23,6 +23,9 @@
 #include "hid_out.h"
 #include "wheel_out.h"
 #include "hardware_as5600.h"
+#include "layout.h"
+#include "layout_us.h"
+#include "layout_es.h"
 
 // Las combinaciones con modificador (Ctrl+C y compañía) se envían como
 // pulsación breve en vez de mantenerse mientras la tecla esté hundida.
@@ -663,6 +666,12 @@ enum MacroStepType : uint8_t {
     // reproductor y el protocolo (SET_MACRO_STEP tipo 5, MACRO_TEST para
     // depurar) se dejan tal cual para retomarlo con la calibración.
     MSTEP_HOME_MOVE = 5,
+    // a = hueco de texto (0..TEXT_SLOT_COUNT-1, ver más abajo "TEXTOS QUE
+    // ESCRIBE EL PROPIO TECLADO"). El texto en sí no vive en MacroStep —no
+    // cabría, y cambiaría con cada edición sin tocar la secuencia—, solo su
+    // hueco. Lo reproduce TextPlayer, no macro_player_tick directamente: ver
+    // docs/PLAN_TEXTO_SIN_APP.md.
+    MSTEP_TEXT      = 6,
 };
 
 struct MacroStep {
@@ -729,6 +738,177 @@ static void load_macros() {
     } else {
         memset(macros, 0, sizeof(macros));
     }
+}
+
+// ==========================================
+// TEXTOS QUE ESCRIBE EL PROPIO TECLADO
+// ==========================================
+// Un hueco de texto por cada id de macro posible (no todas las macros llevan
+// uno: solo las que tengan algún paso MSTEP_TEXT, ver más abajo). No se
+// copian a RAM como `macros[]`: los 64 huecos enteros costarían 32 KB en un
+// chip de 264 KB, y aquí no hace falta —a diferencia de los pasos de una
+// secuencia, un texto no se consulta en cada vuelta del bucle, solo mientras
+// se está tecleando (ver TextPlayer)—, así que se leen de la Flash mapeada
+// tal cual, igual que los iconos OLED.
+#define TEXT_SLOT_COUNT   MACRO_MAX_COUNT   // 64: un hueco por cada id de macro
+#define TEXT_MAX_BYTES    510               // UTF-8, sin el prefijo de longitud
+#define TEXT_SLOT_BYTES   512               // 2 bytes de longitud + TEXT_MAX_BYTES
+
+struct TextSlot {
+    uint16_t len;                    // bytes UTF-8 usados; 0 = hueco vacío
+    uint8_t  bytes[TEXT_MAX_BYTES];  // UTF-8 sin terminador
+};
+static_assert(sizeof(TextSlot) == TEXT_SLOT_BYTES,
+              "TextSlot tiene que ocupar exactamente su hueco");
+
+#define TEXT_SLOTS_PER_SECTOR (FLASH_SECTOR_SIZE / TEXT_SLOT_BYTES)  // 8
+static_assert(FLASH_SECTOR_SIZE % TEXT_SLOT_BYTES == 0,
+              "Un hueco de texto no puede partir un sector: la Flash solo se borra por sectores enteros");
+static_assert(TEXT_SLOT_COUNT % TEXT_SLOTS_PER_SECTOR == 0,
+              "Los huecos de texto tienen que llenar sectores completos");
+
+// Cabecera propia de esta región (no en Settings, a propósito: así esta
+// función no obliga a tocar la cadena de migraciones SettingsV1..V6, que es
+// de lo más delicado que tiene el firmware). Ocupa un sector entero aunque
+// sobre casi todo: la Flash solo se borra por sectores, y no conviene
+// compartirlo con datos de texto que se reescriben con otra frecuencia.
+#define TEXTS_MAGIC 0xDEB07E70
+
+struct TextsHeader {
+    uint32_t magic;
+    uint8_t  layout;   // TextLayout: TEXT_LAYOUT_ES o TEXT_LAYOUT_US
+};
+
+#define FLASH_TEXTS_HEADER_OFFSET (FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES)
+#define FLASH_TEXTS_DATA_OFFSET   (FLASH_TEXTS_HEADER_OFFSET + FLASH_SECTOR_SIZE)
+#define FLASH_TEXTS_DATA_SECTORS  (TEXT_SLOT_COUNT / TEXT_SLOTS_PER_SECTOR)  // 8
+#define FLASH_TEXTS_BYTES         (FLASH_SECTOR_SIZE + FLASH_TEXTS_DATA_SECTORS * FLASH_SECTOR_SIZE)
+
+static_assert(FLASH_TEXTS_HEADER_OFFSET + FLASH_TEXTS_BYTES <= PICO_FLASH_SIZE_BYTES,
+              "Los textos se salen de la Flash del módulo");
+
+static inline uint8_t  text_sector_of(uint8_t slot) { return (uint8_t)(slot / TEXT_SLOTS_PER_SECTOR); }
+static inline uint32_t text_sector_flash_offset(uint8_t sector) {
+    return FLASH_TEXTS_DATA_OFFSET + (uint32_t)sector * FLASH_SECTOR_SIZE;
+}
+
+// Copia viva del sector de textos que se está editando, igual que
+// oled_staging: se lee de golpe, se modifica en RAM y solo se graba de golpe
+// (flush_text_staging), porque la Flash no se puede borrar a trozos más
+// pequeños que un sector entero. `text_staging_sector` es el índice dentro de
+// la región de datos (0..FLASH_TEXTS_DATA_SECTORS-1); 0xFF = vacío.
+static uint8_t text_sector_staging[FLASH_SECTOR_SIZE] __attribute__((aligned(4)));
+static uint8_t text_staging_sector = 0xFF;
+static bool    text_staging_dirty  = false;
+
+static uint8_t text_header_blob[FLASH_SECTOR_SIZE] __attribute__((aligned(4)));
+static bool    text_header_dirty = false;
+static uint8_t text_layout = TEXT_LAYOUT_ES; // copia viva; la Flash es solo persistencia
+
+static inline TextSlot* text_slot_in_staging(uint8_t slot) {
+    return (TextSlot*)(text_sector_staging + (uint32_t)(slot % TEXT_SLOTS_PER_SECTOR) * TEXT_SLOT_BYTES);
+}
+
+static void flush_text_staging() {
+    if (!text_staging_dirty || text_staging_sector >= FLASH_TEXTS_DATA_SECTORS) return;
+    const uint32_t offset = text_sector_flash_offset(text_staging_sector);
+
+    tud_task();
+    watchdog_update();
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_erase(offset, FLASH_SECTOR_SIZE);
+    flash_range_program(offset, text_sector_staging, FLASH_SECTOR_SIZE);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+    text_staging_dirty = false;
+}
+
+// Carga en RAM el sector que le toca a `slot`, grabando antes el que hubiera
+// pendiente si era otro (mismo patrón que load_oled_staging).
+static void load_text_sector(uint8_t slot) {
+    const uint8_t sector = text_sector_of(slot);
+    if (text_staging_sector == sector) return;
+    flush_text_staging();
+    memcpy(text_sector_staging, (const uint8_t*)(XIP_BASE + text_sector_flash_offset(sector)), FLASH_SECTOR_SIZE);
+    text_staging_sector = sector;
+    text_staging_dirty  = false;
+}
+
+// Puntero de solo lectura al hueco, para reproducirlo o volcarlo por CDC. Si
+// su sector es justo el que está en el búfer de preparación sin grabar
+// todavía, se lee de ahí (igual que oled_slot_ptr con staging_holds).
+static const TextSlot* text_slot_ptr(uint8_t slot) {
+    if (text_staging_sector == text_sector_of(slot)) return text_slot_in_staging(slot);
+    return (const TextSlot*)(XIP_BASE + text_sector_flash_offset(text_sector_of(slot))
+                              + (uint32_t)(slot % TEXT_SLOTS_PER_SECTOR) * TEXT_SLOT_BYTES);
+}
+
+static void flush_texts_header() {
+    if (!text_header_dirty) return;
+    memset(text_header_blob, 0, sizeof(text_header_blob));
+    TextsHeader* h = (TextsHeader*)text_header_blob;
+    h->magic  = TEXTS_MAGIC;
+    h->layout = text_layout;
+
+    tud_task();
+    watchdog_update();
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_erase(FLASH_TEXTS_HEADER_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(FLASH_TEXTS_HEADER_OFFSET, text_header_blob, FLASH_SECTOR_SIZE);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+    text_header_dirty = false;
+}
+
+// Cuelga del comando SAVE, igual que save_macros(): graba lo que quedara
+// pendiente en RAM (el sector que se estuviera editando, y la cabecera si
+// cambió la distribución).
+static void save_texts() {
+    flush_text_staging();
+    flush_texts_header();
+}
+
+static inline const char* text_layout_code(uint8_t layout) {
+    return (layout == TEXT_LAYOUT_US) ? "us" : "es";
+}
+
+static void load_texts() {
+    const uint32_t magic = *(const uint32_t*)(XIP_BASE + FLASH_TEXTS_HEADER_OFFSET);
+    if (magic == TEXTS_MAGIC) {
+        const TextsHeader* h = (const TextsHeader*)(XIP_BASE + FLASH_TEXTS_HEADER_OFFSET);
+        text_layout = (h->layout <= TEXT_LAYOUT_US) ? h->layout : (uint8_t)TEXT_LAYOUT_ES;
+    } else {
+        // Primera vez que este firmware corre en el aparato (o la región nunca
+        // llegó a grabarse): la Flash borrada lee 0xFF, no 0, así que sin esto
+        // cada hueco "vacío" tendría `len=0xFFFF` en vez de 0 — un texto
+        // fantasma de 65535 bytes que intentaría teclear lo que hubiera en la
+        // Flash de ahí en adelante. Se graba la región de datos entera a
+        // ceros una vez (borrar sola no basta: borrado es 0xFF, no 0), y la
+        // cabecera con la marca deja constancia de que ya se hizo.
+        text_layout = TEXT_LAYOUT_ES;
+        memset(text_sector_staging, 0, sizeof(text_sector_staging));
+        for (uint8_t sector = 0; sector < FLASH_TEXTS_DATA_SECTORS; sector++) {
+            const uint32_t offset = text_sector_flash_offset(sector);
+            tud_task();
+            watchdog_update();
+            const bool lock = multicore_lockout_victim_is_initialized(1);
+            uint32_t ints = save_and_disable_interrupts();
+            if (lock) multicore_lockout_start_blocking();
+            flash_range_erase(offset, FLASH_SECTOR_SIZE);
+            flash_range_program(offset, text_sector_staging, FLASH_SECTOR_SIZE);
+            if (lock) multicore_lockout_end_blocking();
+            restore_interrupts(ints);
+        }
+        text_header_dirty = true;
+        flush_texts_header();
+    }
+    text_staging_sector = 0xFF;
+    text_staging_dirty  = false;
+    text_header_dirty   = false;
 }
 
 // ==========================================
@@ -1404,6 +1584,7 @@ enum MacroPhase : uint8_t {
     MPH_CLICK_RELEASED = 4, // tras mandar la suelta
     MPH_CHUNK_HOME    = 5, // empujón hacia la esquina, a trozos de ±127
     MPH_CHUNK_TARGET  = 6, // desde la esquina hasta (x, y), a trozos de ±127
+    MPH_TEXT          = 7, // esperando a que TextPlayer termine un MSTEP_TEXT
 };
 
 struct MacroPlayer {
@@ -1494,6 +1675,138 @@ static void macro_queue_chunk() {
     macro_queue_report(0, (int8_t)dx, (int8_t)dy);
 }
 
+// ==========================================
+// REPRODUCTOR DE TEXTO (sin la app)
+// ==========================================
+// Traduce el texto de un hueco a pulsaciones HID reales, con la distribución
+// configurada (layout_es.h / layout_us.h). Lo arranca macro_player_tick al
+// llegar a un paso MSTEP_TEXT (ver más abajo); con la app delante,
+// trigger_macro manda el texto por CDC y este reproductor no llega a
+// arrancar — ver "Dispara una macro" más abajo y docs/PLAN_TEXTO_SIN_APP.md.
+//
+// Como macro_player, no bloquea: como mucho una pulsación (o dos, si hace
+// falta tecla muerta) por vuelta, y siempre comprobando hueco en la cola de
+// HidOut antes de empujar nada. Empujar sin comprobar es justo lo que
+// HidOut::push descarta en silencio si la cola está llena: un texto largo
+// perdería la mayoría de las letras sin avisar.
+static inline LayoutLookup layout_lookup(uint8_t layout, uint32_t cp) {
+    return (layout == TEXT_LAYOUT_US) ? layout_lookup_us(cp) : layout_lookup_es(cp);
+}
+
+#define TEXT_CHAR_GAP_MS 8       // entre pulsaciones: alguna aplicación se come
+                                 // dos sintéticas demasiado seguidas (mismo
+                                 // motivo que RETARDO_ENTRE_LETRAS_MS en el
+                                 // camino del PC, ver OrbyGUI/src-tauri/src/macros.rs)
+#define TEXT_PLAYER_TIMEOUT_MS 30000 // tope de duración total, por si algo se
+                                 // atasca: 510 caracteres a 8 ms cada uno son
+                                 // ~4 s, de sobra margen sin dejar el teclado
+                                 // "escribiendo" para siempre
+
+struct TextPlayer {
+    bool     active;
+    uint8_t  slot;
+    uint8_t  layout;
+    uint16_t pos;         // próximo byte UTF-8 a consumir
+    uint16_t len;
+    uint32_t deadline;    // próxima pulsación no antes de esto
+    uint32_t started_at;  // para el tope de duración total
+    uint16_t skipped;     // caracteres no mapeables saltados en esta pasada
+};
+static TextPlayer text_player = { false, 0, 0, 0, 0, 0, 0, 0 };
+
+static inline const uint8_t* text_player_bytes() {
+    return text_slot_ptr(text_player.slot)->bytes;
+}
+
+// Decodifica el punto de código UTF-8 que empieza en buf[pos]. Devuelve
+// cuántos bytes ocupaba (1-4) o 0 si la secuencia está rota (byte de
+// continuación fuera de sitio, o se corta antes de tiempo): el que llama
+// avanza 1 byte y sigue en ese caso, para perder un carácter en vez de
+// colgarse con un texto mal formado.
+static uint8_t utf8_decode(const uint8_t* buf, uint16_t len, uint16_t pos, uint32_t* cp) {
+    uint8_t b0 = buf[pos];
+    uint8_t need;
+    uint32_t acc;
+    if (b0 < 0x80)                { *cp = b0; return 1; }
+    else if ((b0 & 0xE0) == 0xC0) { need = 1; acc = b0 & 0x1F; }
+    else if ((b0 & 0xF0) == 0xE0) { need = 2; acc = b0 & 0x0F; }
+    else if ((b0 & 0xF8) == 0xF0) { need = 3; acc = b0 & 0x07; }
+    else return 0;
+
+    if ((uint32_t)pos + need >= len) return 0;
+    for (uint8_t i = 1; i <= need; i++) {
+        uint8_t b = buf[pos + i];
+        if ((b & 0xC0) != 0x80) return 0;
+        acc = (acc << 6) | (b & 0x3F);
+    }
+    *cp = acc;
+    return (uint8_t)(need + 1);
+}
+
+static void text_player_start(uint8_t slot, uint8_t layout) {
+    text_player.active     = true;
+    text_player.slot       = slot;
+    text_player.layout     = layout;
+    text_player.pos        = 0;
+    text_player.len        = text_slot_ptr(slot)->len;
+    text_player.deadline   = to_ms_since_boot(get_absolute_time());
+    text_player.started_at = text_player.deadline;
+    text_player.skipped    = 0;
+}
+
+static void text_player_tick(uint32_t now) {
+    if (!text_player.active) return;
+    TextPlayer& tp = text_player;
+
+    if ((int32_t)(now - tp.started_at) > TEXT_PLAYER_TIMEOUT_MS) {
+        tp.active = false; // algo se ha atascado: mejor un texto a medias que un teclado colgado
+        return;
+    }
+    if (tp.pos >= tp.len) { tp.active = false; return; }
+    if ((int32_t)(now - tp.deadline) < 0) return;
+
+    const uint8_t* bytes = text_player_bytes();
+    uint32_t cp;
+    uint8_t consumed = utf8_decode(bytes, tp.len, tp.pos, &cp);
+    if (consumed == 0) { tp.pos++; return; } // byte suelto raro: se salta y ya
+
+    // Saltos de línea y tabuladores van como pulsaciones de verdad, iguales en
+    // las dos distribuciones: pegados o escritos como carácter no los
+    // interpreta media aplicación (mismo motivo que en escribir_texto, en
+    // OrbyGUI/src-tauri/src/macros.rs).
+    if (cp == '\n' || cp == '\r') {
+        if (HidOut::room() < 1) return; // sin hueco: se reintenta en la próxima vuelta
+        HidOut::tap(0, HID_KEY_ENTER);
+        tp.pos += consumed;
+        if (cp == '\r' && tp.pos < tp.len && bytes[tp.pos] == '\n') tp.pos++; // «\r\n» es un salto, no dos
+        tp.deadline = now + TEXT_CHAR_GAP_MS;
+        return;
+    }
+    if (cp == '\t') {
+        if (HidOut::room() < 1) return;
+        HidOut::tap(0, HID_KEY_TAB);
+        tp.pos += consumed;
+        tp.deadline = now + TEXT_CHAR_GAP_MS;
+        return;
+    }
+
+    LayoutLookup look = layout_lookup(tp.layout, cp);
+    if (!look.ok) { tp.skipped++; tp.pos += consumed; return; } // no mapeable: se salta y se cuenta
+
+    // Tecla muerta: dos pulsaciones HID reales y separadas. Se comprueba hueco
+    // para las dos a la vez, porque empujar solo la primera y dejar la
+    // segunda para la próxima vuelta arriesga a que se cuele en medio una
+    // pulsación física del usuario (la cola es compartida) y la combinación
+    // salga mal.
+    const uint8_t needed = look.dead ? 2 : 1;
+    if (HidOut::room() < needed) return;
+
+    if (look.dead) HidOut::tap(look.dead_key.mod, look.dead_key.usage);
+    HidOut::tap(look.key.mod, look.key.usage);
+    tp.pos += consumed;
+    tp.deadline = now + TEXT_CHAR_GAP_MS;
+}
+
 // Se llama una vez por vuelta del bucle principal. Actúa como mucho un paso —o
 // un trozo de un movimiento largo, o media pulsación de clic— cada vez.
 static void macro_player_tick(uint32_t now) {
@@ -1546,6 +1859,14 @@ static void macro_player_tick(uint32_t now) {
         return;
     }
 
+    if (mp.phase == MPH_TEXT) {
+        text_player_tick(now);
+        if (!text_player.active) {
+            mp.step++; mp.rep_left = 0; mp.deadline = now; mp.phase = MPH_IDLE;
+        }
+        return;
+    }
+
     if (mp.id >= MACRO_MAX_COUNT || mp.step >= macros[mp.id].step_count) {
         mp.active = false;
         return;
@@ -1593,6 +1914,23 @@ static void macro_player_tick(uint32_t now) {
             // El paso avanza cuando el trozo hacia el objetivo termine, no aquí.
             break;
 
+        case MSTEP_TEXT:
+            // SET_MACRO_STEP no valida `a` más que como int16 (ver su propio
+            // comentario): un hueco fuera de rango —secuencia corrupta, o de
+            // un id que ya no existe— se salta aquí, igual que un tipo de
+            // paso desconocido, en vez de leer memoria de un hueco que no es
+            // el suyo (mismo motivo que el recorte de MSTEP_MOVE arriba).
+            if (s.a >= 0 && s.a < TEXT_SLOT_COUNT) {
+                text_player_start((uint8_t)s.a, text_layout);
+                mp.phase = MPH_TEXT;
+                // El paso avanza cuando TextPlayer termine, no aquí (ver el
+                // bloque MPH_TEXT más arriba).
+            } else {
+                mp.step++;
+                mp.rep_left = 0;
+            }
+            break;
+
         default:
             mp.step++;
             mp.rep_left = 0;
@@ -1602,18 +1940,48 @@ static void macro_player_tick(uint32_t now) {
     if (mp.phase == MPH_IDLE && mp.step >= macros[mp.id].step_count) mp.active = false;
 }
 
+// Declarada más abajo (junto a HOST_APP); hace falta antes para el reparto
+// de trigger_macro.
+static inline bool host_app_alive();
+
+// Si alguno de los pasos de esta macro escribe texto. Determina el reparto de
+// trigger_macro (ver más abajo): el resto de tipos de paso da igual quién los
+// ejecute (el teclado los reproduce idénticos), pero un texto no — el camino
+// del PC es unicode exacto y el del teclado es una traducción por tabla de
+// distribución, así que a igualdad de disponibilidad se prefiere el PC.
+static bool macro_has_text_step(uint8_t id) {
+    if (id >= MACRO_MAX_COUNT) return false;
+    const FlashMacro& m = macros[id];
+    for (uint8_t i = 0; i < m.step_count; i++) {
+        if (m.steps[i].type == MSTEP_TEXT) return true;
+    }
+    return false;
+}
+
 // Dispara una macro. Se reproduce en el propio teclado siempre que la app la
 // haya subido (device_has_it): es HID real, así que funciona igual con la
 // app cerrada, en la pantalla de bloqueo o en otra sesión, y sin el retardo
 // que mete nut.js en el PC. Solo se manda por CDC para que la ejecute el PC
-// cuando el teclado NO tiene copia jugable — hoy eso es exactamente lo que
+// cuando el teclado NO tiene copia jugable —hoy eso es exactamente lo que
 // exige saber algo que el teclado no puede saber (posición ABSOLUTA del
-// ratón, ver MSTEP_HOME_MOVE arriba); el resto de tipos de paso siempre caben
-// en el teclado.
+// ratón, ver MSTEP_HOME_MOVE arriba)— o cuando SÍ tiene copia pero es un
+// texto y la app está delante: ahí el camino del PC es exacto (unicode) y el
+// del teclado es una aproximación por tabla de distribución (ver
+// docs/PLAN_TEXTO_SIN_APP.md), así que gana el PC cuando está disponible.
+// Sin la app, el teclado escribe él: nunca se queda sin hacer nada.
+//
+// Esto NO cambia key_needs_app (más abajo, junto a HOST_APP): esa función
+// decide si la tecla se tacha en las pantallas, y una macro con texto que ya
+// tiene copia en el teclado nunca necesita la app para hacer *algo* —como
+// mucho, hace la versión aproximada—, así que no se tacha ni cuando el PC
+// gana la preferencia. Las dos funciones ya no dicen exactamente lo mismo a
+// propósito: key_needs_app pregunta "¿se queda sin hacer nada?", no "¿la
+// ejecuta el PC ahora mismo?".
 static void trigger_macro(uint8_t id) {
     const bool device_has_it = (id < MACRO_MAX_COUNT && macros[id].step_count > 0);
+    const bool prefer_pc = device_has_it && macro_has_text_step(id) && host_app_alive();
 
-    if (device_has_it) {
+    if (device_has_it && !prefer_pc) {
         // Si ya hay una en marcha se ignora el reintento en vez de encolarla o
         // mandarla también al PC, que la ejecutaría dos veces por dos caminos.
         if (!macro_player.active) macro_player_start(id);
@@ -1779,8 +2147,13 @@ static inline bool host_app_alive() {
     return (uint32_t)(ms - host_app_last_ms) < HOST_APP_TIMEOUT_MS;
 }
 
-// Espejo exacto de la condición de trigger_macro. Las dos tienen que decir lo
-// mismo o se acabaría tachando una tecla que el teclado sí sabe reproducir.
+// Si esta tecla se queda sin hacer nada sin la app: pregunta justo eso, no
+// "¿la ejecuta el PC ahora mismo?" — desde que un texto puede reproducirse en
+// el teclado (aproximado) o en el PC (exacto) según convenga, las dos cosas
+// ya no son la misma pregunta (ver el comentario de trigger_macro, más
+// arriba). Con device_has_it a true la tecla SIEMPRE hace algo, así que nunca
+// se tacha, aunque trigger_macro decida mandar un texto concreto al PC por
+// tenerlo más a mano.
 static inline bool key_needs_app(const KeyAction& a) {
     if (a.modifier != KEYACT_MACRO) return false;
     return !(a.keycode < MACRO_MAX_COUNT && macros[a.keycode].step_count > 0);
@@ -2344,8 +2717,13 @@ void process_command(const char* cmd) {
         // el menú físico de perfiles (MODE_MENU_PERF).
         // HOSTAPP=1: este firmware entiende HOST_APP y tacha en las pantallas las
         // teclas que necesitan la app de PC mientras no esté anunciada.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MODE=%s\n",
+        // TEXT=1: este firmware sabe escribir texto él solo (SET_TEXT/TEXT_END/
+        // GET_TEXT/TEXT_CLEAR y el paso MSTEP_TEXT de una secuencia). MAXTEXT es
+        // cuántos bytes UTF-8 caben en un hueco; LAYOUT es la distribución que
+        // tiene configurada ahora mismo (se cambia con SET_LAYOUT).
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:TEXT=1:MAXTEXT=%d:LAYOUT=%s:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
+                   TEXT_MAX_BYTES, text_layout_code(text_layout),
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
     }
@@ -2386,6 +2764,7 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
         cdc_printf("STATE:MENUGLITCH:%lu\n", (unsigned long)menu_tap_glitches);
+        cdc_printf("STATE:LAYOUT:%s\n", text_layout_code(text_layout));
         cdc_printf("STATE:PAGE:%d:%d:%d\n", (int)active_page,
                    (int)profiles[active_profile_idx].page_count, MAX_PAGES);
         send_scroll_state();
@@ -2705,6 +3084,114 @@ void process_command(const char* cmd) {
         return;
     }
 
+    // ---------- Textos que escribe el propio teclado ----------
+    // SET_TEXT:<hueco 0-63>:<offset>:<hex>  — sube un trozo de un texto. Va en
+    // hex, igual que OLED_CHUNK más abajo: el parser corta por ':' y las
+    // líneas por '\n', así que UTF-8 crudo no se puede mandar tal cual.
+    if (strncmp(cmd, "SET_TEXT:", 9) == 0) {
+        int slot = 0, offset = 0;
+        const char* p = next_field(cmd + 9, &slot);
+        p = next_field(p, &offset);
+        if (!p || slot < 0 || slot >= TEXT_SLOT_COUNT || offset < 0 || offset >= TEXT_MAX_BYTES) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        load_text_sector((uint8_t)slot);
+        uint8_t* dst = text_slot_in_staging((uint8_t)slot)->bytes;
+        int written = 0;
+        while (p[0] && p[1] && (offset + written) < TEXT_MAX_BYTES) {
+            int hi = hex_nibble(p[0]);
+            int lo = hex_nibble(p[1]);
+            if (hi < 0 || lo < 0) break;
+            dst[offset + written] = (uint8_t)((hi << 4) | lo);
+            written++;
+            p += 2;
+        }
+        text_staging_dirty = true;
+        cdc_printf("TEXT:OK:%d:%d:%d\n", slot, offset, written);
+        return;
+    }
+
+    // TEXT_END:<hueco>:<bytes>  — fija la longitud final y cuenta cuántos
+    // caracteres no sabe escribir la distribución configurada AHORA MISMO, para
+    // que la app pueda avisar (Tarea 6 del plan). Ese número puede quedar
+    // desactualizado si luego se cambia de distribución con SET_LAYOUT: es solo
+    // una foto del momento de subir el texto, no una garantía permanente.
+    if (strncmp(cmd, "TEXT_END:", 9) == 0) {
+        int slot = 0, bytes = 0;
+        const char* p = next_field(cmd + 9, &slot);
+        p = next_field(p, &bytes);
+        if (!p || slot < 0 || slot >= TEXT_SLOT_COUNT || bytes < 0 || bytes > TEXT_MAX_BYTES) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        load_text_sector((uint8_t)slot);
+        TextSlot* t = text_slot_in_staging((uint8_t)slot);
+        t->len = (uint16_t)bytes;
+        text_staging_dirty = true;
+
+        uint16_t skipped = 0;
+        for (uint16_t pos = 0; pos < t->len; ) {
+            uint32_t cp;
+            uint8_t consumed = utf8_decode(t->bytes, t->len, pos, &cp);
+            if (consumed == 0) { skipped++; pos++; continue; }
+            if (cp != '\n' && cp != '\r' && cp != '\t' && !layout_lookup(text_layout, cp).ok) skipped++;
+            pos += consumed;
+        }
+        cdc_printf("TEXT:OK:%d:%d:%d\n", slot, (int)t->len, (int)skipped);
+        return;
+    }
+
+    // GET_TEXT:<hueco>  — vuelca el texto guardado, en hex y a trozos (igual
+    // que dump_oled_slot): hasta 510 bytes no caben en una sola línea del
+    // búfer de 256 de cdc_printf.
+    if (strncmp(cmd, "GET_TEXT:", 9) == 0) {
+        int slot = atoi(cmd + 9);
+        if (slot < 0 || slot >= TEXT_SLOT_COUNT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        const TextSlot* t = text_slot_ptr((uint8_t)slot);
+        cdc_printf("TEXTDATA:%d:LEN:%d\n", slot, (int)t->len);
+
+        static const char HEXCHARS[] = "0123456789abcdef";
+        char hex[181];
+        for (int off = 0; off < (int)t->len; off += 90) {
+            int n = ((int)t->len - off < 90) ? ((int)t->len - off) : 90;
+            for (int i = 0; i < n; i++) {
+                hex[i * 2]     = HEXCHARS[t->bytes[off + i] >> 4];
+                hex[i * 2 + 1] = HEXCHARS[t->bytes[off + i] & 0x0F];
+            }
+            hex[n * 2] = 0;
+            cdc_printf("TEXTDATA:%d:%d:%s\n", slot, off, hex);
+        }
+        cdc_printf("TEXTDATA:%d:END\n", slot);
+        return;
+    }
+
+    // TEXT_CLEAR:<hueco>  — vacía un hueco de texto.
+    if (strncmp(cmd, "TEXT_CLEAR:", 11) == 0) {
+        int slot = atoi(cmd + 11);
+        if (slot < 0 || slot >= TEXT_SLOT_COUNT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        load_text_sector((uint8_t)slot);
+        memset(text_slot_in_staging((uint8_t)slot), 0, sizeof(TextSlot));
+        text_staging_dirty = true;
+        cdc_printf("TEXT:CLEARED:%d\n", slot);
+        return;
+    }
+
+    // SET_LAYOUT:<es|us>  — distribución con la que este teclado traduce texto
+    // sin la app delante. Es una propiedad DEL APARATO, no de la configuración
+    // del PC: así sigue siendo la que toca aunque se enchufe a otro equipo.
+    if (strncmp(cmd, "SET_LAYOUT:", 11) == 0) {
+        const char* v = cmd + 11;
+        uint8_t layout;
+        if (strcmp(v, "es") == 0) layout = TEXT_LAYOUT_ES;
+        else if (strcmp(v, "us") == 0) layout = TEXT_LAYOUT_US;
+        else { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        text_layout = layout;
+        text_header_dirty = true;
+        cdc_printf("LAYOUT:OK:%s\n", v);
+        return;
+    }
+
     // ---------- Iconos OLED personalizados ----------
     // OLED_CHUNK:<perfil>:<hueco 0-20>:<offset>:<hex>  (hueco 20 = icono del perfil)
     // El framebuffer es de 360 bytes (72x40, 5 páginas). La app lo trocea.
@@ -2815,6 +3302,7 @@ void process_command(const char* cmd) {
     if (strcmp(cmd, "SAVE_STATE") == 0) {
         save_settings();
         save_macros();
+        save_texts();
         cdc_printf("SAVE:OK\n");
         return;
     }
@@ -2898,6 +3386,7 @@ int main() {
     // Cargar configuración de Flash
     load_settings();
     load_macros();
+    load_texts();
 
     // Si venimos de un reinicio por watchdog, algo se colgó: nada de intro, a
     // dejar el teclado operativo cuanto antes.
