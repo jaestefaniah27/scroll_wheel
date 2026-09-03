@@ -44,7 +44,7 @@ import { recordMacro, detachResetKey, onRecorderState, setRecordMode, setRecordS
          clearRecording, toggleRecording, renderRecordTab,
          startRecordingKey } from './profiles/recorder.js';
 import { seqAddAction, currentAppStep, setAppKind, currentTextStep, setPowerAction, setPluginAction,
-         giroInvertido, invertirGiroPlugin, setRotaryPluginAction, setRotaryConsumerPair,
+         giroInvertido, consumerGiroInvertido, invertirGiroPar, setRotaryPluginAction, setRotaryConsumerPair,
          pickAppTarget, pickAppFocus,
          renderAppTab, renderTextTab, pickOpenTarget, setSeqOpenKind, pickSeqOpenFocus,
          seqRemoveAction, seqMoveAction, seqActionAt, seqKeyBuilder, startPositionCapture,
@@ -313,8 +313,8 @@ function onClick(e) {
     confirmPluginValuePick();
   } else if (act === 'plugin-value-cancel') {
     cancelPluginValuePick();
-  } else if (act === 'rotary-plugin-invert') {
-    invertirGiroPlugin();
+  } else if (act === 'rotary-invert') {
+    invertirGiroPar();
   } else if (act === 'rotary-plugin-tab') {
     // Entrar en un complemento sin haber elegido todavía qué controla: se
     // asigna la primera acción que encaje en este hueco, para que el mando
@@ -1440,8 +1440,15 @@ function renderRotaryInspector() {
   const isPlugin = Boolean(pluginStep);
   const activePlugin = isPlugin ? plugins.byId(pluginStep.plugin) : null;
   const pluginOps = plugins.actionsFor(activePlugin, target);
-  const puedeInvertir = isPlugin && !isClick && Boolean(Number(pluginStep.value));
-  const invertido = puedeInvertir && giroInvertido(base, pluginStep);
+  const puedeInvertirPlugin = isPlugin && !isClick && Boolean(Number(pluginStep.value));
+  // Igual que el giro de un complemento, una pareja multimedia (Volumen,
+  // Brillo, Zoom) reparte Subir/Bajar entre los dos huecos por construcción:
+  // también se puede montar al revés, así que también necesita su botón.
+  const consumerPair = !isClick && action.type === ROTARY_TYPES.CONSUMER
+    ? consumerPairFor(action.keycode) : null;
+  const puedeInvertir = puedeInvertirPlugin || Boolean(consumerPair);
+  const invertido = puedeInvertirPlugin ? giroInvertido(base, pluginStep)
+    : consumerPair ? consumerGiroInvertido(base, action) : false;
   const types = ROTARY_TYPE_OPTIONS.filter((t) => !(isClick && t.turnOnly));
 
   const variant = editingVariant();
@@ -1507,7 +1514,7 @@ function renderRotaryInspector() {
                    desactivado: el mando no hará nada hasta que vuelva.`}
             </p>`}
           ${puedeInvertir ? `
-            <button class="consumer-chip ${invertido ? 'on' : ''}" data-act="rotary-plugin-invert"
+            <button class="consumer-chip ${invertido ? 'on' : ''}" data-act="rotary-invert"
                     style="margin-top:8px">
               ${icon('reset', 14)} Invertir giro
             </button>` : ''}
@@ -1535,10 +1542,16 @@ function renderRotaryInspector() {
                   : `<button class="consumer-chip ${action.keycode === c.index ? 'on' : ''}"
                              data-act="rotary-consumer" data-index="${c.index}">${c.label}</button>`).join('')}
           </div>
+          ${consumerPair ? `
+            <button class="consumer-chip ${invertido ? 'on' : ''}" data-act="rotary-invert"
+                    style="margin-top:8px">
+              ${icon('reset', 14)} Invertir giro
+            </button>` : ''}
           ${!isClick ? `
             <p class="setting-desc">
               Cada muesca sube o baja un paso, y el sentido lo pone el propio giro: no hace
-              falta elegir qué va en cada lado.
+              falta elegir qué va en cada lado. Si el mando está montado al revés,
+              <em>Invertir giro</em> le da la vuelta a los dos sentidos a la vez.
             </p>` : ''}
         </div>` : ''}
 
