@@ -263,7 +263,14 @@ inventa otro.
 
 ### Comprobación sobre el teclado real
 
-El firmware no tiene tests automáticos, así que esta lista se pasa a mano:
+El firmware no tiene tests automáticos, así que esta lista se pasa a mano. Hasta que
+la Fase 2 le dé a OrbyGUI una pestaña que hable `SET_TEXT`/`TEXT_END`/`MSTEP_TEXT`, la
+única forma de subir un texto de prueba es hablar el protocolo directamente:
+[`OrbyGUI/test-texto-sin-app.js`](../OrbyGUI/test-texto-sin-app.js) (mismo patrón que
+`test-serial.js`) sube dos textos y los cuelga de dos teclas del perfil por defecto.
+Cubre del **2** al **4** y el **7**; el **1**, el **5** y el **6** dependen de que la
+app tenga una copia local de la misma macro con la que comparar (sin eso, `MACRO:<id>`
+por CDC no tiene qué ejecutar en el PC), así que quedan pendientes de la Fase 2.
 
 1. Texto corto (correo) con la app abierta → lo escribe el PC, idéntico a hoy.
 2. El mismo, con la app cerrada del todo (**Salir** desde la bandeja, no la X) → lo
