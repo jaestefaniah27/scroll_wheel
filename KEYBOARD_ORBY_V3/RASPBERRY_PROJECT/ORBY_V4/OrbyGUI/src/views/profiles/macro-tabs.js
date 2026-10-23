@@ -7,7 +7,7 @@
 
 import { state, markDirty, layerIndex, scrollFor } from '../../store.js';
 import * as device from '../../device.js';
-import { MACRO_MODIFIER, ROTARY_TYPES, CONSUMER_TURN_PAIRS } from '../../hid-keys.js';
+import { MACRO_MODIFIER, ROTARY_TYPES, CONSUMER_TURN_PAIRS, consumerPairFor } from '../../hid-keys.js';
 import { toast, requireDevice } from '../../ui.js';
 import { icon } from '../../icons.js';
 import * as variants from '../../variants.js';
@@ -168,16 +168,28 @@ export function giroInvertido(base, step) {
   return Math.sign(Number(step?.value) || 0) === -porDefecto;
 }
 
+// Lo mismo que giroInvertido, pero para una pareja multimedia (Volumen,
+// Brillo, Zoom): no hay un valor con signo que mirar, así que se compara el
+// keycode que hay en el hueco con el que le tocaría por su sentido.
+export function consumerGiroInvertido(base, action) {
+  const pair = consumerPairFor(action?.keycode);
+  if (!pair) return false;
+  const porDefecto = ROTARY_DOWN_SLOTS.has(base) ? pair.down : pair.up;
+  return action.keycode !== porDefecto;
+}
+
 // Le da la vuelta al par entero del mando, no solo al hueco que se está
 // editando: si el encoder está montado del revés, lo que hacía cada sentido
-// pasa al otro.
+// pasa al otro. Sirve tanto para el giro de un complemento como para una
+// pareja multimedia (Volumen, Brillo, Zoom): en los dos casos son dos huecos
+// con acciones opuestas por construcción.
 //
 // Intercambia las dos acciones enteras (no el signo del valor guardado): así
 // no depende de que el otro sentido tuviera ya algo asignado, que era el bug
 // de antes — invertir con la pulsación configurada solo en un lado dejaba el
 // otro sin tocar, y el próximo giro que se asignara ahí salía con el mismo
 // signo en vez del contrario.
-export function invertirGiroPlugin() {
+export function invertirGiroPar() {
   const prof = currentProfile();
   const base = selectedRotarySlot();
   const twin = base === null ? undefined : ROTARY_TWIN[base];
