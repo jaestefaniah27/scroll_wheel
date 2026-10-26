@@ -60,11 +60,23 @@ firma, el `.sig` que necesita el actualizador automático no se genera. Ver
 
 ### Firmware (`main.cpp`, ~3400 líneas)
 Un solo fichero grande + cabeceras en `include/` (drivers: OLED, AS5600, encoder,
-HID, pinout) y `src/` (descriptores USB, bitmaps).
+HID, pinout, pantallas) y `src/` (descriptores USB).
 
 - `pico_multicore`: núcleo 0 USB/HID, núcleo 1 entrada+OLED.
 - `encoder.pio` genera la cabecera del PIO del encoder en tiempo de build.
 - stdio por UART y USB **desactivados** — el CDC es el canal de control, no una consola.
+- Pantallas: `render_screen()` en `main.cpp` decide QUÉ va en cada una y lo dibuja
+  con `include/oled_ui.h`; Core 1 lo lleva al panel animado con `include/oled_anim.h`.
+  Iconos, fuente y catálogo se generan desde `tools/oled_ui/` (ver su README):
+  `include/oled_ui_data.h` no se edita a mano.
+- Transiciones al estilo de la pantalla de inicio del iPhone (carrusel de páginas,
+  menús que se abren como carpetas, onda al cambiar de perfil, pulsación con muelle).
+  Los muelles y fundidos son los de SpringBoardHome de iOS 27.2, con su origen
+  apuntado en `oled_anim.h`. Core 1 compara cada fotograma con lo que ya tiene el
+  panel y solo manda por SPI lo que cambia.
+- La selección de los menús va dibujada en la imagen (`invert_pill`), no invertida
+  por hardware: así se anima con lo demás. La inversión por hardware queda solo
+  para la tecla pulsada, que tiene que responder al instante.
 - El dispatch de comandos serie está sobre la línea ~2180 de `main.cpp`: cadena de
   `strncmp(cmd, "...")`. Al añadir un comando, tócalo ahí **y** en `OrbyGUI/src/device.js`.
 
@@ -206,8 +218,12 @@ y se ven en la lista, pero **todavía no hay quién los ejecute**: devuelven un 
 
 ## Trampas conocidas
 
-- **El firmware no tiene tests automatizados.** `tools/test/*.py` son comprobaciones
-  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano. La app sí los
+- **El firmware casi no tiene tests automatizados.** `tools/test/*.py` son comprobaciones
+  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano. Lo que sí se
+  prueba en el PC son las pantallas: `test_ui.cpp` compara `oled_ui.h` píxel a píxel
+  con `tools/oled_ui/layout.py`, y `test_anim.cpp` comprueba que cada transición
+  empieza y acaba exactamente donde debe (con una carpeta de argumento vuelca los
+  fotogramas para verlos). Todo entra en `tools/test/run.ps1`. La app sí los
   tiene: 132 en `cargo test -p orby-core` y 3 ficheros en `npm test`.
 - **La app instalada no tiene consola.** Cuando no detecta el teclado, el rastro
   está en `%APPDATA%\OrbyGUI\orby.log` (`src-tauri/src/log.rs`). En desarrollo,
