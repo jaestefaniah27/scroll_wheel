@@ -213,6 +213,29 @@ async function onClick(e) {
   }
 }
 
+// La biblioteca de perfiles llama a esto al instalar uno: así el perfil de
+// Altium se pone solo al abrir Altium. Nunca pisa una regla que ya tenga el
+// usuario para ese programa. Devuelve cuántas reglas ha añadido (0 donde no
+// hay detector de ventana, como en el navegador).
+export function addRulesFor(processes, profile) {
+  if (!view.available || !processes?.length) return 0;
+  let added = 0;
+  for (const proc of processes) {
+    const match = proc.toLowerCase();
+    if (view.rules.some((r) => (r.match || '').trim().toLowerCase() === match)) continue;
+    view.rules.push({
+      id: `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+      match, profile, field: 'process',
+    });
+    added++;
+  }
+  if (added) {
+    persist();
+    render();
+  }
+  return added;
+}
+
 function addRule(match, profile) {
   view.rules.push({
     id: `r${Date.now()}${Math.random().toString(36).slice(2, 6)}`,

@@ -43,7 +43,7 @@ def main():
     w('')
     w('struct Glyph  { uint16_t cp; uint8_t w; uint16_t off; };')
     w('struct Sprite { uint8_t w, h; uint16_t off; };')
-    w('struct Entry  { const char* key; uint8_t icon; const char* caption; };')
+    w('struct Entry  { const char* key; uint16_t icon; const char* caption; };')
     w('')
 
     # --- fuente pequeña y grande ------------------------------------------------
@@ -101,7 +101,8 @@ def main():
         w('    {%d, %d, %d},  // %s' % (sw, sh, off, n))
     w('};')
     w('')
-    w('enum : uint8_t {')
+    # 16 bits: con los perfiles de la biblioteca se pasó de 256 dibujos.
+    w('enum : uint16_t {')
     for k, (n, *_r) in enumerate(table):
         w('    SPR_%s = %d,' % (cid(n), k))
     w('    SPR_COUNT')

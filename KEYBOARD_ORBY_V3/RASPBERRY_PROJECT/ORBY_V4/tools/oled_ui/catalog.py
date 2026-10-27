@@ -114,3 +114,9 @@ SYSTEM = {
     'build_date':    ('calendar', ''),
     'pages':         ('pages', ''),
 }
+
+# Las de los perfiles de la biblioteca viven aparte para no enterrar estas.
+from catalog_apps import ENTRIES as _APPS
+_dup = set(_APPS) & set(ENTRIES)
+assert not _dup, 'etiquetas repetidas entre catalog.py y catalog_apps.py: %s' % sorted(_dup)
+ENTRIES.update(_APPS)

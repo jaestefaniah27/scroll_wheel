@@ -38,7 +38,7 @@ static inline void put_col(uint8_t* fb, int x, int y, uint32_t bits, int h) {
     for (int r = 0; r < h; r++) if (bits & (1u << r)) set_px(fb, x, y + r);
 }
 
-static inline void draw_sprite(uint8_t* fb, uint8_t id, int x, int y) {
+static inline void draw_sprite(uint8_t* fb, uint16_t id, int x, int y) {
     if (id >= SPR_COUNT) return;
     const Sprite& s = sprites[id];
     for (int c = 0; c < s.w; c++) put_col(fb, x + c, y, sprite_cols[s.off + c], s.h);
@@ -106,7 +106,7 @@ static inline void draw_text(uint8_t* fb, const char* s, int cx, int top, bool b
 }
 
 // --- Pantallas tipo ---------------------------------------------------------------
-static inline void screen_icon(uint8_t* fb, uint8_t icon, const char* caption) {
+static inline void screen_icon(uint8_t* fb, uint16_t icon, const char* caption) {
     memset(fb, 0, FB);
     draw_sprite(fb, icon, ICON_X, ICON_Y);
     if (caption && *caption) draw_text(fb, caption, W / 2, CAP_Y, false);

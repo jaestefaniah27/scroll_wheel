@@ -77,6 +77,10 @@ HID, pinout, pantallas) y `src/` (descriptores USB).
 - La selección de los menús va dibujada en la imagen (`invert_pill`), no invertida
   por hardware: así se anima con lo demás. La inversión por hardware queda solo
   para la tecla pulsada, que tiene que responder al instante.
+- Biblioteca de perfiles (Altium, KiCad, VS Code, Office en español, Photoshop...):
+  se define en `tools/perfiles/biblioteca.py` y se genera a
+  `OrbyGUI/src/profile-library.json`; la app los instala desde Perfiles → Biblioteca
+  (`src/profile-library.js`). Ver `tools/perfiles/README.md`.
 - El dispatch de comandos serie está sobre la línea ~2180 de `main.cpp`: cadena de
   `strncmp(cmd, "...")`. Al añadir un comando, tócalo ahí **y** en `OrbyGUI/src/device.js`.
 

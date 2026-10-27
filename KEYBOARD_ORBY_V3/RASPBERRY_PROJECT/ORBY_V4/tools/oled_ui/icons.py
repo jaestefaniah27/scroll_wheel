@@ -119,6 +119,12 @@ class Canvas:
         run(x0, x1, y0, True); run(x0, x1, y1 - w, True)
         run(y0, y1, x0, False); run(y0, y1, x1 - w, False)
 
+    def text(self, s, x, y, big=False, italic=False, v=True):
+        """Texto con la fuente de las pantallas, esquina superior izquierda en
+        (x, y). Va encima del dibujo, ya rasterizado: así las letras quedan
+        exactamente como en los nombres, sin pasar por el supermuestreo."""
+        self.__dict__.setdefault('_texts', []).append((s, x, y, big, italic, v))
+
     # -- salida --------------------------------------------------------------
     def bitmap(self):
         small = self.im.resize((self.w, self.h), Image.BOX)
@@ -763,10 +769,31 @@ def _(c):
     c.rect(1, 4, 18, 22, r=2)
 
 
+def _apply_texts(cv, bm):
+    import font
+    for (s, x0, y0, big, italic, v) in getattr(cv, '_texts', []):
+        rows = [''] * 9
+        for i, ch in enumerate(s):
+            g = font.rows9(ch)
+            for k in range(9):
+                rows[k] += g[k] + ('.' if i < len(s) - 1 else '')
+        if big:
+            rows = font.epx(rows)
+        h = len(rows)
+        for yy, row in enumerate(rows):
+            # Cursiva: cada 4 filas hacia arriba, un píxel a la derecha.
+            sh = (h - 1 - yy) // 4 if italic else 0
+            for xx, ch in enumerate(row):
+                X, Y = x0 + xx + sh, y0 + yy
+                if ch == '#' and 0 <= X < cv.w and 0 <= Y < cv.h:
+                    bm[Y][X] = v
+
+
 def render(name):
     cv = Canvas()
     ICONS[name](cv)
     bm = cv.bitmap()
+    _apply_texts(cv, bm)
     g = getattr(cv, '_gradient', None)
     if g:
         x0, y0, x1, y1 = g
@@ -816,4 +843,10 @@ def render_sprite(name):
     w, h, f = SPRITES[name]
     cv = Canvas(w, h)
     f(cv)
-    return cv.bitmap()
+    bm = cv.bitmap()
+    _apply_texts(cv, bm)
+    return bm
+
+
+# Los iconos de los perfiles de la biblioteca, en ficheros aparte por familia.
+import icons_apps  # noqa: E402,F401  (se registran solos en ICONS)

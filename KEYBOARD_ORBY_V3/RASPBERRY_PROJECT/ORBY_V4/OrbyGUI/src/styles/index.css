@@ -561,6 +561,19 @@ body {
 .plugin-row-name b { font-weight: 400; font-size: 11px; color: var(--text-muted); }
 .plugin-row-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 .plugin-row-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+/* Biblioteca de perfiles (vista de perfiles) */
+.library-panel { padding: 16px 18px; margin-bottom: 14px; }
+.library-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+.library-head h3 { margin: 0 0 4px; font-size: 15px; }
+.library-group h4 {
+  margin: 14px 0 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.library-pages { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.library-status {
+  padding: 8px 12px; margin-bottom: 8px; border-radius: var(--radius-sm); font-size: 13px;
+  background: rgba(139, 92, 246, 0.12); border: 1px solid var(--border-active);
+}
 .plugin-empty {
   padding: 18px; text-align: center; font-size: 13px; color: var(--text-muted);
   border: 1px dashed var(--border-light); border-radius: var(--radius-sm);

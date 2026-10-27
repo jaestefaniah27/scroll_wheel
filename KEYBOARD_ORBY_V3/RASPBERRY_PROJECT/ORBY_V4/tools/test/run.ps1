@@ -26,6 +26,12 @@ Write-Host "`nComprobando que los iconos están regenerados..." -ForegroundColor
 & python "$here\..\oled_ui\build.py" --check
 if ($LASTEXITCODE -ne 0) { $failed = $true }
 
+# La biblioteca de perfiles: etiquetas válidas, todas con icono, y el JSON de la
+# app al día con biblioteca.py.
+Write-Host "`nComprobando la biblioteca de perfiles..." -ForegroundColor Gray
+& python "$here\..\perfiles\build.py" --check
+if ($LASTEXITCODE -ne 0) { $failed = $true }
+
 # La huella con la que el teclado y la app deciden si hay que sincronizar esta
 # escrita dos veces, en C++ y en JavaScript. Si dejan de dar lo mismo, la app
 # vuelve a descargarlo todo en cada conexion sin que nadie se entere.
