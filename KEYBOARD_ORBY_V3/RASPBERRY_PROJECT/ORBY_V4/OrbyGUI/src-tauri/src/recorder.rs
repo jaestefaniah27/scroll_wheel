@@ -480,6 +480,9 @@ fn guardar(id: u32, eventos: &[Evento]) {
             }
             let mut copia = m.as_object().cloned().unwrap_or_else(Map::new);
             copia.insert("events".into(), nuevos.clone());
+            // De qué pantalla son las coordenadas: sin esto el teclado no puede
+            // reproducir la grabación por su cuenta (ver mouse::escritorio).
+            copia.insert("desk".into(), crate::mouse::escritorio());
             Value::Object(copia)
         })
         .collect();

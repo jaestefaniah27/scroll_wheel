@@ -19,6 +19,7 @@ import { macroById, nextMacroId, ensureMacro, savePCMacros,
          isPowerMacro, pluginMacroOf } from './macros-store.js';
 import { applyKeymap, applyRotary, applyRotaryPair } from './keys.js';
 import { escape, getCurrentWindowInfo } from './util.js';
+import { renderWhereItRuns } from './where-it-runs.js';
 
 // --- Selector deslizante de una acción de valor exacto ----------------------
 // "Fijar brillo"/"Fijar color" no se asignan con un solo clic: primero hay que
@@ -61,6 +62,7 @@ export function sameStep(a, b) {
   if (a.type !== b.type) return false;
   if (a.type === 'hotkey') return a.modifier === b.modifier && a.keycode === b.keycode;
   if (a.type === 'mouse_click') return a.button === b.button;
+  if (a.type === 'consumer') return a.index === b.index;
   return false;
 }
 
@@ -407,9 +409,11 @@ export function renderAppTab(macroId) {
       </label>
     `}
 
+    ${renderWhereItRuns(macroById(currentMacroId()))}
     <p class="setting-desc">
-      Se ejecuta en el PC al pulsar la tecla (necesita esta app abierta), igual que un paso
-      "Abrir" de una secuencia.
+      El teclado lo abre solo con Win+R, la ruta e Intro: verás el diálogo Ejecutar un instante.
+      Con esta app abierta lo abre el PC directamente. Para una app anclada en la barra de
+      tareas es más rápido "App anclada" en la pestaña Multimedia.
     </p>
 
     <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar</button>`;
@@ -428,13 +432,14 @@ export function renderTextTab(macroId) {
                 placeholder="Por ejemplo tu correo, una firma o un trozo de código">${escape(step.text || '')}</textarea>
     </label>
 
+    ${macroId === null ? '' : renderWhereItRuns(macroById(macroId))}
     <p class="setting-desc">
-      Lo escribe el PC, así que necesita esta app abierta (vale con el icono de la bandeja).
-      Al ir por unicode y no por códigos de tecla, sale igual con cualquier distribución: eñes,
-      acentos y símbolos incluidos. Los textos de más de cuatro letras entran de golpe por el
-      portapapeles y un Ctrl+V (se restaura lo que tuvieras copiado), así que da igual lo largos
-      que sean; donde Ctrl+V no pegue —la consola clásica, algún juego— no aparecerá nada. Los
-      saltos de línea se mandan como Intro y los tabuladores como Tab.
+      Con esta app abierta lo escribe el PC: por unicode, así que sale igual con cualquier
+      distribución, y los textos de más de cuatro letras entran de golpe por el portapapeles
+      (se restaura lo que tuvieras copiado). Sin la app lo teclea el propio teclado, letra a
+      letra, con la distribución elegida en Ajustes; lo que no esté en ella sale con Alt +
+      código, y un emoji no puede salir. Los saltos de línea van como Intro y los tabuladores
+      como Tab.
     </p>
 
     <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar</button>`;
@@ -603,11 +608,18 @@ export function stopPositionCapture(commit) {
       step.type = 'mouse_position';
       step.x = lastMousePos.x;
       step.y = lastMousePos.y;
+      // La pantalla de la captura: sin ella el teclado no puede reproducir la
+      // posición por su cuenta (ver toAbs en src/native/recording.mjs).
+      if (lastMousePos.desk) step.desk = lastMousePos.desk;
+      else delete step.desk;
       savePCMacros();
     }
     rerender();
   } else {
-    seqAddAction({ type: 'mouse_position', x: lastMousePos.x, y: lastMousePos.y });
+    seqAddAction({
+      type: 'mouse_position', x: lastMousePos.x, y: lastMousePos.y,
+      ...(lastMousePos.desk ? { desk: lastMousePos.desk } : {}),
+    });
   }
 }
 

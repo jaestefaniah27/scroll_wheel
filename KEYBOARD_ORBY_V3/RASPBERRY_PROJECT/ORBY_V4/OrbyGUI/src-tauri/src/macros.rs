@@ -1,8 +1,10 @@
 // Las secuencias que ejecuta el PC.
 //
-// El teclado hace él solo lo que le cabe (retardos, atajos, clics), y manda `MACRO:<id>`
-// solo cuando la secuencia tiene algún paso que no sabe hacer: una posición absoluta de
-// ratón, un texto, abrir un programa, apagar el equipo o un complemento.
+// Desde el firmware 4.7 el teclado sabe hacer casi todo él solo (ver src/native/ en el
+// renderer), y manda `MACRO:<id>` en dos casos: cuando la secuencia tiene algo que no
+// sabe hacer (un complemento, un carácter fuera de Windows-1252) y cuando lo sabe hacer
+// pero el PC lo hace mejor y la app está delante (pegar un texto en vez de teclearlo,
+// abrir una app sin pasar por el diálogo Ejecutar).
 //
 // La traducción de códigos de tecla vive en `orby_core::teclas`, que es donde se puede
 // probar. Aquí solo está el trato con Windows.
@@ -12,7 +14,7 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-use orby_core::teclas::{code_a_vk, hid_a_vk, modificadores_a_vk, Tecla};
+use orby_core::teclas::{code_a_vk, consumidor_a_vk, hid_a_vk, modificadores_a_vk, Tecla};
 use serde_json::Value;
 use tauri::AppHandle;
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -373,6 +375,19 @@ fn ejecutar_accion(app: &AppHandle, accion: &Value) {
                 return;
             }
             repetir(accion, || pulsar(&teclas));
+        }
+
+        "consumer" => {
+            // Multimedia dentro de una secuencia: el índice es el de la tabla del
+            // firmware, el mismo que guardan las teclas multimedia.
+            let Some(tecla) = accion
+                .get("index")
+                .and_then(Value::as_u64)
+                .and_then(|i| consumidor_a_vk(i as u8))
+            else {
+                return;
+            };
+            repetir(accion, || pulsar(&[tecla]));
         }
 
         "text" => {

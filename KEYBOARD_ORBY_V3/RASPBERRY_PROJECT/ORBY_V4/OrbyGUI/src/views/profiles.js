@@ -54,6 +54,11 @@ import { seqAddAction, currentAppStep, setAppKind, currentTextStep, setPowerActi
 import { renderSequenceEditor } from './profiles/sequence-editor.js';
 import { getCurrentWindowInfo, keycodeOptions, escape } from './profiles/util.js';
 
+// Win + 1..9: la app anclada en esa posición de la barra de tareas. Usos HID de
+// los dígitos de la fila superior; el 0 no se ofrece (es la décima, rara vez útil).
+const PINNED_APP_MODIFIER = 0x08; // GUI izquierdo
+const PINNED_APP_KEYCODES = [0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26];
+
 // Subir las secuencias al teclado lo hace ahora macros-store.js, pero main.js
 // se lo sigue pidiendo a esta vista: era parte de su interfaz antes del corte.
 export { syncAllMacrosToDevice } from './profiles/macros-store.js';
@@ -221,6 +226,10 @@ function onClick(e) {
     applyKeymap(CONSUMER_MODIFIER, Number(el.dataset.index));
   } else if (act === 'set-power') {
     setPowerAction(el.dataset.mode);
+  } else if (act === 'set-pinned') {
+    // Win + número: la app anclada en esa posición de la barra de tareas. Es un
+    // atajo normal, así que lo hace el teclado solo y en cualquier Windows.
+    applyKeymap(PINNED_APP_MODIFIER, PINNED_APP_KEYCODES[Number(el.dataset.n) - 1]);
   } else if (act === 'toggle-mod') {
     const bit = Number(el.dataset.bit);
     const current = currentAction();
@@ -256,6 +265,10 @@ function onClick(e) {
     // mismos controles (App en foco / Examinar / buscador) que enseña cada
     // paso ya en la lista.
     seqAddAction({ type: 'open_app', target: '', kind: 'app' });
+  } else if (act === 'seq-add-consumer') {
+    // Reproducir/Pausa de entrada: es la multimedia que más se mete en una
+    // secuencia. Se cambia en el propio paso.
+    seqAddAction({ type: 'consumer', index: 3 });
   } else if (act === 'seq-add-text') {
     // En blanco, como el paso "Abrir": el texto se escribe en el propio paso.
     seqAddAction({ type: 'text', text: '' });
@@ -362,6 +375,9 @@ function onChange(e) {
     // `change` salta al salir del campo: repintar aquí no corta la escritura.
     variants.update(view.variantId, { name: e.target.value.trim() });
     render();
+  } else if (act === 'seq-consumer-pick') {
+    const step = seqActionAt(Number(e.target.dataset.index));
+    if (step) { step.index = Number(e.target.value); savePCMacros(currentMacroId()); }
   } else if (act === 'seq-click-button') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) { step.button = e.target.value; savePCMacros(currentMacroId()); }
@@ -1730,8 +1746,25 @@ function renderKeyInspector() {
                       data-act="set-power" data-mode="${mode}">${label}</button>`).join('')}
           </div>
           <p class="setting-desc">
-            Esta acción la ejecuta el PC, no el teclado, así que OrbyGUI tiene que estar abierto
-            —vale con el icono de la bandeja— para que funcione.
+            ${compat.supports(state.deviceInfo, 'native')
+              ? `La hace el propio teclado: suspender con la orden de energía del USB, bloquear con
+                 Win+L y el resto escribiendo <code>shutdown</code> en el diálogo Ejecutar. Con
+                 OrbyGUI abierto se encarga el PC.`
+              : `Esta acción la ejecuta el PC, no el teclado, así que OrbyGUI tiene que estar abierto
+                 —vale con el icono de la bandeja— para que funcione. Con el firmware 4.7 la haría
+                 el propio teclado.`}
+          </p>
+        </div>
+        <div class="field">
+          <span class="field-label">App anclada en la barra de tareas</span>
+          <div class="consumer-grid consumer-grid-3col">
+            ${PINNED_APP_KEYCODES.map((k, i) => `
+              <button class="consumer-chip ${action.modifier === PINNED_APP_MODIFIER && action.keycode === k ? 'on' : ''}"
+                      data-act="set-pinned" data-n="${i + 1}">${i + 1}.ª</button>`).join('')}
+          </div>
+          <p class="setting-desc">
+            Abre (o trae al frente, si ya está abierta) la app que ocupa esa posición en la barra
+            de tareas de Windows. Es Win + el número, así que funciona sin OrbyGUI.
           </p>
         </div>
         ${renderPluginKeyActions(isMacro ? action.keycode : null)}` : ''}

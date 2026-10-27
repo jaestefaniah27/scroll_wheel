@@ -3,12 +3,12 @@
 // monta el HTML.
 
 import { state, hasPages, maxPages, pageCountOf } from '../../store.js';
-import { MODIFIERS, GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER, describeAction } from '../../hid-keys.js';
+import { MODIFIERS, GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER, CONSUMER_ACTIONS, describeAction } from '../../hid-keys.js';
 import { icon } from '../../icons.js';
 import { DEFAULT_STEP_DELAY_MS } from './constants.js';
 import { view } from './view-state.js';
-import { macroById, macroDeviceEligible, DEVICE_STEP_TYPE, MACRO_MAX_STEPS_DEVICE,
-         DEFAULT_REPEAT_GAP_MS } from './macros-store.js';
+import { macroById, DEFAULT_REPEAT_GAP_MS } from './macros-store.js';
+import { renderWhereItRuns } from './where-it-runs.js';
 import { ensureInstalledApps, installedAppsDatalist, seqKeyBuilder,
          capturePosEditIndex, lastMousePos } from './macro-tabs.js';
 import { escape, keycodeOptions } from './util.js';
@@ -140,6 +140,27 @@ export function renderSequenceEditor(macroId) {
         </li>`;
     }
 
+    // Multimedia dentro de una secuencia: la misma tabla que las teclas
+    // multimedia, y como ellas la toca el propio teclado.
+    if (a.type === 'consumer') {
+      return `
+        <li class="seq-item">
+          <span>${stepNum}. Multimedia ${a.count > 1 ? `×${a.count}` : ''}</span>
+          <span class="row-inline" style="gap:6px">
+            <select class="select-input compact" data-act="seq-consumer-pick" data-index="${idx}">
+              ${CONSUMER_ACTIONS.map((c) =>
+                `<option value="${c.index}" ${a.index === c.index ? 'selected' : ''}>${escape(c.label)}</option>`).join('')}
+            </select>
+            ${countField(a, idx)}
+            ${gapField(a, idx)}
+            ${moveButtons(idx, stepNum === 1, idx === lastRealIdx)}
+            <button class="tool-btn danger small" data-act="seq-del" data-index="${idx}" title="Quitar este paso">
+              ${icon('trash', 14)}
+            </button>
+          </span>
+        </li>`;
+    }
+
     // Como el paso "Abrir", necesita apilar en vertical: el campo del texto va
     // debajo de la fila de título (de ahí seq-item-open, ver index.css).
     if (a.type === 'text') {
@@ -247,6 +268,7 @@ export function renderSequenceEditor(macroId) {
         </button>
         <button class="secondary-btn" data-act="seq-add-click">${icon('bolt', 16)} Clic</button>
         <button class="secondary-btn" data-act="seq-add-move">${icon('reset', 16)} Mover ratón</button>
+        <button class="secondary-btn" data-act="seq-add-consumer">${icon('sun', 16)} Multimedia</button>
         <button class="secondary-btn ${platform.can('text') ? '' : 'unsupported'}"
                 ${platform.can('text') ? '' : 'disabled title="Necesita OrbyGUI de escritorio"'}
                 data-act="seq-add-text">${icon('pencil', 16)} Escribir texto</button>
@@ -274,7 +296,7 @@ export function renderSequenceEditor(macroId) {
         ${icon('key', 16)} ${recording ? 'Grabando… pulsa teclas (Esc termina)' : 'Grabar secuencia de teclas'}
       </button>
 
-      ${macro ? renderSequenceLocation(macro) : ''}
+      ${renderWhereItRuns(macro)}
 
       <p class="setting-desc">
         "Grabar secuencia" solo reconoce letras, dígitos, Enter y Espacio; para el resto de
@@ -288,29 +310,8 @@ export function renderSequenceEditor(macroId) {
     </div>`;
 }
 
-// Dice si esta secuencia la toca el propio teclado (sigue funcionando aunque
-// cierres la app) o si necesita el PC, y por qué: espera, tecla, clic (con
-// repeticiones incluidas, ver macro_repeat_or_advance en main.cpp) y
-// movimiento relativo sí se suben; posición de ratón absoluta, de momento no
-// (ver TODO(homing-absoluto) junto a DEVICE_STEP_TYPE) — igual que el formato
-// antiguo "centrar ratón" o tener más pasos de los que caben en el teclado.
-export function renderSequenceLocation(macro) {
-  if (macroDeviceEligible(macro)) {
-    return `<p class="setting-desc">${icon('check', 13)} Se ejecuta en el propio teclado: sigue
-              funcionando aunque cierres esta app.</p>`;
-  }
-  const needsOpen = (macro.actions || []).some((a) => a.type === 'open_app');
-  const needsText = (macro.actions || []).some((a) => a.type === 'text');
-  const needsPos = (macro.actions || []).some((a) => a.type === 'mouse_position' || a.type === 'center_mouse');
-  const reason = needsOpen
-    ? 'abre una app o un archivo, algo que solo sabe hacer el PC'
-    : needsText
-    ? 'escribe un texto, y eso el PC lo manda como unicode: el teclado solo sabe mandar códigos de tecla, que cambian con la distribución'
-    : needsPos
-    ? 'usa una posición de ratón absoluta, que de momento solo sabe reproducir el PC'
-    : `tiene más de ${MACRO_MAX_STEPS_DEVICE} pasos, o alguno de un formato antiguo`;
-  return `<p class="setting-desc">Se ejecuta en el PC, no en el teclado (${reason}): solo
-            funciona con esta app abierta.</p>`;
-}
+// Dónde se ejecuta: ver where-it-runs.js. Se reexporta con el nombre de
+// siempre, que es el que usan las demás pestañas.
+export { renderWhereItRuns as renderSequenceLocation } from './where-it-runs.js';
 
 // Las dos acciones de página. Como las multimedia, no llevan modificadores ni

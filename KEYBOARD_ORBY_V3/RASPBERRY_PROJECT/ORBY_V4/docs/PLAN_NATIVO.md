@@ -1,5 +1,24 @@
 # Plan: hacer nativas en el teclado las funciones que hoy ejecuta el PC
 
+> **Estado: implementado** (firmware 4.7 + `OrbyGUI/src/native/`). Todas las fases
+> de abajo están hechas. Diferencias con lo planeado:
+>
+> - La distribución del teclado se elige en Ajustes (ES / EE. UU.), con la del idioma
+>   del sistema por defecto. No se detecta con `VkKeyScanEx`: haría falta un método
+>   más en `window.orby` y la WebGUI no lo tendría.
+> - Apagar, reiniciar, hibernar y cerrar sesión van por `Win+R` + `shutdown`; el HID
+>   *System Power Down* no se usa porque Windows hace con él lo que diga el botón de
+>   encendido, que puede ser suspender.
+> - La tecla que despierta al PC no se descarta: Windows también suspende el USB con
+>   el PC despierto, y ahí perderla sería comerse una letra.
+> - El pool es de 112 sectores (448 KB) y se reparte por sectores enteros, cada uno de
+>   una sola macro.
+>
+> **Pendiente de probar con el teclado delante** (nada de esto se puede comprobar sin
+> hardware): el puntero absoluto con varios monitores, el despertar por *remote
+> wakeup*, la lectura de los LEDs (Bloq Mayús / Bloq Num) y la velocidad de tecleo en
+> apps exigentes.
+
 Estudio de qué parte de lo que hoy hace OrbyGUI en el PC se puede llevar al firmware,
 cómo, y qué coste tiene. Punto de partida: la lista `PC_ONLY` de
 `OrbyGUI/src/platform.js` y los pasos que `src-tauri/src/macros.rs` ejecuta cuando el

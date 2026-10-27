@@ -20,9 +20,9 @@ es el mismo `src/` de OrbyGUI arrancando por una vía distinta.
 
 Todo esto necesita un proceso con permisos de escritorio, y el navegador no lo tiene:
 
-- Abrir aplicaciones o archivos.
-- Escribir texto por el teclado del sistema.
-- Grabar y reproducir ratón y teclado.
+- Elegir qué aplicación o archivo abre una tecla (la lista de apps instaladas y el
+  selector de archivos son del PC). Lo que ya esté configurado lo abre el teclado.
+- Grabar ratón y teclado (reproducir lo grabado sí: lo hace el teclado).
 - Cargar complementos.
 - Cambiar de perfil según la ventana en primer plano.
 - Autoarranque con la sesión de Windows.
@@ -38,6 +38,11 @@ Todo esto necesita un proceso con permisos de escritorio, y el navegador no lo t
 Perfiles, páginas, etiquetas, atajos, mandos, rueda, iconos OLED, copias de
 seguridad, y las secuencias que el propio teclado sabe tocar sin el PC
 (`macroDeviceEligible`, ver `src/views/profiles/macros-store.js`).
+
+Con el firmware 4.7 eso incluye escribir texto, las acciones de energía, la
+multimedia dentro de una secuencia y reproducir grabaciones: el navegador solo
+las sube, y las ejecuta el teclado (`src/native/`). Los textos se traducen con la
+distribución de teclado elegida en Ajustes.
 
 ## Cómo está montada
 

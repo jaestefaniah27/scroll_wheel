@@ -12,7 +12,28 @@
 
 use serde_json::{json, Value};
 use windows::Win32::Foundation::POINT;
-use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetCursorPos, GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+    SM_YVIRTUALSCREEN,
+};
+
+/// El rectángulo del escritorio virtual (todas las pantallas juntas), en el mismo
+/// espacio físico que `GetCursorPos`.
+///
+/// Lo necesita el teclado para reproducir una posición sin la app: su puntero absoluto
+/// va de 0 a 32767 sobre la superficie entera, así que un píxel solo se puede traducir
+/// sabiendo de qué superficie es. Se guarda junto a cada posición capturada y en cada
+/// grabación (ver src/native/recording.mjs).
+pub fn escritorio() -> Value {
+    unsafe {
+        json!({
+            "x": GetSystemMetrics(SM_XVIRTUALSCREEN),
+            "y": GetSystemMetrics(SM_YVIRTUALSCREEN),
+            "w": GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            "h": GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        })
+    }
+}
 
 #[tauri::command]
 pub fn mouse_get_position() -> Value {
@@ -20,7 +41,7 @@ pub fn mouse_get_position() -> Value {
     // Solo falla si el escritorio no está accesible (sesión bloqueada, cambio de usuario);
     // devolver el origen es más útil que reventar el comando.
     if unsafe { GetCursorPos(&mut punto) }.is_err() {
-        return json!({ "x": 0, "y": 0 });
+        return json!({ "x": 0, "y": 0, "desk": escritorio() });
     }
-    json!({ "x": punto.x, "y": punto.y })
+    json!({ "x": punto.x, "y": punto.y, "desk": escritorio() })
 }

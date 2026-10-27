@@ -14,8 +14,10 @@ de referencia del contrato `window.orby`, y hay un test que obliga a las otras d
 a cubrirlo entero. Lo que se compila y se publica hoy es la vía de Tauri.
 
 El teclado funciona solo: la configuración vive en su Flash. OrbyGUI es un editor,
-no un runtime — salvo para las acciones que solo el PC puede ejecutar (secuencias,
-abrir apps, complementos).
+no un runtime. Desde el firmware 4.7 casi todas las acciones las ejecuta el propio
+teclado (texto, abrir apps vía Win+R, energía, posición del ratón, grabaciones; ver
+«Lo que hace el teclado solo» abajo). Al PC solo le queda lo que de verdad necesita
+el PC: grabar, complementos, perfil por ventana activa.
 
 ## Comandos
 
@@ -49,7 +51,7 @@ npm run dist         # vía Electron: instalador en release/
 
 Los tests del backend son de Rust y van aparte — son la mayoría de los que hay:
 ```bash
-cd OrbyGUI/src-tauri && cargo test -p orby-core   # 132 tests
+cd OrbyGUI/src-tauri && cargo test -p orby-core   # 133 tests
 ```
 
 **`npm run tauri:build` a secas produce una release rota.** Sin las variables de
@@ -76,6 +78,24 @@ una con su `match(line)` y opcionalmente `collect(line)` para respuestas multil�
 
 El teclado emite telemetría no solicitada: `EV:CTX:<perfil>:<pagina>:<total>` cuando
 cambia de contexto por su cuenta (menú, gestor de páginas, tecla de salto).
+
+### Lo que hace el teclado solo (firmware 4.7, `NATIVE=1`)
+Las acciones del editor se **compilan** a pasos del reproductor del firmware en
+`OrbyGUI/src/native/` (módulos puros, con tests en `test/native*.test.mjs`):
+
+| Módulo | Qué decide |
+|---|---|
+| `compile.mjs` | acción → pasos `MSTEP_*`. Tiene que coincidir con `MacroStepType` en `main.cpp` (un test lo comprueba leyendo el fuente) |
+| `layouts.mjs` | texto → pares (modificador, tecla HID) según la distribución del PC (Ajustes). Teclas muertas y Alt+0nnn para lo que no esté |
+| `recording.mjs` | grabación de la app → registros `EVT_*` del firmware, con el puntero absoluto |
+| `pool.mjs` | reparto del pool de Flash por sectores, CRC-16 de cada trozo y CRC-32 de cada sector |
+
+`macros-store.js` es quien sube: coloca los trozos en el pool (`POOL_*`), escribe
+solo los sectores que cambian y luego los pasos. Cada paso de pool lleva la CRC de
+su trozo en `gap`: el firmware no reproduce datos que no cuadren.
+
+Las macros que el PC hace mejor llevan `MSTEP_PREFER_PC` en el paso 0: con la app
+viva el teclado manda `MACRO:<id>` como siempre; sin ella, las reproduce él.
 
 ### Versiones y compatibilidad
 La versión del firmware sale de `include/orby_version.h` y de ahí van el `FW=`
@@ -131,7 +151,7 @@ Cada uno expone `#[tauri::command]`; el renderer los llama con `invoke` a travé
 Ahí vive todo lo que *decide* algo —partir líneas del CDC, comparar versiones de firmware,
 filtrar releases, fusionar configuración, mapear teclas, descodificar la grabadora, armar
 las peticiones de un complemento— precisamente para poder comprobarlo sin un teclado
-delante. Son **132 tests** y es donde toca añadir lógica nueva: los módulos de arriba
+delante. Son **133 tests** y es donde toca añadir lógica nueva: los módulos de arriba
 deberían quedarse con lo que necesita un socket o un fichero.
 
 ### OrbyGUI — renderer (`OrbyGUI/src/`)
@@ -202,13 +222,24 @@ y se ven en la lista, pero **todavía no hay quién los ejecute**: devuelven un 
 - Un método nuevo en `window.orby` toca **las tres vías**: `src/tauri/orby-tauri.js`,
   `electron/preload.js` y `src/web/orby-web.js` (ahí, vacío). El test lo exige.
 - La lógica que se pueda probar sin teclado ni red va en `orby-core`, no en los módulos
-  de `src-tauri/src/`.
+  de `src-tauri/src/`. Del lado del renderer, en `src/native/` o `src/web/` (`.mjs` puros).
+- Un tipo de paso nuevo del reproductor toca **tres** sitios: `MacroStepType` y
+  `macro_player_tick` en `main.cpp`, `STEP` y `actionSteps` en `src/native/compile.mjs`,
+  y si el PC también tiene que saber hacerlo, `ejecutar_accion` en `src-tauri/src/macros.rs`.
 
 ## Trampas conocidas
 
 - **El firmware no tiene tests automatizados.** `tools/test/*.py` son comprobaciones
-  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano. La app sí los
-  tiene: 132 en `cargo test -p orby-core` y 3 ficheros en `npm test`.
+  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano, y
+  `tools/test/test_hid_out.cpp` prueba `hid_out.h` contra un TinyUSB de mentira. La app
+  sí los tiene: 133 en `cargo test -p orby-core` y 5 ficheros en `npm test`
+  (`native-sync.test.mjs` sube secuencias a un teclado simulado que habla el protocolo).
+- **`npm test` con Node 22** no acepta el directorio a secas: `node --test test/*.mjs`.
+- **El puntero absoluto está sin probar con varios monitores.** La app traduce píxeles
+  a 0..32767 sobre el escritorio virtual entero (`toAbs` en `src/native/recording.mjs`).
+  Si Windows lo repartiera solo por el monitor principal, las posiciones en los demás
+  saldrían mal. Comprobarlo con una secuencia de «Posición de ratón» en el secundario
+  y la app cerrada.
 - **La app instalada no tiene consola.** Cuando no detecta el teclado, el rastro
   está en `%APPDATA%\OrbyGUI\orby.log` (`src-tauri/src/log.rs`). En desarrollo,
   `npm run tauri:dev` saca además la consola por el terminal.

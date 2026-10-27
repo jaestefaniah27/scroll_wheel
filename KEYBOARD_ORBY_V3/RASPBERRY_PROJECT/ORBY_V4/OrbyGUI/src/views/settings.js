@@ -13,6 +13,8 @@ import * as firmware from '../firmware.js';
 import * as platform from '../platform.js';
 import { icon } from '../icons.js';
 import * as dashboard from './dashboard.js';
+import { getTextLayout, setTextLayout } from './profiles/macros-store.js';
+import { LAYOUTS } from '../native/layouts.mjs';
 
 // Giro acumulado de la rueda para la prueba en vivo de esta tarjeta.
 let liveTotal = 0;
@@ -103,6 +105,32 @@ export function init() {
   initWheelCalib();
   initAppCard();
   initFirmwareCard();
+  initLayoutCard();
+}
+
+// ================= Distribución del teclado del PC =================
+// Para los textos que escribe el teclado solo (src/native/layouts.mjs).
+function initLayoutCard() {
+  const box = document.getElementById('layout-selector');
+  if (!box) return;
+  box.addEventListener('click', (e) => {
+    const id = e.target.closest('[data-layout]')?.dataset.layout;
+    if (!id || id === getTextLayout()) return;
+    setTextLayout(id);
+    paintLayoutCard();
+    toast('Distribución cambiada: los textos se vuelven a subir al teclado', 'info');
+  });
+  paintLayoutCard();
+}
+
+// También desde render(): la elegida se lee de la configuración del PC, que
+// puede llegar después de montar la tarjeta.
+function paintLayoutCard() {
+  const box = document.getElementById('layout-selector');
+  if (!box) return;
+  const current = getTextLayout();
+  box.innerHTML = Object.entries(LAYOUTS).map(([id, l]) =>
+    `<button class="opt-btn ${id === current ? 'active' : ''}" data-layout="${id}">${l.label}</button>`).join('');
 }
 
 // ================= Aplicación (versión y actualizaciones) =================
@@ -591,6 +619,7 @@ function renderWheelCalib() {
 }
 
 export function render() {
+  paintLayoutCard();
   renderAppCard();
   renderFirmwareCard();
 

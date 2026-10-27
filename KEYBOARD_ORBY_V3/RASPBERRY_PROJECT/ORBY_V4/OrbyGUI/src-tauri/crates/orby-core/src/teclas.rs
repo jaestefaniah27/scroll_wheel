@@ -139,9 +139,41 @@ pub fn code_a_vk(code: &str) -> Option<Tecla> {
     })
 }
 
+/// Índice de la tabla multimedia del firmware (`get_consumer_key_from_index` en
+/// main.cpp) → la tecla virtual que hace lo mismo en Windows. Es lo que usa el PC para
+/// el paso `consumer` de una secuencia cuando la ejecuta él. El brillo y el zoom no
+/// tienen tecla virtual: `None`, y el paso no hace nada en el PC (en el teclado sí).
+pub fn consumidor_a_vk(indice: u8) -> Option<Tecla> {
+    Some(match indice {
+        1 => e(0xb6),  // LAUNCH_APP1: el explorador ("Este equipo")
+        2 => e(0xb7),  // LAUNCH_APP2: la calculadora
+        3 => e(0xb3),  // MEDIA_PLAY_PAUSE
+        4 => e(0xb2),  // MEDIA_STOP
+        5 => e(0xb0),  // MEDIA_NEXT_TRACK
+        6 => e(0xb1),  // MEDIA_PREV_TRACK
+        7 => e(0xaf),  // VOLUME_UP
+        8 => e(0xae),  // VOLUME_DOWN
+        9 => e(0xad),  // VOLUME_MUTE
+        12 => e(0xac), // BROWSER_HOME
+        13 => e(0xb4), // LAUNCH_MAIL
+        14 => e(0xaa), // BROWSER_SEARCH
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{code_a_vk, hid_a_vk, modificadores_a_vk};
+    use super::{code_a_vk, consumidor_a_vk, hid_a_vk, modificadores_a_vk};
+
+    #[test]
+    fn la_multimedia_va_a_sus_teclas_virtuales() {
+        assert_eq!(consumidor_a_vk(3).unwrap().vk, 0xb3, "reproducir/pausa");
+        assert_eq!(consumidor_a_vk(7).unwrap().vk, 0xaf, "subir volumen");
+        assert_eq!(consumidor_a_vk(2).unwrap().vk, 0xb7, "calculadora");
+        // El brillo no tiene tecla virtual: en el PC no hace nada.
+        assert_eq!(consumidor_a_vk(10), None);
+        assert_eq!(consumidor_a_vk(0), None);
+    }
 
     #[test]
     fn las_letras_y_los_digitos_salen_donde_deben() {

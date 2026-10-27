@@ -29,10 +29,13 @@ export function isTauri() {
 // Lo que necesita un proceso con permisos de escritorio. Cada nombre es lo que
 // preguntan las vistas, no el módulo que lo implementa: si mañana las secuencias
 // las tocara el navegador, se quita de aquí y ya está.
+//
+// Escribir texto y las acciones de energía salieron de aquí con el firmware 4.7:
+// las ejecuta el propio teclado (src/native/compile.mjs), así que también se
+// pueden configurar desde el navegador. Con un firmware anterior se quedan
+// marcadas como "necesita la app", igual que cualquier otra.
 const PC_ONLY = new Set([
   'openApp',      // abrir una aplicación o un archivo
-  'text',         // escribir un texto por el teclado del sistema
-  'power',        // suspender, apagar, bloquear
   'recorder',     // grabar y reproducir ratón y teclado
   'plugins',      // complementos
   'autoProfile',  // cambio de perfil según la ventana en primer plano

@@ -11,8 +11,10 @@ import * as variants from '../../variants.js';
 import { view, currentProfile, selectedKeyIndex, isActiveView, currentMacroId,
          rerender } from './view-state.js';
 import { macroById, nextMacroId, ensureMacro, savePCMacros, removeMacro, allMacros,
-         loadPCMacros, isRecordingMacro, isResetMacro, isRecordOrResetMacro } from './macros-store.js';
+         loadPCMacros, isRecordingMacro, isResetMacro, isRecordOrResetMacro,
+         syncMacroToDevice } from './macros-store.js';
 import { applyKeymap } from './keys.js';
+import { renderWhereItRuns } from './where-it-runs.js';
 
 // --- Pestaña "Grabar": capturar una operación y repetirla -------------------
 // A diferencia de una secuencia, aquí no se monta nada paso a paso: el proceso
@@ -263,6 +265,8 @@ export async function onRecorderState({ id, phase }) {
     // El proceso principal ha escrito los eventos en la configuración: hay que
     // releerla antes de volver a guardarla desde aquí, o se perdería.
     await loadPCMacros();
+    // Con algo grabado, el teclado ya la puede reproducir sin la app.
+    syncMacroToDevice(id).catch(() => {});
     await showKeyStatus(id, phase === 'saved' ? 'OK' : 'VACIO');
     restoreTimer = setTimeout(async () => {
       recordPhase = { id: null, phase: 'idle' };
@@ -275,6 +279,9 @@ export async function onRecorderState({ id, phase }) {
   } else if (phase === 'reset') {
     // Se ha pulsado SUPER + la tecla: lo grabado se ha ido y vuelve a RECORD.
     await loadPCMacros();
+    // Y la copia del teclado también: la siguiente pulsación tiene que llegar
+    // al PC para grabar, no reproducir lo de antes.
+    syncMacroToDevice(id).catch(() => {});
     recordPhase = { id: null, phase: 'idle' };
     screenBackup = null;
     await refreshRecordIcons(id);
@@ -430,9 +437,11 @@ export function renderRecordTab(macroId) {
         <button class="secondary-btn danger" data-act="rec-stop">${icon('square', 16)} Parar reproducción</button>
       </div>` : ''}
 
+    ${renderWhereItRuns(m)}
     <p class="setting-desc">
-      Esta acción la ejecuta siempre el PC (el teclado no puede saber dónde está el ratón), así que
-      OrbyGUI tiene que estar abierto —vale con el icono de la bandeja— para que funcione.
+      Grabar lo hace siempre el PC (el teclado no ve el ratón), así que para grabar OrbyGUI tiene
+      que estar abierto. Lo grabado lo reproduce también el propio teclado cuando la app está
+      cerrada.
     </p>`;
 }
 
@@ -445,8 +454,9 @@ export async function startRecordingKey() {
   m.kind = 'recording';
   m.mode = 'once';
   m.events = [];
-  // Sin pasos: así macroDeviceEligible (macros-store.js) la descarta y el teclado avisa siempre
-  // por CDC en vez de intentar tocarla él, que no puede.
+  // Sin pasos ni eventos: así macroDeviceEligible (macros-store.js) la descarta y el teclado
+  // avisa por CDC para que grabe el PC, que es el único que ve el ratón. En cuanto haya algo
+  // grabado, la reproducción sí la puede hacer el teclado (ver compileRecording).
   m.actions = [];
   savePCMacros(id);
 

@@ -12,6 +12,9 @@ import { state, markDirty } from '../../store.js';
 import { MACRO_MODIFIER, ROTARY_TYPES, describeAction, describeRotary } from '../../hid-keys.js';
 import * as plugins from '../../plugins.js';
 import * as compat from '../../compat.js';
+import { compileMacro, POOL_STEPS } from '../../native/compile.mjs';
+import { layoutBlobs, allocate, sectorsUsedBy, crc16, crc32, toHex, SECTOR, ALIGN } from '../../native/pool.mjs';
+import { LAYOUTS, defaultLayout } from '../../native/layouts.mjs';
 
 // --- Macros (secuencias ejecutadas en el PC) --------------------------------
 // Viven en la configuración local (window.orby.getConfig/setConfig), no en el
@@ -38,14 +41,19 @@ export async function loadPCMacros() {
   try {
     const cfg = await window.orby.getConfig();
     pcMacros = cfg?.macros || [];
+    if (LAYOUTS[cfg?.textLayout]) textLayout = cfg.textLayout;
   } catch {
     pcMacros = [];
   }
+  compiled.clear();
 }
 
 // `id`, si se da, es la macro que acaba de cambiar: además de persistir la
 // configuración del PC, se intenta subir (o limpiar) su copia en el teclado.
 export function savePCMacros(id) {
+  // Los pasos se editan en sitio (step.x = …) y a veces se guarda sin id: lo
+  // compilado de cualquiera puede haber cambiado.
+  compiled.clear();
   window.orby.setConfig({ macros: pcMacros });
   if (id !== undefined) syncMacroToDevice(id);
 }
@@ -77,26 +85,15 @@ export function nextMacroId() {
 }
 
 // --- Reproducción en el propio teclado ---------------------------------
-// El firmware sabe tocar espera, tecla, clic y movimiento relativo sin ayuda
-// de nadie. Debe coincidir con MacroStepType en main.cpp.
+// Qué pasos lleva cada acción en el teclado lo decide src/native/compile.mjs:
+// desde el firmware 4.7 eso incluye texto, abrir apps, energía, posición de
+// ratón y grabaciones, no solo esperas, atajos y clics. Lo que de verdad no
+// tiene traducción (un complemento, un emoji) sigue yendo por el PC.
 //
-// TODO(homing-absoluto): la posición absoluta (MSTEP_HOME_MOVE en main.cpp,
-// tipo 5) se implementó y funciona byte a byte tal y como se pidió —lo
-// confirma la telemetría de MACRO_TEST: home a +4000,+4000 y tramo final a
-// (x - esquina, y - esquina) salen exactos, sin redondeos ni signos
-// cambiados—, pero el resultado en pantalla depende del multiplicador de
-// velocidad del puntero de Windows (el de "velocidad del puntero", no el de
-// "mejorar precisión"; ese ya se descartó), que no hay forma de leer ni
-// anular desde el teclado. Sin una calibración (mandar un desplazamiento
-// conocido, medir cuánto se movió de verdad y guardar el factor), la
-// posición absoluta sin la app abierta no es fiable, así que de momento NO
-// se sube al teclado (se queda excluida de DEVICE_STEP_TYPE, cae siempre al
-// camino del PC) y la esquina de home queda aparcada. Retomar con una
-// pantalla de calibración en el editor antes de reactivarlo. Aparcada a
-// petición expresa del usuario — no es la prioridad ahora.
-export const DEVICE_STEP_TYPE = { delay: 1, hotkey: 2, mouse_move: 3, mouse_click: 4 };
-export const MACRO_MAX_STEPS_DEVICE = 48; // == MACRO_MAX_STEPS en main.cpp
-export const CLICK_BUTTON_CODE = { left: 0, middle: 1, right: 2 };
+// TODO(homing-absoluto) quedó resuelto con el puntero absoluto del 4.7
+// (MSTEP_ABS_MOVE): ya no depende de la velocidad del puntero de Windows. El
+// MSTEP_HOME_MOVE del firmware se queda sin usar.
+export { MAX_STEPS as MACRO_MAX_STEPS_DEVICE } from '../../native/compile.mjs';
 
 // Cuántas secuencias caben en el teclado. El firmware las guarda en un array
 // indexado por id, así que un id fuera de rango no es "una macro más": es un
@@ -111,8 +108,16 @@ export function deviceMacroCapacity() {
   const n = parseInt(state.deviceInfo?.maxmacros ?? '', 10);
   return Number.isFinite(n) && n > 0 ? n : MACRO_CAPACITY_FALLBACK;
 }
+
+// Sectores del pool de datos (textos y grabaciones). 0 sin firmware 4.7.
+function poolSectors() {
+  const n = parseInt(state.deviceInfo?.pool ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 // Acciones de energía del PC, elegibles desde la pestaña Multimedia (macro de
-// un único paso "system_power", ver electron/macros.js).
+// un único paso "system_power"). Con el firmware 4.7 también las hace el
+// teclado: ver POWER_RUN y compañía en src/native/compile.mjs.
 export const POWER_MODE_LABELS = {
   sleep: 'Suspender', hibernate: 'Hibernar', restart: 'Reiniciar',
   shutdown: 'Apagar', lock: 'Bloquear pantalla', logoff: 'Cerrar sesión',
@@ -132,31 +137,96 @@ export const POWER_MODE_LABELS = {
 // secuencias que corren por el camino del PC, no del teclado).
 export const DEFAULT_REPEAT_GAP_MS = 20;
 
-export function macroDeviceEligible(m) {
-  const acts = m?.actions || [];
-  return acts.length > 0
-      && acts.length <= MACRO_MAX_STEPS_DEVICE
-      && m.id < deviceMacroCapacity()
-      && acts.every((a) => a.type in DEVICE_STEP_TYPE);
+// --- Distribución de teclado del PC --------------------------------------
+// Para escribir un texto el teclado manda posiciones de tecla, y qué carácter
+// sale lo decide la distribución de Windows. Se guarda en la configuración del
+// PC; si nunca se ha elegido, la del idioma del sistema.
+let textLayout = defaultLayout(globalThis.navigator?.language);
+
+export function getTextLayout() {
+  return textLayout;
 }
 
-// Los pasos de una macro tal y como los quiere el teclado. Se saca aparte
-// porque sirve para dos cosas: subirlos y compararlos con los que ya tiene.
-function deviceStepsOf(m) {
-  return m.actions.map((a) => {
-    const type = DEVICE_STEP_TYPE[a.type];
-    let a1 = 0, b1 = 0;
-    if (a.type === 'delay') a1 = Math.max(0, Math.min(32767, Math.round(a.ms) || 0));
-    else if (a.type === 'hotkey') { a1 = a.modifier || 0; b1 = a.keycode || 0; }
-    else if (a.type === 'mouse_move') { a1 = a.dx || 0; b1 = a.dy || 0; }
-    else if (a.type === 'mouse_click') { a1 = CLICK_BUTTON_CODE[a.button] ?? 0; }
-    // Solo tecla y clic saben repetirse en el firmware (ver sameStep en macro-tabs.js): el
-    // resto de tipos siempre suben con 1 repetición y sin hueco.
-    const repeatable = a.type === 'hotkey' || a.type === 'mouse_click';
-    const repeat = repeatable ? Math.max(1, Math.min(255, a.count || 1)) : 1;
-    const gap = repeat > 1 ? Math.max(0, Math.min(32767, Math.round(a.gap ?? DEFAULT_REPEAT_GAP_MS))) : 0;
-    return { type, a: a1, b: b1, repeat, gap };
-  });
+export function setTextLayout(id) {
+  if (!LAYOUTS[id] || id === textLayout) return;
+  textLayout = id;
+  compiled.clear();
+  window.orby.setConfig({ textLayout: id });
+  // Todo texto subido con la distribución vieja escribiría otra cosa.
+  syncAllMacrosToDevice().catch(() => {});
+}
+
+// El escritorio virtual de este PC, para traducir posiciones de ratón al
+// puntero absoluto. Solo lo sabe la app de escritorio (getMousePosition trae
+// `desk`); en el navegador queda en null y esas posiciones se quedan en el PC.
+let currentDesk = null;
+
+async function refreshDesk() {
+  try {
+    const p = await window.orby.getMousePosition();
+    if (p?.desk?.w > 0 && p?.desk?.h > 0) currentDesk = p.desk;
+  } catch { /* sin backend */ }
+}
+
+// Lo compilado se guarda por macro hasta que algo la cambie: keyNeedsApp se
+// pregunta en cada repintado de la rejilla, y una grabación larga son miles de
+// eventos.
+const compiled = new Map();
+
+function compileFor(m) {
+  const native = compat.supports(state.deviceInfo, 'native') && poolSectors() > 0;
+  const key = `${m.id}|${native}|${textLayout}|${currentDesk ? 1 : 0}`;
+  const hit = compiled.get(m.id);
+  if (hit && hit.key === key && hit.macro === m) return hit.result;
+  const result = compileMacro(m, { native, layout: textLayout, desk: currentDesk });
+  compiled.set(m.id, { key, macro: m, result });
+  return result;
+}
+
+// Por qué una macro se queda en el PC, o null si la toca el teclado.
+export function macroDeviceBlocker(m) {
+  if (!m) return 'no existe';
+  if (m.id >= deviceMacroCapacity()) return 'no cabe en la memoria de secuencias del teclado';
+  const r = compileFor(m);
+  return r.ok ? null : r.reason;
+}
+
+export function macroDeviceEligible(m) {
+  return macroDeviceBlocker(m) === null;
+}
+
+// Si la toca el teclado pero con la app abierta la hace el PC (ver
+// MSTEP_PREFER_PC en main.cpp).
+export function macroPrefersPc(m) {
+  return macroDeviceEligible(m) && compileFor(m).preferPc === true;
+}
+
+// --- Lo que tiene el teclado ---------------------------------------------
+// Los pasos de cada macro tal y como están en el teclado, leídos una vez por
+// conexión. Hacen falta para no reescribir lo que ya está igual y para saber
+// qué sectores del pool tiene ya cada una.
+const onDevice = new Map();
+let onDeviceComplete = false;
+
+async function deviceSteps(id) {
+  if (onDevice.has(id)) return onDevice.get(id);
+  const steps = await device.getMacro(id);
+  onDevice.set(id, steps || []);
+  return onDevice.get(id);
+}
+
+// Quién usa cada sector del pool. Se miran todas las macros del teclado, no
+// solo las de este PC: un texto subido desde otro equipo también ocupa sitio.
+async function poolOwners() {
+  if (!onDeviceComplete) {
+    for (let id = 0; id < deviceMacroCapacity(); id++) await deviceSteps(id);
+    onDeviceComplete = true;
+  }
+  const owners = new Map();
+  for (const [id, steps] of onDevice) {
+    for (const sec of sectorsUsedBy(steps, POOL_STEPS)) owners.set(sec, id);
+  }
+  return owners;
 }
 
 // Si el teclado ya tiene exactamente esos pasos. Con `steps` vacío pregunta por
@@ -167,7 +237,7 @@ function deviceStepsOf(m) {
 async function matchesDevice(id, steps) {
   let current;
   try {
-    current = await device.getMacro(id);
+    current = await deviceSteps(id);
   } catch {
     return false;
   }
@@ -179,6 +249,41 @@ async function matchesDevice(id, steps) {
   });
 }
 
+// Coloca los trozos de pool de una macro y escribe los sectores que no tengan
+// ya lo que toca. Rellena `a` (dónde), `b` (cuánto) y `gap` (CRC) de esos
+// pasos. false si no hay sitio.
+async function placePoolData(id, steps) {
+  const withBlob = steps.filter((s) => s.blob);
+  if (!withBlob.length) return true;
+
+  const { image, offsets, sectors } = layoutBlobs(withBlob.map((s) => s.blob));
+  const first = allocate(id, sectors, await poolOwners(), poolSectors());
+  if (first === null) return false;
+
+  withBlob.forEach((s, i) => {
+    s.a = (first * SECTOR + offsets[i]) / ALIGN;
+    s.b = s.blob.length;
+    s.gap = crc16(s.blob) & 0x7FFF;
+  });
+
+  for (let k = 0; k < sectors; k += 16) {
+    const count = Math.min(16, sectors - k);
+    const have = await device.poolHash(first + k, count);
+    for (let j = 0; j < count; j++) {
+      const sector = first + k + j;
+      const want = image.subarray((k + j) * SECTOR, (k + j + 1) * SECTOR);
+      if (have[sector] === crc32(want)) continue;
+      const got = await device.poolWriteSector(sector, want, toHex);
+      if (got !== crc32(want)) throw new Error(`el sector ${sector} del pool no se grabó bien`);
+    }
+  }
+  return true;
+}
+
+// Las sincronizaciones van de una en una: se lanzan al editar y al conectar, y
+// dos a la vez podrían repartirse el mismo hueco del pool.
+let syncQueue = Promise.resolve();
+
 // Sube (o, si ya no es jugable en el teclado, limpia) la copia de una macro en
 // el dispositivo. No bloquea al que llama: si falla, la macro se queda
 // funcionando por el camino del PC hasta el próximo intento.
@@ -187,7 +292,13 @@ async function matchesDevice(id, steps) {
 // resincronización de la conexión reescribía todas las secuencias, marcaba la
 // configuración como pendiente y el guardado automático gastaba una escritura
 // de Flash del teclado en cada enchufada, sin que hubiera cambiado nada.
-export async function syncMacroToDevice(id) {
+export function syncMacroToDevice(id) {
+  const run = syncQueue.then(() => syncOne(id));
+  syncQueue = run.catch(() => {});
+  return run;
+}
+
+async function syncOne(id) {
   // Sin esto, un firmware anterior a esta función respondería "ERR:UNKNOWN_CMD"
   // a SET_MACRO_STEP, que ninguna petición espera: cada intento agotaría su
   // tiempo de espera (varios segundos) en vez de fallar al momento.
@@ -197,29 +308,42 @@ export async function syncMacroToDevice(id) {
   if (id >= deviceMacroCapacity()) return;
   const m = macroById(id);
 
-  if (!m || !macroDeviceEligible(m)) {
+  const clear = async () => {
     if (await matchesDevice(id, [])) return;   // ya estaba vacía
-    try { await device.macroClear(id); } catch { /* sin conexión o firmware viejo: no pasa nada */ }
+    try { await device.macroClear(id); onDevice.set(id, []); } catch { /* sin conexión o firmware viejo: no pasa nada */ }
     markDirty();
-    return;
-  }
+  };
 
-  const steps = deviceStepsOf(m);
-  if (await matchesDevice(id, steps)) return;
+  if (!m || !macroDeviceEligible(m)) return clear();
+
+  // Copia: los pasos de pool se rellenan con su sitio, y lo compilado se
+  // reutiliza entre llamadas.
+  const steps = compileFor(m).steps.map((s) => ({ ...s }));
 
   try {
+    if (!(await placePoolData(id, steps))) {
+      console.warn(`[secuencias] la ${id} no cabe en el pool del teclado: se queda en el PC`);
+      return clear();
+    }
+    if (await matchesDevice(id, steps)) return;
+
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       await device.setMacroStep(id, i, s.type, s.a, s.b, s.repeat, s.gap);
     }
     await device.macroTrunc(id, steps.length);
+    onDevice.set(id, steps.map(({ type, a, b, repeat, gap }) => ({ type, a, b, repeat, gap })));
     // Vive en RAM del teclado hasta que se guarde en Flash, igual que un
     // cambio de atajo: sin esto, el aviso de "Guardar en Flash" no se
     // encendería y un apagado se llevaría la secuencia por delante.
     markDirty();
-  } catch {
+  } catch (e) {
     // El teclado puede no estar conectado o llevar un firmware sin este
-    // comando: la macro sigue funcionando por el PC mientras tanto.
+    // comando: la macro sigue funcionando por el PC mientras tanto. Lo leído
+    // del teclado ya no es de fiar: se vuelve a preguntar la próxima vez.
+    onDevice.delete(id);
+    onDeviceComplete = false;
+    console.warn(`[secuencias] no se pudo subir la ${id}:`, e?.message || e);
   }
 }
 
@@ -227,18 +351,22 @@ export async function syncMacroToDevice(id) {
 // tenga ya iguales: cubre tanto un teclado recién reflasheado (su Flash de
 // secuencias está vacía) como una macro editada mientras estaba desconectado.
 //
-// La mayoría de las macros no las puede tocar el teclado (abrir una app,
-// escribir un texto, un complemento…): de esas no hay nada que subir, solo
-// habría que limpiar la copia del teclado si alguna vez se subió. Cuáles se
-// subieron se apunta en la configuración del PC, así que preguntar por las
-// demás es gastar una ida y vuelta por el CDC para oír "no tengo nada". Con
-// cien macros eso eran cien preguntas en cada conexión.
+// Las macros que no puede tocar el teclado (un complemento…) no tienen nada
+// que subir, solo habría que limpiar la copia del teclado si alguna vez se
+// subió. Cuáles se subieron se apunta en la configuración del PC, así que
+// preguntar por las demás es gastar una ida y vuelta por el CDC para oír "no
+// tengo nada". Con cien macros eso eran cien preguntas en cada conexión.
 //
 // La lista apuntada puede no existir (primera vez con esta versión): entonces
 // se repasan todas una vez y se apunta el resultado.
 export async function syncAllMacrosToDevice() {
   if (!compat.supports(state.deviceInfo, 'macros')) return;
+  // Otra conexión, quizá otro teclado: lo que se leyó del anterior no vale.
+  onDevice.clear();
+  onDeviceComplete = false;
+  compiled.clear();
   await loadPCMacros();
+  await refreshDesk();
 
   const known = await uploadedIds();
   for (const m of pcMacros) {
@@ -248,8 +376,7 @@ export async function syncAllMacrosToDevice() {
     await syncMacroToDevice(m.id);
   }
 
-  const capacity = deviceMacroCapacity();
-  const now = pcMacros.filter((m) => macroDeviceEligible(m) && m.id < capacity).map((m) => m.id);
+  const now = pcMacros.filter((m) => macroDeviceEligible(m)).map((m) => m.id);
   window.orby.setConfig({ macrosOnDevice: now });
 }
 

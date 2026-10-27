@@ -153,12 +153,11 @@ export const clearOled = async (profile, slot) => {
   return request(`OLED_CLEAR:${profile}:${slot}`, { match: (l) => l.startsWith(`OLED:CLEARED:${profile}:`) });
 };
 
-// Secuencias que puede tocar el propio teclado (espera, tecla, clic, mover el
-// ratón un delta): se suben paso a paso, con el mismo id que guarda la tecla
-// en su modificador MACRO_MODIFIER. La posición absoluta del ratón no tiene
-// equivalente aquí: de esa se sigue encargando el PC por CDC (ver MACRO:<id>).
-// `repeat`/`gap` solo los usa el reproductor en tecla y clic (ver
-// macro_repeat_or_advance en main.cpp); el resto de tipos van con 1/0.
+// Secuencias que puede tocar el propio teclado: se suben paso a paso, con el
+// mismo id que guarda la tecla en su modificador MACRO_MODIFIER. Qué pasos
+// lleva cada acción lo decide src/native/compile.mjs. `repeat`/`gap` solo los
+// usa el reproductor en tecla, clic y multimedia (ver macro_repeat_or_advance
+// en main.cpp); en los pasos de pool, `gap` es la CRC de su trozo.
 //
 // Los tres declaran `fail`: el firmware rechaza los argumentos fuera de rango
 // con ERR:BAD_ARGS, y sin esto la sincronización de secuencias al conectar se
@@ -195,6 +194,49 @@ export function getMacro(id) {
     match: (line) => line === `MACRO:${id}:END` || line.startsWith('ERR:'),
     result: steps,
   });
+}
+
+// --- Pool de datos de las secuencias (firmware 4.7, POOL=<sectores>) --------
+// Textos y grabaciones no caben en un paso: van a una región de Flash propia, y
+// el paso apunta a su trozo. Quién va dónde lo decide macros-store.js; aquí solo
+// están los comandos. Se escribe por sectores enteros: BEGIN lo vacía en la RAM
+// del teclado, DATA lo rellena a trozos y COMMIT lo graba.
+
+// CRC-32 de `count` sectores (16 como mucho por petición, ver POOL_HASH en main.cpp).
+export function poolHash(first, count) {
+  const out = {};
+  return request(`POOL_HASH:${first}:${count}`, {
+    collect: (line) => {
+      const m = /^POOL:HASH:(\d+):([0-9a-f]{8})$/.exec(line);
+      if (!m) return false;
+      out[Number(m[1])] = parseInt(m[2], 16) >>> 0;
+      return true;
+    },
+    match: (line) => line === 'POOL:HASH:END',
+    fail: REJECTED,
+    result: out,
+  });
+}
+
+// Bytes por línea de POOL_DATA: el búfer de comandos del firmware es de 512, y
+// cada byte va en dos caracteres de hex.
+const POOL_CHUNK = 192;
+
+// Graba un sector entero y devuelve la CRC-32 que el teclado lee de vuelta.
+export async function poolWriteSector(sector, bytes, toHex) {
+  await request(`POOL_BEGIN:${sector}`, { match: (l) => l === `POOL:BEGIN:OK:${sector}`, fail: REJECTED });
+  for (let off = 0; off < bytes.length; off += POOL_CHUNK) {
+    const piece = bytes.subarray(off, off + POOL_CHUNK);
+    // Lo que ya es 0xFF lo deja así el BEGIN: un texto corto no manda 4 KB.
+    if (piece.every((b) => b === 0xFF)) continue;
+    await request(`POOL_DATA:${off}:${toHex(piece)}`, { match: (l) => l === `POOL:DATA:OK:${off}`, fail: REJECTED });
+  }
+  const line = await request(`POOL_COMMIT:${sector}`, {
+    timeout: 6000,
+    match: (l) => l.startsWith(`POOL:COMMIT:OK:${sector}:`),
+    fail: REJECTED,
+  });
+  return parseInt(String(line).split(':').pop(), 16) >>> 0;
 }
 
 // --- Alta y baja de perfiles ------------------------------------------------
