@@ -3,7 +3,7 @@
 import * as device from '../device.js';
 import * as updater from '../updater.js';
 import { state, markDirty, syncFromDevice } from '../store.js';
-import { toast, requireDevice } from '../ui.js';
+import { toast, requireDevice, confirmar } from '../ui.js';
 import { runExport, runImport } from '../backup.js';
 import * as cache from '../oled-cache.js';
 import * as wheelDial from '../wheel-dial.js';
@@ -86,7 +86,13 @@ export function init() {
 
   document.getElementById('btn-factory-reset').addEventListener('click', async () => {
     if (!requireDevice()) return;
-    if (!confirm('Se restaurarán los perfiles, iconos y la calibración de fábrica en la memoria del teclado.\n\nEl cambio no será permanente hasta que pulses "Guardar en Flash".\n\n¿Continuar?')) return;
+    if (!await confirmar({
+      titulo: '¿Restaurar valores de fábrica?',
+      mensaje: 'Se restaurarán los perfiles, iconos y la calibración de fábrica en la memoria del teclado.\n\n'
+             + 'El cambio no será permanente hasta que pulses "Guardar en Flash".',
+      aceptar: 'Restaurar',
+      peligro: true,
+    })) return;
     try {
       await device.resetDefaults();
       // Vuelven los cuatro perfiles de fábrica: los índices y los iconos que
@@ -199,7 +205,11 @@ function initFirmwareCard() {
     const aviso = manual
       ? 'Este firmware no sabe reiniciarse solo: cuando te lo pida, desenchufa el teclado y vuelve a enchufarlo con BOOTSEL pulsado.\n\n'
       : '';
-    if (!confirm(`${aviso}El teclado dejará de funcionar durante la copia (unos segundos). No lo desconectes.\n\n¿Actualizar a la ${firmware.fw.latest?.version}?`)) return;
+    if (!await confirmar({
+      titulo: `¿Actualizar a la ${firmware.fw.latest?.version}?`,
+      mensaje: `${aviso}El teclado dejará de funcionar durante la copia (unos segundos). No lo desconectes.`,
+      aceptar: 'Actualizar',
+    })) return;
 
     await firmware.update();
     if (firmware.fw.status === 'done') toast('Firmware actualizado');
@@ -305,9 +315,13 @@ function initPlugins() {
       await plugins.refresh();
     } else if (el.dataset.act === 'plugin-remove') {
       const p = plugins.byId(id);
-      if (!confirm(`Se desinstalará «${p?.name || id}».\n\n`
-                 + 'Las teclas y mandos que lo usaran dejarán de hacer nada, pero conservarán su '
-                 + 'ajuste: si vuelves a instalarlo, volverán a funcionar.\n\n¿Continuar?')) return;
+      if (!await confirmar({
+        titulo: `¿Desinstalar «${p?.name || id}»?`,
+        mensaje: 'Las teclas y mandos que lo usaran dejarán de hacer nada, pero conservarán su '
+               + 'ajuste: si vuelves a instalarlo, volverán a funcionar.',
+        aceptar: 'Desinstalar',
+        peligro: true,
+      })) return;
       const res = await window.orby.plugins.uninstall(id);
       if (!res.ok) {
         toast(`No se pudo desinstalar: ${res.error}`, 'error', 5000);

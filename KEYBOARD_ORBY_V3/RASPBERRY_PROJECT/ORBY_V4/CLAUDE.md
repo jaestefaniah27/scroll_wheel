@@ -173,6 +173,12 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
 - `firmware.js` — espejo de `src-tauri/src/firmware.rs`; pone el tope de versión desde `compat.js`.
 - `updater.js` — espejo de `src-tauri/src/updater.rs`; le cuenta al backend si hay
   cambios sin guardar, para que no reinicie la app a media escritura en Flash.
+- `styles/index.css` — aspecto de macOS/iOS en oscuro. Colores, radios y curvas
+  salen de los tokens de `:root` (colores de sistema de Apple, `--fill*` para
+  controles, `--ease-out`/`--spring`): no escribas un `rgba()` de color a mano,
+  usa `rgba(var(--primary-rgb), a)` y compañía.
+- `ui.js` — avisos (`toast`) y `confirmar()`, la alerta al estilo iOS. No uses
+  `confirm()`: en WebView2 sale como diálogo de navegador con "localhost dice".
 
 ### OrbyGUI — las tres vías
 El mismo renderer arranca en tres sitios, y `src/entry.js` decide cuál montando el

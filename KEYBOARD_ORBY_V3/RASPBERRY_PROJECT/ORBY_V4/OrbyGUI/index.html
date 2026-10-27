@@ -21,7 +21,7 @@
        está montada y el teclado ha tenido su oportunidad de contestar
        (ver src/splash.js). -->
   <style>
-    html, body { background: #0a0a0f; }
+    html, body { background: #0d0d0f; }
     #app-splash {
       position: fixed;
       inset: 0;
@@ -31,36 +31,46 @@
       align-items: center;
       justify-content: center;
       gap: 18px;
-      background: radial-gradient(circle at 50% 40%, #16162a 0%, #0a0a0f 70%);
-      font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
-      color: #f8fafc;
+      /* Negro casi puro, como el arranque de un Mac: el logo es lo único que
+         tiene que verse. Mismos colores que :root en src/styles/index.css,
+         copiados porque esa hoja todavía no ha llegado. */
+      background: #0d0d0f;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI', system-ui, Roboto, sans-serif;
+      color: #f5f5f7;
       opacity: 1;
-      transition: opacity .28s ease;
+      -webkit-font-smoothing: antialiased;
+      transition: opacity .4s cubic-bezier(.32, .72, 0, 1), transform .5s cubic-bezier(.32, .72, 0, 1);
     }
-    #app-splash.gone { opacity: 0; pointer-events: none; }
+    /* Al irse crece un poco mientras se funde: el mismo gesto que una app de
+       iOS al abrirse desde su icono. */
+    #app-splash.gone { opacity: 0; transform: scale(1.04); pointer-events: none; }
     .splash-logo {
-      width: 78px;
-      height: 78px;
-      border-radius: 22px;
-      background: linear-gradient(135deg, #8b5cf6, #6366f1);
-      box-shadow: 0 0 42px rgba(139, 92, 246, .45);
-      animation: splash-pulse 1.8s ease-in-out infinite;
+      width: 84px;
+      height: 84px;
+      border-radius: 20px;
+      background:
+        radial-gradient(circle at 50% 50%, #fff 0 17%, transparent 18%),
+        linear-gradient(160deg, #a5a3ff, #5e5ce6 60%, #4b3fd1);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 12px 40px rgba(125, 122, 255, .3);
+      animation: splash-in .8s cubic-bezier(.34, 1.36, .64, 1) both;
     }
-    .splash-name { font-size: 20px; font-weight: 600; letter-spacing: 1px; }
+    .splash-name { font-size: 22px; font-weight: 600; letter-spacing: -.02em; animation: splash-fade .6s .15s both; }
     .splash-msg {
       font-size: 13px;
-      color: #94a3b8;
+      color: #98989f;
       min-height: 18px;
       /* El texto cambia varias veces durante el arranque (copia del PC,
          teclado, perfiles): sin ancho fijo el bloque saltaría a cada cambio. */
       text-align: center;
     }
+    /* La barra blanca y fina del arranque de un Mac. */
     .splash-bar {
-      width: 168px;
-      height: 3px;
+      width: 150px;
+      height: 4px;
       border-radius: 2px;
       overflow: hidden;
-      background: rgba(255, 255, 255, .08);
+      background: rgba(255, 255, 255, .14);
+      animation: splash-fade .6s .25s both;
     }
     .splash-bar::after {
       content: '';
@@ -68,20 +78,21 @@
       width: 40%;
       height: 100%;
       border-radius: 2px;
-      background: linear-gradient(90deg, #8b5cf6, #6366f1);
-      animation: splash-slide 1.1s ease-in-out infinite;
+      background: #f5f5f7;
+      animation: splash-slide 1.3s cubic-bezier(.65, 0, .35, 1) infinite;
     }
-    @keyframes splash-pulse {
-      0%, 100% { transform: scale(1);    box-shadow: 0 0 42px rgba(139, 92, 246, .45); }
-      50%      { transform: scale(1.06); box-shadow: 0 0 60px rgba(139, 92, 246, .65); }
+    @keyframes splash-in {
+      from { opacity: 0; transform: scale(.82); }
+      to   { opacity: 1; transform: none; }
     }
+    @keyframes splash-fade { from { opacity: 0; } to { opacity: 1; } }
     @keyframes splash-slide {
       0%   { transform: translateX(-110%); }
-      100% { transform: translateX(360%); }
+      100% { transform: translateX(260%); }
     }
     /* Sin animaciones si el sistema las tiene desactivadas. */
     @media (prefers-reduced-motion: reduce) {
-      .splash-logo, .splash-bar::after { animation: none; }
+      .splash-logo, .splash-name, .splash-bar, .splash-bar::after { animation: none; }
     }
   </style>
 </head>

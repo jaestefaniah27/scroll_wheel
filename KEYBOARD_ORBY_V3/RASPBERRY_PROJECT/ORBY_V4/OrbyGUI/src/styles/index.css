@@ -1,42 +1,78 @@
-:root {
-  /* Paleta de colores Premium Violeta/Índigo (Marca Orby) */
-  --bg-dark: #0a0a0f;
-  --bg-panel: rgba(22, 22, 33, 0.7);
-  --bg-panel-hover: rgba(32, 32, 48, 0.8);
-  /* `--bg-panel` ya compuesto sobre --bg-dark. Es el fondo de los paneles
-     grandes que viven dentro de un scroller: una capa opaca se rasteriza más
-     barata que una translúcida y no obliga a leer lo que hay debajo. Los
-     elementos pequeños (pestañas, botones) siguen usando la versión con alfa,
-     donde el coste es irrelevante. */
-  --bg-panel-solid: #12121c;
-  --border-light: rgba(255, 255, 255, 0.08);
-  --border-active: rgba(139, 92, 246, 0.4);
-  
-  --primary: #8b5cf6; /* Violeta */
-  --primary-hover: #7c3aed;
-  --secondary: #6366f1; /* Índigo */
-  
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --info: #3b82f6;
+/* Estética de macOS/iOS en modo oscuro, la misma familia que las pantallas del
+   teclado desde el firmware 4.6. Los valores no son inventados: son los colores
+   de sistema de Apple para fondo oscuro (systemIndigo, systemGreen...), sus
+   rellenos translúcidos para controles y sus radios. Con eso la app y las
+   pantallas se leen como una sola cosa.
 
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-glow: 0 0 15px rgba(139, 92, 246, 0.3);
-  
-  --radius-sm: 6px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  
-  --titlebar-height: 38px;
+   Los colores de estado van también en tripletas RGB (`--*-rgb`) porque casi
+   todos los usos son tintes con alfa, y escribir el número a mano en cada
+   `rgba()` es lo que dejó la paleta anterior repartida en treinta sitios. */
+:root {
+  --bg-dark: #0d0d0f;            /* fondo de ventana: casi negro, como iOS agrupado */
+  --bg-panel: rgba(44, 44, 46, 0.72);
+  --bg-panel-hover: rgba(58, 58, 60, 0.85);
+  /* Tarjetas: el secondarySystemGroupedBackground de iOS. Opaco por la regla
+     de los scrollers (ver `.view`). */
+  --bg-panel-solid: #1c1c1e;
+  --bg-elevated: #2c2c2e;
+  /* Rellenos de control de Apple: gris translúcido que funciona sobre
+     cualquier fondo y que es lo que da el aspecto "iOS" a botones y pistas. */
+  --fill: rgba(118, 118, 128, 0.24);
+  --fill-soft: rgba(118, 118, 128, 0.14);
+  --fill-strong: rgba(118, 118, 128, 0.36);
+  --border-light: rgba(255, 255, 255, 0.07);
+  --separator: rgba(84, 84, 88, 0.55);
+  --border-active: rgba(var(--primary-rgb), 0.55);
+
+  /* La marca sigue siendo violeta, pero el de Apple (systemIndigo, variante
+     accesible): el #8b5cf6 anterior chillaba al lado de los grises neutros. */
+  --primary-rgb: 125, 122, 255;
+  --primary: rgb(var(--primary-rgb));
+  --primary-hover: #6d6af0;
+  --secondary: #a5a3ff;
+
+  --text-main: #f5f5f7;
+  --text-muted: #98989f;
+  --text-faint: #636366;
+
+  --success-rgb: 48, 209, 88;
+  --warning-rgb: 255, 159, 10;
+  --danger-rgb: 255, 69, 58;
+  --info-rgb: 10, 132, 255;
+  --success: rgb(var(--success-rgb));
+  --warning: rgb(var(--warning-rgb));
+  --danger: rgb(var(--danger-rgb));
+  --info: #64d2ff;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  /* Antes era un halo violeta. Apple no usa halos: marca la selección con un
+     anillo nítido, que además no se emborrona al escalar la ventana. */
+  --shadow-glow: 0 0 0 1px var(--primary);
+  --focus-ring: 0 0 0 3.5px rgba(var(--primary-rgb), 0.5);
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+
+  /* Curvas de UIKit: `--ease-out` es la de las hojas que suben y las vistas que
+     entran; `--spring` rebota un poco y es la de las pulsaciones. Son las
+     mismas que el firmware usa en las pantallas (oled_anim.h). */
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+
+  --font-text: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', system-ui, Roboto, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI', system-ui, Roboto, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'Cascadia Mono', 'Cascadia Code', Consolas, monospace;
+
+  --titlebar-height: 40px;
   /* Barra lateral: ancho plegado (el que ocupa en el layout) y desplegado (el
      que toma al pasar el ratón, superponiéndose al contenido). */
   --sidebar-w: 64px;
-  --sidebar-w-open: 212px;
+  --sidebar-w-open: 220px;
+
+  color-scheme: dark;
 }
 
 * {
@@ -47,14 +83,26 @@
 
 body {
   /* Pila del sistema: antes se traía Inter desde Google Fonts y la app se
-     quedaba sin tipografía al abrirla sin conexión. */
-  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+     quedaba sin tipografía al abrirla sin conexión. San Francisco primero
+     (la WebGUI abierta en un Mac); en Windows cae en Segoe UI Variable, que
+     tiene tamaños ópticos como ella y se le parece mucho. */
+  font-family: var(--font-text);
+  font-size: 14px;
+  letter-spacing: -0.006em;
   background-color: var(--bg-dark);
   color: var(--text-main);
   height: 100vh;
   overflow: hidden;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
+
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
+
+button { font-family: inherit; }
+
+/* Anillo de foco de macOS: solo con teclado, nunca al hacer clic. */
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 /* Panel base.
    Antes llevaba `backdrop-filter: blur(12px)`. Un backdrop-filter dentro de un
@@ -71,7 +119,7 @@ body {
 .glass-panel {
   background: var(--bg-panel-solid);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
 }
 
@@ -88,8 +136,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(10, 10, 15, 0.95);
-  border-bottom: 1px solid var(--border-light);
+  background: #161618;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
   position: relative;
   z-index: 100;
 }
@@ -108,17 +157,22 @@ body {
   pointer-events: none;
 }
 
+/* El mismo icono que la pantalla de carga: una "squircle" con el brillo de
+   arriba que llevan los iconos de iOS. */
 .app-logo {
-  width: 16px;
-  height: 16px;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background:
+    radial-gradient(circle at 50% 50%, #fff 0 18%, transparent 19%),
+    linear-gradient(160deg, #a5a3ff, #5e5ce6 60%, #4b3fd1);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .app-title {
   font-weight: 600;
   font-size: 13px;
-  letter-spacing: 0.5px;
+  letter-spacing: -0.01em;
   color: var(--text-main);
 }
 
@@ -126,46 +180,36 @@ body {
   pointer-events: none;
 }
 
+/* Cápsula neutra con solo el punto de color, como los indicadores del Centro
+   de control: el texto en rojo o verde gritaba más de lo que dice. */
 .status-badge {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-light);
-  transition: all 0.3s ease;
+  gap: 7px;
+  padding: 4px 11px 4px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-main);
+  background: var(--fill-soft);
+  border: none;
+  transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out);
 }
 
 .status-badge .status-dot {
-  width: 8px; height: 8px;
+  width: 7px; height: 7px;
   border-radius: 50%;
+  transition: background 0.3s var(--ease-out);
 }
 
-.status-badge.connected {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.3);
-  color: var(--success);
-}
 .status-badge.connected .status-dot {
   background: var(--success);
-  box-shadow: 0 0 8px var(--success);
+  box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.22);
 }
 
-.status-badge.disconnected {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: var(--danger);
-}
+.status-badge.disconnected { color: var(--text-muted); }
 .status-badge.disconnected .status-dot { background: var(--danger); }
 
-.status-badge.searching {
-  background: rgba(59, 130, 246, 0.1);
-  border-color: rgba(59, 130, 246, 0.3);
-  color: var(--info);
-}
 .status-badge.searching .status-dot {
   background: var(--info);
   animation: pulse 1.5s infinite;
@@ -232,13 +276,15 @@ body {
   width: var(--sidebar-w);
   display: flex;
   flex-direction: column;
-  padding: 20px 12px;
-  gap: 16px;
-  /* Opaco a propósito: se superpone al contenido de la vista. */
-  background: var(--bg-dark);
-  border-right: 1px solid var(--border-light);
+  padding: 16px 12px;
+  gap: 4px;
+  /* Barra lateral de macOS: un gris algo más claro que el contenido. Opaca
+     mientras está plegada, porque no tiene nada debajo. */
+  background: #161618;
+  border-right: 1px solid rgba(0, 0, 0, 0.6);
   overflow: hidden; /* recorta las etiquetas mientras está plegada */
-  transition: width 0.16s ease, box-shadow 0.16s ease;
+  transition: width 0.38s var(--ease-out), box-shadow 0.38s var(--ease-out),
+              background 0.38s var(--ease-out);
 }
 
 /* `:has(:focus-visible)` y no `:focus-within`: al pulsar un botón el foco se
@@ -250,7 +296,19 @@ body {
 .sidebar:hover .sidebar-rail,
 .sidebar-rail:has(:focus-visible) {
   width: var(--sidebar-w-open);
-  box-shadow: 8px 0 28px rgba(0, 0, 0, 0.45);
+  box-shadow: 12px 0 40px rgba(0, 0, 0, 0.5);
+}
+
+/* Desplegada sí tapa contenido, y ahí va translúcida con desenfoque, como la
+   barra lateral de macOS. No choca con la regla de no desenfocar dentro de un
+   scroller (ver `.glass-panel`): la barra está FUERA del scroller, y el
+   desenfoque solo se recalcula mientras el ratón la tiene abierta. */
+@supports (backdrop-filter: blur(1px)) {
+  .sidebar:hover .sidebar-rail,
+  .sidebar-rail:has(:focus-visible) {
+    background: rgba(30, 30, 32, 0.72);
+    backdrop-filter: blur(30px) saturate(180%);
+  }
 }
 
 .sidebar-spacer { flex-grow: 1; }
@@ -262,7 +320,7 @@ body {
   height: 40px;
   flex-shrink: 0;
   padding: 0 9px;
-  border-radius: var(--radius-md);
+  border-radius: 10px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -271,8 +329,9 @@ body {
   gap: 12px;
   cursor: pointer;
   overflow: hidden;
-  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), transform 0.3s var(--spring);
 }
+.nav-item:active { transform: scale(0.94); }
 
 .nav-icon { flex-shrink: 0; display: flex; }
 
@@ -280,23 +339,25 @@ body {
   white-space: nowrap;
   font-family: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transform: translateX(-6px);
+  transition: opacity 0.2s var(--ease-out), transform 0.38s var(--ease-out);
 }
 
 .sidebar:hover .nav-label,
-.sidebar-rail:has(:focus-visible) .nav-label { opacity: 1; }
+.sidebar-rail:has(:focus-visible) .nav-label { opacity: 1; transform: none; }
 
 .nav-item:hover {
   color: var(--text-main);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--fill-soft);
 }
 
+/* Selección de barra lateral de macOS: relleno plano del color de acento,
+   sin degradado ni sombra. */
 .nav-item.active {
-  color: white;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+  color: #fff;
+  background: var(--primary);
 }
 
 /* Main Content Area */
@@ -318,17 +379,29 @@ body {
 .view {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  padding: 32px;
+  padding: 28px 32px;
   background: var(--bg-dark);
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
+  /* Entra subiendo un pelo y saliendo de una escala casi completa, como una
+     app al abrirse en iOS. Solo se anima la vista que entra: la que sale se
+     esconde de golpe por debajo y no se cruzan dos capas a medio fundir. */
+  transform: translateY(8px) scale(0.995);
+  transition: opacity 0.2s var(--ease-out), transform 0.5s var(--ease-out), visibility 0s linear 0.2s;
   overflow-y: auto;
 }
 
 .view.active {
   opacity: 1;
   visibility: visible;
+  /* `none` y no `translateY(0)`: cualquier transform deja a la vista como
+     bloque contenedor de lo que lleve `position: fixed` dentro. */
+  transform: none;
+  transition: opacity 0.32s var(--ease-out), transform 0.5s var(--ease-out), visibility 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view, .view.active { transform: none; transition: opacity 0.15s linear, visibility 0s; }
 }
 
 /* ================= DASHBOARD VIEW ================= */
@@ -341,10 +414,9 @@ body {
 }
 
 .dashboard-grid h2 {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: -0.005em;
   color: var(--text-muted);
   margin-bottom: 16px;
 }
@@ -373,13 +445,20 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 34px;
-  padding: 26px 30px;
-  background: #111116;
-  border-radius: 20px;
-  border: 2px solid #22222a;
+  padding: 28px 32px;
+  /* Carcasa en gris espacial: aluminio anodizado con el bisel de luz arriba,
+     como un producto de Apple fotografiado de frente. */
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 40%),
+    linear-gradient(160deg, #2b2b2f, #1b1b1e);
+  border-radius: 28px;
+  border: none;
   box-shadow:
-    inset 0 4px 20px rgba(0,0,0,0.5),
-    0 10px 30px rgba(0,0,0,0.4);
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -1px 0 rgba(0,0,0,0.5),
+    0 0 0 1px rgba(0,0,0,0.6),
+    0 30px 60px -20px rgba(0,0,0,0.7),
+    0 12px 24px rgba(0,0,0,0.35);
 }
 
 .board-keys {
@@ -396,29 +475,42 @@ body {
 
 .encoder-row { display: flex; gap: 46px; }
 
+/* Mandos de aluminio torneado: el degradado cónico hace el brillo que gira
+   alrededor del eje, igual que la corona de un Apple Watch. */
 .hw-encoder {
   width: 52px; height: 52px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #444, #111);
-  border: 2px solid #333;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  background:
+    radial-gradient(circle at 50% 50%, transparent 58%, rgba(0,0,0,0.35) 60%, transparent 64%),
+    conic-gradient(from 200deg, #6b6b70, #c7c7cc 12%, #5a5a5f 30%, #3a3a3e 48%, #8e8e93 66%, #48484c 84%, #6b6b70);
+  border: none;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.7), 0 6px 14px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.3);
   position: relative;
-  transition: transform 0.1s;
+  transition: transform 0.35s var(--spring), box-shadow 0.2s var(--ease-out);
 }
 .hw-encoder::after {
   content: ''; position: absolute;
   top: 6px; left: 50%; transform: translateX(-50%);
-  width: 4px; height: 12px; background: #888; border-radius: 2px;
+  width: 3px; height: 11px; background: #1c1c1e; border-radius: 2px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.35);
 }
-.hw-encoder.active { transform: scale(0.95); border-color: var(--primary); }
+.hw-encoder.active {
+  transform: scale(0.94);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.7), 0 0 0 4px rgba(var(--primary-rgb), 0.55), 0 4px 10px rgba(0,0,0,0.5);
+}
 
 .hw-wheel { position: relative; }
 .hw-wheel-face {
   width: 168px; height: 168px; border-radius: 50%; position: relative;
-  background: radial-gradient(circle at 35% 28%, #2f2f40, #0e0e15);
-  border: 3px solid #2a2a38;
-  box-shadow: inset 0 6px 22px rgba(0,0,0,0.75), 0 8px 18px rgba(0,0,0,0.45);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 66%, rgba(255,255,255,0.05) 67%, transparent 70%),
+    radial-gradient(circle at 38% 26%, #3a3a3e, #161618 72%);
+  border: none;
+  box-shadow:
+    0 0 0 3px #232326, 0 0 0 4px rgba(0,0,0,0.7),
+    inset 0 2px 1px rgba(255,255,255,0.08), inset 0 -10px 30px rgba(0,0,0,0.6),
+    0 14px 28px rgba(0,0,0,0.5);
+  transition: box-shadow 0.25s var(--ease-out);
 }
 /* Marcador de la rueda. Gira siguiendo el ángulo absoluto del sensor, así que
    se queda donde esté la rueda de verdad; el desfase y el sentido se calibran
@@ -429,36 +521,47 @@ body {
 }
 .dial-marker::after {
   content: ''; position: absolute; left: 50%; border-radius: 50%;
-  background: var(--primary); box-shadow: 0 0 10px rgba(139,92,246,0.8);
+  background: var(--primary); box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.25);
 }
 .dial-marker.as-dot::after {
   top: 9px; width: 14px; height: 14px; margin-left: -7px;
 }
 .dial-marker.as-line::after {
   top: 10px; width: 5px; height: 40px; margin-left: -2.5px; border-radius: 3px;
-  background: linear-gradient(to bottom, var(--primary), rgba(139,92,246,0.1));
+  background: linear-gradient(to bottom, var(--primary), rgba(var(--primary-rgb), 0.1));
   box-shadow: none;
 }
 .hw-wheel-hub {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: 44px; height: 44px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #1c1c26, #0b0b11);
-  border: 1px solid #2f2f3d;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 55%, rgba(0,0,0,0.3) 58%, transparent 62%),
+    conic-gradient(from 210deg, #5a5a5f, #aeaeb2 14%, #48484c 34%, #2c2c2e 52%, #7c7c80 70%, #3a3a3e 86%, #5a5a5f);
+  border: none;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.7), 0 3px 8px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.3);
 }
 .hw-wheel.active .hw-wheel-face {
-  border-color: var(--primary);
-  box-shadow: 0 0 20px rgba(139,92,246,0.45), inset 0 6px 22px rgba(0,0,0,0.75);
+  box-shadow:
+    0 0 0 3px #232326, 0 0 0 6px rgba(var(--primary-rgb), 0.6),
+    inset 0 2px 1px rgba(255,255,255,0.08), inset 0 -10px 30px rgba(0,0,0,0.6),
+    0 14px 28px rgba(0,0,0,0.5);
 }
 
+/* Teclas como las de un Magic Keyboard: tapa casi plana, un bisel de luz
+   arriba y sombra corta. La pulsación es un hundimiento con muelle, no un
+   salto de borde como antes. */
 .hw-key {
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 12px;
-  border-bottom-width: 4px;
+  background: linear-gradient(180deg, #333336, #262628);
+  border: none;
+  border-radius: 13px;
   position: relative;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.05s;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  transition: transform 0.35s var(--spring), box-shadow 0.25s var(--ease-out), background 0.2s;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.1),
+    0 0 0 1px rgba(0,0,0,0.55),
+    0 3px 0 #141416,
+    0 5px 10px rgba(0,0,0,0.45);
 }
 
 /* 45x25 es 72x40 a escala 0.625: cualquier otra medida deforma el icono, que
@@ -467,59 +570,72 @@ body {
   box-sizing: content-box;
   width: 45px; height: 25px;
   background: #000;
-  border-radius: 2px;
-  border: 1px solid #333;
+  border-radius: 3px;
+  border: 1px solid #0a0a0a;
   color: #fff;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: inset 0 0 4px rgba(139, 92, 246, 0.2);
+  /* El cristal de la pantalla: reflejo arriba y canto oscuro alrededor. */
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
 .hw-key .oled-screen .okey-canvas { width: 100%; height: 100%; }
 
-.hw-key.no-screen { background: #22222e; }
+.hw-key.no-screen { background: linear-gradient(180deg, #2c2c2f, #222224); }
 
 .hw-key.active {
-  transform: translateY(3px);
-  border-bottom-width: 1px;
-  background: var(--primary-hover);
-  border-color: var(--primary);
-  box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
+  transform: translateY(2px) scale(0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 0 0 1px rgba(0,0,0,0.55),
+    0 0 0 3px rgba(var(--primary-rgb), 0.85),
+    0 1px 0 #141416,
+    0 2px 4px rgba(0,0,0,0.45);
+  transition: transform 0.08s var(--ease-out), box-shadow 0.08s;
 }
 .hw-key.active .oled-screen {
   background: #fff; color: #000;
 }
 
+/* Lista agrupada de Ajustes de iOS: filas en un mismo bloque separadas por
+   una línea fina que no llega al borde izquierdo. */
 .status-panel { padding: 24px; }
-.status-items { display: flex; flex-direction: column; gap: 16px; }
+.status-items {
+  display: flex; flex-direction: column;
+  background: var(--fill-soft);
+  border-radius: 12px;
+  overflow: hidden;
+}
 .status-item {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 16px;
-  background: rgba(0,0,0,0.2);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-light);
+  min-height: 46px;
+  padding: 0 16px;
+  position: relative;
 }
-.status-item .label { color: var(--text-muted); font-size: 13px; }
-.status-item .value { font-weight: 600; font-size: 14px; }
-.value.highlight { color: var(--primary); text-shadow: 0 0 10px rgba(139,92,246,0.4); }
+.status-item + .status-item::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0;
+  height: 1px; background: var(--separator); transform: scaleY(0.6);
+}
+.status-item .label { color: var(--text-main); font-size: 14px; }
+.status-item .value { font-weight: 400; font-size: 14px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.value.highlight { color: var(--primary); font-weight: 600; }
 
 .telemetry-panel { padding: 24px; display: flex; flex-direction: column; }
 .event-feed {
   flex-grow: 1;
-  background: rgba(0,0,0,0.3);
-  border-radius: var(--radius-sm);
+  background: var(--fill-soft);
+  border-radius: 12px;
   padding: 16px;
   display: flex; flex-direction: column; justify-content: center; align-items: center;
-  border: 1px solid var(--border-light);
 }
-.event-feed .empty-state { color: var(--text-muted); font-style: italic; font-size: 13px; }
+.event-feed .empty-state { color: var(--text-faint); font-size: 13px; }
 .big-event {
-  font-size: 24px; font-weight: 700; font-family: monospace;
+  font-size: 24px; font-weight: 700; font-family: var(--font-mono);
   color: var(--success);
-  animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: popIn 0.45s var(--spring);
 }
-@keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes popIn { 0% { transform: scale(0.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
 /* ================= SETTINGS VIEW ================= */
 /* Columnas, no rejilla: las tarjetas de ajustes tienen alturas muy distintas
@@ -538,7 +654,7 @@ body {
 }
 .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .card-header i { font-size: 24px; color: var(--primary); }
-.card-header h2 { font-size: 18px; font-weight: 600; }
+.card-header h2 { font-size: 17px; font-weight: 600; }
 .setting-body { display: flex; flex-direction: column; gap: 12px; }
 .setting-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
 
@@ -550,10 +666,10 @@ body {
 .plugin-row {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 12px; border-radius: var(--radius-sm);
-  background: rgba(0,0,0,0.26); border: 1px solid var(--border-light);
+  background: var(--fill-soft); border: 1px solid transparent;
   margin-bottom: 8px;
 }
-.plugin-row.has-error { border-color: rgba(239,68,68,0.4); }
+.plugin-row.has-error { border-color: rgba(var(--danger-rgb), 0.4); }
 .plugin-row-icon { color: var(--primary); display: flex; flex-shrink: 0; }
 .plugin-row.has-error .plugin-row-icon { color: var(--danger); }
 .plugin-row-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
@@ -572,7 +688,7 @@ body {
 .library-pages { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .library-status {
   padding: 8px 12px; margin-bottom: 8px; border-radius: var(--radius-sm); font-size: 13px;
-  background: rgba(139, 92, 246, 0.12); border: 1px solid var(--border-active);
+  background: rgba(var(--primary-rgb), 0.12); border: 1px solid var(--border-active);
 }
 .plugin-empty {
   padding: 18px; text-align: center; font-size: 13px; color: var(--text-muted);
@@ -586,19 +702,25 @@ body {
 
 /* Sliders */
 .slider-container { display: flex; align-items: center; gap: 16px; }
-.slider-val { font-family: monospace; font-size: 14px; font-weight: 600; width: 40px; text-align: right; }
+.slider-val { font-family: var(--font-mono); font-size: 14px; font-weight: 600; width: 40px; text-align: right; }
+/* Deslizador de iOS: pista fina y gris, y el tramo recorrido del color de
+   acento. Ese tramo lo pinta `--fill-pct`, que pone src/ui.js en cada input
+   de rango; sin él la pista se queda gris entera, que también es correcto. */
 .premium-slider {
   flex-grow: 1;
-  -webkit-appearance: none; height: 6px; border-radius: 3px;
-  background: rgba(255,255,255,0.1); outline: none;
+  -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--primary) var(--fill-pct, 0%), var(--fill-strong) var(--fill-pct, 0%));
+  outline: none;
 }
 .premium-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
-  background: var(--text-main); border: 2px solid var(--primary);
-  cursor: pointer; transition: transform 0.1s;
-  box-shadow: var(--shadow-glow);
+  -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+  background: #fff; border: none;
+  cursor: pointer; transition: transform 0.3s var(--spring);
+  box-shadow: 0 0.5px 4px rgba(0,0,0,0.12), 0 6px 13px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
-.premium-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+.premium-slider:active::-webkit-slider-thumb { transform: scale(1.12); }
+.premium-slider:focus-visible { box-shadow: none; }
+.premium-slider:focus-visible::-webkit-slider-thumb { box-shadow: var(--focus-ring); }
 
 /* Etiquetas a los lados de un slider, tipo "Más lento" / "Más rápido". */
 .slider-row {
@@ -607,36 +729,55 @@ body {
 }
 
 /* Segmented Control */
+/* Control segmentado de iOS. Todos los de la app (este, NORMAL/SUPER, las
+   páginas, las pestañas del inspector) comparten el mismo aspecto: pista
+   gris translúcida y el segmento elegido como una pastilla más clara con
+   sombra, no relleno de color. */
 .timeout-selector {
-  display: flex; background: rgba(0,0,0,0.3); border-radius: var(--radius-sm);
-  padding: 4px; border: 1px solid var(--border-light);
+  display: flex; background: var(--fill); border-radius: 9px;
+  padding: 2px; border: none;
 }
 .timeout-selector .opt-btn {
-  flex: 1; padding: 8px 0; border: none; background: transparent;
-  color: var(--text-muted); font-size: 12px; font-weight: 600; border-radius: 4px;
-  cursor: pointer; transition: all 0.2s;
+  flex: 1; padding: 6px 0; border: none; background: transparent;
+  color: var(--text-main); font-size: 13px; font-weight: 500; border-radius: 7px;
+  cursor: pointer; transition: background 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
 }
-.timeout-selector .opt-btn.active { background: var(--bg-panel-hover); color: var(--text-main); box-shadow: var(--shadow-sm); }
+.timeout-selector .opt-btn.active,
+.toggle-btn.active,
+.inspector-tab.active {
+  background: #636366; color: #fff; font-weight: 600;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.12), 0 3px 1px rgba(0,0,0,0.04), inset 0 0.5px 0 rgba(255,255,255,0.12);
+}
 
 /* Info List */
 .info-list { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
-.info-list li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.info-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--separator); }
+.info-list li:last-child { border-bottom: none; }
 .info-list .lbl { color: var(--text-muted); }
 /* El valor se ajusta y corta: los mensajes de error del actualizador son
    largos y sin espacios, y sin esto se salen de la tarjeta. */
 .info-list .val {
-  font-family: monospace; color: var(--info);
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
   min-width: 0; text-align: right; overflow-wrap: anywhere;
 }
 
 /* Buttons */
+/* Botones de macOS/iOS: relleno gris translúcido sin borde para el
+   secundario y acento plano para el principal. Al pulsar se encogen con
+   muelle, que es lo que hace que respondan "como un iPhone". */
 .secondary-btn {
-  background: rgba(255,255,255,0.05); border: 1px solid var(--border-light);
+  background: var(--fill); border: none;
   color: var(--text-main); padding: 8px 16px; border-radius: var(--radius-sm);
   font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
-  transition: all 0.2s;
+  transition: background 0.2s var(--ease-out), color 0.2s, opacity 0.2s, transform 0.35s var(--spring);
 }
-.secondary-btn:hover { background: rgba(255,255,255,0.1); }
+.secondary-btn:hover { background: var(--fill-strong); }
+.secondary-btn:active, .primary-btn:active, .tool-btn:active, .chip:active,
+.type-chip:active, .mod-chip:active, .consumer-chip:active, .preset-btn:active,
+.btn-activate:active, .save-flash-btn:active, .update-badge.ready:active {
+  transform: scale(0.96);
+  transition-duration: 0.08s;
+}
 .mt-4 { margin-top: 16px; }
 .hidden { display: none !important; }
 
@@ -650,7 +791,7 @@ body {
 .console-output {
   flex-grow: 1; overflow-y: auto; padding: 16px;
   background: #050508; /* el mismo de `.console-wrapper`; opaco por ser scroller */
-  font-family: 'Consolas', 'Courier New', monospace; font-size: 13px;
+  font-family: var(--font-mono); font-size: 13px;
   display: flex; flex-direction: column; gap: 4px;
 }
 .console-line { word-break: break-all; }
@@ -663,10 +804,10 @@ body {
   display: flex; align-items: center; padding: 12px 16px;
   background: rgba(255,255,255,0.02); border-top: 1px solid rgba(255,255,255,0.05);
 }
-.prompt { color: var(--primary); font-family: monospace; font-weight: bold; margin-right: 12px; }
+.prompt { color: var(--primary); font-family: var(--font-mono); font-weight: bold; margin-right: 12px; }
 #console-input {
   flex-grow: 1; background: transparent; border: none; color: var(--text-main);
-  font-family: monospace; font-size: 14px; outline: none;
+  font-family: var(--font-mono); font-size: 14px; outline: none;
 }
 #btn-clear-console {
   background: transparent; border: none; color: var(--text-muted);
@@ -676,17 +817,17 @@ body {
 
 /* ================= PROFILES VIEW ================= */
 .profiles-toolbar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+/* Segmentado: el aspecto del segmento elegido está con `.timeout-selector`. */
 .layer-toggle {
-  display: flex; align-items: center; background: rgba(0,0,0,0.3);
-  padding: 4px; border-radius: 20px; border: 1px solid var(--border-light); gap: 8px;
+  display: flex; align-items: center; background: var(--fill);
+  padding: 2px; border-radius: 9px; border: none; gap: 2px;
 }
-.layer-toggle .label { font-size: 12px; color: var(--text-muted); margin-left: 12px; }
+.layer-toggle .label { font-size: 12px; color: var(--text-muted); margin: 0 8px 0 10px; }
 .toggle-btn {
-  background: transparent; border: none; color: var(--text-muted);
-  padding: 4px 16px; border-radius: 16px; font-size: 12px; font-weight: 600;
-  cursor: pointer; transition: all 0.2s;
+  background: transparent; border: none; color: var(--text-main);
+  padding: 5px 16px; border-radius: 7px; font-size: 12.5px; font-weight: 500;
+  cursor: pointer; transition: background 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
 }
-.toggle-btn.active { background: var(--primary); color: white; box-shadow: 0 0 10px rgba(139,92,246,0.3); }
 
 .profiles-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 24px;
@@ -697,23 +838,24 @@ body {
 .profile-title i { font-size: 28px; color: var(--text-main); }
 .profile-title h2 { font-size: 20px; font-weight: 700; margin: 0; }
 .btn-activate {
-  background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.4);
-  color: var(--primary); padding: 6px 16px; border-radius: 20px;
-  font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+  background: rgba(var(--primary-rgb), 0.16); border: none;
+  color: var(--primary); padding: 6px 16px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.35s var(--spring);
 }
 .btn-activate:hover { background: var(--primary); color: white; }
-.profile-card.is-active { border-color: var(--primary); box-shadow: 0 0 20px rgba(139,92,246,0.2); }
+.profile-card.is-active { border-color: var(--primary); }
 .profile-card.is-active .btn-activate { background: var(--primary); color: white; cursor: default; }
 
 .macro-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
 }
 .macro-item {
-  background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05);
+  background: var(--fill-soft); border: 1px solid transparent;
   border-radius: 6px; padding: 8px; display: flex; flex-direction: column; align-items: center;
 }
 .macro-item .key-num { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
-.macro-item .label { font-family: monospace; font-size: 12px; font-weight: 600; color: #fff; }
+.macro-item .label { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: #fff; }
 
 /* ================= ICONOS SVG EN LÍNEA ================= */
 .icn { display: block; flex-shrink: 0; }
@@ -729,35 +871,36 @@ body {
 .save-flash-btn {
   pointer-events: auto; -webkit-app-region: no-drag;
   display: flex; align-items: center; gap: 6px;
-  padding: 4px 12px; border-radius: 20px; cursor: pointer;
-  font-size: 11px; font-weight: 600;
-  background: rgba(255,255,255,0.05); border: 1px solid var(--border-light);
-  color: var(--text-muted); transition: all 0.2s;
+  padding: 4px 12px; border-radius: 999px; cursor: pointer;
+  font-size: 11.5px; font-weight: 500;
+  background: var(--fill-soft); border: none;
+  color: var(--text-muted);
+  transition: background 0.25s var(--ease-out), color 0.25s, transform 0.35s var(--spring);
 }
 .save-flash-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .save-flash-btn.has-changes {
-  background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.45);
-  color: var(--warning); animation: nudge 2.4s ease-in-out infinite;
+  background: rgba(var(--warning-rgb), 0.18);
+  color: var(--warning); animation: nudge 2.4s var(--ease-out) infinite;
 }
-.save-flash-btn.has-changes:hover { background: var(--warning); color: #1a1205; }
-@keyframes nudge { 0%,92%,100% { transform: none; } 96% { transform: translateY(-2px); } }
+.save-flash-btn.has-changes:hover { background: var(--warning); color: #1c1c1e; }
+@keyframes nudge { 0%,90%,100% { transform: none; } 95% { transform: scale(1.06); } }
 
 /* Aviso de versión nueva, al lado del estado de conexión y del guardado. */
 .update-badge {
   pointer-events: auto; -webkit-app-region: no-drag;
   display: flex; align-items: center; gap: 6px;
-  padding: 4px 12px; border-radius: 20px; cursor: default;
-  font-size: 11px; font-weight: 600;
-  background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.35);
-  color: var(--info); transition: all 0.2s;
+  padding: 4px 12px; border-radius: 999px; cursor: default;
+  font-size: 11.5px; font-weight: 500;
+  background: rgba(var(--info-rgb), 0.18); border: none;
+  color: var(--info); transition: background 0.25s, color 0.25s, transform 0.35s var(--spring);
 }
 /* Descargando todavía no se puede pulsar; lista, sí. */
 .update-badge.ready {
   cursor: pointer;
-  background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.5);
-  color: var(--primary); animation: nudge 2.4s ease-in-out infinite;
+  background: var(--primary);
+  color: #fff; animation: nudge 2.4s var(--ease-out) infinite;
 }
-.update-badge.ready:hover { background: var(--primary); color: #0f0a1a; }
+.update-badge.ready:hover { filter: brightness(1.1); }
 
 /* ================= CONTROLES DE FORMULARIO ================= */
 .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
@@ -766,43 +909,52 @@ body {
 .row-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .text-input, .select-input {
-  background: rgba(0,0,0,0.35); border: 1px solid var(--border-light);
+  background: var(--fill-soft); border: 1px solid transparent;
   border-radius: var(--radius-sm); color: var(--text-main);
-  padding: 9px 12px; font-size: 13px; font-family: inherit; outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s; width: 100%;
+  padding: 8px 12px; font-size: 13px; font-family: inherit; outline: none;
+  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background 0.2s; width: 100%;
 }
-.text-input:focus, .select-input:focus { border-color: var(--border-active); box-shadow: 0 0 0 3px rgba(139,92,246,0.12); }
+.text-input::placeholder { color: var(--text-faint); }
+.text-input:focus, .select-input:focus { background: rgba(0,0,0,0.25); border-color: var(--primary); box-shadow: var(--focus-ring); }
+/* Flecha de los desplegables: `appearance: none` quita la del sistema y sin
+   esto no se distinguían de un campo de texto. */
+.select-input {
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='%2398989f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5l3-3 3 3M2 9l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
 .text-input.compact { width: auto; min-width: 74px; padding: 6px 10px; }
 .select-input { appearance: none; cursor: pointer; }
-.select-input optgroup { background: #14141d; }
-.select-input option { background: #14141d; }
+.select-input optgroup { background: var(--bg-elevated); }
+.select-input option { background: var(--bg-elevated); }
 
 .check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
 .check input { accent-color: var(--primary); }
 
 .primary-btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-  border: none; color: #fff; padding: 10px 18px; border-radius: var(--radius-sm);
+  background: var(--primary);
+  border: none; color: #fff; padding: 8px 18px; border-radius: var(--radius-sm);
   font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
-  transition: filter 0.2s, transform 0.1s;
+  box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.3);
+  transition: filter 0.2s, opacity 0.2s, transform 0.35s var(--spring);
 }
-.primary-btn:hover { filter: brightness(1.12); }
-.primary-btn:active { transform: translateY(1px); }
-.primary-btn:disabled { opacity: 0.5; cursor: progress; }
-.primary-btn.is-capturing { background: linear-gradient(135deg, var(--warning), #ea580c); }
+.primary-btn:hover { filter: brightness(1.1); }
+.primary-btn:disabled { opacity: 0.45; cursor: progress; }
+.primary-btn.is-capturing { background: var(--warning); color: #1c1c1e; }
 
 .secondary-btn.full, .primary-btn.full { width: 100%; }
-.secondary-btn.is-on { border-color: var(--border-active); color: var(--primary); background: rgba(139,92,246,0.12); }
-.secondary-btn.danger { color: var(--danger); border-color: rgba(239,68,68,0.3); }
-.secondary-btn.danger:hover { background: rgba(239,68,68,0.15); }
+.secondary-btn.is-on { color: var(--primary); background: rgba(var(--primary-rgb), 0.16); }
+.secondary-btn.danger { color: var(--danger); }
+.secondary-btn.danger:hover { background: rgba(var(--danger-rgb), 0.16); }
+.secondary-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .pill {
-  font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
-  padding: 4px 10px; border-radius: 12px;
-  background: rgba(255,255,255,0.06); color: var(--text-muted); border: 1px solid var(--border-light);
+  font-size: 11px; font-weight: 600;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--fill-soft); color: var(--text-muted); border: none;
 }
-.pill-live { background: rgba(16,185,129,0.12); color: var(--success); border-color: rgba(16,185,129,0.35); }
+.pill-live { background: rgba(var(--success-rgb), 0.16); color: var(--success); }
 
 .empty-panel {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -822,7 +974,7 @@ body {
 .value.is-on { color: var(--success); }
 .big-event { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .big-event-title { font-size: 22px; font-weight: 700; color: var(--success); }
-.big-event-detail { font-family: monospace; font-size: 13px; color: var(--text-muted); }
+.big-event-detail { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); }
 
 /* ================= EDITOR DE PERFILES ================= */
 /* Barra superior: pestañas de perfil a la izquierda y su gestión (crear,
@@ -835,25 +987,26 @@ body {
 .profile-bar-actions .secondary-btn { padding: 8px 12px; }
 .profile-bar-actions .secondary-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .profile-count {
-  font-family: 'Consolas', monospace; font-size: 11px; color: var(--text-muted);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
   padding-left: 6px; border-left: 1px solid var(--border-light);
 }
 
 .profile-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
 .profile-tab {
-  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-  background: var(--bg-panel); border: 1px solid var(--border-light);
-  border-radius: var(--radius-md); color: var(--text-muted);
+  display: flex; align-items: center; gap: 10px; padding: 9px 16px;
+  background: var(--bg-panel-solid); border: 1px solid var(--border-light);
+  border-radius: 12px; color: var(--text-muted);
   cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
-  transition: all 0.2s;
+  transition: background 0.2s var(--ease-out), color 0.2s, box-shadow 0.25s var(--ease-out), transform 0.35s var(--spring);
 }
-.profile-tab:hover { background: var(--bg-panel-hover); color: var(--text-main); }
-.profile-tab.active { border-color: var(--border-active); color: var(--text-main); box-shadow: var(--shadow-glow); }
+.profile-tab:hover { background: var(--bg-elevated); color: var(--text-main); }
+.profile-tab:active { transform: scale(0.97); }
+.profile-tab.active { background: var(--bg-elevated); border-color: var(--primary); color: var(--text-main); box-shadow: var(--shadow-glow); }
 .profile-tab .tab-icon { color: var(--accent); display: flex; }
 /* Icono real del perfil (72x40) en vez del decorativo: mismo alto que el SVG
    que sustituye (18px), ancho proporcional, sin difuminar al escalar. */
 .tab-icon-canvas { height: 18px; width: auto; image-rendering: pixelated; display: block; }
-.tab-live { font-size: 9px; letter-spacing: 0.5px; color: var(--success); background: rgba(16,185,129,0.12); padding: 2px 6px; border-radius: 8px; }
+.tab-live { font-size: 9px; letter-spacing: 0.5px; color: var(--success); background: rgba(var(--success-rgb), 0.12); padding: 2px 6px; border-radius: 8px; }
 
 /* Variaciones: el mismo perfil con un par de atajos distintos para una app.
    La barra vive justo bajo las pestañas de perfil porque es una capa más de lo
@@ -861,7 +1014,7 @@ body {
 .variant-bar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   margin: -6px 0 20px; padding: 10px 14px;
-  background: rgba(0,0,0,0.22); border: 1px solid var(--border-light);
+  background: var(--fill-soft); border: 1px solid transparent;
   border-radius: var(--radius-md);
 }
 .variant-bar-label {
@@ -872,17 +1025,17 @@ body {
 .variant-bar-label .icn { color: var(--primary); }
 .variant-bar .chip { display: flex; align-items: center; gap: 6px; }
 .variant-bar .chip.ghost { border-style: dashed; }
-.variant-bar .chip.is-live { border-color: rgba(16,185,129,0.5); }
+.variant-bar .chip.is-live { border-color: rgba(var(--success-rgb), 0.5); }
 .variant-bar .chip.is-live::before {
   content: ''; width: 6px; height: 6px; border-radius: 50%;
   background: var(--success); box-shadow: 0 0 8px var(--success);
 }
 .chip-count {
-  font-style: normal; font-size: 10px; font-family: 'Consolas', monospace;
+  font-style: normal; font-size: 10px; font-family: var(--font-mono);
   padding: 1px 5px; border-radius: 8px; background: rgba(255,255,255,0.1);
 }
 
-.variant-card { border-color: rgba(139,92,246,0.35); }
+.variant-card { border-color: rgba(var(--primary-rgb), 0.35); }
 .variant-card .row-inline > .field { flex: 1; min-width: 180px; margin-bottom: 12px; }
 
 /* Lista de aplicaciones que disparan la variación. */
@@ -891,7 +1044,7 @@ body {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 6px 5px 12px; border-radius: 16px;
   font-size: 12px; font-weight: 600; color: var(--text-main);
-  background: rgba(139,92,246,0.14); border: 1px solid rgba(139,92,246,0.35);
+  background: rgba(var(--primary-rgb), 0.14); border: 1px solid rgba(var(--primary-rgb), 0.35);
 }
 .match-x {
   display: flex; align-items: center; justify-content: center;
@@ -909,10 +1062,10 @@ body {
   background: rgba(255,255,255,0.04); border: 1px dashed var(--border-light);
 }
 .override-note.is-override {
-  border-style: solid; border-color: rgba(245,158,11,0.45);
-  background: rgba(245,158,11,0.08); color: var(--text-main);
+  border-style: solid; border-color: rgba(var(--warning-rgb), 0.45);
+  background: rgba(var(--warning-rgb), 0.08); color: var(--text-main);
 }
-.override-note code { font-family: 'Consolas', monospace; color: var(--primary); }
+.override-note code { font-family: var(--font-mono); color: var(--primary); }
 .override-note .secondary-btn { margin-left: auto; padding: 6px 10px; font-size: 12px; }
 
 /* Selector deslizante de una acción de complemento con valor exacto ("Fijar
@@ -924,7 +1077,7 @@ body {
 .plugin-value-pick .field { margin-bottom: 10px; }
 
 /* Huecos que la variación cambia respecto al perfil base. */
-.okey.is-override, .rotary-part.is-override { border-color: rgba(245,158,11,0.55); }
+.okey.is-override, .rotary-part.is-override { border-color: rgba(var(--warning-rgb), 0.55); }
 .okey-dot {
   width: 6px; height: 6px; border-radius: 50%; background: var(--warning);
   display: inline-block; margin-left: 2px;
@@ -983,14 +1136,16 @@ body {
 .editor-key {
   display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
   padding: 12px; min-height: 84px; text-align: left; font-family: inherit;
-  background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
-  border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s;
+  background: var(--fill-soft); border: 1px solid transparent;
+  border-radius: 12px; cursor: pointer;
+  transition: background 0.2s var(--ease-out), border-color 0.2s, box-shadow 0.2s, transform 0.35s var(--spring);
 }
-.editor-key:hover { background: rgba(255,255,255,0.05); border-color: var(--border-light); }
-.editor-key.selected { border-color: var(--primary); background: rgba(139,92,246,0.12); box-shadow: var(--shadow-glow); }
+.editor-key:active, .okey:active, .rotary-part:active { transform: scale(0.97); }
+.editor-key:hover { background: var(--fill); border-color: transparent; }
+.editor-key.selected { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.12); box-shadow: var(--shadow-glow); }
 .editor-key.no-screen { opacity: 0.6; }
 .editor-key .ek-num { font-size: 10px; color: var(--text-muted); }
-.editor-key .ek-label { font-family: monospace; font-size: 15px; font-weight: 700; color: var(--text-main); }
+.editor-key .ek-label { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--text-main); }
 .editor-key .ek-action { font-size: 11px; color: var(--text-muted); line-height: 1.3; }
 .editor-key.assigned .ek-action { color: var(--secondary); }
 
@@ -1013,17 +1168,17 @@ body {
 
 .rotary-part {
   display: flex; align-items: center; gap: 10px; padding: 8px 10px; text-align: left;
-  background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
+  background: var(--fill-soft); border: 1px solid transparent;
   border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; transition: all 0.15s;
 }
-.rotary-part:hover { background: rgba(255,255,255,0.05); border-color: var(--border-light); }
-.rotary-part.selected { border-color: var(--primary); background: rgba(139,92,246,0.12); box-shadow: var(--shadow-glow); }
+.rotary-part:hover { background: var(--fill); border-color: transparent; }
+.rotary-part.selected { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.12); box-shadow: var(--shadow-glow); }
 .rp-dir {
   width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,0.06); color: var(--text-muted); font-size: 13px;
 }
-.rotary-part.assigned .rp-dir { background: rgba(139,92,246,0.2); color: var(--primary); }
+.rotary-part.assigned .rp-dir { background: rgba(var(--primary-rgb), 0.2); color: var(--primary); }
 .rp-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rp-body em { font-style: normal; font-size: 10px; color: var(--text-muted); }
 .rp-body strong { font-size: 12px; font-weight: 600; color: var(--text-main); overflow-wrap: anywhere; }
@@ -1031,10 +1186,10 @@ body {
 .type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .type-chip {
   padding: 9px 8px; font-size: 11px; font-weight: 600; text-align: left; font-family: inherit;
-  background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);
+  background: var(--fill-soft); border: 1px solid transparent;
   color: var(--text-muted); border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s;
 }
-.type-chip:hover { color: var(--text-main); background: rgba(255,255,255,0.06); }
+.type-chip:hover { color: var(--text-main); background: var(--fill); }
 .type-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 .type-chip.small { padding: 5px 8px; font-size: 10px; }
 
@@ -1047,24 +1202,23 @@ body {
    inspector estrecho, así que saltan de fila en vez de quedar ilegibles. */
 .inspector-tabs {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
-  gap: 4px; margin-bottom: 18px; padding: 4px;
-  background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  gap: 2px; margin-bottom: 18px; padding: 2px;
+  background: var(--fill); border: none;
+  border-radius: 9px;
 }
 .inspector-tab {
-  padding: 8px 6px; font-size: 12px; font-weight: 600; font-family: inherit;
-  background: transparent; border: none; border-radius: var(--radius-sm);
-  color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+  padding: 6px 6px; font-size: 12px; font-weight: 500; font-family: inherit;
+  background: transparent; border: none; border-radius: 7px;
+  color: var(--text-main); cursor: pointer;
+  transition: background 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
 }
-.inspector-tab:hover { color: var(--text-main); }
-.inspector-tab.active { background: var(--primary); color: #fff; }
 
 /* Pasos de una macro (secuencia ejecutada en el PC). */
 .seq-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .seq-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 8px 10px; font-size: 12px; color: var(--text-main);
-  background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
+  background: var(--fill-soft); border: 1px solid transparent;
   border-radius: var(--radius-sm);
 }
 /* Paso "Abrir" de una secuencia: además de la fila título+borrar, lleva
@@ -1079,12 +1233,13 @@ body {
 .seq-gap-input { min-width: 56px; max-width: 68px; text-align: center; padding: 6px 6px; font-size: 12px; }
 .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .mod-chip, .consumer-chip, .chip, .preset-btn {
-  background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);
+  background: var(--fill-soft); border: 1px solid transparent;
   color: var(--text-muted); border-radius: var(--radius-sm); cursor: pointer;
-  font-family: inherit; transition: all 0.15s;
+  font-family: inherit;
+  transition: background 0.2s var(--ease-out), color 0.2s, border-color 0.2s, transform 0.35s var(--spring);
 }
 .mod-chip { padding: 7px 4px; font-size: 11px; font-weight: 600; }
-.mod-chip:hover, .consumer-chip:hover, .chip:hover { color: var(--text-main); background: rgba(255,255,255,0.06); }
+.mod-chip:hover, .consumer-chip:hover, .chip:hover { color: var(--text-main); background: var(--fill); }
 .mod-chip.on, .consumer-chip.on, .chip.on {
   background: var(--primary); border-color: var(--primary); color: #fff;
 }
@@ -1098,18 +1253,18 @@ body {
 .rec-state {
   padding: 10px 12px; border-radius: var(--radius-sm);
   font-size: 12px; line-height: 1.5;
-  border: 1px solid var(--border-light); background: rgba(0,0,0,0.28); color: var(--text-muted);
+  border: 1px solid transparent; background: var(--fill-soft); color: var(--text-muted);
 }
-.rec-state.ok { border-color: rgba(16,185,129,0.35); background: rgba(16,185,129,0.1); color: var(--success); }
+.rec-state.ok { border-color: rgba(var(--success-rgb), 0.35); background: rgba(var(--success-rgb), 0.1); color: var(--success); }
 .rec-state.is-rec {
-  border-color: rgba(239,68,68,0.45); background: rgba(239,68,68,0.12); color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.45); background: rgba(var(--danger-rgb), 0.12); color: var(--danger);
   animation: recPulse 1.2s ease-in-out infinite;
 }
-@keyframes recPulse { 50% { border-color: rgba(239,68,68,0.9); } }
+@keyframes recPulse { 50% { border-color: rgba(var(--danger-rgb), 0.9); } }
 .inspector-summary { padding-top: 14px; border-top: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 6px; }
 .inspector-summary code {
-  font-family: 'Consolas', monospace; font-size: 14px; color: var(--primary);
-  background: rgba(139,92,246,0.1); padding: 8px 12px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 14px; color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1); padding: 8px 12px; border-radius: var(--radius-sm);
 }
 
 /* ================= RUEDA DE SCROLL (dentro de Perfiles) ================= */
@@ -1129,10 +1284,13 @@ body {
 .wheel-tune-head .slider-row { margin-top: 8px; }
 
 .wheel-readout { text-align: center; margin: 8px 0 20px; }
+/* Cifra grande al estilo de los widgets de iOS: SF Rounded donde exista, y
+   números tabulares para que no baile al arrastrar el deslizador. */
 .wheel-readout span {
-  font-size: 48px; font-weight: 700; font-family: 'Consolas', monospace; line-height: 1;
-  background: linear-gradient(to bottom, #fff, #a78bfa);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  font-size: 52px; font-weight: 700; line-height: 1; letter-spacing: -0.03em;
+  font-family: ui-rounded, 'SF Pro Rounded', var(--font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-main);
 }
 .wheel-readout small { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
 
@@ -1142,39 +1300,42 @@ body {
 .wheel-tune-main > .preset-row:first-child { margin-top: 0; }
 .preset-btn { display: flex; flex-direction: column; gap: 3px; padding: 12px; text-align: left; }
 .preset-btn strong { font-size: 13px; color: var(--text-main); }
-.preset-btn span { font-family: monospace; font-size: 11px; color: var(--primary); }
+.preset-btn span { font-family: var(--font-mono); font-size: 11px; color: var(--primary); }
 .preset-btn em { font-size: 11px; font-style: normal; color: var(--text-muted); }
-.preset-btn.on { border-color: var(--primary); background: rgba(139,92,246,0.12); }
+.preset-btn.on { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.12); }
 .preset-btn.on strong, .preset-btn.on em { color: var(--text-main); }
 
 .hires-state { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; font-size: 12px; }
-.hires-state.ok  { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: var(--success); }
-.hires-state.off { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--warning); }
+.hires-state.ok  { background: rgba(var(--success-rgb), 0.1); border: 1px solid rgba(var(--success-rgb), 0.3); color: var(--success); }
+.hires-state.off { background: rgba(var(--warning-rgb), 0.1); border: 1px solid rgba(var(--warning-rgb), 0.3); color: var(--warning); }
 .hires-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
 
 .wheel-dial { display: flex; justify-content: center; margin: 8px 0 6px; }
 .wheel-dial-face {
   width: 84px; height: 84px; border-radius: 50%; position: relative;
-  background: radial-gradient(circle at 35% 30%, #2b2b3a, #101018);
-  border: 2px solid #2a2a38; box-shadow: inset 0 4px 16px rgba(0,0,0,0.7);
+  background: radial-gradient(circle at 38% 26%, #3a3a3e, #161618 72%);
+  border: none;
+  box-shadow: 0 0 0 2px #232326, 0 0 0 3px rgba(0,0,0,0.7),
+              inset 0 1px 1px rgba(255,255,255,0.08), inset 0 -6px 18px rgba(0,0,0,0.6),
+              0 8px 18px rgba(0,0,0,0.45);
 }
 /* El dial pequeño usa el mismo marcador que el dashboard, a menor escala. */
 .wheel-dial-face .dial-marker.as-dot::after { top: 5px; width: 9px; height: 9px; margin-left: -4.5px; }
 .wheel-dial-face .dial-marker.as-line::after { top: 6px; width: 3px; height: 26px; margin-left: -1.5px; }
 
-.wheel-live-readout { text-align: center; font-family: monospace; font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.wheel-live-readout { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 10px; font-variant-numeric: tabular-nums; }
 
 /* Calibración del marcador: forma, sentido y desfase respecto a la tapa. */
 .dial-calib {
   display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px;
   padding: 12px; border-radius: var(--radius-sm);
-  background: rgba(0,0,0,0.28); border: 1px solid var(--border-light);
+  background: var(--fill-soft); border: 1px solid transparent;
 }
 .dial-offset { display: flex; align-items: center; gap: 8px; }
 .dial-offset .premium-slider { flex: 1; }
 .dial-offset b {
   min-width: 42px; text-align: right;
-  font-family: 'Consolas', monospace; font-size: 12px; color: var(--primary);
+  font-family: var(--font-mono); font-size: 12px; color: var(--primary);
 }
 
 /* ================= EDITOR OLED ================= */
@@ -1192,7 +1353,7 @@ body {
   padding: 14px 18px; border-radius: var(--radius-md);
   /* Opaco a propósito, no `--bg-panel`: al quedarse pegada arriba tiene que
      tapar de verdad lo que pase por debajo. */
-  background: #14141f; border: 1px solid var(--border-light);
+  background: var(--bg-panel-solid); border: 1px solid var(--border-light);
   box-shadow: var(--shadow-md);
 }
 .oled-actionbar-info { min-width: 0; }
@@ -1211,7 +1372,7 @@ body {
   display: flex; flex-direction: column; gap: 16px;
 }
 .oled-card { padding: 20px; }
-.oled-card.is-placing { border-color: rgba(245,158,11,0.45); box-shadow: 0 0 18px rgba(245,158,11,0.12); }
+.oled-card.is-placing { border-color: rgba(var(--warning-rgb), 0.45); box-shadow: 0 0 18px rgba(var(--warning-rgb), 0.12); }
 .oled-hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 10px; }
 .divider { height: 1px; background: var(--border-light); margin: 16px 0; }
 
@@ -1221,13 +1382,14 @@ body {
 .okey {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding: 6px 4px; font-family: inherit; cursor: pointer;
-  background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 8px; transition: all 0.15s;
+  background: var(--fill-soft); border: 1px solid transparent;
+  border-radius: 12px;
+  transition: background 0.2s var(--ease-out), border-color 0.2s, box-shadow 0.2s, transform 0.35s var(--spring);
 }
-.okey:hover { background: rgba(255,255,255,0.05); border-color: var(--border-light); }
-.okey.selected { border-color: var(--primary); background: rgba(139,92,246,0.14); box-shadow: var(--shadow-glow); }
+.okey:hover { background: var(--fill); border-color: transparent; }
+.okey.selected { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.14); box-shadow: var(--shadow-glow); }
 .okey.no-screen { opacity: 0.4; cursor: default; justify-content: center; min-height: 84px; }
-.okey.no-screen:hover { background: rgba(0,0,0,0.28); border-color: rgba(255,255,255,0.06); }
+.okey.no-screen:hover { background: var(--fill-soft); border-color: transparent; }
 .okey-num { display: flex; gap: 5px; font-size: 9px; color: var(--text-muted); }
 .okey-num em { font-style: normal; color: var(--primary); }
 .okey-role { font-size: 9px; letter-spacing: 1px; font-weight: 600; color: var(--text-muted); }
@@ -1240,9 +1402,9 @@ body {
   display: flex; align-items: center; justify-content: center;
   background: #05050a; border: 1px solid #2a2a36; border-radius: 2px;
 }
-.okey.has-icon .okey-screen { border-color: rgba(139,92,246,0.5); }
+.okey.has-icon .okey-screen { border-color: rgba(var(--primary-rgb), 0.5); }
 .okey-canvas { image-rendering: pixelated; display: block; }
-.okey-text { font-family: monospace; font-size: 11px; font-weight: 600; color: #e9e2ff; }
+.okey-text { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: #e9e2ff; }
 .okey-action { font-size: 9px; line-height: 1.25; text-align: center; color: var(--text-muted); min-height: 22px; }
 .okey-action.assigned { color: var(--secondary); }
 /* Las teclas 10 y 12 no tienen pantalla, pero en el editor de perfiles siguen
@@ -1256,7 +1418,7 @@ body {
 .editor-board .okey-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 520px; }
 
 /* Panel de colocación de la capa flotante */
-.field-label b { color: var(--primary); font-weight: 700; font-family: 'Consolas', monospace; }
+.field-label b { color: var(--primary); font-weight: 700; font-family: var(--font-mono); }
 
 .size-row { display: flex; align-items: center; gap: 8px; }
 .size-row .premium-slider { flex: 1; }
@@ -1284,14 +1446,14 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 .oled-toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
 .tool-btn {
   width: 36px; height: 36px; border-radius: var(--radius-sm);
-  background: rgba(0,0,0,0.3); border: 1px solid var(--border-light);
+  background: var(--fill-soft); border: 1px solid transparent;
   color: var(--text-muted); cursor: pointer; transition: all 0.15s;
 }
-.tool-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.06); }
+.tool-btn:hover { color: var(--text-main); background: var(--fill); }
 .tool-btn.on, .tool-btn.is-on { background: var(--primary); border-color: var(--primary); color: #fff; }
-.tool-btn.danger:hover { color: var(--danger); border-color: rgba(239,68,68,0.4); }
+.tool-btn.danger:hover { color: var(--danger); border-color: rgba(var(--danger-rgb), 0.4); }
 .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.tool-btn:disabled:hover { color: var(--text-muted); background: rgba(0,0,0,0.3); }
+.tool-btn:disabled:hover { color: var(--text-muted); background: var(--fill-soft); }
 .tool-sep { width: 1px; height: 22px; background: var(--border-light); margin: 0 4px; }
 
 /* El lienzo crece con el zoom, así que el contenedor desplaza en vez de
@@ -1319,7 +1481,7 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 }
 .zoom-level {
   min-width: 40px; text-align: center;
-  font-family: 'Consolas', monospace; font-size: 12px; font-weight: 600;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
   color: var(--text-muted);
 }
 
@@ -1336,7 +1498,7 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 .icon-lib-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px;
   max-height: 232px; overflow-y: auto; padding: 4px;
-  background: rgba(0,0,0,0.28); border-radius: var(--radius-sm);
+  background: var(--fill-soft); border-radius: var(--radius-sm);
   overscroll-behavior: contain;
 }
 .icon-lib-grid.empty {
@@ -1350,12 +1512,12 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
   border-radius: 8px; color: var(--text-muted); transition: all 0.12s;
 }
 .icon-lib-item:hover {
-  color: var(--text-main); background: rgba(139,92,246,0.16);
-  border-color: rgba(139,92,246,0.5);
+  color: var(--text-main); background: rgba(var(--primary-rgb), 0.16);
+  border-color: rgba(var(--primary-rgb), 0.5);
 }
 .icon-lib-item svg { display: block; }
 
-.oled-preview-box { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; background: rgba(0,0,0,0.35); border-radius: var(--radius-sm); margin-bottom: 16px; }
+.oled-preview-box { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; background: var(--fill-soft); border-radius: 12px; margin-bottom: 16px; }
 #oled-preview { image-rendering: pixelated; border: 1px solid #333; border-radius: 2px; }
 
 /* ================= CONSOLA ================= */
@@ -1366,20 +1528,24 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 
 /* ================= AVISOS ================= */
 #toast-host { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 10px; z-index: 999; }
+/* Notificación de iOS: tarjeta gris con el texto en blanco y solo el icono
+   del color del aviso. Entra desde abajo con muelle y sale encogiendo. */
 .toast {
   display: flex; align-items: center; gap: 10px;
-  padding: 12px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;
-  background: rgba(22,22,33,0.96); border: 1px solid var(--border-light);
-  /* Sin backdrop-filter: a 0.96 de opacidad no se veía nada detrás, así que
-     solo costaba una pasada extra de GPU. */
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  animation: toastIn 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  padding: 12px 18px 12px 14px; border-radius: 16px; font-size: 13px; font-weight: 500;
+  color: var(--text-main);
+  background: rgba(44,44,46,0.97); border: none;
+  /* Sin backdrop-filter: a 0.97 de opacidad no se vería nada detrás, así que
+     solo costaría una pasada extra de GPU. */
+  box-shadow: var(--shadow-pop);
+  animation: toastIn 0.55s var(--spring);
 }
-.toast-success { border-color: rgba(16,185,129,0.4); color: var(--success); }
-.toast-error   { border-color: rgba(239,68,68,0.4);  color: var(--danger); }
-.toast-info    { border-color: rgba(59,130,246,0.4); color: var(--info); }
-.toast.leaving { opacity: 0; transform: translateX(12px); transition: all 0.2s; }
-@keyframes toastIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+.toast .icn { width: 22px; height: 22px; padding: 4px; border-radius: 50%; color: #fff; }
+.toast-success .icn { background: var(--success); }
+.toast-error   .icn { background: var(--danger); }
+.toast-info    .icn { background: rgb(var(--info-rgb)); }
+.toast.leaving { opacity: 0; transform: scale(0.92) translateY(6px); transition: opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(18px) scale(0.94); } to { opacity: 1; transform: none; } }
 
 /* ================= CAMBIO AUTOMÁTICO DE PERFIL ================= */
 .auto-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
@@ -1387,15 +1553,24 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 .auto-head { display: flex; align-items: center; justify-content: space-between; }
 .auto-head .card-header { margin-bottom: 0; }
 
+/* Interruptor de iOS, a la proporción del original (51x31) un poco reducida:
+   verde de sistema, bola blanca con sombra, y la bola se estira al pulsar. */
 .switch {
-  width: 46px; height: 26px; border-radius: 13px; padding: 3px; cursor: pointer;
-  background: rgba(0,0,0,0.4); border: 1px solid var(--border-light);
-  display: flex; align-items: center; transition: all 0.2s;
+  width: 46px; height: 28px; border-radius: 14px; padding: 2px; cursor: pointer;
+  background: var(--fill-strong); border: none;
+  display: flex; align-items: center;
+  transition: background 0.3s var(--ease-out);
   flex-shrink: 0;
 }
-.switch-knob { width: 18px; height: 18px; border-radius: 50%; background: var(--text-muted); transition: all 0.2s; }
-.switch.on { background: var(--primary); border-color: var(--primary); }
-.switch.on .switch-knob { transform: translateX(20px); background: #fff; }
+.switch-knob {
+  width: 24px; height: 24px; border-radius: 12px; background: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.15), 0 3px 1px rgba(0,0,0,0.06);
+  transition: transform 0.4s var(--spring), width 0.25s var(--ease-out);
+}
+.switch:active .switch-knob { width: 29px; }
+.switch.on { background: var(--success); }
+.switch.on .switch-knob { transform: translateX(18px); }
+.switch.on:active .switch-knob { transform: translateX(13px); }
 
 /* Cada aplicación es una tarjeta: programa + perfil, que es lo único que hace
    falta en el caso normal. El resto (contra qué compara y su prioridad) queda
@@ -1407,12 +1582,12 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 }
 .rule-card {
   position: relative; padding: 14px; border-radius: var(--radius-md);
-  background: rgba(0,0,0,0.26); border: 1px solid rgba(255,255,255,0.06);
+  background: var(--fill-soft); border: 1px solid transparent;
   border-top: 3px solid var(--accent, var(--primary));
   transition: border-color 0.2s, background 0.2s;
 }
 .rule-card:hover { background: rgba(255,255,255,0.03); }
-.rule-card.is-active { background: rgba(16,185,129,0.07); border-color: rgba(16,185,129,0.4); }
+.rule-card.is-active { background: rgba(var(--success-rgb), 0.07); border-color: rgba(var(--success-rgb), 0.4); }
 .rule-card .field { margin-bottom: 12px; }
 .rule-card .text-input, .rule-card .select-input { padding: 7px 10px; font-size: 12px; }
 
@@ -1422,7 +1597,7 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
   font-size: 14px; font-weight: 600; color: var(--text-main);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.rule-priority { margin-left: auto; font-family: monospace; font-size: 10px; color: var(--text-muted); }
+.rule-priority { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
 
 .rule-card-foot { display: flex; align-items: center; gap: 8px; }
 .rule-card-foot .select-input.compact { flex: 1; min-width: 0; width: auto; }
@@ -1444,17 +1619,17 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
   padding: 9px 16px; border-radius: 20px; font-size: 12px; font-weight: 600;
   background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); color: var(--text-muted);
 }
-.fallback-pill.on { background: rgba(139,92,246,0.14); border-color: var(--border-active); color: var(--primary); }
+.fallback-pill.on { background: rgba(var(--primary-rgb), 0.14); border-color: var(--border-active); color: var(--primary); }
 
 .auto-now {
   display: flex; flex-direction: column; gap: 4px; padding: 14px 16px;
-  background: rgba(0,0,0,0.3); border: 1px solid var(--border-light); border-radius: var(--radius-sm);
+  background: var(--fill-soft); border: 1px solid transparent; border-radius: var(--radius-sm);
 }
-.auto-now.matched { border-color: rgba(16,185,129,0.35); }
+.auto-now.matched { border-color: rgba(var(--success-rgb), 0.35); }
 .auto-now strong { font-size: 16px; color: var(--text-main); }
 .auto-now em { font-style: normal; font-size: 11px; color: var(--text-muted); word-break: break-word; }
 .auto-verdict { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
-.auto-verdict code { font-family: monospace; color: var(--primary); }
+.auto-verdict code { font-family: var(--font-mono); color: var(--primary); }
 .auto-verdict b { color: var(--success); }
 .auto-error { margin-top: 10px; font-size: 11px; color: var(--danger); word-break: break-word; }
 
@@ -1495,18 +1670,21 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 .readonly-banner {
   position: fixed;
   bottom: 24px;
-  left: 24px;
+  /* A la derecha de la barra lateral: pegado al borde tapaba su último icono. */
+  left: calc(var(--sidebar-w) + 24px);
   z-index: 998;              /* por debajo de los avisos, que salen por la derecha */
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 14px;
-  border-radius: 10px;
+  padding: 9px 16px 9px 12px;
+  border-radius: 999px;
   font-size: 12.5px;
-  color: var(--warning, #f59e0b);
-  background: rgba(20, 20, 28, 0.92);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  font-weight: 500;
+  color: var(--text-main);
+  background: rgba(44, 44, 46, 0.97);
+  border: none;
+  box-shadow: var(--shadow-pop);
+  animation: toastIn 0.55s var(--spring);
   pointer-events: none;      /* es un cartel, no se pulsa */
 }
 
@@ -1536,17 +1714,38 @@ body.read-only #timeout-selector {
 
 .web-gate.hidden { display: none; }
 
+/* Pantalla de bienvenida de un producto de Apple: el icono grande, el título
+   en Display y un único botón de cápsula. */
 .gate-card {
-  max-width: 26rem;
-  padding: 2.5rem;
+  max-width: 27rem;
+  padding: 2.75rem 2.5rem 2.25rem;
   text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+  background: var(--bg-panel-solid);
+  border-radius: 28px;
+  box-shadow: var(--shadow-pop);
+  animation: gateIn 0.7s var(--ease-out);
 }
+@keyframes gateIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: none; } }
 
-.gate-card h1 { margin-bottom: 1rem; }
-.gate-desc { margin-bottom: 1.5rem; opacity: 0.85; }
-.gate-error { margin-bottom: 1rem; color: var(--danger, #ff6b6b); font-size: 0.9rem; }
-.gate-btn { margin-bottom: 1.5rem; }
-.gate-note { font-size: 0.8rem; opacity: 0.6; line-height: 1.5; }
+.gate-card::before {
+  content: '';
+  width: 72px; height: 72px; margin-bottom: 1.25rem;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 50%, #fff 0 17%, transparent 18%),
+    linear-gradient(160deg, #a5a3ff, #5e5ce6 60%, #4b3fd1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 10px 30px rgba(var(--primary-rgb), 0.35);
+}
+.gate-card h1 { margin-bottom: 0.6rem; font-size: 28px; font-weight: 700; }
+.gate-desc { margin-bottom: 1.6rem; color: var(--text-muted); font-size: 15px; line-height: 1.45; }
+.gate-error {
+  margin: -0.6rem 0 1.2rem; padding: 8px 12px; border-radius: 10px;
+  color: var(--danger); background: rgba(var(--danger-rgb), 0.12); font-size: 13px;
+}
+.gate-btn { margin-bottom: 1.5rem; padding: 12px 28px; border-radius: 999px; font-size: 15px; min-width: 220px; }
+.gate-note { font-size: 12px; color: var(--text-faint); line-height: 1.5; }
+.gate-note strong { color: var(--text-muted); }
 
 /* Marca de "esto lo ejecuta el PC" en la rejilla de teclas. Va pegada al texto de
    la acción y no en una esquina: lo que califica es la acción, no la tecla. */
@@ -1565,3 +1764,53 @@ body.read-only #timeout-selector {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ================= ALERTA DE CONFIRMACIÓN ================= */
+/* La de iOS: tarjeta de 270 px centrada, título en negrita, texto pequeño y
+   dos botones a lo ancho separados por líneas finas. La pinta confirmar() en
+   src/ui.js. Por encima de todo menos de los avisos, que tienen que poder
+   explicar qué ha pasado al aceptar. */
+.alert-backdrop {
+  position: fixed; inset: 0; z-index: 990;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  animation: alertFade 0.2s var(--ease-out);
+}
+.alert-backdrop.leaving { opacity: 0; transition: opacity 0.2s var(--ease-out); }
+.alert-backdrop.leaving .alert { transform: scale(0.96); transition: transform 0.2s var(--ease-out); }
+
+.alert {
+  width: 300px; max-width: calc(100vw - 48px);
+  border-radius: 16px; overflow: hidden;
+  background: rgba(44, 44, 46, 0.98);
+  box-shadow: var(--shadow-pop);
+  text-align: center;
+  animation: alertIn 0.45s var(--spring);
+}
+.alert h2 {
+  padding: 20px 18px 0; font-size: 16px; font-weight: 600; line-height: 1.3;
+}
+.alert p {
+  padding: 6px 18px 0; font-size: 13px; line-height: 1.4; color: var(--text-main);
+  white-space: pre-line; /* los mensajes separan párrafos con \n\n */
+}
+.alert-btns {
+  display: grid; grid-template-columns: 1fr 1fr; margin-top: 20px;
+  border-top: 1px solid var(--separator);
+}
+.alert-btns button {
+  min-height: 46px; padding: 0 8px; border: none; background: transparent;
+  font-size: 15px; color: var(--primary); cursor: pointer;
+  transition: background 0.15s;
+}
+.alert-btns button + button { border-left: 1px solid var(--separator); }
+.alert-btns button:hover { background: rgba(255, 255, 255, 0.05); }
+.alert-btns button:active { background: rgba(255, 255, 255, 0.1); }
+/* Sin anillo: el botón ocupa media alerta y el anillo la partía en dos. iOS
+   marca el foco de teclado oscureciendo el botón, igual que al pulsarlo. */
+.alert-btns button:focus-visible { box-shadow: none; background: rgba(255, 255, 255, 0.08); }
+.alert-btns .is-default { font-weight: 600; }
+.alert-btns .is-danger { color: var(--danger); font-weight: 600; }
+
+@keyframes alertFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes alertIn { from { opacity: 0; transform: scale(1.12); } to { opacity: 1; transform: none; } }

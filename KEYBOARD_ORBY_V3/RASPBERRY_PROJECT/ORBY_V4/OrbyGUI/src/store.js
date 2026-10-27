@@ -57,14 +57,16 @@ export function hasPages() {
 // La lista se recorre en bucle: con perfiles creados por el usuario ya no hay un
 // número fijo de entradas.
 const PROFILE_PALETTE = [
-  { icon: 'profiles', accent: '#8b5cf6' },
-  { icon: 'pencil',   accent: '#ec4899' },
-  { icon: 'bolt',     accent: '#22d3ee' },
-  { icon: 'oled',     accent: '#f59e0b' },
-  { icon: 'key',      accent: '#10b981' },
-  { icon: 'wheel',    accent: '#f43f5e' },
-  { icon: 'text',     accent: '#6366f1' },
-  { icon: 'fill',     accent: '#84cc16' },
+  // Colores de sistema de Apple en modo oscuro, en el orden del selector de
+  // color de acento de macOS: así ningún par seguido se parece.
+  { icon: 'profiles', accent: '#7d7aff' },  // indigo
+  { icon: 'pencil',   accent: '#ff375f' },  // pink
+  { icon: 'bolt',     accent: '#64d2ff' },  // cyan
+  { icon: 'oled',     accent: '#ff9f0a' },  // orange
+  { icon: 'key',      accent: '#30d158' },  // green
+  { icon: 'wheel',    accent: '#ff453a' },  // red
+  { icon: 'text',     accent: '#bf5af2' },  // purple
+  { icon: 'fill',     accent: '#ffd60a' },  // yellow
 ];
 
 export function profileMeta(idx) {

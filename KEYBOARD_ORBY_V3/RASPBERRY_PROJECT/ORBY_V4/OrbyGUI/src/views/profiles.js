@@ -22,7 +22,7 @@ import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, CONSUMER_TURN_OPTIONS, 
          MACRO_MODIFIER, KEY_GROUPS, describeAction, eventToAction,
          ROTARY_TYPES, ROTARY_SLOTS, isScrollType, describeRotary } from '../hid-keys.js';
 import { icon } from '../icons.js';
-import { toast, requireDevice } from '../ui.js';
+import { toast, requireDevice, confirmar } from '../ui.js';
 import { goTo } from '../nav.js';
 import * as cache from '../oled-cache.js';
 import * as fb from '../oled-fb.js';
@@ -596,8 +596,12 @@ async function addCurrentApp() {
 async function removeVariant() {
   const variant = editingVariant();
   if (!variant) return;
-  if (!confirm(`Se borrará la variación "${variant.name}" y sus ${variants.countOverrides(variant)} cambios.\n\n`
-             + 'El perfil base no se toca.\n\n¿Continuar?')) return;
+  if (!await confirmar({
+    titulo: `¿Borrar la variación «${variant.name}»?`,
+    mensaje: `Se van sus ${variants.countOverrides(variant)} cambios. El perfil base no se toca.`,
+    aceptar: 'Borrar',
+    peligro: true,
+  })) return;
 
   await variants.remove(variant.id);
   view.variantId = null;
@@ -751,8 +755,13 @@ async function removeProfile() {
   if (state.profiles.length <= 1) { toast('Tiene que quedar al menos un perfil', 'error'); return; }
 
   const prof = currentProfile();
-  if (!confirm(`Se borrará el perfil "${prof?.name || ''}" con sus atajos, mandos e iconos.\n\n`
-             + 'El cambio no será permanente hasta que pulses "Guardar en Flash".\n\n¿Continuar?')) return;
+  if (!await confirmar({
+    titulo: `¿Eliminar el perfil «${prof?.name || ''}»?`,
+    mensaje: 'Se van con él sus atajos, mandos e iconos.\n\n'
+           + 'El cambio no será permanente hasta que pulses "Guardar en Flash".',
+    aceptar: 'Eliminar',
+    peligro: true,
+  })) return;
 
   view.busy = true;
   render();
@@ -1141,9 +1150,14 @@ async function deletePage(idx) {
     toast('Activa este perfil en el teclado para borrarle páginas');
     return;
   }
-  if (!confirm(`¿Eliminar la página ${idx + 1} de ${escape(prof.name)}?\n\n`
-             + 'Se van sus teclas, etiquetas, mandos e iconos. Las páginas siguientes '
-             + 'se recolocan.')) return;
+  // Sin escape(): confirmar() pone el texto con textContent, y escapado se
+  // vería un &amp; literal en el título.
+  if (!await confirmar({
+    titulo: `¿Eliminar la página ${idx + 1} de ${prof.name}?`,
+    mensaje: 'Se van sus teclas, etiquetas, mandos e iconos. Las páginas siguientes se recolocan.',
+    aceptar: 'Eliminar',
+    peligro: true,
+  })) return;
   try {
     await removePage(idx);
     variants.shiftPages(view.editingProfile, idx);

@@ -7,7 +7,7 @@
 import * as device from './device.js';
 import { state, markDirty, syncFromDevice, pageCountOf, withPinnedPage } from './store.js';
 import { writeAllPages } from './profile-library.js';
-import { toast } from './ui.js';
+import { toast, confirmar } from './ui.js';
 import * as cache from './oled-cache.js';
 
 const FORMAT = 'orby-backup';
@@ -244,9 +244,14 @@ export async function runImport(setBusy) {
     if (!res.ok) throw new Error(res.error || 'error desconocido');
 
     const count = res.data?.profiles?.length ?? 0;
-    if (!confirm(`Se sobrescribirán los ${count} perfiles del teclado con la copia del `
-               + `${new Date(res.data.savedAt).toLocaleString('es-ES')}.\n\n`
-               + 'El cambio no será permanente hasta que pulses "Guardar en Flash".\n\n¿Continuar?')) return;
+    if (!await confirmar({
+      titulo: '¿Restaurar la copia?',
+      mensaje: `Se sobrescribirán los ${count} perfiles del teclado con la copia del `
+             + `${new Date(res.data.savedAt).toLocaleString('es-ES')}.\n\n`
+             + 'El cambio no será permanente hasta que pulses "Guardar en Flash".',
+      aceptar: 'Restaurar',
+      peligro: true,
+    })) return;
 
     setBusy('Restaurando…');
     await importAll(res.data, setBusy);
