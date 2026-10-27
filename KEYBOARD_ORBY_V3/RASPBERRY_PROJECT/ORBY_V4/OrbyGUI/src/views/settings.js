@@ -235,6 +235,17 @@ function initFirmwareCard() {
     toast('Actualización cancelada', 'info');
   });
 
+  // iniciarAuto() lee la configuración de forma asíncrona: el interruptor se
+  // pinta después de esa lectura, en la primera vuelta de renderFirmwareCard.
+  const auto = document.getElementById('btn-fw-auto');
+  auto.addEventListener('click', async () => {
+    const on = !auto.classList.contains('on');
+    await firmware.setAutoEnabled(on);
+    auto.classList.toggle('on', on);
+    toast(on ? 'El firmware se actualizará solo cuando no uses el ordenador'
+             : 'Actualización automática del firmware desactivada');
+  });
+
   firmware.onChange(renderFirmwareCard);
   firmware.init().then(renderFirmwareCard);
 }
@@ -261,6 +272,7 @@ function renderFirmwareCard() {
   status.style.color = st.status === 'error' ? 'var(--danger)' : '';
 
   btnCheck.disabled = firmware.busy();
+  document.getElementById('btn-fw-auto')?.classList.toggle('on', firmware.autoEnabled());
   btnCancel.classList.toggle('hidden', !['downloading', 'bootsel'].includes(st.status));
   // Se ofrece cuando hay algo que instalar y hay teclado al que instalárselo.
   btnUpdate.classList.toggle('hidden', !st.latest || !state.connected || firmware.busy());

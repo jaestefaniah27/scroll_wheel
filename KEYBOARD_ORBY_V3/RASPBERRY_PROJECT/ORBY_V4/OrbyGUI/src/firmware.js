@@ -11,6 +11,7 @@
 
 import * as compat from './compat.js';
 import { state } from './store.js';
+import { motivoParaEsperar, VUELTA_MS, RECOMPROBAR_MS } from './fw-auto.mjs';
 
 const listeners = new Set();
 
@@ -54,6 +55,7 @@ export async function init() {
 // firmware publicado" justo después de una comprobación que había ido bien.
 export async function check() {
   if (!available()) return null;
+  ultimaComprobacion = Date.now();
   const st = await window.orby.firmware.check({
     maxFw: compat.FW_RECOMMENDED,
     currentFw: state.deviceInfo?.fw ?? null,
@@ -99,4 +101,74 @@ export function describe() {
 // teclado que se quedó a medias— pero no mientras hay algo en marcha.
 export function busy() {
   return ['checking', 'downloading', 'bootsel', 'flashing'].includes(fw.status);
+}
+
+// ================= Actualización automática =================
+// El firmware se instala solo cuando el PC lleva un rato sin que nadie lo toque
+// (ver fw-auto.mjs para las reglas). Se activa por defecto: la clave
+// `autoFirmware` de la configuración solo existe si alguien lo ha apagado, así
+// que una instalación vieja sin ella queda activada.
+
+let autoOn = true;
+let fallida = null;          // versión que falló sola en esta sesión
+let ultimaComprobacion = 0;
+let enVuelta = false;
+let avisar = null;
+
+export function autoEnabled() {
+  return autoOn;
+}
+
+export function setAutoEnabled(on) {
+  autoOn = Boolean(on);
+  return window.orby.setConfig({ autoFirmware: autoOn });
+}
+
+// `aviso(texto, tipo)` es el toast de ui.js: se recibe y no se importa para que
+// este módulo no arrastre la interfaz.
+export async function iniciarAuto(aviso) {
+  if (!available()) return;
+  avisar = aviso;
+  try {
+    autoOn = (await window.orby.getConfig())?.autoFirmware !== false;
+  } catch { /* sin configuración legible se queda el valor por defecto */ }
+  setInterval(vuelta, VUELTA_MS);
+}
+
+async function vuelta() {
+  // Una actualización dura más que una vuelta: sin esto la siguiente vuelta la
+  // vería `busy()` y no haría nada, pero la comprobación de GitHub sí se pisaría.
+  if (enVuelta) return;
+  enVuelta = true;
+  try {
+    if (autoOn && state.connected && !busy() && Date.now() - ultimaComprobacion > RECOMPROBAR_MS) {
+      await check();
+    }
+    const motivo = motivoParaEsperar({
+      activado: autoOn,
+      conectado: state.connected,
+      disponible: fw.available,
+      version: fw.latest?.version,
+      ocupado: busy(),
+      sinGuardar: state.dirty,
+      bootsel: compat.supports(state.deviceInfo, 'bootsel'),
+      inactivoMs: autoOn ? await window.orby.firmware.idleMs() : null,
+      fallida,
+    });
+    if (motivo) return;
+
+    const version = fw.latest.version;
+    await update();
+    if (fw.status === 'done') {
+      avisar?.(`Firmware del teclado actualizado a la ${version} mientras no lo usabas`, 'success', 8000);
+    } else if (fw.status === 'error') {
+      fallida = version;
+      avisar?.(`No se pudo actualizar el firmware solo: ${fw.error}. Puedes reintentarlo desde Ajustes`, 'error', 9000);
+    }
+  } catch {
+    // Un fallo de una vuelta (GitHub caído, el puente sin responder) no es
+    // motivo para parar las siguientes.
+  } finally {
+    enVuelta = false;
+  }
 }

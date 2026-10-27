@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, Notification, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -451,6 +451,8 @@ ipcMain.handle('firmware:get', () => firmware?.state ?? null);
 ipcMain.handle('firmware:check', (_e, opts) => firmware?.check(opts) ?? null);
 ipcMain.handle('firmware:update', (_e, opts) => firmware?.update(opts) ?? null);
 ipcMain.handle('firmware:cancel', () => firmware?.cancel() ?? null);
+// Lo mismo que firmware_idle_ms de Tauri: powerMonitor lo da en segundos.
+ipcMain.handle('firmware:idleMs', () => powerMonitor.getSystemIdleTime() * 1000);
 
 // --- IPC: serie ---
 // Comandos que cambian algo en el teclado. Los de lectura (GET_*) no entran:

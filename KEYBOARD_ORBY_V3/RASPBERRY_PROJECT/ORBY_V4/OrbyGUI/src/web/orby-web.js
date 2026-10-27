@@ -103,6 +103,7 @@ export async function instalarOrbyWeb() {
       check: async () => null,
       update: async () => ({ ok: false }),
       cancel: async () => null,
+      idleMs: async () => null,
       onState: () => {},
     },
 

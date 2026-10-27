@@ -113,6 +113,8 @@ export async function instalarOrbyTauri() {
       check: (opts) => invoke('firmware_check', { opts }),
       update: (opts) => invoke('firmware_update', { opts }),
       cancel: () => invoke('firmware_cancel'),
+      // Milisegundos sin entrada en el PC, o null si Windows no lo dice.
+      idleMs: () => invoke('firmware_idle_ms'),
       onState: puente('firmware:state'),
     },
 

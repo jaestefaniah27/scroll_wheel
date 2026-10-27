@@ -60,6 +60,9 @@ windows = { version = "0.61", features = [
   "Win32_System_Com",
   # La clave `Run` del autoarranque.
   "Win32_System_Registry",
+  # `GetTickCount`, contra el que se mide `GetLastInputInfo` para saber cuánto lleva el
+  # PC sin que nadie lo toque (actualización automática del firmware).
+  "Win32_System_SystemInformation",
   # `GetCurrentThreadId`, que es a quien se le manda el WM_QUIT que para los ganchos de
   # la grabadora.
   "Win32_System_Threading",

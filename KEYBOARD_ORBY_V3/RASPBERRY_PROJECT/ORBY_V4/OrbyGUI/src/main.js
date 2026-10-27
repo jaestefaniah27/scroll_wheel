@@ -92,6 +92,7 @@ function initChrome() {
 
   document.getElementById('btn-save-flash').addEventListener('click', saveToFlash);
   initUpdateBadge();
+  if (platform.can('firmwareUpdate')) firmware.iniciarAuto(toast);
 }
 
 // El aviso de actualización vive al lado del estado de conexión y del guardado:
@@ -389,7 +390,9 @@ async function onDeviceConnected(info) {
   if (platform.can('firmwareUpdate')) {
     firmware.check()?.then((st) => {
       if (st?.available) {
-        toast(`Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
+        toast(firmware.autoEnabled()
+          ? `Hay firmware nuevo para el teclado (${st.latest.version}): se instalará solo cuando dejes de usarlo un rato`
+          : `Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
       }
     }).catch(() => {});
   }

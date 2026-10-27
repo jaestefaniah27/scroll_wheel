@@ -329,6 +329,29 @@ pub fn firmware_update(app: AppHandle, opts: Option<Value>) -> Value {
     }
 }
 
+/// Cuánto lleva el PC sin entrada de teclado ni ratón, en milisegundos. Es lo que decide
+/// si se puede actualizar el firmware sin preguntar: el teclado de macros es un
+/// dispositivo HID más, así que sus teclas, mandos y rueda también cuentan como uso.
+///
+/// Las dos marcas son `GetTickCount` de 32 bits y dan la vuelta a los 49 días: restarlas
+/// con vuelta da bien la diferencia mientras no pasen 49 días sin tocar nada.
+#[tauri::command]
+pub fn firmware_idle_ms() -> Option<u64> {
+    use windows::Win32::System::SystemInformation::GetTickCount;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+
+    let mut info = LASTINPUTINFO {
+        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+        dwTime: 0,
+    };
+    // Solo falla sin escritorio accesible (sesión bloqueada a medias, cambio de usuario).
+    // Sin dato no se actualiza: es mejor esperar que flashear a ciegas.
+    if !unsafe { GetLastInputInfo(&mut info) }.as_bool() {
+        return None;
+    }
+    Some(unsafe { GetTickCount() }.wrapping_sub(info.dwTime) as u64)
+}
+
 #[tauri::command]
 pub fn firmware_cancel(app: AppHandle) -> Value {
     poner_cancelado(&app, true);

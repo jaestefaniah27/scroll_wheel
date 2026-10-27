@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld('orby', {
     check: (opts) => ipcRenderer.invoke('firmware:check', opts),
     update: (opts) => ipcRenderer.invoke('firmware:update', opts),
     cancel: () => ipcRenderer.invoke('firmware:cancel'),
+    idleMs: () => ipcRenderer.invoke('firmware:idleMs'),
     onState: (cb) => ipcRenderer.on('firmware:state', (_e, st) => cb(st)),
   },
 

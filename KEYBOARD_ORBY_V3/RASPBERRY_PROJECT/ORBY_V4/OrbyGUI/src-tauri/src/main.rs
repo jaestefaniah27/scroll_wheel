@@ -110,6 +110,7 @@ fn main() {
             firmware::firmware_check,
             firmware::firmware_update,
             firmware::firmware_cancel,
+            firmware::firmware_idle_ms,
             plugins::plugins_list,
             plugins::plugins_install,
             plugins::plugins_uninstall,
