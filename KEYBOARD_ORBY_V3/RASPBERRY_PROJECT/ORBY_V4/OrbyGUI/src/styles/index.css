@@ -508,10 +508,10 @@ button { font-family: inherit; }
   position: relative;
 }
 
-/* Réplica del Orby, con la geometría del prototipo y no a ojo.
-   Las medidas son las del modelo de la web del producto (orvy.es), en
-   milímetros: carcasa de 210 x 125, teclas de 19,6 a 23 de paso, rueda de 76
-   y mandos de 13. Cada pieza se coloca por su centro con --x/--y en tanto por
+/* Réplica del Orby, con la geometría del teclado montado y no a ojo.
+   Medidas en milímetros, sacadas de una foto cenital del real: carcasa de
+   210 x 125, teclas de 20 a 24,4 de paso, rueda de 75 y mandos de 15,5
+   (las posiciones, en dashboard.js). Cada pieza se coloca por su centro con --x/--y en tanto por
    ciento de la carcasa (lo calcula dashboard.js), y todo lo demás se mide en
    --u, un milímetro de carcasa, para que la réplica escale entera con el panel.
 
@@ -527,7 +527,8 @@ button { font-family: inherit; }
 }
 
 .orby-case {
-  position: absolute; inset: 0; border-radius: calc(16 * var(--u));
+  /* Esquinas casi vivas, como la caja impresa: unos 3 mm de radio. */
+  position: absolute; inset: 0; border-radius: calc(3 * var(--u));
   background:
     radial-gradient(120% 90% at 30% 0%, rgba(255,255,255,0.9), transparent 55%),
     linear-gradient(165deg, #f6f5f1, #d9d7d0);
@@ -550,7 +551,7 @@ button { font-family: inherit; }
 }
 
 /* ---- Teclas: hueco en la carcasa, tecla negra y cap transparente encima ---- */
-.hw-key { width: calc(19.6 * var(--u)); aspect-ratio: 1; }
+.hw-key { width: calc(20 * var(--u)); aspect-ratio: 1; }
 .hw-key::before {
   content: ''; position: absolute; inset: calc(-0.8 * var(--u)); border-radius: calc(4 * var(--u));
   background: #2a2c30; box-shadow: inset 0 calc(0.8 * var(--u)) calc(1.5 * var(--u)) rgba(0,0,0,0.6);
@@ -608,33 +609,35 @@ button { font-family: inherit; }
 }
 
 /* ---- Rueda y mandos: ranura en la carcasa y pieza moleteada ---- */
-.hw-wheel { width: calc(76 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
-.hw-encoder { width: calc(13 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
+.hw-wheel { width: calc(75 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
+.hw-encoder { width: calc(15.5 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
 .hw-wheel::before, .hw-encoder::before {
   /* Holgura de la ranura: en el modelo va de 0,4 a 0,7 mm alrededor de la pieza. */
   content: ''; position: absolute; inset: calc(-0.9 * var(--u)); border-radius: 50%;
   background: #3a3c3e; box-shadow: inset 0 calc(0.6 * var(--u)) calc(1.2 * var(--u)) rgba(0,0,0,0.7);
   transition: box-shadow 0.25s var(--ease-out);
 }
+/* Rueda y mandos son piezas impresas, lisas y con la misma textura que la
+   carcasa: sin moleteado. La sombra corta de abajo es la del canto, porque
+   las dos sobresalen de la tapa. */
 .hw-wheel-face, .hw-encoder-face, .wheel-dial-face {
   position: absolute; inset: 0; border-radius: 50%;
-  background: repeating-conic-gradient(from 0deg, #f1f0eb 0deg 1.5deg, #bdbbb3 1.5deg 3deg);
-  box-shadow: 0 calc(1.6 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,0.45);
+  background: radial-gradient(circle at 42% 34%, #fcfbf8, #eeede8 55%, #dedcd5 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.07),
+    inset 0 calc(-0.8 * var(--u)) calc(1.6 * var(--u)) rgba(0,0,0,0.12),
+    0 calc(1.2 * var(--u)) 0 #c9c7c0,
+    0 calc(2.4 * var(--u)) calc(4 * var(--u)) rgba(0,0,0,0.35);
 }
 .hw-wheel-face::before, .hw-encoder-face::before, .wheel-dial-face::before {
-  content: ''; position: absolute; inset: 5%; border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%, #f3f2ee 0 58%, #e6e4de 72%, #d6d4cc 100%);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06), 0 0 calc(1.2 * var(--u)) rgba(0,0,0,0.25);
+  content: ''; position: absolute; inset: 0; border-radius: 50%; opacity: 0.4; mix-blend-mode: multiply;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.035) 0 1px, transparent 1px 3px);
 }
 /* Reflejo fijo encima: no gira con la rueda, y por eso parece de verdad. */
 .hw-wheel-shine {
   position: absolute; inset: 5%; border-radius: 50%; pointer-events: none;
   background: conic-gradient(from 200deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.75) 40deg, rgba(255,255,255,0) 90deg, rgba(0,0,0,0.06) 200deg, rgba(255,255,255,0) 300deg);
   mix-blend-mode: soft-light;
-}
-.hw-encoder-mark {
-  position: absolute; left: 50%; top: 12%; width: 9%; height: 30%; translate: -50% 0;
-  border-radius: 9px; background: #6d6f74;
 }
 /* Al girar, la ranura se ilumina del color de acento: es la única pista de
    actividad que no se inventa nada del aparato. */
@@ -648,22 +651,26 @@ button { font-family: inherit; }
 
 /* Marcador de la rueda. Gira siguiendo el ángulo absoluto del sensor, así que
    se queda donde esté la rueda de verdad; el desfase y el sentido se calibran
-   desde Ajustes para que coincida con la marca de la tapa. Se dibuja como la
-   tapa real: el punto es el hoyuelo para el dedo y la raya, una ranura. */
+   desde Ajustes para que coincida con la marca de la tapa.
+   El punto se dibuja como la pieza real: un tapón de un 20 % del diámetro, a
+   un 63 % del radio desde el centro, con una ranura tangencial como la de un
+   tornillo. La raya es la alternativa para quien marque la tapa a rotulador. */
 .dial-marker {
-  position: absolute; inset: 5%; border-radius: 50%;
+  position: absolute; inset: 0; border-radius: 50%;
   transition: transform 0.1s linear; pointer-events: none;
 }
 .dial-marker::after {
   content: ''; position: absolute; left: 50%; translate: -50% 0;
 }
 .dial-marker.as-dot::after {
-  top: 9%; width: 17%; aspect-ratio: 1; border-radius: 50%;
-  background: radial-gradient(circle at 50% 40%, #cfcdc6, #efeee9 70%);
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.28), 0 1px 0 rgba(255,255,255,0.8);
+  top: 8.5%; width: 20%; aspect-ratio: 1; border-radius: 50%;
+  background:
+    linear-gradient(100deg, transparent 47%, rgba(0,0,0,0.28) 48%, rgba(0,0,0,0.28) 51%, rgba(255,255,255,0.7) 52%, transparent 54%),
+    radial-gradient(circle at 45% 35%, #fbfbf8, #e7e5df 75%);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 -1px 2px rgba(0,0,0,0.12), inset 0 1px 0 #fff;
 }
 .dial-marker.as-line::after {
-  top: 7%; width: 2.2%; height: 22%; border-radius: 3px;
+  top: 9%; width: 2.2%; height: 22%; border-radius: 3px;
   background: #a9aaa6; box-shadow: inset 0 1px 2px rgba(0,0,0,0.35);
 }
 

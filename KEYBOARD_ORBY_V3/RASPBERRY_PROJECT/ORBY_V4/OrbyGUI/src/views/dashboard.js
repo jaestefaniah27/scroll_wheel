@@ -1,10 +1,11 @@
 // Vista Dashboard: réplica del hardware con telemetría en vivo.
 //
-// La réplica se coloca con las coordenadas del prototipo, en milímetros y con
-// el origen en el centro de la carcasa: son las mismas que usa el modelo de la
-// web del producto (orvy.es). Doce teclas en 3x4 a 23 mm de paso a la
-// izquierda, la rueda de 76 mm a la derecha y los dos mandos en el borde de
-// arriba: el primero en el centro de la carcasa y el segundo en la esquina.
+// La réplica se coloca con las medidas del Orby montado, en milímetros y con el
+// origen en el centro de la carcasa (x a la derecha, z hacia el usuario). Están
+// tomadas de una foto cenital del teclado real, no del modelo de la web: allí
+// las teclas iban a 23 mm de paso y los mandos y la rueda algo desplazados.
+// En la foto el paso sale igual en las dos direcciones (24,4 y 24,5 mm), que
+// es lo que confirma que la proporción de la carcasa, 210 x 125, está bien.
 
 import * as device from '../device.js';
 import { state, notify, labelForKey, labelSlot, profile, liveScroll, KEY_TO_SCREEN,
@@ -17,9 +18,10 @@ let wheelTotal = 0;
 
 const CASE_W = 210;
 const CASE_D = 125;
-const keyPos = (i) => ({ x: -57 + ((i % 3) - 1) * 23, z: -2.5 + (Math.floor(i / 3) - 1.5) * 23 });
-const WHEEL_POS = { x: 52, z: 1.5 };
-const KNOB_POS = [{ x: 1, z: -41 }, { x: 92, z: -41 }];
+const KEY_PITCH = 24.4;
+const keyPos = (i) => ({ x: -59.8 + ((i % 3) - 1) * KEY_PITCH, z: 0.6 + (Math.floor(i / 3) - 1.5) * KEY_PITCH });
+const WHEEL_POS = { x: 42.5, z: 5 };
+const KNOB_POS = [{ x: -2, z: -34.5 }, { x: 84, z: -34.5 }];
 
 // Centro de una pieza en tanto por ciento de la carcasa, que es lo que lee el CSS.
 function at({ x, z }) {
@@ -53,7 +55,7 @@ export function init() {
       </div>
       ${KNOB_POS.map((p, n) => `
       <div class="hw-encoder" id="hw-enc-${n + 1}" title="Encoder ${n + 1}" style="${at(p)}">
-        <div class="hw-encoder-face"><div class="hw-encoder-mark"></div></div>
+        <div class="hw-encoder-face"></div>
       </div>`).join('')}
     </div>`;
 

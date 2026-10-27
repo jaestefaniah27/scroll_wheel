@@ -182,8 +182,9 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
   Un color nuevo necesita su valor en los dos bloques.
   Excepciones a propósito: la réplica del teclado (dashboard) y las pantallas
   OLED tienen colores fijos, porque son el objeto físico. La réplica se coloca
-  con las medidas del prototipo en mm, las mismas del modelo de orvy.es
-  (`views/dashboard.js`).
+  con medidas en mm sacadas de una foto cenital del teclado montado
+  (`views/dashboard.js`); el modelo de orvy.es tiene el paso de teclas y la
+  posición de mandos y rueda algo distintos, no lo copies.
 - `ui.js` — avisos (`toast`) y `confirmar()`, la alerta al estilo iOS. No uses
   `confirm()`: en WebView2 sale como diálogo de navegador con "localhost dice".
 
