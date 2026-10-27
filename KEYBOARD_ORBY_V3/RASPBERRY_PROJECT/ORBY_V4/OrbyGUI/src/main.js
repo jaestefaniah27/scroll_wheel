@@ -16,6 +16,7 @@ import * as compat from './compat.js';
 import * as firmware from './firmware.js';
 import * as platform from './platform.js';
 import * as liveOled from './live-oled.js';
+import * as oledMirror from './oled-mirror.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
@@ -154,11 +155,23 @@ function renderUpdateBadge() {
 // Perfiles: es de donde se viene y a donde se vuelve al guardar o salir.
 const NAV_FOR_VIEW = { 'view-oled': 'view-profiles' };
 
+// El título grande de la barra de herramientas, como en Ajustes del Sistema:
+// las vistas no llevan cabecera propia, así que es lo que dice dónde estás.
+const VIEW_TITLES = {
+  'view-dashboard': 'Inicio',
+  'view-profiles': 'Perfiles y macros',
+  'view-oled': 'Icono de la tecla',
+  'view-auto': 'Cambio automático',
+  'view-settings': 'Ajustes',
+  'view-console': 'Consola serie',
+};
+
 function switchView(target, params) {
   activeView = target;
   const navTarget = NAV_FOR_VIEW[target] || target;
   document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.target === navTarget));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === target));
+  document.getElementById('view-title').textContent = VIEW_TITLES[target] || '';
 
   if (params && target === 'view-oled') oled.openTarget(params);
   else VIEWS[target]?.render?.();
@@ -219,7 +232,7 @@ function renderChrome() {
     // que hace falta para saber si un fallo es del teclado o de la app, y
     // tenerla a la vista ahorra tener que ir a buscarla.
     const fw = state.deviceInfo?.fw ? ` · fw ${state.deviceInfo.fw}` : '';
-    text.textContent = state.syncing ? 'Sincronizando…' : `Orby V4 conectado${fw}`;
+    text.textContent = state.syncing ? 'Sincronizando…' : `Conectado${fw}`;
   } else {
     badge.className = 'status-badge disconnected';
     text.textContent = 'Desconectado';
@@ -458,6 +471,7 @@ function arrancarApp() {
   // Visor en vivo (brillo/color actual...) en la pantalla de la tecla que se le
   // asigne: sondea el complemento y empuja el bitmap sin tocar Flash.
   liveOled.init();
+  oledMirror.init();
 
   // Variaciones de perfil por aplicación: se leen del disco antes de que el
   // detector de ventanas empiece a pedir evaluaciones.

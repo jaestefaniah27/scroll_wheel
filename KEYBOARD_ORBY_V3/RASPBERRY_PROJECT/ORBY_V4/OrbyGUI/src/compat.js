@@ -24,7 +24,7 @@ export const FW_MIN = '2.0';
 
 // La que trae este repositorio (include/orby_version.h). Con una anterior la
 // app funciona recortada; con una posterior, la app es la vieja.
-export const FW_RECOMMENDED = '4.11';
+export const FW_RECOMMENDED = '4.12';
 
 // Qué versión hace falta para cada función, y qué bandera del handshake la
 // confirma cuando el firmware la anuncia.
@@ -41,6 +41,7 @@ export const FEATURES = {
   hostApp:    { since: '4.5', label: 'tachar en las pantallas las teclas que necesitan la app', flag: 'hostapp' },
   macroStore: { since: '4.7', label: 'llevar en el teclado lo que hace cada macro, para usarlo en otro PC', flag: 'mstore' },
   animSpeed:  { since: '4.8', label: 'ajustar la velocidad de las animaciones de las pantallas', flag: 'animspeed' },
+  mirror:     { since: '4.12', label: 'ver en el dashboard las animaciones de las pantallas', flag: 'mirror' },
 };
 
 // Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y

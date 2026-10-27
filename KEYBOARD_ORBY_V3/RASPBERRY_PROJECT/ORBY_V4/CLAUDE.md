@@ -99,6 +99,12 @@ una con su `match(line)` y opcionalmente `collect(line)` para respuestas multil�
 El teclado emite telemetría no solicitada: `EV:CTX:<perfil>:<pagina>:<total>` cuando
 cambia de contexto por su cuenta (menú, gestor de páginas, tecla de salto).
 
+Con `MIRROR:1` (firmware 4.12) emite además el **espejo de las pantallas**: en cada
+transición, los diez destinos (`EV:SCR:<n>:<hex>`) y el tipo y ritmo
+(`EV:SCR:GO:<tipo>:<ritmo>`), más `EV:INV` (teclas sujetas) y `EV:DISP` (reposo).
+`device.js` manda todo lo que empieza por `EV:` directo a telemetría, sin pasar por
+la cola de peticiones, y no enseña las imágenes en la consola.
+
 ### Versiones y compatibilidad
 La versión del firmware sale de `include/orby_version.h` y de ahí van el `FW=`
 del handshake y el `bcdDevice` del USB. Lo que la app sabe usar está en
@@ -166,6 +172,11 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
 - `mirror.js` — copia local de los perfiles en disco. Sin teclado la app abre en
   **solo lectura** con esta copia; no se edita offline (evita dos versiones en conflicto).
 - `oled-cache.js` / `oled-fb.js` — iconos OLED (framebuffer 1 bit, 360 bytes/pantalla).
+- `oled-anim.mjs` — **copia en JS de `include/oled_anim.h`**, bit a bit. Si tocas una
+  constante o una rama del `.h`, tócala aquí y regenera el fichero dorado
+  (`tools/test/anim_golden.cpp`): `test/oled-anim.test.mjs` compara los dos.
+- `oled-mirror.js` — las diez pantallas del Inicio. Con el espejo del firmware corre
+  las mismas transiciones que Core 1; sin él, las aproxima con los iconos de la app.
 - `variants.js` — variaciones de perfil por aplicación. Viven **solo en la RAM** del
   teclado: hay que revertir a base antes de escribir a Flash (`variants.withBase`).
 - `plugins.js` — espejo en renderer de la lista de complementos.
@@ -173,7 +184,9 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
 - `firmware.js` — espejo de `src-tauri/src/firmware.rs`; pone el tope de versión desde `compat.js`.
 - `updater.js` — espejo de `src-tauri/src/updater.rs`; le cuenta al backend si hay
   cambios sin guardar, para que no reinicie la app a media escritura en Flash.
-- `styles/index.css` — aspecto de macOS/iOS en oscuro. Colores, radios y curvas
+- `styles/index.css` — aspecto de macOS (barra lateral de Ajustes del Sistema,
+  título grande) con la identidad de la landing: negro y el cian de los OLED como
+  acento (`--on-primary` es el texto encima del acento). Colores, radios y curvas
   salen de los tokens de `:root` (colores de sistema de Apple, `--fill*` para
   controles, `--ease-out`/`--spring`): no escribas un `rgba()` de color a mano,
   usa `rgba(var(--primary-rgb), a)` y compañía.

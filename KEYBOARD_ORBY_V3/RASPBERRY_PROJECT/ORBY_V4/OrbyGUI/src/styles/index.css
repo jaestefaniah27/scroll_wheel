@@ -1,39 +1,44 @@
-/* Estética de macOS/iOS en modo oscuro, la misma familia que las pantallas del
-   teclado desde el firmware 4.6. Los valores no son inventados: son los colores
-   de sistema de Apple para fondo oscuro (systemIndigo, systemGreen...), sus
-   rellenos translúcidos para controles y sus radios. Con eso la app y las
-   pantallas se leen como una sola cosa.
+/* Orvy, al estilo de una app de Apple y con la identidad de la landing: negro
+   casi puro, el cian de los píxeles OLED como color de acento y la réplica
+   blanca del teclado como protagonista. La estructura es la de Ajustes del
+   Sistema de macOS (barra lateral con baldosas de color, título grande, grupos
+   en columna); los muelles y curvas, los de UIKit, que son también los de las
+   pantallas del teclado (oled_anim.h).
 
    Los colores de estado van también en tripletas RGB (`--*-rgb`) porque casi
    todos los usos son tintes con alfa, y escribir el número a mano en cada
-   `rgba()` es lo que dejó la paleta anterior repartida en treinta sitios. */
+   `rgba()` es lo que dejó la paleta anterior repartida en treinta sitios.
+
+   `--on-primary` es el color del texto encima del acento. El cian es claro: el
+   texto blanco encima no se lee, así que en oscuro va casi negro (como el botón
+   de la landing) y en claro, con el acento oscurecido, blanco. */
 :root {
-  --bg-dark: #0d0d0f;            /* fondo de ventana: casi negro, como iOS agrupado */
-  --bg-panel: rgba(44, 44, 46, 0.72);
-  --bg-panel-hover: rgba(58, 58, 60, 0.85);
-  /* Tarjetas: el secondarySystemGroupedBackground de iOS. Opaco por la regla
-     de los scrollers (ver `.view`). */
-  --bg-panel-solid: #1c1c1e;
-  --bg-elevated: #2c2c2e;
-  /* Rellenos de control de Apple: gris translúcido que funciona sobre
-     cualquier fondo y que es lo que da el aspecto "iOS" a botones y pistas. */
-  --fill: rgba(118, 118, 128, 0.24);
-  --fill-soft: rgba(118, 118, 128, 0.14);
-  --fill-strong: rgba(118, 118, 128, 0.36);
+  --bg-dark: #050607;            /* fondo de la ventana: el negro de la landing */
+  --bg-panel: rgba(22, 26, 32, 0.72);
+  --bg-panel-hover: rgba(30, 35, 42, 0.85);
+  /* Tarjetas: un gris frío, no el cálido de iOS, para casar con el cian.
+     Opaco por la regla de los scrollers (ver `.view`). */
+  --bg-panel-solid: #101317;
+  --bg-elevated: #191d23;
+  /* Rellenos de control: gris translúcido que funciona sobre cualquier fondo. */
+  --fill: rgba(130, 140, 160, 0.2);
+  --fill-soft: rgba(130, 140, 160, 0.11);
+  --fill-strong: rgba(130, 140, 160, 0.32);
   --border-light: rgba(255, 255, 255, 0.07);
-  --separator: rgba(84, 84, 88, 0.55);
+  --separator: rgba(255, 255, 255, 0.08);
   --border-active: rgba(var(--primary-rgb), 0.55);
 
-  /* La marca sigue siendo violeta, pero el de Apple (systemIndigo, variante
-     accesible): el #8b5cf6 anterior chillaba al lado de los grises neutros. */
-  --primary-rgb: 125, 122, 255;
+  --primary-rgb: 79, 227, 255;
   --primary: rgb(var(--primary-rgb));
-  --primary-hover: #6d6af0;
-  --secondary: #a5a3ff;
+  --primary-hover: #8eefff;
+  --on-primary: #021015;
+  --secondary: #9de9ff;
+  --glow-rgb: 79, 227, 255;
+  --violet-rgb: 183, 155, 255;
 
-  --text-main: #f5f5f7;
-  --text-muted: #98989f;
-  --text-faint: #636366;
+  --text-main: #f5f7f8;
+  --text-muted: #8a929c;
+  --text-faint: #565d66;
 
   --success-rgb: 48, 209, 88;
   --warning-rgb: 255, 159, 10;
@@ -45,20 +50,18 @@
   --info: #64d2ff;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.28);
-  --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
-  /* Antes era un halo violeta. Apple no usa halos: marca la selección con un
-     anillo nítido, que además no se emborrona al escalar la ventana. */
+  --shadow-md: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  /* Apple marca la selección con un anillo nítido, no con un halo. */
   --shadow-glow: 0 0 0 1px var(--primary);
-  --focus-ring: 0 0 0 3.5px rgba(var(--primary-rgb), 0.5);
+  --focus-ring: 0 0 0 3.5px rgba(var(--primary-rgb), 0.45);
 
   --radius-sm: 8px;
   --radius-md: 14px;
-  --radius-lg: 20px;
+  --radius-lg: 18px;
 
   /* Curvas de UIKit: `--ease-out` es la de las hojas que suben y las vistas que
-     entran; `--spring` rebota un poco y es la de las pulsaciones. Son las
-     mismas que el firmware usa en las pantallas (oled_anim.h). */
+     entran; `--spring` rebota un poco y es la de las pulsaciones. */
   --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   --spring: cubic-bezier(0.34, 1.36, 0.64, 1);
 
@@ -66,54 +69,54 @@
   --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI', system-ui, Roboto, sans-serif;
   --font-mono: 'SF Mono', ui-monospace, 'Cascadia Mono', 'Cascadia Code', Consolas, monospace;
 
-  /* Marco de la ventana (barra de título y lateral) y superficies flotantes. */
-  --chrome-bg: #161618;
-  --chrome-edge: rgba(0, 0, 0, 0.6);
-  --chrome-hi: rgba(255, 255, 255, 0.04);
-  --sidebar-glass: rgba(30, 30, 32, 0.72);
-  --overlay-bg: rgba(44, 44, 46, 0.97);   /* avisos, alertas, cartel de solo lectura */
-  --scrim: rgba(0, 0, 0, 0.45);
+  /* Barra lateral: el "vibrancy" de macOS sobre negro, algo más claro que el
+     contenido para que se lea como otra superficie. */
+  --chrome-bg: #0b0d10;
+  --chrome-edge: rgba(255, 255, 255, 0.06);
+  --sidebar-sel: rgba(var(--primary-rgb), 0.14);
+  --overlay-bg: rgba(28, 32, 38, 0.97);   /* avisos, alertas, cartel de solo lectura */
+  --scrim: rgba(0, 0, 0, 0.5);
   --hover: rgba(255, 255, 255, 0.05);
   --hover-strong: rgba(255, 255, 255, 0.1);
-  --segment-on: #636366;
+  --segment-on: #4a525c;
   --segment-on-text: #fff;
-  --input-focus-bg: rgba(0, 0, 0, 0.25);
-  --console-bg: #050508;
+  --input-focus-bg: rgba(0, 0, 0, 0.3);
+  --console-bg: #030405;
+  /* El foco de luz detrás de la réplica, como el de la portada de la landing. */
+  --stage-glow: radial-gradient(60% 70% at 50% 58%, rgba(79, 227, 255, 0.13), rgba(79, 227, 255, 0.03) 55%, transparent 75%),
+                radial-gradient(30% 35% at 82% 18%, rgba(183, 155, 255, 0.1), transparent 70%);
+  --stage-bg: #07090b;
 
-  --titlebar-height: 40px;
-  /* Barra lateral: ancho plegado (el que ocupa en el layout) y desplegado (el
-     que toma al pasar el ratón, superponiéndose al contenido). */
-  --sidebar-w: 64px;
-  --sidebar-w-open: 220px;
+  --toolbar-height: 56px;
+  --sidebar-w: 236px;
 
   color-scheme: dark;
 }
 
 /* ================= MODO CLARO ================= */
-/* Los mismos tokens con los valores claros de Apple: fondo agrupado de iOS
-   (#f2f2f7), tarjetas blancas y los colores de sistema en su variante para
-   fondo claro, que son algo más oscuros para seguir leyéndose sobre blanco.
+/* Los mismos tokens con valores claros. El acento se oscurece (el cian puro
+   sobre blanco no se lee) y pasa a llevar texto blanco encima.
    Lo activa src/theme.js poniendo data-theme en <html>; no hay media query
    aquí a propósito (ver el comentario de theme.js).
 
-   Lo que NO cambia: las pantallas OLED, su editor y el texto que llevan. Son
-   la imagen de un panel de verdad, que es negro con píxeles blancos se mire
-   como se mire. */
+   Lo que NO cambia: la réplica del teclado y las pantallas OLED. Son la imagen
+   de un objeto de verdad, que se ve igual encima de cualquier mesa. */
 :root[data-theme="light"] {
-  --bg-dark: #f2f2f7;
+  --bg-dark: #f5f6f8;
   --bg-panel: rgba(255, 255, 255, 0.72);
   --bg-panel-hover: rgba(255, 255, 255, 0.9);
   --bg-panel-solid: #ffffff;
   --bg-elevated: #ffffff;
   --fill: rgba(118, 118, 128, 0.12);
-  --fill-soft: rgba(118, 118, 128, 0.08);
+  --fill-soft: rgba(118, 118, 128, 0.07);
   --fill-strong: rgba(120, 120, 128, 0.2);
   --border-light: rgba(0, 0, 0, 0.06);
-  --separator: rgba(60, 60, 67, 0.22);
+  --separator: rgba(60, 60, 67, 0.14);
 
-  --primary-rgb: 88, 86, 214;
-  --primary-hover: #4b49c8;
-  --secondary: #5856d6;
+  --primary-rgb: 0, 137, 168;
+  --primary-hover: #007591;
+  --on-primary: #ffffff;
+  --secondary: #0089a8;
 
   --text-main: #1d1d1f;
   --text-muted: #6e6e73;
@@ -126,13 +129,12 @@
   --info: #007aff;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px rgba(0, 0, 0, 0.05);
   --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
 
-  --chrome-bg: #ececef;
-  --chrome-edge: rgba(0, 0, 0, 0.1);
-  --chrome-hi: rgba(255, 255, 255, 0.7);
-  --sidebar-glass: rgba(236, 236, 240, 0.75);
+  --chrome-bg: #eceef1;
+  --chrome-edge: rgba(0, 0, 0, 0.07);
+  --sidebar-sel: rgba(var(--primary-rgb), 0.12);
   --overlay-bg: rgba(255, 255, 255, 0.98);
   --scrim: rgba(0, 0, 0, 0.2);
   --hover: rgba(0, 0, 0, 0.04);
@@ -141,6 +143,8 @@
   --segment-on-text: #1d1d1f;
   --input-focus-bg: #ffffff;
   --console-bg: #ffffff;
+  --stage-glow: radial-gradient(60% 70% at 50% 58%, rgba(0, 137, 168, 0.1), transparent 70%);
+  --stage-bg: #e9ecef;
 
   color-scheme: light;
 }
@@ -152,10 +156,9 @@
 }
 
 body {
-  /* Pila del sistema: antes se traía Inter desde Google Fonts y la app se
-     quedaba sin tipografía al abrirla sin conexión. San Francisco primero
-     (la WebGUI abierta en un Mac); en Windows cae en Segoe UI Variable, que
-     tiene tamaños ópticos como ella y se le parece mucho. */
+  /* Pila del sistema: la app tiene que arrancar sin conexión, así que nada de
+     fuentes remotas. San Francisco primero (la WebGUI abierta en un Mac); en
+     Windows cae en Segoe UI Variable, que tiene tamaños ópticos como ella. */
   font-family: var(--font-text);
   font-size: 14px;
   letter-spacing: -0.006em;
@@ -171,21 +174,15 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
 
 button { font-family: inherit; }
 
+::selection { background: rgba(var(--primary-rgb), 0.35); }
+
 /* Anillo de foco de macOS: solo con teclado, nunca al hacer clic. */
 :focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
-/* Panel base.
-   Antes llevaba `backdrop-filter: blur(12px)`. Un backdrop-filter dentro de un
-   contenedor con scroll descalifica el scroll compuesto en Chromium: cada
-   fotograma hay que releer el fondo y rehacer el desenfoque en el hilo
-   principal en vez de mover una capa ya rasterizada. Como todas las vistas van
-   llenas de `.glass-panel` y `.view` es el que scrollea, la rueda de alta
-   resolución —que mueve la página en CADA fotograma, no una vez por detent— se
-   veía a tirones.
-   El desenfoque tampoco pintaba nada: el fondo de detrás es el color plano
-   --bg-dark, y desenfocar un color liso da el mismo color liso. Se sustituye
-   por el resultado ya compuesto (rgba(22,22,33,.7) sobre #0a0a0f), que además
-   deja la capa opaca y más barata de rasterizar. */
+/* Panel base. Sin backdrop-filter a propósito: dentro de un contenedor con
+   scroll descalifica el scroll compuesto de Chromium, y la rueda de alta
+   resolución mueve la página en CADA fotograma. El fondo de detrás es liso:
+   desenfocarlo daría el mismo color. */
 .glass-panel {
   background: var(--bg-panel-solid);
   border: 1px solid var(--border-light);
@@ -193,93 +190,126 @@ button { font-family: inherit; }
   box-shadow: var(--shadow-md);
 }
 
-/* Scrollbar invisible: el contenido sigue siendo desplazable, solo se quita
-   la barra que ocupaba espacio y afeaba los bordes de los paneles. */
-::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+/* Barras de scroll finas y que solo se ven al usarlas, como en macOS. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: transparent; border-radius: 10px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+:hover::-webkit-scrollbar-thumb { background-color: var(--fill-strong); }
+
+/* ================= ARMAZÓN ================= */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  height: 100vh;
 }
 
-/* ================= TITLEBAR ================= */
-.titlebar {
-  height: var(--titlebar-height);
+/* ---- Barra lateral, la de Ajustes del Sistema ---- */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 0 10px 12px;
+  background: var(--chrome-bg);
+  border-right: 1px solid var(--chrome-edge);
+  position: relative;
+  z-index: 60; /* por debajo de los avisos (999) */
+}
+
+/* La cabecera de la barra es también zona de arrastre de la ventana. */
+.sidebar-brand {
+  height: var(--toolbar-height);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background: var(--chrome-bg);
-  border-bottom: 1px solid var(--chrome-edge);
-  box-shadow: 0 1px 0 var(--chrome-hi);
-  position: relative;
-  z-index: 100;
-}
-
-.titlebar-drag-region {
-  position: absolute;
-  top: 0; left: 0; right: 140px; bottom: 0;
+  gap: 10px;
+  padding: 0 8px;
   -webkit-app-region: drag;
 }
 
-.titlebar-left {
-  display: flex;
-  align-items: center;
-  padding-left: 16px;
-  gap: 10px;
-  pointer-events: none;
-}
-
-/* El mismo icono que la pantalla de carga: una "squircle" con el brillo de
-   arriba que llevan los iconos de iOS. */
-.app-logo {
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
+/* El mismo icono que la pantalla de carga: una squircle negra con el punto
+   de luz cian de un píxel OLED encendido. */
+.brand-mark, .splash-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   background:
-    radial-gradient(circle at 50% 50%, #fff 0 18%, transparent 19%),
-    linear-gradient(160deg, #a5a3ff, #5e5ce6 60%, #4b3fd1);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+    radial-gradient(circle at 50% 50%, #c8f5ff 0 16%, rgba(79, 227, 255, 0.55) 26%, transparent 46%),
+    linear-gradient(160deg, #1b2229, #05070a);
+  box-shadow: inset 0 0 0 1px rgba(157, 233, 255, 0.28), 0 2px 10px rgba(79, 227, 255, 0.25);
 }
 
-.app-title {
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: -0.01em;
+/* Wordmark como el de la landing: negrita ancha y espaciada. */
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.16em;
   color: var(--text-main);
 }
 
-.titlebar-center {
-  pointer-events: none;
+/* Tarjeta del aparato: la miniatura del teclado y si está conectado. */
+.device-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--fill-soft);
 }
 
-/* Cápsula neutra con solo el punto de color, como los indicadores del Centro
-   de control: el texto en rojo o verde gritaba más de lo que dice. */
+/* Miniatura: carcasa blanca con seis teclas y la rueda. Es un objeto físico,
+   así que no sigue al tema. */
+.device-chip-art {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  border-radius: 4px;
+  background: linear-gradient(165deg, #f6f5f1, #d6d4cc);
+  box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(0, 0, 0, 0.35);
+  display: grid;
+  grid-template-columns: repeat(3, 6px);
+  grid-auto-rows: 6px;
+  gap: 2px;
+  padding: 5px 0 0 5px;
+}
+.device-chip-art i { border-radius: 1.5px; background: #1c1f23; }
+.device-chip-art b {
+  position: absolute; right: 5px; top: 6px;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #fff, #e3e1db 70%);
+  box-shadow: 0 0 0 1.5px #3a3c3e;
+}
+.device-chip-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.device-chip-name { font-size: 13px; font-weight: 600; }
+
+/* Estado: solo el punto lleva color, como los indicadores del Centro de control. */
 .status-badge {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 11px 4px 9px;
-  border-radius: 999px;
+  gap: 6px;
   font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-main);
-  background: var(--fill-soft);
-  border: none;
-  transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
+.status-badge .status-text { overflow: hidden; text-overflow: ellipsis; }
 .status-badge .status-dot {
-  width: 7px; height: 7px;
+  width: 7px; height: 7px; flex-shrink: 0;
   border-radius: 50%;
-  transition: background 0.3s var(--ease-out);
+  transition: background 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out);
 }
-
 .status-badge.connected .status-dot {
   background: var(--success);
-  box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.22);
+  box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.2), 0 0 8px rgba(var(--success-rgb), 0.6);
 }
-
-.status-badge.disconnected { color: var(--text-muted); }
-.status-badge.disconnected .status-dot { background: var(--danger); }
-
+.status-badge.disconnected .status-dot { background: var(--text-faint); }
 .status-badge.searching .status-dot {
   background: var(--info);
   animation: pulse 1.5s infinite;
@@ -291,10 +321,126 @@ button { font-family: inherit; }
   100% { opacity: 0.4; transform: scale(0.8); }
 }
 
+.sidebar-group { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-spacer { flex-grow: 1; }
+
+/* Fila de la barra lateral: baldosa de color con el icono en blanco y la
+   etiqueta, como en Ajustes del Sistema. */
+.nav-item {
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s var(--ease-out), transform 0.3s var(--spring);
+}
+.nav-item:active { transform: scale(0.97); }
+.nav-item:hover { background: var(--hover); }
+.nav-item.active { background: var(--sidebar-sel); }
+.nav-item.active .nav-label { font-weight: 600; }
+
+.nav-icon {
+  width: 24px; height: 24px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 7px;
+  color: #fff;
+  background: var(--tile, #8e8e93);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.nav-label { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Colores de las baldosas, los de sistema de Apple. La de Inicio es el cian
+   de la marca, y lleva el texto oscuro porque sobre cian el blanco no se lee. */
+[data-tint="cyan"]     { --tile: linear-gradient(160deg, #6ff0ff, #18b4d8); }
+[data-tint="violet"]   { --tile: linear-gradient(160deg, #b79bff, #7a5af0); }
+[data-tint="orange"]   { --tile: linear-gradient(160deg, #ffb340, #ff8a00); }
+[data-tint="gray"]     { --tile: linear-gradient(160deg, #a1a1a6, #737378); }
+[data-tint="graphite"] { --tile: linear-gradient(160deg, #6e737b, #3e4249); }
+[data-tint="indigo"]   { --tile: linear-gradient(160deg, #7d7aff, #4b49d6); }
+[data-tint="green"]    { --tile: linear-gradient(160deg, #4cd964, #28a745); }
+[data-tint="blue"]     { --tile: linear-gradient(160deg, #47a9ff, #0a6cff); }
+[data-tint="pink"]     { --tile: linear-gradient(160deg, #ff6b8b, #ff2d55); }
+[data-tint="red"]      { --tile: linear-gradient(160deg, #ff6961, #e0352b); }
+[data-tint="cyan"] .nav-icon, .settings-card[data-tint="cyan"] > .card-header > span:first-child { color: #021015; }
+
+/* Pie: guardado en la Flash y aviso de versión nueva. */
+.sidebar-foot { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+
+.save-flash-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: 8px; cursor: pointer;
+  font-size: 12px; font-weight: 500;
+  background: var(--fill-soft); border: none;
+  color: var(--text-muted);
+  transition: background 0.25s var(--ease-out), color 0.25s, transform 0.35s var(--spring);
+}
+.save-flash-btn .icn { color: var(--success); }
+.save-flash-btn:disabled { opacity: 0.45; cursor: default; }
+.save-flash-btn.has-changes {
+  background: rgba(var(--warning-rgb), 0.16);
+  color: var(--warning);
+}
+.save-flash-btn.has-changes .icn { color: var(--warning); animation: spin 1.1s linear infinite; }
+.save-flash-btn.has-changes:hover { background: var(--warning); color: #1c1c1e; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes nudge { 0%,90%,100% { transform: none; } 95% { transform: scale(1.04); } }
+
+/* Aviso de versión nueva. Descargando todavía no se puede pulsar; lista, sí. */
+.update-badge {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: 8px; cursor: default;
+  font-size: 12px; font-weight: 600;
+  background: rgba(var(--info-rgb), 0.16); border: none;
+  color: var(--info); transition: background 0.25s, color 0.25s, transform 0.35s var(--spring);
+}
+
+/* ---- Columna principal: barra de herramientas + vista ---- */
+.main-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.toolbar {
+  height: var(--toolbar-height);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 32px;
+  position: relative;
+  z-index: 50;
+}
+
+.titlebar-drag-region {
+  position: absolute;
+  inset: 0 140px 0 0;
+  -webkit-app-region: drag;
+}
+
+/* El título grande de macOS Ventura en adelante: Display, 22 px, negrita. */
+.view-title {
+  position: relative; /* encima de la zona de arrastre, pero sin capturar clics */
+  pointer-events: none;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
 .titlebar-controls {
   display: flex;
+  margin-left: auto;
+  align-self: flex-start;
+  height: 36px;
   -webkit-app-region: no-drag;
-  height: 100%;
+  position: relative;
 }
 
 .window-btn {
@@ -308,155 +454,30 @@ button { font-family: inherit; }
   justify-content: center;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
-  font-size: 16px;
 }
+.window-btn:hover { background: var(--hover-strong); color: var(--text-main); }
+.window-btn.close:hover { background: #e81123; color: #fff; }
 
-.window-btn:hover {
-  background: var(--hover-strong);
-  color: var(--text-main);
-}
-.window-btn.close:hover {
-  background: var(--danger);
-  color: white;
-}
-
-/* ================= LAYOUT ================= */
-.app-container {
-  display: flex;
-  height: calc(100vh - var(--titlebar-height));
-}
-
-/* Barra lateral desplegable.
-   `.sidebar` solo reserva el hueco de la versión plegada en el layout; quien
-   crece es `.sidebar-rail`, que va posicionado encima. Así al desplegarse se
-   superpone al contenido en vez de empujarlo, que es lo que obligaría a
-   recalcular y repintar la vista entera cada vez que el ratón pasa por encima.
-   La barra hace de título de cada vista, por eso ninguna tiene ya cabecera
-   propia: ese alto se lo queda el contenido. */
-.sidebar {
-  width: var(--sidebar-w);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 60; /* por debajo de la barra de título (100) y de los avisos (999) */
-}
-
-.sidebar-rail {
-  position: absolute;
-  top: 0; bottom: 0; left: 0;
-  width: var(--sidebar-w);
-  display: flex;
-  flex-direction: column;
-  padding: 16px 12px;
-  gap: 4px;
-  /* Barra lateral de macOS: un gris algo más claro que el contenido. Opaca
-     mientras está plegada, porque no tiene nada debajo. */
-  background: var(--chrome-bg);
-  border-right: 1px solid var(--chrome-edge);
-  overflow: hidden; /* recorta las etiquetas mientras está plegada */
-  transition: width 0.38s var(--ease-out), box-shadow 0.38s var(--ease-out),
-              background 0.38s var(--ease-out);
-}
-
-/* `:has(:focus-visible)` y no `:focus-within`: al pulsar un botón el foco se
-   queda en él, y con `:focus-within` la barra seguía desplegada después de
-   apartar el ratón hasta que se hacía clic en cualquier otro sitio.
-   `:focus-visible` solo casa con el foco por teclado -Chromium no lo aplica a
-   los clics de ratón-, así que sigue quedándose abierta al recorrerla con el
-   tabulador, que si no deja el foco en un botón cuyo nombre no se ve. */
-.sidebar:hover .sidebar-rail,
-.sidebar-rail:has(:focus-visible) {
-  width: var(--sidebar-w-open);
-  box-shadow: 12px 0 40px rgba(0, 0, 0, 0.3);
-}
-
-/* Desplegada sí tapa contenido, y ahí va translúcida con desenfoque, como la
-   barra lateral de macOS. No choca con la regla de no desenfocar dentro de un
-   scroller (ver `.glass-panel`): la barra está FUERA del scroller, y el
-   desenfoque solo se recalcula mientras el ratón la tiene abierta. */
-@supports (backdrop-filter: blur(1px)) {
-  .sidebar:hover .sidebar-rail,
-  .sidebar-rail:has(:focus-visible) {
-    background: var(--sidebar-glass);
-    backdrop-filter: blur(30px) saturate(180%);
-  }
-}
-
-.sidebar-spacer { flex-grow: 1; }
-
-/* El icono no se mueve al desplegar: 12 de padding de la barra + 9 del botón
-   dejan sus 22 px centrados en los 64 de la barra plegada. Lo que cambia es
-   solo el ancho del botón, que pasa a tener sitio para la etiqueta. */
-.nav-item {
-  height: 40px;
-  flex-shrink: 0;
-  padding: 0 9px;
-  border-radius: 10px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  overflow: hidden;
-  transition: background 0.2s var(--ease-out), color 0.2s var(--ease-out), transform 0.3s var(--spring);
-}
-.nav-item:active { transform: scale(0.94); }
-
-.nav-icon { flex-shrink: 0; display: flex; }
-
-.nav-label {
-  white-space: nowrap;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  opacity: 0;
-  transform: translateX(-6px);
-  transition: opacity 0.2s var(--ease-out), transform 0.38s var(--ease-out);
-}
-
-.sidebar:hover .nav-label,
-.sidebar-rail:has(:focus-visible) .nav-label { opacity: 1; transform: none; }
-
-.nav-item:hover {
-  color: var(--text-main);
-  background: var(--fill-soft);
-}
-
-/* Selección de barra lateral de macOS: relleno plano del color de acento,
-   sin degradado ni sombra. */
-.nav-item.active {
-  color: #fff;
-  background: var(--primary);
-}
-
-/* Main Content Area */
 .content-area {
   flex-grow: 1;
   position: relative;
   overflow: hidden;
 }
 
-/* El fondo explícito no cambia nada a la vista -detrás solo estaba el mismo
-   --bg-dark del body-, pero sí cambia cómo lo trata Chromium. La capa de
-   contenido de un contenedor con scroll solo entra en la ruta rápida si es
-   OPACA: con fondo transparente hay que limpiar y mezclar cada tesela al
-   rasterizarla y el texto pierde el suavizado subpíxel. Al girar la rueda en
-   alta resolución se generan teselas nuevas en cada fotograma, así que la
-   diferencia se ve como tirones y texto que "baila".
+/* Fondo explícito: la capa de contenido de un scroller solo entra en la ruta
+   rápida de Chromium si es OPACA, y con la rueda de alta resolución se nota.
    Regla general en este archivo: TODO elemento con overflow scrollable lleva
    fondo opaco. */
 .view {
   position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  padding: 28px 32px;
+  inset: 0;
+  padding: 6px 32px 32px;
   background: var(--bg-dark);
   opacity: 0;
   visibility: hidden;
-  /* Entra subiendo un pelo y saliendo de una escala casi completa, como una
-     app al abrirse en iOS. Solo se anima la vista que entra: la que sale se
-     esconde de golpe por debajo y no se cruzan dos capas a medio fundir. */
-  transform: translateY(8px) scale(0.995);
+  /* Entra subiendo un pelo, como una vista que llega en iOS. Solo se anima la
+     que entra: la que sale se esconde de golpe. */
+  transform: translateY(10px);
   transition: opacity 0.2s var(--ease-out), transform 0.5s var(--ease-out), visibility 0s linear 0.2s;
   overflow-y: auto;
 }
@@ -467,63 +488,176 @@ button { font-family: inherit; }
   /* `none` y no `translateY(0)`: cualquier transform deja a la vista como
      bloque contenedor de lo que lleve `position: fixed` dentro. */
   transform: none;
-  transition: opacity 0.32s var(--ease-out), transform 0.5s var(--ease-out), visibility 0s;
+  transition: opacity 0.32s var(--ease-out), transform 0.55s var(--ease-out), visibility 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .view, .view.active { transform: none; transition: opacity 0.15s linear, visibility 0s; }
 }
 
-/* ================= DASHBOARD VIEW ================= */
-.dashboard-grid {
+/* ================= INICIO ================= */
+.dash {
   display: grid;
-  grid-template-columns: 2fr 1fr;
-  grid-template-rows: auto 1fr;
-  gap: 24px;
-  height: calc(100% - 100px);
+  grid-template-rows: minmax(340px, 1fr) auto auto;
+  gap: 18px;
+  min-height: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
 }
 
-.dashboard-grid h2 {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  color: var(--text-muted);
-  margin-bottom: 16px;
-}
-
-.hardware-preview-card {
-  grid-column: 1;
-  grid-row: 1 / 3;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Keyboard Visualizer */
-#keyboard-visualizer {
-  flex-grow: 1;
+/* El escenario: la réplica bajo un foco de luz, como la portada de la landing. */
+.dash-stage {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
+  padding: 36px 40px;
+  border-radius: 24px;
+  background: var(--stage-glow), var(--stage-bg);
+  border: 1px solid var(--border-light);
+  overflow: hidden;
+  isolation: isolate;
+}
+/* Rejilla de suelo en perspectiva, la de la landing, muy apagada. */
+.dash-stage::after {
+  content: '';
+  position: absolute;
+  left: -20%; right: -20%; bottom: -8%;
+  height: 48%;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(157, 233, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(157, 233, 255, 0.07) 1px, transparent 1px);
+  background-size: 48px 48px;
+  transform: perspective(520px) rotateX(64deg);
+  transform-origin: bottom;
+  -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 85%);
+  mask-image: linear-gradient(to top, #000 10%, transparent 85%);
+}
+:root[data-theme="light"] .dash-stage::after { opacity: 0; }
+
+#keyboard-visualizer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Réplica del Orby, con la geometría del teclado montado y no a ojo.
-   Medidas en milímetros, sacadas de una foto cenital del real: carcasa de
-   210 x 125, teclas de 20 a 24,4 de paso, rueda de 75 y mandos de 15,5
-   (las posiciones, en dashboard.js). Cada pieza se coloca por su centro con --x/--y en tanto por
-   ciento de la carcasa (lo calcula dashboard.js), y todo lo demás se mide en
-   --u, un milímetro de carcasa, para que la réplica escale entera con el panel.
+/* Cartel de directo: si lo que se ve son las pantallas reales o una aproximación. */
+.dash-live {
+  position: absolute;
+  top: 16px; right: 16px;
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 11px 5px 9px;
+  border-radius: 999px;
+  font-size: 11.5px; font-weight: 500;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+:root[data-theme="light"] .dash-live { background: rgba(255, 255, 255, 0.7); border-color: var(--border-light); }
+.dash-live .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
+.dash-live.off .live-dot { background: var(--text-faint); }
+.dash-live.on { color: var(--text-main); }
+.dash-live.on .live-dot { background: #ff453a; box-shadow: 0 0 8px rgba(255, 69, 58, 0.8); animation: livePulse 1.6s ease-in-out infinite; }
+@keyframes livePulse { 50% { opacity: 0.35; } }
 
-   Los colores tampoco siguen al tema: la carcasa es blanca impresa en 3D, las
-   teclas negras con cap transparente y las pantallas, OLED. Es un objeto
-   físico, y en modo claro u oscuro se ve igual que encima de la mesa. */
+/* Perfiles en píldoras: el selector de apps de la landing. */
+.dash-profiles {
+  justify-self: center;
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 4px; padding: 4px;
+  border-radius: 999px;
+  background: var(--fill-soft);
+  border: 1px solid var(--border-light);
+}
+.dash-profiles:empty { display: none; }
+.dash-pill {
+  padding: 7px 16px;
+  border: none; border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s, background 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out), transform 0.35s var(--spring);
+}
+.dash-pill:hover { color: var(--text-main); }
+.dash-pill:active { transform: scale(0.95); }
+.dash-pill.on {
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: 0 0 18px rgba(var(--primary-rgb), 0.45);
+}
+
+/* Widgets de iOS: etiqueta pequeña arriba y la cifra grande. */
+.dash-widgets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.35fr);
+  gap: 14px;
+}
+.widget {
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-light);
+}
+.widget-label {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.widget-big {
+  font-family: ui-rounded, 'SF Pro Rounded', var(--font-display);
+  font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.widget-big.is-on { color: var(--primary); }
+.widget-sub {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-muted);
+}
+.widget-sub b { font-weight: 600; color: var(--text-main); }
+
+/* Puntos de página: los de debajo de la rejilla de iconos del iPhone. */
+.page-dots { display: inline-flex; gap: 5px; }
+.page-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--fill-strong); transition: background 0.3s; }
+.page-dots i.on { background: var(--text-main); }
+
+.widget-event .event-feed { flex: 1; display: flex; align-items: center; min-height: 40px; }
+.event-feed .empty-state { color: var(--text-faint); font-size: 13px; }
+.big-event { display: flex; align-items: baseline; gap: 10px; animation: popIn 0.45s var(--spring); min-width: 0; }
+.big-event-title { font-size: 20px; font-weight: 700; color: var(--primary); white-space: nowrap; }
+.big-event-detail {
+  font-family: var(--font-mono); font-size: 13px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@keyframes popIn { 0% { transform: scale(0.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+@media (max-width: 1180px) {
+  .dash-widgets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---- La réplica del teclado ----
+   Medidas en milímetros sacadas de una foto cenital del real: carcasa de
+   210 x 125, teclas de 20 a 24,4 de paso, rueda de 75 y mandos de 15,5 (las
+   posiciones, en dashboard.js). Cada pieza se coloca por su centro con --x/--y
+   en tanto por ciento de la carcasa, y todo lo demás se mide en --u, un
+   milímetro de carcasa, para que la réplica escale entera.
+
+   Los colores no siguen al tema: carcasa blanca impresa en 3D, teclas con cap
+   transparente y pantallas OLED. Es la misma pieza que la landing. */
 .orby-board {
   position: relative;
-  width: min(100%, 640px);
+  width: min(100%, 780px);
   aspect-ratio: 210 / 125;
   container-type: inline-size;
   --u: calc(100cqw / 210);
+  /* Que siempre quepa de alto en el escenario, aunque la ventana sea baja. */
+  max-width: calc((100vh - 400px) * 210 / 125);
+  min-width: 380px;
 }
 
 .orby-case {
@@ -537,7 +671,8 @@ button { font-family: inherit; }
     inset 0 calc(-1.4 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,0.18),
     inset 0 0 0 1px rgba(0,0,0,0.06),
     0 calc(2 * var(--u)) 0 #b9b6ae,
-    0 calc(10 * var(--u)) calc(30 * var(--u)) rgba(0,0,0,0.45);
+    0 calc(12 * var(--u)) calc(34 * var(--u)) rgba(0,0,0,0.55),
+    0 0 calc(60 * var(--u)) rgba(79, 227, 255, 0.08);
 }
 /* Grano de impresión 3D: capas de 0,2 mm, apenas visibles. */
 .orby-case::after {
@@ -550,7 +685,8 @@ button { font-family: inherit; }
   translate: -50% -50%;
 }
 
-/* ---- Teclas: hueco en la carcasa, tecla negra y cap transparente encima ---- */
+/* Teclas: hueco en la carcasa, y encima la tecla vista a través de la cap
+   transparente (el degradado blanco es el reflejo del plástico). */
 .hw-key { width: calc(20 * var(--u)); aspect-ratio: 1; }
 .hw-key::before {
   content: ''; position: absolute; inset: calc(-0.8 * var(--u)); border-radius: calc(4 * var(--u));
@@ -559,15 +695,13 @@ button { font-family: inherit; }
 .hw-cap {
   position: absolute; inset: 0; border-radius: calc(3.4 * var(--u));
   display: grid; place-items: center;
-  /* La tecla negra (#141518 en el modelo) vista a través de la cap: el
-     degradado blanco es el reflejo del plástico transparente. */
   background:
-    linear-gradient(150deg, rgba(255,255,255,0.42), rgba(255,255,255,0.07) 38%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.16)),
-    #16181b;
+    linear-gradient(150deg, rgba(255,255,255,0.5), rgba(255,255,255,0.08) 38%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.2)),
+    #1a1d21;
   box-shadow:
-    inset 0 0 0 1px rgba(255,255,255,0.45),
-    inset 0 calc(0.6 * var(--u)) 0 rgba(255,255,255,0.35),
-    inset 0 calc(-1.2 * var(--u)) calc(2 * var(--u)) rgba(0,0,0,0.35),
+    inset 0 0 0 1px rgba(255,255,255,0.5),
+    inset 0 calc(0.6 * var(--u)) 0 rgba(255,255,255,0.4),
+    inset 0 calc(-1.2 * var(--u)) calc(2 * var(--u)) rgba(0,0,0,0.3),
     0 calc(1.4 * var(--u)) 0 rgba(150,160,170,0.75),
     0 calc(2.4 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,0.35);
   transition: transform 0.3s var(--spring), box-shadow 0.3s var(--ease-out);
@@ -575,47 +709,50 @@ button { font-family: inherit; }
 .hw-key.active .hw-cap {
   transform: translateY(calc(1.1 * var(--u)));
   box-shadow:
-    inset 0 0 0 1px rgba(255,255,255,0.45),
-    inset 0 calc(0.6 * var(--u)) 0 rgba(255,255,255,0.28),
+    inset 0 0 0 1px rgba(255,255,255,0.5),
+    inset 0 calc(0.6 * var(--u)) 0 rgba(255,255,255,0.3),
     0 calc(0.3 * var(--u)) 0 rgba(150,160,170,0.75),
     0 calc(0.6 * var(--u)) calc(1 * var(--u)) rgba(0,0,0,0.35);
   transition-duration: 0.08s;
 }
 
-/* Pantalla de 72x40: la proporción del panel real, no la de la web. Con
-   content-box el borde no se come píxeles del icono. */
+/* Pantalla de 72x40: la proporción del panel real. El canvas es de 72x40
+   píxeles y el navegador lo amplía sin suavizar; el brillo es el sangrado de
+   luz de un OLED de verdad, el mismo de la landing. */
 .hw-key .oled-screen {
-  width: 74%; aspect-ratio: 72 / 40;
-  display: grid; place-items: center; overflow: hidden;
-  background: #020304; border-radius: calc(0.8 * var(--u));
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 calc(2 * var(--u)) rgba(79,227,255,0.08);
-  color: #9de9ff; font-family: var(--font-mono); font-weight: 600;
-  font-size: calc(2.6 * var(--u)); letter-spacing: 0.02em;
-  text-shadow: 0 0 4px rgba(79,227,255,0.6);
+  position: relative;
+  width: 76%; aspect-ratio: 72 / 40;
+  display: grid; place-items: center; overflow: visible;
+  background: #010203; border-radius: calc(0.8 * var(--u));
+  box-shadow: 0 0 0 calc(0.5 * var(--u)) #000, inset 0 0 calc(2 * var(--u)) rgba(79,227,255,0.08);
 }
-/* El brillo del OLED: el píxel encendido sangra un poco de luz azulada. */
-.hw-key .oled-screen .okey-canvas {
+.oled-px {
+  position: absolute; inset: 0;
   width: 100%; height: 100%;
-  filter: drop-shadow(0 0 1px rgba(79,227,255,0.9)) drop-shadow(0 0 4px rgba(79,227,255,0.35));
-  transition: filter 0.15s;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 calc(0.25 * var(--u)) rgba(79,227,255,0.95)) drop-shadow(0 0 calc(1.2 * var(--u)) rgba(79,227,255,0.45));
 }
-.hw-key.active .oled-screen .okey-canvas {
-  filter: brightness(1.5) drop-shadow(0 0 2px rgba(157,233,255,1)) drop-shadow(0 0 8px rgba(79,227,255,0.6));
+/* Sin espejo, una tecla con solo etiqueta lleva el texto encima del lienzo. */
+.oled-text {
+  position: relative;
+  font-family: var(--font-mono); font-weight: 700;
+  font-size: calc(2.5 * var(--u)); letter-spacing: 0.02em;
+  color: #d6f6ff;
+  text-shadow: 0 0 calc(0.6 * var(--u)) rgba(79,227,255,0.8);
+  max-width: 94%; overflow: hidden; white-space: nowrap; text-overflow: clip;
 }
-/* MENÚ y SUPER no llevan pantalla: tecla negra lisa con la función rotulada. */
+/* MENÚ y SUPER no llevan pantalla: tecla lisa con la función rotulada. */
 .hw-key-role {
-  font-size: calc(2.3 * var(--u)); letter-spacing: 0.12em; font-weight: 600;
-  color: rgba(255,255,255,0.42);
+  font-size: calc(2.3 * var(--u)); letter-spacing: 0.14em; font-weight: 700;
+  color: rgba(255,255,255,0.45);
 }
 
-/* ---- Rueda y mandos: ranura en la carcasa y pieza moleteada ---- */
+/* Rueda y mandos: ranura en la carcasa y pieza impresa lisa. */
 .hw-wheel { width: calc(75 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
 .hw-encoder { width: calc(15.5 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
 .hw-wheel::before, .hw-encoder::before {
-  /* Holgura de la ranura: en el modelo va de 0,4 a 0,7 mm alrededor de la pieza.
-     La sombra de borde y la de elevación de la pieza van aquí, en la ranura, y
-     no en la cara (más abajo): así no pintan por encima del anillo y se queda
-     completo y centrado en vez de desaparecer por un lado. */
+  /* La sombra de borde y la de elevación van en la ranura y no en la cara: así
+     no pintan encima del anillo y se queda completo y centrado. */
   content: ''; position: absolute; inset: calc(-0.9 * var(--u)); border-radius: 50%;
   background: #3a3c3e;
   box-shadow:
@@ -624,9 +761,6 @@ button { font-family: inherit; }
     0 calc(2.4 * var(--u)) calc(4 * var(--u)) rgba(0,0,0,0.35);
   transition: box-shadow 0.25s var(--ease-out);
 }
-/* Rueda y mandos son piezas impresas, lisas y con la misma textura que la
-   carcasa: sin moleteado. La sombra corta de abajo es la del canto, porque
-   las dos sobresalen de la tapa. */
 .hw-wheel-face, .hw-encoder-face, .wheel-dial-face {
   position: absolute; inset: 0; border-radius: 50%;
   background: radial-gradient(circle at 42% 34%, #fcfbf8, #eeede8 55%, #dedcd5 100%);
@@ -644,24 +778,21 @@ button { font-family: inherit; }
   background: conic-gradient(from 200deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.75) 40deg, rgba(255,255,255,0) 90deg, rgba(0,0,0,0.06) 200deg, rgba(255,255,255,0) 300deg);
   mix-blend-mode: soft-light;
 }
-/* Al girar, la ranura se ilumina del color de acento: es la única pista de
-   actividad que no se inventa nada del aparato. */
+/* Al girar, la ranura se ilumina de cian: la luz de los OLED. */
 .hw-wheel.active::before, .hw-encoder.active::before {
   box-shadow: inset 0 calc(0.6 * var(--u)) calc(1.2 * var(--u)) rgba(0,0,0,0.7),
               0 calc(1.2 * var(--u)) 0 #c9c7c0,
               0 calc(2.4 * var(--u)) calc(4 * var(--u)) rgba(0,0,0,0.35),
-              0 0 0 calc(1 * var(--u)) rgba(var(--primary-rgb), 0.85),
-              0 0 calc(4 * var(--u)) rgba(var(--primary-rgb), 0.5);
+              0 0 0 calc(0.8 * var(--u)) rgba(79, 227, 255, 0.9),
+              0 0 calc(6 * var(--u)) rgba(79, 227, 255, 0.55);
 }
 .hw-encoder-face { transition: transform 0.3s var(--spring); }
 .hw-encoder.active .hw-encoder-face { transform: scale(0.95); }
 
-/* Marcador de la rueda. Gira siguiendo el ángulo absoluto del sensor, así que
-   se queda donde esté la rueda de verdad; el desfase y el sentido se calibran
-   desde Ajustes para que coincida con la marca de la tapa.
-   El punto se dibuja como la pieza real: un tapón liso de un 20 % del
-   diámetro, a un 63 % del radio desde el centro, sin ranura — se fabrica liso.
-   La raya es la alternativa para quien marque la tapa a rotulador. */
+/* Marcador de la rueda. Gira siguiendo el ángulo absoluto del sensor; el
+   desfase y el sentido se calibran desde Ajustes. El punto es la pieza real:
+   un tapón liso de un 20 % del diámetro a un 63 % del radio. La raya es la
+   alternativa para quien marque la tapa a rotulador. */
 .dial-marker {
   position: absolute; inset: 0; border-radius: 50%;
   transition: transform 0.1s linear; pointer-events: none;
@@ -679,63 +810,57 @@ button { font-family: inherit; }
   background: #a9aaa6; box-shadow: inset 0 1px 2px rgba(0,0,0,0.35);
 }
 
-.status-panel { padding: 24px; }
-.status-items {
-  display: flex; flex-direction: column;
-  background: var(--fill-soft);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.status-item {
-  display: flex; justify-content: space-between; align-items: center;
-  min-height: 46px;
-  padding: 0 16px;
-  position: relative;
-}
-.status-item + .status-item::before {
-  content: ''; position: absolute; top: 0; left: 16px; right: 0;
-  height: 1px; background: var(--separator); transform: scaleY(0.6);
-}
-.status-item .label { color: var(--text-main); font-size: 14px; }
-.status-item .value { font-weight: 400; font-size: 14px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.value.is-on { color: var(--success); }
 .value.highlight { color: var(--primary); font-weight: 600; }
 
-.telemetry-panel { padding: 24px; display: flex; flex-direction: column; }
-.event-feed {
-  flex-grow: 1;
-  background: var(--fill-soft);
-  border-radius: 12px;
-  padding: 16px;
-  display: flex; flex-direction: column; justify-content: center; align-items: center;
-}
-.event-feed .empty-state { color: var(--text-faint); font-size: 13px; }
-.big-event {
-  font-size: 24px; font-weight: 700; font-family: var(--font-mono);
-  color: var(--success);
-  animation: popIn 0.45s var(--spring);
-}
-@keyframes popIn { 0% { transform: scale(0.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-
-/* ================= SETTINGS VIEW ================= */
-/* Columnas, no rejilla: las tarjetas de ajustes tienen alturas muy distintas
-   (la de información del dispositivo triplica a la de reposo), y con
-   `grid-template-columns` la altura de cada fila la marcaba la tarjeta más
-   alta, dejando medio panel en blanco y empujando la calibración de la rueda
-   fuera de la pantalla. Fluyendo por columnas se empaquetan sin huecos. */
+/* ================= AJUSTES ================= */
+/* Una columna centrada de grupos, como el panel derecho de Ajustes del
+   Sistema: cabecera con la baldosa de color y el título, y debajo las filas. */
 .settings-grid {
-  max-width: 1360px;
-  column-width: 330px; column-gap: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 24px;
 }
+.settings-section {
+  margin: 18px 0 -2px 4px;
+  font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--text-muted);
+}
+.settings-section:first-child { margin-top: 0; }
+
 .settings-card {
-  padding: 20px;
-  break-inside: avoid; /* una tarjeta nunca se parte entre dos columnas */
-  margin-bottom: 20px;
+  border-radius: 12px;
+  box-shadow: none;
+  overflow: hidden;
 }
-.card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.card-header i { font-size: 24px; color: var(--primary); }
-.card-header h2 { font-size: 17px; font-weight: 600; }
-.setting-body { display: flex; flex-direction: column; gap: 12px; }
-.setting-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+/* Cabecera de tarjeta en el resto de vistas: icono y título en una fila. */
+.card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.card-header h2 { font-size: 16px; font-weight: 700; letter-spacing: -0.015em; }
+.card-header > span:first-child { color: var(--primary); display: flex; }
+
+.settings-card .card-header {
+  gap: 12px;
+  margin: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--separator);
+}
+.settings-card .card-header h2 { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+/* La baldosa del grupo: el color lo pone data-tint en la tarjeta. */
+.settings-card .card-header > span:first-child {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 7px;
+  color: #fff;
+  background: var(--tile, linear-gradient(160deg, #a1a1a6, #737378));
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.setting-body { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; }
+.setting-desc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+.setting-desc:empty { display: none; }
+.settings-card .row-inline .switch-label { font-size: 13.5px; }
 
 /* Complementos. Las tarjetas de sus ajustes las pinta el JS dentro de este
    contenedor; `display: contents` lo borra de la caja para que sus hijas caigan
@@ -828,9 +953,10 @@ button { font-family: inherit; }
   box-shadow: 0 3px 8px rgba(0,0,0,0.12), 0 3px 1px rgba(0,0,0,0.04), inset 0 0.5px 0 rgba(255,255,255,0.12);
 }
 
-/* Info List */
-.info-list { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
-.info-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--separator); }
+/* Lista de datos: filas de Ajustes del Sistema, etiqueta a la izquierda y valor
+   en gris a la derecha. */
+.info-list { list-style: none; display: flex; flex-direction: column; font-size: 13px; }
+.info-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--separator); }
 .info-list li:last-child { border-bottom: none; }
 .info-list .lbl { color: var(--text-muted); }
 /* El valor se ajusta y corta: los mensajes de error del actualizador son
@@ -922,9 +1048,9 @@ button { font-family: inherit; }
   font-size: 12px; font-weight: 600; cursor: pointer;
   transition: background 0.2s, color 0.2s, transform 0.35s var(--spring);
 }
-.btn-activate:hover { background: var(--primary); color: white; }
+.btn-activate:hover { background: var(--primary); color: var(--on-primary); }
 .profile-card.is-active { border-color: var(--primary); }
-.profile-card.is-active .btn-activate { background: var(--primary); color: white; cursor: default; }
+.profile-card.is-active .btn-activate { background: var(--primary); color: var(--on-primary); cursor: default; }
 
 .macro-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
@@ -942,44 +1068,6 @@ button { font-family: inherit; }
    izquierda, y este `justify-content: center` le sacaba el icono del botón al
    desbordar la etiqueta. */
 [data-icon], .window-btn, .tool-btn { display: flex; align-items: center; justify-content: center; }
-.card-header > span:first-child { color: var(--primary); display: flex; }
-
-/* ================= TITLEBAR: GUARDAR EN FLASH ================= */
-.titlebar-center { display: flex; align-items: center; gap: 12px; pointer-events: none; }
-
-.save-flash-btn {
-  pointer-events: auto; -webkit-app-region: no-drag;
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 12px; border-radius: 999px; cursor: pointer;
-  font-size: 11.5px; font-weight: 500;
-  background: var(--fill-soft); border: none;
-  color: var(--text-muted);
-  transition: background 0.25s var(--ease-out), color 0.25s, transform 0.35s var(--spring);
-}
-.save-flash-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.save-flash-btn.has-changes {
-  background: rgba(var(--warning-rgb), 0.18);
-  color: var(--warning); animation: nudge 2.4s var(--ease-out) infinite;
-}
-.save-flash-btn.has-changes:hover { background: var(--warning); color: #1c1c1e; }
-@keyframes nudge { 0%,90%,100% { transform: none; } 95% { transform: scale(1.06); } }
-
-/* Aviso de versión nueva, al lado del estado de conexión y del guardado. */
-.update-badge {
-  pointer-events: auto; -webkit-app-region: no-drag;
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 12px; border-radius: 999px; cursor: default;
-  font-size: 11.5px; font-weight: 500;
-  background: rgba(var(--info-rgb), 0.18); border: none;
-  color: var(--info); transition: background 0.25s, color 0.25s, transform 0.35s var(--spring);
-}
-/* Descargando todavía no se puede pulsar; lista, sí. */
-.update-badge.ready {
-  cursor: pointer;
-  background: var(--primary);
-  color: #fff; animation: nudge 2.4s var(--ease-out) infinite;
-}
-.update-badge.ready:hover { filter: brightness(1.1); }
 
 /* ================= CONTROLES DE FORMULARIO ================= */
 .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
@@ -1013,7 +1101,7 @@ button { font-family: inherit; }
 .primary-btn {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   background: var(--primary);
-  border: none; color: #fff; padding: 8px 18px; border-radius: var(--radius-sm);
+  border: none; color: var(--on-primary); padding: 8px 18px; border-radius: var(--radius-sm);
   font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
   box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.3);
   transition: filter 0.2s, opacity 0.2s, transform 0.35s var(--spring);
@@ -1042,13 +1130,6 @@ button { font-family: inherit; }
 .empty-panel h3 { color: var(--text-main); font-size: 16px; }
 .empty-panel p { font-size: 13px; max-width: 320px; line-height: 1.5; }
 .empty-panel .icn { color: var(--primary); opacity: 0.7; }
-
-/* ================= DASHBOARD: EXTRAS ================= */
-
-.value.is-on { color: var(--success); }
-.big-event { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.big-event-title { font-size: 22px; font-weight: 700; color: var(--success); }
-.big-event-detail { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); }
 
 /* ================= EDITOR DE PERFILES ================= */
 /* Barra superior: pestañas de perfil a la izquierda y su gestión (crear,
@@ -1264,7 +1345,7 @@ button { font-family: inherit; }
   color: var(--text-muted); border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s;
 }
 .type-chip:hover { color: var(--text-main); background: var(--fill); }
-.type-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.type-chip.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .type-chip.small { padding: 5px 8px; font-size: 10px; }
 
 .editor-inspector { padding: 24px; }
@@ -1315,7 +1396,7 @@ button { font-family: inherit; }
 .mod-chip { padding: 7px 4px; font-size: 11px; font-weight: 600; }
 .mod-chip:hover, .consumer-chip:hover, .chip:hover { color: var(--text-main); background: var(--fill); }
 .mod-chip.on, .consumer-chip.on, .chip.on {
-  background: var(--primary); border-color: var(--primary); color: #fff;
+  background: var(--primary); border-color: var(--primary); color: var(--on-primary);
 }
 .consumer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .consumer-grid-3col { grid-template-columns: 1fr 1fr 1fr; }
@@ -1527,7 +1608,7 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
   color: var(--text-muted); cursor: pointer; transition: all 0.15s;
 }
 .tool-btn:hover { color: var(--text-main); background: var(--fill); }
-.tool-btn.on, .tool-btn.is-on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.tool-btn.on, .tool-btn.is-on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .tool-btn.danger:hover { color: var(--danger); border-color: rgba(var(--danger-rgb), 0.4); }
 .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .tool-btn:disabled:hover { color: var(--text-muted); background: var(--fill-soft); }
@@ -1744,23 +1825,23 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
    de comandos en device.js-; esto es la senal visual, para que no parezca que la
    app se ha quedado tonta cuando un clic no hace nada. */
 .readonly-banner {
+  /* En la barra de herramientas, a la izquierda de los botones de la ventana:
+     ahí no tapa contenido ni compite con los avisos, que salen abajo. */
   position: fixed;
-  bottom: 24px;
-  /* A la derecha de la barra lateral: pegado al borde tapaba su último icono. */
-  left: calc(var(--sidebar-w) + 24px);
-  z-index: 998;              /* por debajo de los avisos, que salen por la derecha */
+  top: 12px;
+  right: 156px;
+  z-index: 998;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 16px 9px 12px;
+  gap: 7px;
+  padding: 6px 13px 6px 10px;
   border-radius: 999px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--text-main);
-  background: var(--overlay-bg);
-  border: none;
-  box-shadow: var(--shadow-pop);
-  animation: toastIn 0.55s var(--spring);
+  color: var(--warning);
+  background: rgba(var(--warning-rgb), 0.12);
+  border: 1px solid rgba(var(--warning-rgb), 0.25);
+  animation: alertFade 0.4s var(--ease-out);
   pointer-events: none;      /* es un cartel, no se pulsa */
 }
 
@@ -1890,3 +1971,101 @@ body.read-only #timeout-selector {
 
 @keyframes alertFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes alertIn { from { opacity: 0; transform: scale(1.12); } to { opacity: 1; transform: none; } }
+
+/* ================= PULIDO DE LAS VISTAS DE EDICIÓN =================
+   Lo de arriba de esta sección viene de la versión anterior y va por tokens;
+   esto lo ajusta al lenguaje nuevo sin tocar el marcado que pintan los JS. */
+
+/* Pestañas de perfil: control segmentado de iOS en una cápsula, con el icono
+   OLED de cada perfil brillando como en la réplica. */
+.profile-bar { align-items: center; margin-bottom: 16px; }
+.profile-tabs {
+  gap: 2px; padding: 3px;
+  border-radius: 12px;
+  background: var(--fill-soft);
+  border: 1px solid var(--border-light);
+}
+.profile-tab {
+  padding: 7px 14px; gap: 8px;
+  background: transparent; border: none; border-radius: 9px;
+  font-weight: 600;
+}
+.profile-tab:hover { background: var(--hover); }
+.profile-tab.active {
+  background: var(--segment-on); color: var(--segment-on-text);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.16), 0 1px 1px rgba(0,0,0,0.06), inset 0 0.5px 0 rgba(255,255,255,0.12);
+}
+.tab-icon-canvas { filter: drop-shadow(0 0 2px rgba(79, 227, 255, 0.7)); border-radius: 2px; }
+.tab-live {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--on-primary); background: var(--primary);
+}
+
+/* Acciones del perfil: botones de barra de herramientas, sin relleno hasta
+   que el ratón pasa por encima. */
+.profile-bar-actions { gap: 2px; }
+.profile-bar-actions .secondary-btn {
+  background: transparent; padding: 7px 10px; font-size: 12.5px; color: var(--text-muted);
+}
+.profile-bar-actions .secondary-btn:hover:not(:disabled) { background: var(--fill-soft); color: var(--text-main); }
+.profile-bar-actions .secondary-btn.danger { color: var(--danger); }
+.profile-bar-actions .secondary-btn.active { background: var(--sidebar-sel); color: var(--primary); }
+.profile-count { border-left-color: var(--separator); margin-left: 6px; }
+
+.variant-bar { background: transparent; border: 1px solid var(--border-light); padding: 8px 12px; }
+
+/* Las miniaturas de pantalla: negro de panel y el mismo brillo que la réplica. */
+.okey-screen, .oled-preview-box #oled-preview {
+  background: #010203; border-color: #000;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+}
+.okey-canvas { filter: drop-shadow(0 0 1px rgba(79, 227, 255, 0.85)) drop-shadow(0 0 3px rgba(79, 227, 255, 0.35)); }
+.okey-text { color: #d6f6ff; text-shadow: 0 0 4px rgba(79, 227, 255, 0.6); }
+.okey.has-icon .okey-screen { border-color: #000; }
+.okey { border-radius: 14px; }
+.okey.selected { background: rgba(var(--primary-rgb), 0.1); }
+.okey-num em { color: var(--primary); }
+
+/* Tarjetas de edición: los paneles de iOS, con el título más sobrio. */
+.editor-board, .editor-inspector { border-radius: var(--radius-lg); }
+.inspector-head h3 { font-size: 17px; font-weight: 700; }
+.rotary-title, .field-label { letter-spacing: 0.05em; }
+
+/* El lienzo del editor de iconos, sobre negro de panel. */
+.oled-canvas-wrap { background: #020304; }
+.oled-actionbar { border-radius: var(--radius-lg); }
+
+/* Interruptor: verde de sistema como en iOS. */
+.switch.on { background: var(--success); }
+
+/* Botones con el acento: el cian de la landing lleva un brillo propio. */
+.primary-btn { box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 0 14px rgba(var(--primary-rgb), 0.25); }
+:root[data-theme="light"] .primary-btn { box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.15); }
+
+/* Cambio automático: la tarjeta de regla con la franja de color arriba se
+   cambia por la baldosa de la app, más de Apple. */
+.rule-card { border-top-width: 1px; border-color: var(--border-light); background: var(--bg-elevated); }
+.rule-card:hover { background: var(--bg-elevated); border-color: var(--fill-strong); }
+.rule-app-icon {
+  width: 26px; height: 26px; border-radius: 7px; align-items: center; justify-content: center;
+  background: var(--accent, var(--primary)); color: #fff;
+}
+.auto-main, .auto-side { border-radius: var(--radius-lg); }
+
+/* Consola: un terminal de verdad, negro y con la letra de sistema. */
+.console-wrapper { border-radius: var(--radius-lg); overflow: hidden; }
+.console-line.rx { color: #7ee7a0; }
+.console-line.tx { color: var(--secondary); }
+
+/* Avisos: abajo en el centro de la vista, como los de macOS al copiar algo. */
+#toast-host { right: 24px; bottom: 20px; }
+.toast { border-radius: 14px; border: 1px solid var(--border-light); }
+
+/* Pantalla de conexión de la versión de navegador: el icono de la marca. */
+.gate-card::before {
+  background:
+    radial-gradient(circle at 50% 50%, #e6fbff 0 14%, rgba(79, 227, 255, 0.6) 24%, transparent 46%),
+    linear-gradient(160deg, #1b2229, #05070a);
+  box-shadow: inset 0 0 0 1px rgba(157, 233, 255, 0.25), 0 10px 40px rgba(79, 227, 255, 0.25);
+}
+.web-gate { background: var(--stage-glow), var(--bg-dark); }

@@ -2144,6 +2144,34 @@ static uint8_t oled_target[10][OLED_FB_SIZE];
 static uint8_t oled_frame[OLED_FB_SIZE];
 static uint8_t oled_pressed[OLED_FB_SIZE];
 
+// --- Espejo de las pantallas en la app (MIRROR:1, firmware 4.12) ---
+// La app repite en el dashboard las mismas transiciones que hace el teclado.
+// No se mandan los fotogramas (a 60 Hz serían 216 KB/s por el CDC): se manda
+// el DESTINO de cada transición y su tipo, y la app corre el mismo motor de
+// oled_anim.h portado a JS (src/oled-anim.js). Mismas imágenes, mismo muelle,
+// mismo instante de salida: lo que se ve en pantalla es lo mismo.
+//
+// Core 1 es quien sabe qué transición toca y quien dibuja los destinos, pero
+// el CDC es de Core 0. Se pasan por aquí con un contador de secuencia impar
+// mientras se escribe: si Core 0 lo ve impar, o cambia mientras copia, espera
+// a la siguiente vuelta en vez de mandar media imagen de cada transición.
+static uint8_t mirror_fb[10][OLED_FB_SIZE];
+static volatile uint32_t mirror_seq  = 0;
+static volatile uint8_t  mirror_kind = 0;
+static volatile uint16_t mirror_rate = 1000;   // velocidad del grupo, x1000
+volatile bool mirror_on = false;
+
+static void mirror_publish(OledAnim::Kind kind) {
+    if (!mirror_on) return;
+    mirror_seq = mirror_seq + 1;
+    __dmb();
+    memcpy(mirror_fb, oled_target, sizeof(mirror_fb));
+    mirror_kind = (uint8_t)kind;
+    mirror_rate = (uint16_t)lroundf(OledAnim::rate_of(kind) * 1000.0f);
+    __dmb();
+    mirror_seq = mirror_seq + 1;
+}
+
 // Pinta una pantalla con su contenido normal, sin animar. Lo usa la intro.
 static void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
     render_screen(screen_num, oled_shown[screen_num - 1]);
@@ -2233,6 +2261,7 @@ void core1_entry() {
             ctx = nuevo;
             memcpy(oled_from, oled_shown, sizeof(oled_from));
             for (int i = 0; i < 10; i++) render_screen((uint8_t)(i + 1), oled_target[i]);
+            mirror_publish(kind);
             t0 = ahora;
             animando = true;
         }
@@ -2329,6 +2358,54 @@ static void cdc_printf(const char* fmt, ...) {
     int len = vsnprintf(line, sizeof(line), fmt, args);
     va_end(args);
     if (len > 0) cdc_write_all(line, (uint32_t)(len < (int)sizeof(line) ? len : (int)sizeof(line) - 1));
+}
+
+// Lo que Core 0 ya ha contado a la app del espejo. Se ponen a "nada contado"
+// al activarlo, para que la app reciba el estado entero de golpe.
+static uint32_t mirror_sent = 0;
+static int      mirror_disp_sent = -1;
+static int32_t  mirror_inv_sent  = -1;
+
+// Manda por el CDC la última transición que ha publicado Core 1: diez líneas
+// EV:SCR:<pantalla>:<720 hex> con los destinos y una EV:SCR:GO:<tipo>:<ritmo>
+// que es la que dispara la animación en la app. También el reposo de las
+// pantallas y el negativo de las teclas pulsadas, que no pasan por Core 1
+// como transición.
+static void mirror_pump(uint16_t inversions) {
+    if (!mirror_on || !tud_cdc_n_connected(0)) return;
+
+    if ((int)displays_on != mirror_disp_sent) {
+        mirror_disp_sent = (int)displays_on;
+        cdc_printf("EV:DISP:%d\n", mirror_disp_sent);
+    }
+    if ((int32_t)inversions != mirror_inv_sent) {
+        mirror_inv_sent = (int32_t)inversions;
+        cdc_printf("EV:INV:%u\n", (unsigned)inversions);
+    }
+
+    const uint32_t s = mirror_seq;
+    if ((s & 1) || s == mirror_sent) return;
+    static uint8_t copia[10][OLED_FB_SIZE];
+    __dmb();
+    memcpy(copia, mirror_fb, sizeof(copia));
+    const uint8_t  kind = mirror_kind;
+    const uint16_t rate = mirror_rate;
+    __dmb();
+    if (mirror_seq != s) return;   // Core 1 la ha pisado a medias: la próxima vuelta
+    mirror_sent = s;
+
+    static const char HEX[] = "0123456789abcdef";
+    static char line[16 + OLED_FB_SIZE * 2];
+    for (int i = 0; i < 10; i++) {
+        int n = snprintf(line, 16, "EV:SCR:%d:", i);
+        for (int b = 0; b < OLED_FB_SIZE; b++) {
+            line[n++] = HEX[copia[i][b] >> 4];
+            line[n++] = HEX[copia[i][b] & 15];
+        }
+        line[n++] = '\n';
+        cdc_write_all(line, (uint32_t)n);
+    }
+    cdc_printf("EV:SCR:GO:%d:%d\n", (int)kind, (int)rate);
 }
 
 static int hex_nibble(char c) {
@@ -2504,11 +2581,13 @@ void process_command(const char* cmd) {
         // teclas que necesitan la app de PC mientras no esté anunciada.
         // MSTORE=1: guarda una copia de las macros del PC (MSTORE_*), para que
         // otro ordenador sepa qué hace cada tecla de macro.
+        // MIRROR=1: sabe mandar a la app lo que enseñan las pantallas
+        // (MIRROR:1, EV:SCR) para que el dashboard las anime igual.
         // ANIMSPEED=2: entiende SET_ANIMSPEED/GET_ANIMSPEED (velocidad por
         // grupo de las animaciones de las pantallas), en % sobre la base de
         // fábrica de cada grupo. Con =1 (4.8/4.9) el % era sobre el muelle de
         // Apple, y la app tiene que traducir.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MODE=%s\n",
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2601,6 +2680,19 @@ void process_command(const char* cmd) {
         } else {
             cdc_printf("ERR:ANIMSPEED_VALUE\n");
         }
+        return;
+    }
+
+    // MIRROR:1 / MIRROR:0 — espejo de las pantallas en la app (ver
+    // mirror_pump). Al encenderlo se pide un refresco: Core 1 vuelve a dibujar
+    // los destinos y la app recibe el estado completo sin esperar a que pase algo.
+    if (strncmp(cmd, "MIRROR:", 7) == 0) {
+        mirror_on = (atoi(cmd + 7) != 0);
+        mirror_sent = mirror_seq;
+        mirror_disp_sent = -1;
+        mirror_inv_sent  = -1;
+        if (mirror_on) system_refresh_req = true;
+        cdc_printf("MIRROR:OK:%d\n", mirror_on ? 1 : 0);
         return;
     }
 
@@ -3879,6 +3971,7 @@ int main() {
                 }
             }
             active_inversions = inversions;
+            mirror_pump(inversions);
         }
 
         // --- MANEJO DE INACTIVIDAD / REPOSO AUTOMÁTICO ---

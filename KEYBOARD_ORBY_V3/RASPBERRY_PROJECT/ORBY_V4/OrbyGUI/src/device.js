@@ -121,6 +121,11 @@ export const setTimeout_   = (v)  => request(`SET_TIMEOUT:${v}`,    { match: (l)
 // la 4.10, % sobre el ritmo de fábrica del grupo (ver views/settings.js).
 export const setAnimSpeed = (group, pct) =>
   request(`SET_ANIMSPEED:${group}:${pct}`, { match: (l) => l.startsWith('ANIMSPEED:OK:') });
+// Espejo de las pantallas (firmware 4.12): con él encendido el teclado manda
+// el destino de cada transición (EV:SCR) y el dashboard la anima igual. Ver
+// src/oled-mirror.js.
+export const setMirror = (on) =>
+  request(`MIRROR:${on ? 1 : 0}`, { match: (l) => l.startsWith('MIRROR:OK:') });
 export const saveToFlash   = ()   => request('SAVE_STATE',          { match: (l) => l.startsWith('SAVE:OK'), timeout: 8000 });
 export const resetDefaults = ()   => request('RESET_DEFAULTS',      { match: (l) => l.startsWith('RESET:OK') });
 
@@ -602,6 +607,17 @@ export function init() {
     // que desenchufar y volver a enchufar para salir de ahí, viendo mientras
     // tanto el dashboard moverse con la rueda debajo del cartel "Desconectado".
     if (!linkUp) recoverLink();
+
+    // Lo que viene solo (EV:...) no es la respuesta de nadie. Se separa antes
+    // de mirar la cola: las peticiones multilínea (GET_PROFILE) recogen con
+    // `collect` y una imagen del espejo colada en medio les estropearía el
+    // volcado. Las imágenes (EV:SCR:<n>:<hex>) tampoco van a la consola: son
+    // once líneas de 720 caracteres por cada cosa que cambia en el teclado.
+    if (line.startsWith('EV:')) {
+      if (!/^EV:SCR:\d/.test(line)) emit('rx', line);
+      emit('telemetry', line);
+      return;
+    }
 
     emit('rx', line);
     const consumed = settlePending(line);

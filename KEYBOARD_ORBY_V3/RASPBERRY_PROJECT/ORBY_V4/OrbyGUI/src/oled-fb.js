@@ -425,12 +425,14 @@ export function compose(base, overlay, mode = 'replace') {
 
 // Pinta el framebuffer en un <canvas> ampliado, con rejilla opcional.
 // `outline` dibuja el recuadro de la capa flotante que se está colocando.
-export function renderToCanvas(fb, canvas, { zoom = 8, grid = true, color = '#e9e2ff', outline = null } = {}) {
+// El color es el de los píxeles de la réplica del dashboard (oled-mirror.js):
+// una tecla tiene que verse igual en el editor que en el teclado.
+export function renderToCanvas(fb, canvas, { zoom = 8, grid = true, color = '#d6f6ff', outline = null } = {}) {
   canvas.width = OLED_W * zoom;
   canvas.height = OLED_H * zoom;
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#05050a';
+  ctx.fillStyle = '#010203';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.fillStyle = color;
@@ -455,7 +457,7 @@ export function renderToCanvas(fb, canvas, { zoom = 8, grid = true, color = '#e9
     ctx.stroke();
 
     // Marcas de página: el firmware direcciona la pantalla en bandas de 8 px.
-    ctx.strokeStyle = 'rgba(125,122,255,0.3)';
+    ctx.strokeStyle = 'rgba(79,227,255,0.22)';
     ctx.beginPath();
     for (let p = 1; p < OLED_PAGES; p++) {
       ctx.moveTo(0, p * 8 * zoom + 0.5);
