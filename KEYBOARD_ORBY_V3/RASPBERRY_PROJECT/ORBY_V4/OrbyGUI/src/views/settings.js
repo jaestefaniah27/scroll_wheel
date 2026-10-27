@@ -80,6 +80,7 @@ export function init() {
     });
   });
 
+  initAnimSpeed();
   if (hayAutostart) initAutostart();
   if (hayPlugins) initPlugins();
 
@@ -493,6 +494,71 @@ function escape(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// ================= Velocidad de las animaciones =================
+// Cada grupo de transición (ver OledAnim::Group en el firmware) con su propio
+// multiplicador: 100% es el ritmo con el que se diseñaron, y solo el carrusel,
+// el submenú y el cambio de perfil salen de fábrica por encima porque eran los
+// que se notaban lentos; abrir/cerrar menú y el fundido ya iban bien.
+const ANIM_GROUPS = [
+  { key: 'menu',     group: 0, label: 'Menú (abrir/cerrar)' },
+  { key: 'carousel', group: 1, label: 'Carrusel de páginas' },
+  { key: 'submenu',  group: 2, label: 'Entrar/salir de submenú' },
+  { key: 'profile',  group: 3, label: 'Cambio de perfil' },
+  { key: 'fade',     group: 4, label: 'Fundido' },
+];
+
+function initAnimSpeed() {
+  const list = document.getElementById('anim-speed-list');
+  if (!list) return;
+
+  // El número se actualiza al vuelo mientras se arrastra; el comando al
+  // teclado solo se manda al soltar, como el desfase de la rueda.
+  list.addEventListener('input', (e) => {
+    if (e.target.dataset.act !== 'animspeed') return;
+    const label = list.querySelector(`.anim-speed-val[data-group="${e.target.dataset.group}"]`);
+    if (label) label.textContent = `${e.target.value}%`;
+  });
+
+  list.addEventListener('change', async (e) => {
+    if (e.target.dataset.act !== 'animspeed') return;
+    const group = Number(e.target.dataset.group);
+    const pct = Number(e.target.value);
+    if (!requireDevice()) { renderAnimSpeed(); return; }
+    try {
+      await device.setAnimSpeed(group, pct);
+      state.animSpeed = { ...state.animSpeed, [ANIM_GROUPS[group].key]: pct };
+      markDirty();
+    } catch {
+      toast('El teclado no confirmó la velocidad de la animación', 'error');
+      renderAnimSpeed();
+    }
+  });
+
+  renderAnimSpeed();
+}
+
+function renderAnimSpeed() {
+  const card = document.getElementById('settings-animspeed');
+  const list = document.getElementById('anim-speed-list');
+  if (!card || !list) return;
+
+  // Sin la bandera `animspeed` el teclado no entiende SET_ANIMSPEED: mejor no
+  // ofrecer un control que se quedaría esperando una respuesta que no llega.
+  if (!compat.supports(state.deviceInfo, 'animSpeed')) {
+    card.classList.add('hidden');
+    return;
+  }
+  card.classList.remove('hidden');
+
+  list.innerHTML = ANIM_GROUPS.map((g) => `
+    <div class="anim-speed-row">
+      <span class="field-label">${g.label}</span>
+      <input type="range" class="premium-slider" data-act="animspeed" data-group="${g.group}"
+             min="25" max="400" step="5" value="${state.animSpeed[g.key]}">
+      <b class="anim-speed-val" data-group="${g.group}">${state.animSpeed[g.key]}%</b>
+    </div>`).join('');
+}
+
 // ================= Calibración de la rueda =================
 // Cómo se dibuja la rueda magnética en pantalla: no toca el teclado, solo hace
 // que el dibujo (forma del marcador, sentido, desfase) coincida con el
@@ -624,6 +690,8 @@ export function render() {
   document.querySelectorAll('#timeout-selector .opt-btn').forEach((btn) => {
     btn.classList.toggle('active', Number(btn.dataset.val) === state.timeout);
   });
+
+  renderAnimSpeed();
 
   const list = document.getElementById('device-info-list');
   if (!list) return;

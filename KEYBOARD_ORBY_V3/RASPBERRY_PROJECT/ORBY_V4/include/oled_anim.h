@@ -201,9 +201,52 @@ static inline void init() {
                                  + hop_delay(9));   // la 10 es la del anillo más lejano
 }
 
-// Lo que dura una transición, onda incluida. Pasado ese instante render()
-// devuelve el destino tal cual, bit a bit.
-static inline float duration(Kind k) { return g_settle[k]; }
+// --- Velocidad configurable ---------------------------------------------------
+// Un multiplicador por grupo de transición: 1.0 es el muelle "de fábrica" de
+// SpringBoard tal cual está arriba. Por encima, la misma animación tarda menos
+// tiempo real sin cambiar de forma: escalar el tiempo que recibe un muelle
+// crítico/sobreamortiguado por `r` es exactamente el muelle que saldría de
+// multiplicar su rigidez por r² y su amortiguamiento por r (mismo ζ, más ω), así
+// que no hace falta tocar las constantes de arriba para acelerarlo.
+//
+// El valor neutro de esta librería es 1.0 en los cinco grupos a propósito: así
+// test_anim.cpp sigue comprobando los muelles de Apple sin recortar. Quien fija
+// la velocidad "de fábrica" del teclado (más rápida que 1.0 en los grupos que
+// no eran el de abrir/cerrar menú ni el fundido) es main.cpp, con OledAnim::set_rate.
+enum Group : uint8_t { G_MENU, G_CAROUSEL, G_SUBMENU, G_PROFILE, G_FADE, G_COUNT };
+
+static inline float g_rate[G_COUNT] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+
+static inline Group group_of(Kind k) {
+    switch (k) {
+        case MENU_OPEN:
+        case MENU_CLOSE: return G_MENU;
+        case PAGE_NEXT:
+        case PAGE_PREV:  return G_CAROUSEL;
+        case PUSH:
+        case POP:        return G_SUBMENU;
+        case PROFILE:    return G_PROFILE;
+        default:         return G_FADE;   // CROSSFADE; CUT no anima
+    }
+}
+
+static inline float clamp_rate(float r) {
+    if (r < 0.25f) return 0.25f;
+    if (r > 4.0f)  return 4.0f;
+    return r;
+}
+
+static inline void set_rate(Group g, float r) {
+    if (g < G_COUNT) g_rate[g] = clamp_rate(r);
+}
+
+static inline float rate(Group g) { return (g < G_COUNT) ? g_rate[g] : 1.0f; }
+
+static inline float rate_of(Kind k) { return g_rate[group_of(k)]; }
+
+// Lo que dura una transición, onda incluida, al ritmo configurado ahora mismo.
+// Pasado ese instante real render() devuelve el destino tal cual, bit a bit.
+static inline float duration(Kind k) { return g_settle[k] / rate_of(k); }
 
 // --- Dibujo -----------------------------------------------------------------
 static inline bool get_px(const uint8_t* fb, int x, int y) {
@@ -320,23 +363,27 @@ static inline void render(Kind k, float t, int i,
         return;
     }
 
+    // Tiempo virtual: a `rate_of(k)` veces el real, para que el muelle/fundido
+    // de más abajo recorra la misma forma en menos tiempo real (ver set_rate).
+    const float tv = t * rate_of(k);
+
     switch (k) {
     case CROSSFADE: {
-        const uint8_t n = alpha16(fade(SWAP, t));
+        const uint8_t n = alpha16(fade(SWAP, tv));
         draw_layer(out, {a, 1.0f, 0, 0, n, 16, false});
         draw_layer(out, {b, 1.0f, 0, 0, 0,  n, false});
         return;
     }
     case PAGE_NEXT:
     case PAGE_PREV: {
-        const float p = spring(NUDGE, t) * (float)CANVAS;
+        const float p = spring(NUDGE, tv) * (float)CANVAS;
         draw_carousel(out, i, k == PAGE_NEXT ? p : -p, from, to);
         return;
     }
     case MENU_OPEN: {
-        const float p = spring(FOLDER, t);
-        const uint8_t no = alpha16(1.0f - fade(OPEN_OUTER, t));
-        const uint8_t ni = alpha16(fade(OPEN_INNER, t));
+        const float p = spring(FOLDER, tv);
+        const uint8_t no = alpha16(1.0f - fade(OPEN_OUTER, tv));
+        const uint8_t ni = alpha16(fade(OPEN_INNER, tv));
         // Las ventanas se cuentan desde lados opuestos del Bayer: mientras las
         // dos opacidades no sumen más de 1 no comparten ni un píxel.
         draw_layer(out, {a, 1.0f + (BG_ZOOM - 1.0f) * p, 0, 0, (uint8_t)(16 - no), 16, false});
@@ -344,9 +391,9 @@ static inline void render(Kind k, float t, int i,
         return;
     }
     case MENU_CLOSE: {
-        const float p = spring(FOLDER, t);
-        const uint8_t ni = alpha16(1.0f - fade(CLOSE_INNER, t));
-        const uint8_t no = alpha16(fade(CLOSE_OUTER, t));
+        const float p = spring(FOLDER, tv);
+        const uint8_t ni = alpha16(1.0f - fade(CLOSE_INNER, tv));
+        const uint8_t no = alpha16(fade(CLOSE_OUTER, tv));
         draw_layer(out, {b, BG_ZOOM + (1.0f - BG_ZOOM) * p, 0, 0, (uint8_t)(16 - no), 16, false});
         draw_layer(out, {a, 1.0f + (FOLDER_MIN - 1.0f) * p, 0, 0, 0, ni, false});
         return;
@@ -354,7 +401,7 @@ static inline void render(Kind k, float t, int i,
     case PUSH: {
         // La vista nueva entra entera por la derecha y tapa a la vieja, que se
         // retira un tercio y se apaga a medias: el empuje de UINavigationController.
-        const float p = spring(PULL, t);
+        const float p = spring(PULL, tv);
         const float xn = W * (1.0f - p);
         draw_layer(out, {a, 1.0f, -W * 0.3f * p, 0, 0, alpha16(1.0f - 0.5f * p), false});
         draw_layer(out, {b, 1.0f, xn, 0, 0, 16, true});
@@ -362,7 +409,7 @@ static inline void render(Kind k, float t, int i,
         return;
     }
     case POP: {
-        const float p = spring(PULL, t);
+        const float p = spring(PULL, tv);
         const float xo = W * p;
         draw_layer(out, {b, 1.0f, -W * 0.3f * (1.0f - p), 0, 0, alpha16(0.5f + 0.5f * p), false});
         draw_layer(out, {a, 1.0f, xo, 0, 0, 16, true});
@@ -374,9 +421,9 @@ static inline void render(Kind k, float t, int i,
         // 0,4 s, lo de dentro llega con 0,1 de retardo), y no la de cerrar: con
         // 1 bit, irse en 0,2 s antes de que llegue nada deja las diez pantallas
         // a negro un instante, y se lee como un parpadeo, no como un cambio.
-        const float tl = t - hop_delay(i);
+        const float tl = tv - hop_delay(i);
         const float p  = spring(FOLDER, tl);
-        const float fo = fade(OPEN_OUTER, t);
+        const float fo = fade(OPEN_OUTER, tv);
         const uint8_t no = alpha16(1.0f - fo);
         const uint8_t ni = alpha16(fade(OPEN_INNER, tl));
         draw_layer(out, {a, 1.0f - 0.1f * fo, 0, 0, (uint8_t)(16 - no), 16, false});

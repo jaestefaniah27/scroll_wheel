@@ -379,6 +379,28 @@ volatile AppMode current_mode = MODE_NORMAL;
 volatile uint8_t active_profile_idx = 0;   // 0=OFIM, 1=PHTS, 2=ALTM, 3=PREM
 volatile uint8_t active_page = 0;          // Página en uso del perfil activo
 volatile uint8_t reposo_timeout_min = 5;    // 5 minutos por defecto (0=OFF)
+
+// Velocidad de las animaciones estilo Apple (oled_anim.h), en % por grupo
+// (100 = el muelle "de fábrica" de SpringBoard; ver OledAnim::set_rate). El de
+// abrir/cerrar menú y el fundido ya salían a buen ritmo tal cual; el carrusel
+// de páginas, entrar/salir de submenú y el cambio de perfil salían lentos, así
+// que su valor de fábrica ya sale acelerado. Orden: OledAnim::Group.
+volatile uint8_t anim_speed_pct[OledAnim::G_COUNT] = {100, 160, 160, 140, 100};
+
+static void apply_anim_speed() {
+    for (uint8_t g = 0; g < OledAnim::G_COUNT; g++)
+        OledAnim::set_rate((OledAnim::Group)g, anim_speed_pct[g] / 100.0f);
+}
+
+// Ritmo de fábrica para quien venga de un formato de ajustes sin anim_speed:
+// nadie tuvo ocasión de tocarlo a mano, así que no hay preferencia que conservar.
+static void set_default_anim_speed() {
+    anim_speed_pct[OledAnim::G_MENU]     = 100;
+    anim_speed_pct[OledAnim::G_CAROUSEL] = 160;
+    anim_speed_pct[OledAnim::G_SUBMENU]  = 160;
+    anim_speed_pct[OledAnim::G_PROFILE]  = 140;
+    anim_speed_pct[OledAnim::G_FADE]     = 100;
+}
 volatile uint8_t selected_menu_idx = 0;     // Opción de menú activa (0 a 4)
 volatile bool super_active = false;         // Estado de la tecla modificadora SUPER
 volatile bool system_refresh_req = false;   // Flag para actualizar pantallas
@@ -495,10 +517,12 @@ static_assert(FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES <= PICO_FLASH_SIZE_BYTE
 #define SETTINGS_MAGIC_V6 0xDEB00400  // + páginas por perfil: el banco de iconos
                                       //   se muda a 1024 KB con un tramo por
                                       //   (perfil, página) y sale de la RAM
-#define SETTINGS_MAGIC    0xDEB00410  // - current_brightness: el registro de
+#define SETTINGS_MAGIC_V7 0xDEB00410  // - current_brightness: el registro de
                                       //   contraste nunca hizo nada en esta
                                       //   placa (ver hardware_oled.h), campo
                                       //   eliminado
+#define SETTINGS_MAGIC    0xDEB00420  // + anim_speed: velocidad por grupo de
+                                      //   las animaciones de oled_anim.h
 
 // Diseños antiguos, conservados solo para poder leer lo ya grabado.
 struct ProfileV2 {
@@ -597,6 +621,19 @@ struct SettingsV6 {
     Profile  profiles[MAX_PROFILES];
 };
 
+// Formato 4.1: idéntico al actual salvo por anim_speed, que no existía (todas
+// las animaciones iban al ritmo de fábrica, 100%).
+struct SettingsV7 {
+    uint32_t magic;
+    uint8_t  active_profile_idx;
+    uint8_t  reposo_timeout_min;
+    uint8_t  profile_count;
+    uint8_t  active_page;
+    uint8_t  padding[3];
+    uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
+    Profile  profiles[MAX_PROFILES];
+};
+
 struct Settings {
     uint32_t magic;
     uint8_t  active_profile_idx;
@@ -604,6 +641,8 @@ struct Settings {
     uint8_t  profile_count;
     uint8_t  active_page;
     uint8_t  padding[3];
+    uint8_t  anim_speed[OledAnim::G_COUNT];  // % por grupo, ver OledAnim::Group
+    uint8_t  padding2[3];
     uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
     Profile  profiles[MAX_PROFILES];
 };
@@ -920,6 +959,7 @@ void load_defaults() {
     active_profile_idx = 0;
     active_page = 0;
     reposo_timeout_min = 5;
+    set_default_anim_speed();
 }
 
 // Graba un tramo del banco. Es la única función que escribe iconos en la Flash.
@@ -959,6 +999,8 @@ void save_settings() {
     s->reposo_timeout_min     = reposo_timeout_min;
     s->profile_count          = profile_count;
     s->active_page            = active_page;
+    // memcpy no admite un origen volatile: se copia campo a campo.
+    for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) s->anim_speed[g] = anim_speed_pct[g];
     memcpy(s->custom_oled_mask, custom_oled_mask, sizeof(custom_oled_mask));
     memcpy(s->profiles, profiles, sizeof(profiles));
 
@@ -1056,9 +1098,28 @@ void load_settings() {
         reposo_timeout_min     = s->reposo_timeout_min;
         profile_count          = s->profile_count;
         active_page            = s->active_page;
+        for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) anim_speed_pct[g] = s->anim_speed[g];
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
         sanitize_loaded();
+        return;
+    }
+
+    // Formato 4.1: mismos campos que el actual salvo por anim_speed, que no
+    // existía (no había nada que elegir: todo iba al 100%). Al venir de ahí se
+    // adopta el nuevo ritmo de fábrica, más rápido en lo que no era ya bueno:
+    // nadie había tenido ocasión de ajustarlo a mano.
+    if (magic == SETTINGS_MAGIC_V7) {
+        const SettingsV7* s = (const SettingsV7*)(XIP_BASE + FLASH_TARGET_OFFSET);
+        active_profile_idx     = s->active_profile_idx;
+        reposo_timeout_min     = s->reposo_timeout_min;
+        profile_count          = s->profile_count;
+        active_page            = s->active_page;
+        set_default_anim_speed();
+        memcpy(profiles, s->profiles, sizeof(profiles));
+        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
+        sanitize_loaded();
+        save_settings();
         return;
     }
 
@@ -1070,6 +1131,7 @@ void load_settings() {
         reposo_timeout_min     = s->reposo_timeout_min;
         profile_count          = s->profile_count;
         active_page            = s->active_page;
+        set_default_anim_speed();
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
         sanitize_loaded();
@@ -1090,6 +1152,7 @@ void load_settings() {
         reposo_timeout_min = v5 ? s5->reposo_timeout_min : s4->reposo_timeout_min;
         profile_count      = v5 ? s5->profile_count      : s4->profile_count;
         active_page        = 0;
+        set_default_anim_speed();
 
         const uint8_t count = v5 ? MAX_PROFILES : SETTINGS_V4_PROFILES;
         memset(profiles, 0, sizeof(profiles));
@@ -1120,6 +1183,7 @@ void load_settings() {
         active_profile_idx = s->active_profile_idx;
         reposo_timeout_min = s->reposo_timeout_min;
         profile_count      = 4;
+        set_default_anim_speed();
         memset(profiles, 0, sizeof(profiles));
         memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(s->custom_oled_mask));
@@ -1154,6 +1218,7 @@ void load_settings() {
         active_profile_idx = s->active_profile_idx;
         reposo_timeout_min = s->reposo_timeout_min;
         profile_count      = 4;
+        set_default_anim_speed();
         memset(profiles, 0, sizeof(profiles));
         memset(custom_oled_mask, 0, sizeof(custom_oled_mask));
         for (int i = 0; i < 4; i++) custom_oled_mask[i][0] = s->custom_oled_mask[i];
@@ -2097,6 +2162,7 @@ void core1_entry() {
     HardwareOled oleds;
     oleds.init_all_screens();
     OledAnim::init();
+    apply_anim_speed();
 
     // Intro de arranque. Si no hay animación horneada se limita a pintar el
     // contenido normal. Termine como termine, deja `oled_shown` al día.
@@ -2411,7 +2477,9 @@ void process_command(const char* cmd) {
         // teclas que necesitan la app de PC mientras no esté anunciada.
         // MSTORE=1: guarda una copia de las macros del PC (MSTORE_*), para que
         // otro ordenador sepa qué hace cada tecla de macro.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:MODE=%s\n",
+        // ANIMSPEED=1: entiende SET_ANIMSPEED/GET_ANIMSPEED (velocidad por
+        // grupo de las animaciones de las pantallas).
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2455,6 +2523,10 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:MENUGLITCH:%lu\n", (unsigned long)menu_tap_glitches);
         cdc_printf("STATE:PAGE:%d:%d:%d\n", (int)active_page,
                    (int)profiles[active_profile_idx].page_count, MAX_PAGES);
+        cdc_printf("STATE:ANIMSPEED:%d:%d:%d:%d:%d\n",
+                   (int)anim_speed_pct[OledAnim::G_MENU], (int)anim_speed_pct[OledAnim::G_CAROUSEL],
+                   (int)anim_speed_pct[OledAnim::G_SUBMENU], (int)anim_speed_pct[OledAnim::G_PROFILE],
+                   (int)anim_speed_pct[OledAnim::G_FADE]);
         send_scroll_state();
         cdc_printf("STATE:END\n");
         return;
@@ -2482,6 +2554,30 @@ void process_command(const char* cmd) {
         } else {
             cdc_printf("ERR:TIMEOUT_VALUE\n");
         }
+        return;
+    }
+
+    // Velocidad de las animaciones de las pantallas, por grupo (ver
+    // OledAnim::Group: 0 menú, 1 carrusel de páginas, 2 submenú, 3 cambio de
+    // perfil, 4 fundido). 25-400%, igual que el tope de OledAnim::set_rate.
+    if (strncmp(cmd, "SET_ANIMSPEED:", 14) == 0) {
+        int group = 0, pct = 0;
+        if (sscanf(cmd + 14, "%d:%d", &group, &pct) == 2
+            && group >= 0 && group < OledAnim::G_COUNT && pct >= 25 && pct <= 400) {
+            anim_speed_pct[group] = (uint8_t)pct;
+            OledAnim::set_rate((OledAnim::Group)group, pct / 100.0f);
+            cdc_printf("ANIMSPEED:OK:%d:%d\n", group, pct);
+        } else {
+            cdc_printf("ERR:ANIMSPEED_VALUE\n");
+        }
+        return;
+    }
+
+    if (strcmp(cmd, "GET_ANIMSPEED") == 0) {
+        cdc_printf("ANIMSPEED:%d:%d:%d:%d:%d\n",
+                   (int)anim_speed_pct[OledAnim::G_MENU], (int)anim_speed_pct[OledAnim::G_CAROUSEL],
+                   (int)anim_speed_pct[OledAnim::G_SUBMENU], (int)anim_speed_pct[OledAnim::G_PROFILE],
+                   (int)anim_speed_pct[OledAnim::G_FADE]);
         return;
     }
 

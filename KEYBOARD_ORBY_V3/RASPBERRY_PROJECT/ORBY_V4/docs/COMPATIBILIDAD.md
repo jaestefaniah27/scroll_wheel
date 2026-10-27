@@ -23,6 +23,7 @@ commit, más este documento.
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
 |---|---|---|
+| **4.8** | Velocidad configurable de las transiciones animadas de las pantallas, por grupo: menú, carrusel de páginas, submenú y cambio de perfil llevan ahora un multiplicador (`SET_ANIMSPEED`/`GET_ANIMSPEED`, bandera `ANIMSPEED=1`). De fábrica salen más rápidas en todo salvo abrir/cerrar menú y el fundido, que ya iban bien | OrbyGUI 1.0.7 o posterior |
 | **4.7** | Comandos `MSTORE_*` y bandera `MSTORE=1`: el teclado guarda una copia de lo que hace cada macro del PC (abrir una app, un texto, una grabación...), para que la app de otro ordenador la recupere al conectar. Pantallas rediseñadas (iconos, fuente con tildes, menús con icono y nombre) y transiciones animadas; iconos para los perfiles de la biblioteca | OrbyGUI 1.0.6 o posterior para recuperar macros; cualquiera para lo demás |
 | **4.6** | Sin funciones nuevas. Arregla el antirrebote de las teclas, que era por bloqueo y daba por buena una pulsación entera a partir de dos picos de ruido: en la tecla de menú eso salía como páginas pasando solas sin parar. Añade `STATE:MENUGLITCH:<n>` a `GET_STATE`, el contador de pulsos descartados por demasiado cortos | Cualquiera |
 | **4.5** | Comando `HOST_APP:<0\|1>` y bandera `HOSTAPP=1`: el teclado tacha con una barra diagonal las pantallas de las teclas que solo puede ejecutar la app de PC mientras esta no esté anunciada | OrbyGUI 0.4.x o posterior |

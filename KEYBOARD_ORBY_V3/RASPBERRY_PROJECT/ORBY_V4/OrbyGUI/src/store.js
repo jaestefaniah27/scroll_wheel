@@ -21,6 +21,11 @@ export const state = {
   deviceMode: 'NORMAL',
   superActive: false,
   timeout: 5,
+  // Velocidad de las animaciones de las pantallas, en % por grupo (100 = la de
+  // fábrica de SpringBoard; ver OledAnim::Group en el firmware). Con un
+  // firmware anterior al 4.8 no llega y se queda en estos valores, que son los
+  // que trae ese firmware fijos (sin bandera `animspeed`, compat.js lo recorta).
+  animSpeed: { menu: 100, carousel: 160, submenu: 160, profile: 140, fade: 100 },
   scroll: { detentsPerRev: 60, invert: false, hires: false }, // lo que aplica ahora mismo
   profiles: [],       // rellenado desde el firmware
   dirty: false,       // hay cambios sin escribir en Flash
@@ -204,6 +209,7 @@ export async function syncFromDevice({ expected = null, iconOf = null, onProgres
       if (Number.isInteger(s.profileCount)) count = s.profileCount;
       if (Number.isInteger(s.maxProfiles))  state.maxProfiles = s.maxProfiles;
       if (Number.isInteger(s.timeout))      state.timeout = s.timeout;
+      if (s.animSpeed) state.animSpeed = s.animSpeed;
       if (typeof s.superActive === 'boolean') state.superActive = s.superActive;
       if (s.mode)   state.deviceMode = s.mode;
       if (s.scroll) state.scroll = s.scroll;

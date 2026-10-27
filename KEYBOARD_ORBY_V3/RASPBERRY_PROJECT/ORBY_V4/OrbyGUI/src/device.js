@@ -114,6 +114,12 @@ export function send(command) {
 
 export const setProfile   = (idx) => request(`SET_PROFILE:${idx}`, { match: (l) => l.startsWith('PROFILE:OK:') });
 export const setTimeout_   = (v)  => request(`SET_TIMEOUT:${v}`,    { match: (l) => l.startsWith('TIMEOUT:OK:') });
+
+// Velocidad de las animaciones de las pantallas. `group` es el orden del
+// firmware (OledAnim::Group): 0 menú, 1 carrusel de páginas, 2 submenú,
+// 3 cambio de perfil, 4 fundido. `pct` en 25-400 (100 = ritmo de fábrica).
+export const setAnimSpeed = (group, pct) =>
+  request(`SET_ANIMSPEED:${group}:${pct}`, { match: (l) => l.startsWith('ANIMSPEED:OK:') });
 export const saveToFlash   = ()   => request('SAVE_STATE',          { match: (l) => l.startsWith('SAVE:OK'), timeout: 8000 });
 export const resetDefaults = ()   => request('RESET_DEFAULTS',      { match: (l) => l.startsWith('RESET:OK') });
 
@@ -261,6 +267,11 @@ export function getState() {
         return true;
       }
       if (line.startsWith('STATE:TIMEOUT:'))    { state.timeout   = parseInt(line.slice(14), 10); return true; }
+      if (line.startsWith('STATE:ANIMSPEED:')) {
+        const [menu, carousel, submenu, profile, fade] = line.slice(17).split(':').map(Number);
+        state.animSpeed = { menu, carousel, submenu, profile, fade };
+        return true;
+      }
       if (line.startsWith('STATE:MODE:'))       { state.mode      = line.slice(11); return true; }
       if (line.startsWith('STATE:SUPER:'))      { state.superActive = line.slice(12) === '1'; return true; }
       if (line.startsWith('STATE:PAGE:')) {
