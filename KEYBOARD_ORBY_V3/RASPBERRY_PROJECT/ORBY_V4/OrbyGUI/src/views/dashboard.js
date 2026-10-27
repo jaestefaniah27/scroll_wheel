@@ -1,8 +1,10 @@
 // Vista Dashboard: réplica del hardware con telemetría en vivo.
 //
-// La disposición sigue al teclado real: las doce teclas a la izquierda y, a su
-// derecha, los mandos —los dos encoders arriba y la rueda magnética, que es un
-// disco grande, debajo de ellos.
+// La réplica se coloca con las coordenadas del prototipo, en milímetros y con
+// el origen en el centro de la carcasa: son las mismas que usa el modelo de la
+// web del producto (orvy.es). Doce teclas en 3x4 a 23 mm de paso a la
+// izquierda, la rueda de 76 mm a la derecha y los dos mandos en el borde de
+// arriba: el primero en el centro de la carcasa y el segundo en la esquina.
 
 import * as device from '../device.js';
 import { state, notify, labelForKey, labelSlot, profile, liveScroll, KEY_TO_SCREEN,
@@ -13,37 +15,46 @@ import * as cache from '../oled-cache.js';
 let wheelDecay = null;
 let wheelTotal = 0;
 
+const CASE_W = 210;
+const CASE_D = 125;
+const keyPos = (i) => ({ x: -57 + ((i % 3) - 1) * 23, z: -2.5 + (Math.floor(i / 3) - 1.5) * 23 });
+const WHEEL_POS = { x: 52, z: 1.5 };
+const KNOB_POS = [{ x: 1, z: -41 }, { x: 92, z: -41 }];
+
+// Centro de una pieza en tanto por ciento de la carcasa, que es lo que lee el CSS.
+function at({ x, z }) {
+  const px = ((x + CASE_W / 2) / CASE_W) * 100;
+  const py = ((z + CASE_D / 2) / CASE_D) * 100;
+  return `--x:${px.toFixed(3)};--y:${py.toFixed(3)}`;
+}
+
 export function init() {
   const container = document.getElementById('keyboard-visualizer');
 
   let html = `
-    <div class="orby-board">
-      <div class="board-keys">`;
+    <div class="orby-board" role="img" aria-label="Réplica del Orby">
+      <div class="orby-case"></div>`;
 
   for (let i = 1; i <= 12; i++) {
     const hasScreen = KEY_TO_SCREEN[i - 1] !== 0;
     html += `
-      <div class="hw-key ${hasScreen ? '' : 'no-screen'}" id="hw-key-${i}">
-        ${hasScreen ? `<div class="oled-screen" id="hw-oled-${i}">--</div>`
-                    : `<span class="hw-key-role">${i === KEY_SUPER ? 'SUPER' : 'MENU'}</span>`}
+      <div class="hw-key ${hasScreen ? '' : 'no-screen'}" id="hw-key-${i}" style="${at(keyPos(i - 1))}">
+        <div class="hw-cap">
+          ${hasScreen ? `<div class="oled-screen" id="hw-oled-${i}">--</div>`
+                      : `<span class="hw-key-role">${i === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`}
+        </div>
       </div>`;
   }
 
   html += `
+      <div class="hw-wheel" id="hw-scroll" title="Rueda" style="${at(WHEEL_POS)}">
+        <div class="hw-wheel-face">${wheelDial.markerHtml('hw-wheel-needle')}</div>
+        <div class="hw-wheel-shine"></div>
       </div>
-      <div class="board-controls">
-        <div class="encoder-row">
-          <div class="hw-encoder" id="hw-enc-1"><span class="hw-tag">ENC 1</span></div>
-          <div class="hw-encoder" id="hw-enc-2"><span class="hw-tag">ENC 2</span></div>
-        </div>
-        <div class="hw-wheel" id="hw-scroll">
-          <div class="hw-wheel-face">
-            ${wheelDial.markerHtml('hw-wheel-needle')}
-            <div class="hw-wheel-hub"></div>
-          </div>
-          <span class="hw-tag">RUEDA</span>
-        </div>
-      </div>
+      ${KNOB_POS.map((p, n) => `
+      <div class="hw-encoder" id="hw-enc-${n + 1}" title="Encoder ${n + 1}" style="${at(p)}">
+        <div class="hw-encoder-face"><div class="hw-encoder-mark"></div></div>
+      </div>`).join('')}
     </div>`;
 
   container.innerHTML = html;

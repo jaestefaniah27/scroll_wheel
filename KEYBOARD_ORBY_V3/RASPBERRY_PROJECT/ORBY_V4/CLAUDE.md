@@ -180,6 +180,10 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
   Hay modo claro: `:root[data-theme="light"]` redefine los mismos tokens, y
   `src/theme.js` pone el atributo (sigue al sistema o a lo elegido en Ajustes).
   Un color nuevo necesita su valor en los dos bloques.
+  Excepciones a propósito: la réplica del teclado (dashboard) y las pantallas
+  OLED tienen colores fijos, porque son el objeto físico. La réplica se coloca
+  con las medidas del prototipo en mm, las mismas del modelo de orvy.es
+  (`views/dashboard.js`).
 - `ui.js` — avisos (`toast`) y `confirmar()`, la alerta al estilo iOS. No uses
   `confirm()`: en WebView2 sale como diálogo de navegador con "localhost dice".
 

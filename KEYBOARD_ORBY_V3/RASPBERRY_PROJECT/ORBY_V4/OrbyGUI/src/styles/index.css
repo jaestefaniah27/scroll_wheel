@@ -80,18 +80,6 @@
   --input-focus-bg: rgba(0, 0, 0, 0.25);
   --console-bg: #050508;
 
-  /* Réplica del teclado. En oscuro es gris espacial; en claro, plata. */
-  --hw-case-a: #2b2b2f;  --hw-case-b: #1b1b1e;
-  --hw-key-a: #333336;   --hw-key-b: #262628;
-  --hw-key2-a: #2c2c2f;  --hw-key2-b: #222224;
-  --hw-key-base: #141416;
-  --hw-face-a: #3a3a3e;  --hw-face-b: #161618;
-  --hw-ring: #232326;
-  --hw-edge: rgba(0, 0, 0, 0.65);
-  --hw-shade: rgba(0, 0, 0, 0.55);
-  --hw-drop: rgba(0, 0, 0, 0.42);
-  --hw-hi: rgba(255, 255, 255, 0.1);
-
   --titlebar-height: 40px;
   /* Barra lateral: ancho plegado (el que ocupa en el layout) y desplegado (el
      que toma al pasar el ratón, superponiéndose al contenido). */
@@ -153,17 +141,6 @@
   --segment-on-text: #1d1d1f;
   --input-focus-bg: #ffffff;
   --console-bg: #ffffff;
-
-  --hw-case-a: #e6e7e9;  --hw-case-b: #c9cacd;
-  --hw-key-a: #fdfdfd;   --hw-key-b: #ececee;
-  --hw-key2-a: #f2f2f4;  --hw-key2-b: #e2e2e5;
-  --hw-key-base: #b4b4b9;
-  --hw-face-a: #f7f7f8;  --hw-face-b: #c7c7cc;
-  --hw-ring: #d1d1d6;
-  --hw-edge: rgba(0, 0, 0, 0.16);
-  --hw-shade: rgba(0, 0, 0, 0.12);
-  --hw-drop: rgba(0, 0, 0, 0.14);
-  --hw-hi: rgba(255, 255, 255, 0.9);
 
   color-scheme: light;
 }
@@ -389,7 +366,7 @@ button { font-family: inherit; }
 .sidebar:hover .sidebar-rail,
 .sidebar-rail:has(:focus-visible) {
   width: var(--sidebar-w-open);
-  box-shadow: 12px 0 40px var(--hw-shade);
+  box-shadow: 12px 0 40px rgba(0, 0, 0, 0.3);
 }
 
 /* Desplegada sí tapa contenido, y ahí va translúcida con desenfoque, como la
@@ -531,168 +508,165 @@ button { font-family: inherit; }
   position: relative;
 }
 
-/* Réplica del hardware: las doce teclas a la izquierda y, a su derecha, los
-   mandos — los dos encoders arriba y la rueda magnética, un disco grande, justo
-   debajo de ellos. */
+/* Réplica del Orby, con la geometría del prototipo y no a ojo.
+   Las medidas son las del modelo de la web del producto (orvy.es), en
+   milímetros: carcasa de 210 x 125, teclas de 19,6 a 23 de paso, rueda de 76
+   y mandos de 13. Cada pieza se coloca por su centro con --x/--y en tanto por
+   ciento de la carcasa (lo calcula dashboard.js), y todo lo demás se mide en
+   --u, un milímetro de carcasa, para que la réplica escale entera con el panel.
+
+   Los colores tampoco siguen al tema: la carcasa es blanca impresa en 3D, las
+   teclas negras con cap transparente y las pantallas, OLED. Es un objeto
+   físico, y en modo claro u oscuro se ve igual que encima de la mesa. */
 .orby-board {
-  display: flex;
-  align-items: flex-start;
-  gap: 34px;
-  padding: 28px 32px;
-  /* Carcasa en gris espacial: aluminio anodizado con el bisel de luz arriba,
-     como un producto de Apple fotografiado de frente. */
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 40%),
-    linear-gradient(160deg, var(--hw-case-a), var(--hw-case-b));
-  border-radius: 28px;
-  border: none;
-  box-shadow:
-    inset 0 1px 0 var(--hw-hi),
-    inset 0 -1px 0 var(--hw-shade),
-    0 0 0 1px var(--hw-shade),
-    0 30px 60px -20px var(--hw-edge),
-    0 12px 24px var(--hw-drop);
-}
-
-.board-keys {
-  display: grid;
-  grid-template-columns: repeat(3, 70px);
-  grid-template-rows: repeat(4, 70px);
-  gap: 14px;
-}
-
-.board-controls {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 34px; padding-top: 10px;
-}
-
-.encoder-row { display: flex; gap: 46px; }
-
-/* Mandos de aluminio torneado: el degradado cónico hace el brillo que gira
-   alrededor del eje, igual que la corona de un Apple Watch. */
-.hw-encoder {
-  width: 52px; height: 52px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, transparent 58%, var(--hw-drop) 60%, transparent 64%),
-    conic-gradient(from 200deg, #6b6b70, #c7c7cc 12%, #5a5a5f 30%, #3a3a3e 48%, #8e8e93 66%, #48484c 84%, #6b6b70);
-  border: none;
-  box-shadow: 0 0 0 1px var(--hw-edge), 0 6px 14px var(--hw-edge), inset 0 1px 0 rgba(255,255,255,0.3);
   position: relative;
-  transition: transform 0.35s var(--spring), box-shadow 0.2s var(--ease-out);
-}
-.hw-encoder::after {
-  content: ''; position: absolute;
-  top: 6px; left: 50%; transform: translateX(-50%);
-  width: 3px; height: 11px; background: #1c1c1e; border-radius: 2px;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.35);
-}
-.hw-encoder.active {
-  transform: scale(0.94);
-  box-shadow: 0 0 0 1px var(--hw-edge), 0 0 0 4px rgba(var(--primary-rgb), 0.55), 0 4px 10px var(--hw-shade);
+  width: min(100%, 640px);
+  aspect-ratio: 210 / 125;
+  container-type: inline-size;
+  --u: calc(100cqw / 210);
 }
 
-.hw-wheel { position: relative; }
-.hw-wheel-face {
-  width: 168px; height: 168px; border-radius: 50%; position: relative;
+.orby-case {
+  position: absolute; inset: 0; border-radius: calc(16 * var(--u));
   background:
-    radial-gradient(circle at 50% 50%, transparent 66%, rgba(255,255,255,0.05) 67%, transparent 70%),
-    radial-gradient(circle at 38% 26%, var(--hw-face-a), var(--hw-face-b) 72%);
-  border: none;
+    radial-gradient(120% 90% at 30% 0%, rgba(255,255,255,0.9), transparent 55%),
+    linear-gradient(165deg, #f6f5f1, #d9d7d0);
   box-shadow:
-    0 0 0 3px var(--hw-ring), 0 0 0 4px var(--hw-edge),
-    inset 0 2px 1px rgba(255,255,255,0.08), inset 0 -10px 30px var(--hw-shade),
-    0 14px 28px var(--hw-shade);
+    inset 0 1px 0 #fff,
+    inset 0 calc(-1.4 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,0.18),
+    inset 0 0 0 1px rgba(0,0,0,0.06),
+    0 calc(2 * var(--u)) 0 #b9b6ae,
+    0 calc(10 * var(--u)) calc(30 * var(--u)) rgba(0,0,0,0.45);
+}
+/* Grano de impresión 3D: capas de 0,2 mm, apenas visibles. */
+.orby-case::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; opacity: 0.35; mix-blend-mode: multiply;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.035) 0 1px, transparent 1px 3px);
+}
+
+.hw-key, .hw-encoder, .hw-wheel {
+  position: absolute; left: calc(var(--x) * 1%); top: calc(var(--y) * 1%);
+  translate: -50% -50%;
+}
+
+/* ---- Teclas: hueco en la carcasa, tecla negra y cap transparente encima ---- */
+.hw-key { width: calc(19.6 * var(--u)); aspect-ratio: 1; }
+.hw-key::before {
+  content: ''; position: absolute; inset: calc(-0.8 * var(--u)); border-radius: calc(4 * var(--u));
+  background: #2a2c30; box-shadow: inset 0 calc(0.8 * var(--u)) calc(1.5 * var(--u)) rgba(0,0,0,0.6);
+}
+.hw-cap {
+  position: absolute; inset: 0; border-radius: calc(3.4 * var(--u));
+  display: grid; place-items: center;
+  /* La tecla negra (#141518 en el modelo) vista a través de la cap: el
+     degradado blanco es el reflejo del plástico transparente. */
+  background:
+    linear-gradient(150deg, rgba(255,255,255,0.42), rgba(255,255,255,0.07) 38%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.16)),
+    #16181b;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.45),
+    inset 0 calc(0.6 * var(--u)) 0 rgba(255,255,255,0.35),
+    inset 0 calc(-1.2 * var(--u)) calc(2 * var(--u)) rgba(0,0,0,0.35),
+    0 calc(1.4 * var(--u)) 0 rgba(150,160,170,0.75),
+    0 calc(2.4 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,0.35);
+  transition: transform 0.3s var(--spring), box-shadow 0.3s var(--ease-out);
+}
+.hw-key.active .hw-cap {
+  transform: translateY(calc(1.1 * var(--u)));
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.45),
+    inset 0 calc(0.6 * var(--u)) 0 rgba(255,255,255,0.28),
+    0 calc(0.3 * var(--u)) 0 rgba(150,160,170,0.75),
+    0 calc(0.6 * var(--u)) calc(1 * var(--u)) rgba(0,0,0,0.35);
+  transition-duration: 0.08s;
+}
+
+/* Pantalla de 72x40: la proporción del panel real, no la de la web. Con
+   content-box el borde no se come píxeles del icono. */
+.hw-key .oled-screen {
+  width: 74%; aspect-ratio: 72 / 40;
+  display: grid; place-items: center; overflow: hidden;
+  background: #020304; border-radius: calc(0.8 * var(--u));
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 calc(2 * var(--u)) rgba(79,227,255,0.08);
+  color: #9de9ff; font-family: var(--font-mono); font-weight: 600;
+  font-size: calc(2.6 * var(--u)); letter-spacing: 0.02em;
+  text-shadow: 0 0 4px rgba(79,227,255,0.6);
+}
+/* El brillo del OLED: el píxel encendido sangra un poco de luz azulada. */
+.hw-key .oled-screen .okey-canvas {
+  width: 100%; height: 100%;
+  filter: drop-shadow(0 0 1px rgba(79,227,255,0.9)) drop-shadow(0 0 4px rgba(79,227,255,0.35));
+  transition: filter 0.15s;
+}
+.hw-key.active .oled-screen .okey-canvas {
+  filter: brightness(1.5) drop-shadow(0 0 2px rgba(157,233,255,1)) drop-shadow(0 0 8px rgba(79,227,255,0.6));
+}
+/* MENÚ y SUPER no llevan pantalla: tecla negra lisa con la función rotulada. */
+.hw-key-role {
+  font-size: calc(2.3 * var(--u)); letter-spacing: 0.12em; font-weight: 600;
+  color: rgba(255,255,255,0.42);
+}
+
+/* ---- Rueda y mandos: ranura en la carcasa y pieza moleteada ---- */
+.hw-wheel { width: calc(76 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
+.hw-encoder { width: calc(13 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
+.hw-wheel::before, .hw-encoder::before {
+  /* Holgura de la ranura: en el modelo va de 0,4 a 0,7 mm alrededor de la pieza. */
+  content: ''; position: absolute; inset: calc(-0.9 * var(--u)); border-radius: 50%;
+  background: #3a3c3e; box-shadow: inset 0 calc(0.6 * var(--u)) calc(1.2 * var(--u)) rgba(0,0,0,0.7);
   transition: box-shadow 0.25s var(--ease-out);
 }
+.hw-wheel-face, .hw-encoder-face, .wheel-dial-face {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, #f1f0eb 0deg 1.5deg, #bdbbb3 1.5deg 3deg);
+  box-shadow: 0 calc(1.6 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,0.45);
+}
+.hw-wheel-face::before, .hw-encoder-face::before, .wheel-dial-face::before {
+  content: ''; position: absolute; inset: 5%; border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #f3f2ee 0 58%, #e6e4de 72%, #d6d4cc 100%);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06), 0 0 calc(1.2 * var(--u)) rgba(0,0,0,0.25);
+}
+/* Reflejo fijo encima: no gira con la rueda, y por eso parece de verdad. */
+.hw-wheel-shine {
+  position: absolute; inset: 5%; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from 200deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.75) 40deg, rgba(255,255,255,0) 90deg, rgba(0,0,0,0.06) 200deg, rgba(255,255,255,0) 300deg);
+  mix-blend-mode: soft-light;
+}
+.hw-encoder-mark {
+  position: absolute; left: 50%; top: 12%; width: 9%; height: 30%; translate: -50% 0;
+  border-radius: 9px; background: #6d6f74;
+}
+/* Al girar, la ranura se ilumina del color de acento: es la única pista de
+   actividad que no se inventa nada del aparato. */
+.hw-wheel.active::before, .hw-encoder.active::before {
+  box-shadow: inset 0 calc(0.6 * var(--u)) calc(1.2 * var(--u)) rgba(0,0,0,0.7),
+              0 0 0 calc(1 * var(--u)) rgba(var(--primary-rgb), 0.85),
+              0 0 calc(4 * var(--u)) rgba(var(--primary-rgb), 0.5);
+}
+.hw-encoder-face { transition: transform 0.3s var(--spring); }
+.hw-encoder.active .hw-encoder-face { transform: scale(0.95); }
+
 /* Marcador de la rueda. Gira siguiendo el ángulo absoluto del sensor, así que
    se queda donde esté la rueda de verdad; el desfase y el sentido se calibran
-   desde Perfiles para que coincida con el marcador pegado en la tapa. */
+   desde Ajustes para que coincida con la marca de la tapa. Se dibuja como la
+   tapa real: el punto es el hoyuelo para el dedo y la raya, una ranura. */
 .dial-marker {
-  position: absolute; inset: 0; border-radius: 50%;
+  position: absolute; inset: 5%; border-radius: 50%;
   transition: transform 0.1s linear; pointer-events: none;
 }
 .dial-marker::after {
-  content: ''; position: absolute; left: 50%; border-radius: 50%;
-  background: var(--primary); box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.25);
+  content: ''; position: absolute; left: 50%; translate: -50% 0;
 }
 .dial-marker.as-dot::after {
-  top: 9px; width: 14px; height: 14px; margin-left: -7px;
+  top: 9%; width: 17%; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, #cfcdc6, #efeee9 70%);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.28), 0 1px 0 rgba(255,255,255,0.8);
 }
 .dial-marker.as-line::after {
-  top: 10px; width: 5px; height: 40px; margin-left: -2.5px; border-radius: 3px;
-  background: linear-gradient(to bottom, var(--primary), rgba(var(--primary-rgb), 0.1));
-  box-shadow: none;
-}
-.hw-wheel-hub {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 44px; height: 44px; border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 50%, transparent 55%, rgba(0,0,0,0.3) 58%, transparent 62%),
-    conic-gradient(from 210deg, #5a5a5f, #aeaeb2 14%, #48484c 34%, #2c2c2e 52%, #7c7c80 70%, #3a3a3e 86%, #5a5a5f);
-  border: none;
-  box-shadow: 0 0 0 1px var(--hw-edge), 0 3px 8px var(--hw-shade), inset 0 1px 0 rgba(255,255,255,0.3);
-}
-.hw-wheel.active .hw-wheel-face {
-  box-shadow:
-    0 0 0 3px var(--hw-ring), 0 0 0 6px rgba(var(--primary-rgb), 0.6),
-    inset 0 2px 1px rgba(255,255,255,0.08), inset 0 -10px 30px var(--hw-shade),
-    0 14px 28px var(--hw-shade);
+  top: 7%; width: 2.2%; height: 22%; border-radius: 3px;
+  background: #a9aaa6; box-shadow: inset 0 1px 2px rgba(0,0,0,0.35);
 }
 
-/* Teclas como las de un Magic Keyboard: tapa casi plana, un bisel de luz
-   arriba y sombra corta. La pulsación es un hundimiento con muelle, no un
-   salto de borde como antes. */
-.hw-key {
-  background: linear-gradient(180deg, var(--hw-key-a), var(--hw-key-b));
-  border: none;
-  border-radius: 13px;
-  position: relative;
-  display: flex; align-items: center; justify-content: center;
-  transition: transform 0.35s var(--spring), box-shadow 0.25s var(--ease-out), background 0.2s;
-  box-shadow:
-    inset 0 1px 0 var(--hw-hi),
-    0 0 0 1px var(--hw-edge),
-    0 3px 0 var(--hw-key-base),
-    0 5px 10px var(--hw-drop);
-}
-
-/* 45x25 es 72x40 a escala 0.625: cualquier otra medida deforma el icono, que
-   se estira al 100% de esta caja. Con content-box el borde no se come píxeles. */
-.hw-key .oled-screen {
-  box-sizing: content-box;
-  width: 45px; height: 25px;
-  background: #000;
-  border-radius: 3px;
-  border: 1px solid #0a0a0a;
-  color: #fff;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  display: flex; align-items: center; justify-content: center;
-  /* El cristal de la pantalla: reflejo arriba y canto oscuro alrededor. */
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.08);
-}
-
-.hw-key .oled-screen .okey-canvas { width: 100%; height: 100%; }
-
-.hw-key.no-screen { background: linear-gradient(180deg, var(--hw-key2-a), var(--hw-key2-b)); }
-
-.hw-key.active {
-  transform: translateY(2px) scale(0.96);
-  box-shadow:
-    inset 0 1px 0 var(--hw-hi),
-    0 0 0 1px var(--hw-edge),
-    0 0 0 3px rgba(var(--primary-rgb), 0.85),
-    0 1px 0 var(--hw-key-base),
-    0 2px 4px var(--hw-drop);
-  transition: transform 0.08s var(--ease-out), box-shadow 0.08s;
-}
-.hw-key.active .oled-screen {
-  background: #fff; color: #000;
-}
-
-/* Lista agrupada de Ajustes de iOS: filas en un mismo bloque separadas por
-   una línea fina que no llega al borde izquierdo. */
 .status-panel { padding: 24px; }
 .status-items {
   display: flex; flex-direction: column;
@@ -1058,11 +1032,6 @@ button { font-family: inherit; }
 .empty-panel .icn { color: var(--primary); opacity: 0.7; }
 
 /* ================= DASHBOARD: EXTRAS ================= */
-.hw-tag {
-  position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%);
-  font-size: 8px; letter-spacing: 1px; color: var(--text-muted); white-space: nowrap;
-}
-.hw-key-role { font-size: 9px; letter-spacing: 1px; color: var(--text-muted); font-weight: 600; }
 
 .value.is-on { color: var(--success); }
 .big-event { display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -1404,17 +1373,13 @@ button { font-family: inherit; }
 .hires-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
 
 .wheel-dial { display: flex; justify-content: center; margin: 8px 0 6px; }
+/* La misma rueda que el dashboard, en pequeño (la apariencia comparte reglas
+   con .hw-wheel-face). Aquí --u vale un poco más para que el moleteado y la
+   sombra no se pierdan a este tamaño. */
 .wheel-dial-face {
-  width: 84px; height: 84px; border-radius: 50%; position: relative;
-  background: radial-gradient(circle at 38% 26%, var(--hw-face-a), var(--hw-face-b) 72%);
-  border: none;
-  box-shadow: 0 0 0 2px var(--hw-ring), 0 0 0 3px var(--hw-edge),
-              inset 0 1px 1px rgba(255,255,255,0.08), inset 0 -6px 18px var(--hw-shade),
-              0 8px 18px var(--hw-drop);
+  position: relative; width: 84px; height: 84px; --u: 0.9px;
+  box-shadow: 0 0 0 3px #2a2c30, 0 6px 14px rgba(0,0,0,0.35);
 }
-/* El dial pequeño usa el mismo marcador que el dashboard, a menor escala. */
-.wheel-dial-face .dial-marker.as-dot::after { top: 5px; width: 9px; height: 9px; margin-left: -4.5px; }
-.wheel-dial-face .dial-marker.as-line::after { top: 6px; width: 3px; height: 26px; margin-left: -1.5px; }
 
 .wheel-live-readout { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 10px; font-variant-numeric: tabular-nums; }
 
@@ -1735,7 +1700,6 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 /* ================= RESPONSIVE ================= */
 @media (max-width: 1180px) {
   .editor-layout, .oled-grid, .auto-grid, .wheel-tune { grid-template-columns: minmax(0, 1fr); }
-  .orby-board { flex-direction: column; align-items: center; gap: 24px; }
 
   /* En pantalla estrecha los dos paneles se apilan: vuelve a haber un único
      scroll de página, como en el resto de vistas. */
