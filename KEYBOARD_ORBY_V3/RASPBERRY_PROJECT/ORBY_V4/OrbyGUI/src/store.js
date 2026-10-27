@@ -21,11 +21,12 @@ export const state = {
   deviceMode: 'NORMAL',
   superActive: false,
   timeout: 5,
-  // Velocidad de las animaciones de las pantallas, en % por grupo (100 = la de
-  // fábrica de SpringBoard; ver OledAnim::Group en el firmware). Con un
-  // firmware anterior al 4.8 no llega y se queda en estos valores, que son los
-  // que trae ese firmware fijos (sin bandera `animspeed`, compat.js lo recorta).
-  animSpeed: { menu: 100, carousel: 160, submenu: 160, profile: 140, fade: 100 },
+  // Velocidad de las animaciones de las pantallas, por grupo, tal cual la dice
+  // el teclado (ver OledAnim::Group en el firmware). Desde la 4.10 es % sobre
+  // el ritmo de fábrica de cada grupo (100 = de fábrica); la 4.8/4.9 contaba
+  // sobre el muelle de Apple y la vista de Ajustes traduce. Con un firmware
+  // anterior al 4.8 no llega, y compat.js esconde el control.
+  animSpeed: { menu: 100, carousel: 100, submenu: 100, profile: 100, fade: 100 },
   scroll: { detentsPerRev: 60, invert: false, hires: false }, // lo que aplica ahora mismo
   profiles: [],       // rellenado desde el firmware
   dirty: false,       // hay cambios sin escribir en Flash

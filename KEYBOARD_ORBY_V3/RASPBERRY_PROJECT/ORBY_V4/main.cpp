@@ -380,26 +380,23 @@ volatile uint8_t active_profile_idx = 0;   // 0=OFIM, 1=PHTS, 2=ALTM, 3=PREM
 volatile uint8_t active_page = 0;          // Página en uso del perfil activo
 volatile uint8_t reposo_timeout_min = 5;    // 5 minutos por defecto (0=OFF)
 
-// Velocidad de las animaciones estilo Apple (oled_anim.h), en % por grupo
-// (100 = el muelle "de fábrica" de SpringBoard; ver OledAnim::set_rate). El de
-// abrir/cerrar menú y el fundido ya salían a buen ritmo tal cual; el carrusel
-// de páginas, entrar/salir de submenú y el cambio de perfil salían lentos, así
-// que su valor de fábrica ya sale acelerado. Orden: OledAnim::Group.
-volatile uint8_t anim_speed_pct[OledAnim::G_COUNT] = {100, 160, 160, 140, 100};
+// Velocidad de las animaciones estilo Apple (oled_anim.h). Cada grupo tiene un
+// ritmo base, en % del muelle "de fábrica" de SpringBoard (ver
+// OledAnim::set_rate), y el usuario elige un % sobre esa base: 100 es lo que
+// sale de fábrica. Las bases son las que se eligieron a mano con los sliders de
+// la 4.8/4.9 mirando el teclado. Orden: OledAnim::Group.
+static const uint16_t ANIM_BASE_PCT[OledAnim::G_COUNT] = {200, 65, 200, 140, 100};
+volatile uint8_t anim_speed_pct[OledAnim::G_COUNT] = {100, 100, 100, 100, 100};
 
 static void apply_anim_speed() {
     for (uint8_t g = 0; g < OledAnim::G_COUNT; g++)
-        OledAnim::set_rate((OledAnim::Group)g, anim_speed_pct[g] / 100.0f);
+        OledAnim::set_rate((OledAnim::Group)g, ANIM_BASE_PCT[g] * anim_speed_pct[g] / 10000.0f);
 }
 
-// Ritmo de fábrica para quien venga de un formato de ajustes sin anim_speed:
-// nadie tuvo ocasión de tocarlo a mano, así que no hay preferencia que conservar.
+// Ritmo de fábrica para quien venga de un formato de ajustes sin anim_speed
+// relativo: lo de antes era otra escala, y la base nueva ya es lo que eligió.
 static void set_default_anim_speed() {
-    anim_speed_pct[OledAnim::G_MENU]     = 100;
-    anim_speed_pct[OledAnim::G_CAROUSEL] = 160;
-    anim_speed_pct[OledAnim::G_SUBMENU]  = 160;
-    anim_speed_pct[OledAnim::G_PROFILE]  = 140;
-    anim_speed_pct[OledAnim::G_FADE]     = 100;
+    for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) anim_speed_pct[g] = 100;
 }
 volatile uint8_t selected_menu_idx = 0;     // Opción de menú activa (0 a 4)
 volatile bool super_active = false;         // Estado de la tecla modificadora SUPER
@@ -521,8 +518,11 @@ static_assert(FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES <= PICO_FLASH_SIZE_BYTE
                                       //   contraste nunca hizo nada en esta
                                       //   placa (ver hardware_oled.h), campo
                                       //   eliminado
-#define SETTINGS_MAGIC    0xDEB00420  // + anim_speed: velocidad por grupo de
+#define SETTINGS_MAGIC_V8 0xDEB00420  // + anim_speed: velocidad por grupo de
                                       //   las animaciones de oled_anim.h
+#define SETTINGS_MAGIC    0xDEB00430  // anim_speed pasa a ser % sobre
+                                      //   ANIM_BASE_PCT, no sobre el muelle de
+                                      //   Apple: misma disposición, otra escala
 
 // Diseños antiguos, conservados solo para poder leer lo ya grabado.
 struct ProfileV2 {
@@ -1102,6 +1102,23 @@ void load_settings() {
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
         sanitize_loaded();
+        return;
+    }
+
+    // Formato 4.8/4.9: la misma disposición, pero anim_speed contaba sobre el
+    // muelle de Apple. Esos valores son justo los que pasaron a ser la base, así
+    // que traducirlos daría ~100 de todas formas: se arranca en 100.
+    if (magic == SETTINGS_MAGIC_V8) {
+        const Settings* s = (const Settings*)(XIP_BASE + FLASH_TARGET_OFFSET);
+        active_profile_idx     = s->active_profile_idx;
+        reposo_timeout_min     = s->reposo_timeout_min;
+        profile_count          = s->profile_count;
+        active_page            = s->active_page;
+        set_default_anim_speed();
+        memcpy(profiles, s->profiles, sizeof(profiles));
+        memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
+        sanitize_loaded();
+        save_settings();
         return;
     }
 
@@ -2128,11 +2145,11 @@ static void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
 
 // Lo que hace falta del estado para saber QUÉ ha cambiado entre dos refrescos,
 // y con ello qué transición toca.
-struct ScreenCtx { uint8_t mode, profile, page, pages; };
+struct ScreenCtx { uint8_t mode, profile, page, pages; bool super; };
 
 static ScreenCtx screen_ctx() {
     return { (uint8_t)current_mode, active_profile_idx, active_page,
-             profiles[active_profile_idx].page_count };
+             profiles[active_profile_idx].page_count, super_active };
 }
 
 static OledAnim::Kind classify(const ScreenCtx& a, const ScreenCtx& b) {
@@ -2154,7 +2171,10 @@ static OledAnim::Kind classify(const ScreenCtx& a, const ScreenCtx& b) {
         if (b.pages > 1 && a.page == (b.page + 1) % b.pages) return PAGE_PREV;
         return b.page > a.page ? PAGE_NEXT : PAGE_PREV;
     }
-    return CROSSFADE;   // capa SUPER, un icono nuevo, una tecla tachada...
+    // La capa SUPER es otra rejilla de iconos que se abre encima mientras se
+    // sujeta la tecla: se anima igual que el menú.
+    if (a.super != b.super) return b.super ? MENU_OPEN : MENU_CLOSE;
+    return CROSSFADE;   // un icono nuevo, una tecla tachada...
 }
 
 void core1_entry() {
@@ -2477,9 +2497,11 @@ void process_command(const char* cmd) {
         // teclas que necesitan la app de PC mientras no esté anunciada.
         // MSTORE=1: guarda una copia de las macros del PC (MSTORE_*), para que
         // otro ordenador sepa qué hace cada tecla de macro.
-        // ANIMSPEED=1: entiende SET_ANIMSPEED/GET_ANIMSPEED (velocidad por
-        // grupo de las animaciones de las pantallas).
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=1:MODE=%s\n",
+        // ANIMSPEED=2: entiende SET_ANIMSPEED/GET_ANIMSPEED (velocidad por
+        // grupo de las animaciones de las pantallas), en % sobre la base de
+        // fábrica de cada grupo. Con =1 (4.8/4.9) el % era sobre el muelle de
+        // Apple, y la app tiene que traducir.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2559,13 +2581,15 @@ void process_command(const char* cmd) {
 
     // Velocidad de las animaciones de las pantallas, por grupo (ver
     // OledAnim::Group: 0 menú, 1 carrusel de páginas, 2 submenú, 3 cambio de
-    // perfil, 4 fundido). 25-400%, igual que el tope de OledAnim::set_rate.
+    // perfil, 4 fundido). En % sobre ANIM_BASE_PCT. Tope en 250 porque se
+    // guarda en un byte: el 400 que admitía la 4.8 se guardaba dando la vuelta.
+    // Lo que se pase del tope de OledAnim::set_rate lo recorta ella.
     if (strncmp(cmd, "SET_ANIMSPEED:", 14) == 0) {
         int group = 0, pct = 0;
         if (sscanf(cmd + 14, "%d:%d", &group, &pct) == 2
-            && group >= 0 && group < OledAnim::G_COUNT && pct >= 25 && pct <= 400) {
+            && group >= 0 && group < OledAnim::G_COUNT && pct >= 25 && pct <= 250) {
             anim_speed_pct[group] = (uint8_t)pct;
-            OledAnim::set_rate((OledAnim::Group)group, pct / 100.0f);
+            apply_anim_speed();
             cdc_printf("ANIMSPEED:OK:%d:%d\n", group, pct);
         } else {
             cdc_printf("ERR:ANIMSPEED_VALUE\n");

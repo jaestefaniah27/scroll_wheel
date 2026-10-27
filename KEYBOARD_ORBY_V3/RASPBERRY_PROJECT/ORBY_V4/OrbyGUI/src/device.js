@@ -117,7 +117,8 @@ export const setTimeout_   = (v)  => request(`SET_TIMEOUT:${v}`,    { match: (l)
 
 // Velocidad de las animaciones de las pantallas. `group` es el orden del
 // firmware (OledAnim::Group): 0 menú, 1 carrusel de páginas, 2 submenú,
-// 3 cambio de perfil, 4 fundido. `pct` en 25-400 (100 = ritmo de fábrica).
+// 3 cambio de perfil, 4 fundido. `pct` tal cual lo entiende el teclado: desde
+// la 4.10, % sobre el ritmo de fábrica del grupo (ver views/settings.js).
 export const setAnimSpeed = (group, pct) =>
   request(`SET_ANIMSPEED:${group}:${pct}`, { match: (l) => l.startsWith('ANIMSPEED:OK:') });
 export const saveToFlash   = ()   => request('SAVE_STATE',          { match: (l) => l.startsWith('SAVE:OK'), timeout: 8000 });

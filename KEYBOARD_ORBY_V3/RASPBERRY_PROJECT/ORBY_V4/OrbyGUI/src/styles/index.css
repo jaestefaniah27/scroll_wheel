@@ -1408,15 +1408,12 @@ button { font-family: inherit; }
   font-family: var(--font-mono); font-size: 12px; color: var(--primary);
 }
 
-/* Velocidad de las animaciones: un slider por grupo (ver OledAnim::Group). */
+/* Velocidad de las animaciones: un segmentado por grupo (ver OledAnim::Group). */
 .anim-speed-list { display: flex; flex-direction: column; gap: 10px; }
 .anim-speed-row { display: flex; align-items: center; gap: 10px; }
 .anim-speed-row .field-label { flex: 0 0 170px; }
-.anim-speed-row .premium-slider { flex: 1; }
-.anim-speed-val {
-  min-width: 42px; text-align: right;
-  font-family: var(--font-mono); font-size: 12px; color: var(--primary);
-}
+.anim-speed-row .timeout-selector { flex: 1; }
+.anim-speed-row .opt-btn { font-size: 12px; font-variant-numeric: tabular-nums; }
 
 /* ================= EDITOR OLED ================= */
 /* Esta vista no hace scroll de página: ocupa el alto completo y son el lienzo y

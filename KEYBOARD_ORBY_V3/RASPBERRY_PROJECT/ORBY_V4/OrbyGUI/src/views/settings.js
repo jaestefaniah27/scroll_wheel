@@ -496,42 +496,59 @@ function escape(s) {
 
 // ================= Velocidad de las animaciones =================
 // Cada grupo de transición (ver OledAnim::Group en el firmware) con su propio
-// multiplicador: 100% es el ritmo con el que se diseñaron, y solo el carrusel,
-// el submenú y el cambio de perfil salen de fábrica por encima porque eran los
-// que se notaban lentos; abrir/cerrar menú y el fundido ya iban bien.
+// multiplicador sobre el ritmo de fábrica de ese grupo. Opciones fijas y no un
+// slider: entre 135% y 140% no se ve diferencia en el panel, y con cinco
+// escalones se puede volver a "Normal" sin buscar el número.
+//
+// `base` es el ritmo de fábrica medido como lo contaba el firmware 4.8/4.9
+// (ANIMSPEED=1): en % del muelle de Apple. Desde la 4.10 (ANIMSPEED=2) el
+// teclado ya habla en % sobre esa base y no hay que traducir nada.
 const ANIM_GROUPS = [
-  { key: 'menu',     group: 0, label: 'Menú (abrir/cerrar)' },
-  { key: 'carousel', group: 1, label: 'Carrusel de páginas' },
-  { key: 'submenu',  group: 2, label: 'Entrar/salir de submenú' },
-  { key: 'profile',  group: 3, label: 'Cambio de perfil' },
-  { key: 'fade',     group: 4, label: 'Fundido' },
+  { key: 'menu',     group: 0, base: 200, label: 'Menú y SUPER' },
+  { key: 'carousel', group: 1, base: 65,  label: 'Carrusel de páginas' },
+  { key: 'submenu',  group: 2, base: 200, label: 'Entrar/salir de submenú' },
+  { key: 'profile',  group: 3, base: 140, label: 'Cambio de perfil' },
+  { key: 'fade',     group: 4, base: 100, label: 'Fundido' },
 ];
+
+const ANIM_OPTIONS = [50, 75, 100, 125, 150];
+
+const animAbsolute = () => state.deviceInfo?.animspeed === '1';
+
+// Lo que dice el teclado → % sobre la base, ajustado a la opción más cercana
+// (un 4.8 puede traer cualquier número que se dejara con el slider).
+function animOption(g) {
+  const raw = state.animSpeed[g.key] ?? 100;
+  const rel = animAbsolute() ? (raw * 100) / g.base : raw;
+  return ANIM_OPTIONS.reduce((a, b) => (Math.abs(b - rel) < Math.abs(a - rel) ? b : a));
+}
+
+// El 4.8/4.9 guarda el % en un byte sin comprobarlo: por encima de 255 da la
+// vuelta. Se recorta aquí, aunque el menú más rápido se quede algo corto.
+function animWire(g, rel) {
+  if (!animAbsolute()) return rel;
+  return Math.min(255, Math.max(25, Math.round((g.base * rel) / 100)));
+}
 
 function initAnimSpeed() {
   const list = document.getElementById('anim-speed-list');
   if (!list) return;
 
-  // El número se actualiza al vuelo mientras se arrastra; el comando al
-  // teclado solo se manda al soltar, como el desfase de la rueda.
-  list.addEventListener('input', (e) => {
-    if (e.target.dataset.act !== 'animspeed') return;
-    const label = list.querySelector(`.anim-speed-val[data-group="${e.target.dataset.group}"]`);
-    if (label) label.textContent = `${e.target.value}%`;
-  });
-
-  list.addEventListener('change', async (e) => {
-    if (e.target.dataset.act !== 'animspeed') return;
-    const group = Number(e.target.dataset.group);
-    const pct = Number(e.target.value);
-    if (!requireDevice()) { renderAnimSpeed(); return; }
+  list.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-act="animspeed"]');
+    if (!btn) return;
+    const g = ANIM_GROUPS[Number(btn.dataset.group)];
+    const rel = Number(btn.dataset.pct);
+    if (!requireDevice()) return;
+    const wire = animWire(g, rel);
     try {
-      await device.setAnimSpeed(group, pct);
-      state.animSpeed = { ...state.animSpeed, [ANIM_GROUPS[group].key]: pct };
+      await device.setAnimSpeed(g.group, wire);
+      state.animSpeed = { ...state.animSpeed, [g.key]: wire };
       markDirty();
     } catch {
       toast('El teclado no confirmó la velocidad de la animación', 'error');
-      renderAnimSpeed();
     }
+    renderAnimSpeed();
   });
 
   renderAnimSpeed();
@@ -550,13 +567,18 @@ function renderAnimSpeed() {
   }
   card.classList.remove('hidden');
 
-  list.innerHTML = ANIM_GROUPS.map((g) => `
+  list.innerHTML = ANIM_GROUPS.map((g) => {
+    const cur = animOption(g);
+    return `
     <div class="anim-speed-row">
       <span class="field-label">${g.label}</span>
-      <input type="range" class="premium-slider" data-act="animspeed" data-group="${g.group}"
-             min="25" max="400" step="5" value="${state.animSpeed[g.key]}">
-      <b class="anim-speed-val" data-group="${g.group}">${state.animSpeed[g.key]}%</b>
-    </div>`).join('');
+      <div class="timeout-selector">
+        ${ANIM_OPTIONS.map((pct) => `
+          <button class="opt-btn${pct === cur ? ' active' : ''}" data-act="animspeed"
+                  data-group="${g.group}" data-pct="${pct}">${pct}%</button>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ================= Calibración de la rueda =================

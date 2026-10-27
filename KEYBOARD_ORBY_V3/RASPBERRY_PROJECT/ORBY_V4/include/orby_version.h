@@ -15,7 +15,7 @@
 //   - OrbyGUI/src/compat.js           (hasta dónde llega esta app)
 
 #define ORBY_FW_MAJOR 4
-#define ORBY_FW_MINOR 9
+#define ORBY_FW_MINOR 10
 
 #define ORBY_STR_(x) #x
 #define ORBY_STR(x)  ORBY_STR_(x)
@@ -26,4 +26,7 @@
 // La misma versión en BCD para el descriptor USB (4.1 -> 0x0410). Windows la
 // enseña en las propiedades del dispositivo, así que tiene que coincidir con la
 // del handshake o el aparato dice dos cosas distintas según a quién se pregunte.
+// Con un menor de dos cifras deja de ser BCD de verdad (4.10 -> 0x04A0): en BCD
+// estricto sería 0x0410, el mismo que la 4.1. Nadie lo descodifica, solo se
+// enseña, y así sigue siendo único y creciente.
 #define ORBY_USB_BCD_DEVICE ((uint16_t)((ORBY_FW_MAJOR << 8) | (ORBY_FW_MINOR << 4)))

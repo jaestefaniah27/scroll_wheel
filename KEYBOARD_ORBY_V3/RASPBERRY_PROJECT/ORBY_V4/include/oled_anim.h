@@ -126,10 +126,19 @@ static inline float fade_end(const Fade& f) { return f.delay + f.duration; }
 // innerFolderFade 0.3 s con 0.1 de retardo, EaseIn (el contenido aparece).
 static constexpr Fade OPEN_OUTER  = {0.0f,  0.4f, EASE_IN};
 static constexpr Fade OPEN_INNER  = {0.1f,  0.3f, EASE_IN};
-// SBHFolderCloseSettings: outerFolderFade 0.3 s, retardo 0.15, EaseIn (lo de
-// fuera vuelve); innerFolderFade 0.2 s EaseOut (el contenido se va).
-static constexpr Fade CLOSE_OUTER = {0.15f, 0.3f, EASE_IN};
+// SBHFolderCloseSettings: innerFolderFade 0.2 s EaseOut (el contenido se va).
 static constexpr Fade CLOSE_INNER = {0.0f,  0.2f, EASE_OUT};
+
+// Abrir y cerrar un menú (y la capa SUPER) no usan la pareja de carpeta de
+// arriba tal cual. Con ella lo que entra aparece con EaseIn y 0,1 s de retardo,
+// y para cuando se ve, el muelle ya lo ha llevado casi a su tamaño: en 1 bit no
+// se notaba que creciera, solo que aparecía debajo. Aquí lo que entra empieza a
+// moverse justo cuando empieza a verse (mismo retardo en su muelle) y aparece
+// con EaseOut, así que se le ve crecer; lo que sale se va en 0,25 s con EaseIn,
+// que lo deja a la vista mientras se agranda. Las dos opacidades suman ~1 en
+// todo el recorrido: casi no comparten píxeles del Bayer.
+static constexpr Fade FOLDER_OUT = {0.0f,  0.25f, EASE_IN};
+static constexpr Fade FOLDER_IN  = {0.1f,  0.2f,  EASE_OUT};
 
 // Fundido corto para lo que cambia sin cambiar de sitio: la capa SUPER, el
 // cursor de un menú, un icono recién subido. Es el innerFolderFade de cerrar.
@@ -163,18 +172,20 @@ enum Kind : uint8_t {
     CROSSFADE,    // mismo sitio, contenido distinto
     PAGE_NEXT,    // la página entra por la derecha y empuja a la anterior
     PAGE_PREV,
-    MENU_OPEN,    // de la pantalla normal a un menú: se abre como una carpeta
-    MENU_CLOSE,   // del menú a la pantalla normal: la carpeta se cierra
+    MENU_OPEN,    // de la pantalla normal a un menú (o a la capa SUPER): se abre como una carpeta
+    MENU_CLOSE,   // del menú (o de SUPER) a la pantalla normal: la carpeta se cierra
     PUSH,         // entrar en un submenú
     POP,          // volver al menú principal
     PROFILE       // otro perfil: los iconos nuevos crecen en onda desde el centro
 };
 
-// Escalas de la carpeta. El contenido del menú nace al 60 % y la pantalla de
-// fondo se acerca un 25 % mientras se va, igual que la rejilla de iconos
-// cuando se abre una carpeta.
-static constexpr float FOLDER_MIN  = 0.60f;
-static constexpr float BG_ZOOM     = 1.25f;
+// Escalas de la carpeta. Al abrir, el contenido del menú nace al 40 % y la
+// pantalla de fondo se acerca un 60 % mientras se va, como la rejilla de iconos
+// cuando se abre una carpeta; al cerrar, al revés. Con el 60 % y el 25 % de
+// antes, en 72x40 el cambio de tamaño se quedaba en dos o tres píxeles y no se
+// leía como zoom.
+static constexpr float FOLDER_MIN  = 0.40f;
+static constexpr float BG_ZOOM     = 1.60f;
 static constexpr float PROFILE_MIN = 0.60f;
 
 // Hueco entre pantallas en el carrusel de páginas, a escala real: los 72 px
@@ -193,9 +204,12 @@ static inline void init() {
     g_settle[CROSSFADE]  = fade_end(SWAP);
     g_settle[PAGE_NEXT]  = settle(NUDGE, (float)CANVAS);
     g_settle[PAGE_PREV]  = g_settle[PAGE_NEXT];
-    float s = settle(FOLDER, (1.0f - FOLDER_MIN) * W / 2);
-    g_settle[MENU_OPEN]  = fmaxf(s, fmaxf(fade_end(OPEN_OUTER), fade_end(OPEN_INNER)));
-    g_settle[MENU_CLOSE] = fmaxf(s, fmaxf(fade_end(CLOSE_OUTER), fade_end(CLOSE_INNER)));
+    // Lo que sale ya no se ve pasado su fundido; lo que entra manda, y al
+    // cerrar entra desde el zoom grande, que es el recorrido más largo.
+    const float viaje = fmaxf(1.0f - FOLDER_MIN, BG_ZOOM - 1.0f) * W / 2;
+    g_settle[MENU_OPEN]  = fmaxf(fade_end(FOLDER_OUT),
+                                 fmaxf(FOLDER_IN.delay + settle(FOLDER, viaje), fade_end(FOLDER_IN)));
+    g_settle[MENU_CLOSE] = g_settle[MENU_OPEN];
     g_settle[PUSH]       = settle(PULL, (float)W);
     g_settle[POP]        = g_settle[PUSH];
     g_settle[PROFILE]    = fmaxf(fade_end(OPEN_OUTER),
@@ -213,8 +227,8 @@ static inline void init() {
 //
 // El valor neutro de esta librería es 1.0 en los cinco grupos a propósito: así
 // test_anim.cpp sigue comprobando los muelles de Apple sin recortar. Quien fija
-// la velocidad "de fábrica" del teclado (más rápida que 1.0 en los grupos que
-// no eran el de abrir/cerrar menú ni el fundido) es main.cpp, con OledAnim::set_rate.
+// la velocidad "de fábrica" del teclado (ANIM_BASE_PCT, distinta por grupo) es
+// main.cpp, con OledAnim::set_rate.
 enum Group : uint8_t { G_MENU, G_CAROUSEL, G_SUBMENU, G_PROFILE, G_FADE, G_COUNT };
 
 static inline float g_rate[G_COUNT] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
@@ -382,22 +396,22 @@ static inline void render(Kind k, float t, int i,
         draw_carousel(out, i, k == PAGE_NEXT ? p : -p, from, to);
         return;
     }
-    case MENU_OPEN: {
-        const float p = spring(FOLDER, tv);
-        const uint8_t no = alpha16(1.0f - fade(OPEN_OUTER, tv));
-        const uint8_t ni = alpha16(fade(OPEN_INNER, tv));
+    case MENU_OPEN:
+    case MENU_CLOSE: {
+        // Cerrar es abrir con las escalas cambiadas de lado: al abrir lo de
+        // antes se agranda y lo nuevo crece desde pequeño; al cerrar lo de
+        // antes se encoge y lo nuevo llega desde grande.
+        const bool abre = (k == MENU_OPEN);
+        const float sale_a  = abre ? BG_ZOOM : FOLDER_MIN;
+        const float entra_de = abre ? FOLDER_MIN : BG_ZOOM;
+        const float po = spring(FOLDER, tv);
+        const float pi = spring(FOLDER, tv - FOLDER_IN.delay);
+        const uint8_t no = alpha16(1.0f - fade(FOLDER_OUT, tv));
+        const uint8_t ni = alpha16(fade(FOLDER_IN, tv));
         // Las ventanas se cuentan desde lados opuestos del Bayer: mientras las
         // dos opacidades no sumen más de 1 no comparten ni un píxel.
-        draw_layer(out, {a, 1.0f + (BG_ZOOM - 1.0f) * p, 0, 0, (uint8_t)(16 - no), 16, false});
-        draw_layer(out, {b, FOLDER_MIN + (1.0f - FOLDER_MIN) * p, 0, 0, 0, ni, false});
-        return;
-    }
-    case MENU_CLOSE: {
-        const float p = spring(FOLDER, tv);
-        const uint8_t ni = alpha16(1.0f - fade(CLOSE_INNER, tv));
-        const uint8_t no = alpha16(fade(CLOSE_OUTER, tv));
-        draw_layer(out, {b, BG_ZOOM + (1.0f - BG_ZOOM) * p, 0, 0, (uint8_t)(16 - no), 16, false});
-        draw_layer(out, {a, 1.0f + (FOLDER_MIN - 1.0f) * p, 0, 0, 0, ni, false});
+        draw_layer(out, {a, 1.0f + (sale_a - 1.0f) * po, 0, 0, (uint8_t)(16 - no), 16, false});
+        draw_layer(out, {b, entra_de + (1.0f - entra_de) * pi, 0, 0, 0, ni, false});
         return;
     }
     case PUSH: {
