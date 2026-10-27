@@ -177,10 +177,12 @@ static constexpr float FOLDER_MIN  = 0.60f;
 static constexpr float BG_ZOOM     = 1.25f;
 static constexpr float PROFILE_MIN = 0.60f;
 
-// Huecos entre teclas en el carrusel de páginas. El real es de 86 px y con él
-// un icono pasaría más tiempo escondido entre teclas que a la vista; 24 deja
-// que se vea viajar de una tecla a la siguiente.
-static constexpr int CAROUSEL_GAP = 24;
+// Hueco entre pantallas en el carrusel de páginas, a escala real: los 72 px
+// del panel miden unos 10 mm (7,2 px/mm) y entre una pantalla y la vecina hay
+// 9,75 mm, o sea 70 px. Con el hueco comprimido un icono parecía saltar de
+// tecla en tecla más deprisa de lo que se mueve el resto del carrusel; a escala
+// real va a la misma velocidad mientras cruza el espacio que no se ve.
+static constexpr int CAROUSEL_GAP = 70;
 static constexpr int PITCH        = W + CAROUSEL_GAP;
 static constexpr int CANVAS       = 3 * PITCH;
 
