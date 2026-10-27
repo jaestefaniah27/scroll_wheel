@@ -9,7 +9,7 @@ import * as A from '../src/oled-anim.mjs';
 // con la copia en JS y tienen que salir iguales, bit a bit.
 
 const golden = readFileSync(new URL('./fixtures/oled-anim-golden.txt', import.meta.url), 'utf8')
-  .trim().split('\n');
+  .trim().split(/\r?\n/);   // git en Windows lo puede sacar con CRLF
 
 function crc32(c, bytes) {
   c = ~c >>> 0;
