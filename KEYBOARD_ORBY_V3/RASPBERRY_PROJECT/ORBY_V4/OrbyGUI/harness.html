@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><title>harness</title></head><body>
+<script>
+// Arnés de desarrollo, NO se commitea: window.orby falso con la copia real del PC.
+const noop = () => {};
+const cbs = {};
+window.orby = {
+  platform: 'electron',
+  sendCommand: async (c) => { console.log('[tx]', c); },
+  getDeviceInfo: async () => null, getStatus: async () => 'disconnected', reconnect: async () => {},
+  onConnected: (cb) => (cbs.connected = cb), onDisconnected: (cb) => (cbs.disconnected = cb),
+  onData: (cb) => (cbs.data = cb), onError: noop, onSearching: noop,
+  getMousePosition: async () => ({ x: 0, y: 0 }),
+  getConfig: async () => (await fetch('/.dev/config.json')).json(), setConfig: async () => {},
+  plugins: { list: async () => [], install: async () => null, uninstall: async () => {}, setEnabled: async () => {},
+    getSettings: async () => ({}), setSettings: async () => {}, test: async () => ({}), read: async () => ({ ok: false }), openFolder: noop },
+  autostart: { get: async () => true, set: async () => {} },
+  saveBackup: async () => null, loadBackup: async () => null, pickAppOrFile: async () => null,
+  listInstalledApps: async () => [],
+  recorder: { toggle: async () => {}, stop: async () => {}, status: async () => ({}), onState: noop },
+  foreground: { start: async () => {}, stop: async () => {}, current: async () => null, available: async () => true, onChange: noop, onError: noop },
+  updater: { get: async () => ({ status: 'idle', current: '1.0.11' }), check: async () => {}, install: async () => {}, ocupado: noop, onState: noop },
+  firmware: { get: async () => ({}), check: async () => ({}), update: async () => {}, cancel: async () => {}, onState: noop },
+  minimize: noop, maximize: noop, close: noop,
+};
+window.__harness = cbs;
+</script>
+<script type="module">
+const html = await (await fetch('/index.html')).text();
+const doc = new DOMParser().parseFromString(html, 'text/html');
+for (const s of doc.head.querySelectorAll('style')) document.head.appendChild(s.cloneNode(true));
+document.body.insertAdjacentHTML('beforeend', doc.body.innerHTML.replace(/<script[\s\S]*?<\/script>/g, ''));
+await import('/src/entry.js');
+document.dispatchEvent(new Event('DOMContentLoaded'));
+</script>
+</body></html>
