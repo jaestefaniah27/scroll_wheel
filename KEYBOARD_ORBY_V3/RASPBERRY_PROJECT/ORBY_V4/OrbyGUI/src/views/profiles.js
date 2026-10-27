@@ -58,7 +58,7 @@ import { getCurrentWindowInfo, keycodeOptions, escape } from './profiles/util.js
 
 // Subir las secuencias al teclado lo hace ahora macros-store.js, pero main.js
 // se lo sigue pidiendo a esta vista: era parte de su interfaz antes del corte.
-export { syncAllMacrosToDevice } from './profiles/macros-store.js';
+export { syncAllMacrosToDevice, syncMacroStore } from './profiles/macros-store.js';
 
 
 export function init() {

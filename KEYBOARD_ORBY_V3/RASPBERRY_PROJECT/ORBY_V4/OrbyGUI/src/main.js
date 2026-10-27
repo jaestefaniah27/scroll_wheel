@@ -356,7 +356,14 @@ async function onDeviceConnected(info) {
   // No bloquea el arranque: si el teclado lleva firmware con secuencias
   // propias, sube las que le falten (cubre un teclado recién reflasheado, cuya
   // Flash de secuencias está vacía aunque la app ya las tuviera guardadas).
-  profiles.syncAllMacrosToDevice?.().catch(() => {});
+  //
+  // Antes, la copia de las macros que guarda el teclado (firmware 4.7): si
+  // viene de otro PC, aquí se recuperan sus macros, y las secuencias que el
+  // teclado sabe tocar ya salen de la lista buena.
+  (profiles.syncMacroStore?.() ?? Promise.resolve(0))
+    .then((n) => { if (n) toast(`${n === 1 ? 'Recuperada 1 macro' : `Recuperadas ${n} macros`} del teclado`); })
+    .catch((err) => toast(`No se pudieron leer las macros del teclado: ${err.message}`, 'error'))
+    .finally(() => profiles.syncAllMacrosToDevice?.().catch(() => {}));
 
   // Qué firmware hay publicado para este teclado. No bloquea: si GitHub no
   // contesta, la tarjeta de Ajustes lo dirá y no pasa nada más.

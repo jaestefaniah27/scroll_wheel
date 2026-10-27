@@ -81,6 +81,12 @@ HID, pinout, pantallas) y `src/` (descriptores USB).
   se define en `tools/perfiles/biblioteca.py` y se genera a
   `OrbyGUI/src/profile-library.json`; la app los instala desde Perfiles → Biblioteca
   (`src/profile-library.js`). Ver `tools/perfiles/README.md`.
+- Las macros del PC (abrir apps, textos, grabaciones...) se guardan además en el
+  teclado (`include/macro_store.h`, comandos `MSTORE_*`, firmware 4.7): un bloque
+  opaco en dos bancos de 224 KB que la app escribe y lee (`src/web/macro-blob.mjs`).
+  Así otro PC sabe qué hace cada tecla de macro. El teclado no las ejecuta: solo
+  las guarda. La copia del teclado manda; la app junta y sube al conectar
+  (`syncMacroStore` en `views/profiles/macros-store.js`).
 - El dispatch de comandos serie está sobre la línea ~2180 de `main.cpp`: cadena de
   `strncmp(cmd, "...")`. Al añadir un comando, tócalo ahí **y** en `OrbyGUI/src/device.js`.
 
@@ -227,8 +233,11 @@ y se ven en la lista, pero **todavía no hay quién los ejecute**: devuelven un 
   prueba en el PC son las pantallas: `test_ui.cpp` compara `oled_ui.h` píxel a píxel
   con `tools/oled_ui/layout.py`, y `test_anim.cpp` comprueba que cada transición
   empieza y acaba exactamente donde debe (con una carpeta de argumento vuelca los
-  fotogramas para verlos). Todo entra en `tools/test/run.ps1`. La app sí los
-  tiene: 132 en `cargo test -p orby-core` y 3 ficheros en `npm test`.
+  fotogramas para verlos), y `test_macro_store.cpp` prueba el almacén de macros
+  sobre una Flash simulada, cortes de corriente incluidos. Todo entra en
+  `tools/test/run.ps1`. La app sí los tiene: 132 en `cargo test -p orby-core` y
+  los de `OrbyGUI/test/` (con Node 22, `node --test test/*.mjs`: el
+  `node --test test/` del `npm test` ya no acepta una carpeta).
 - **La app instalada no tiene consola.** Cuando no detecta el teclado, el rastro
   está en `%APPDATA%\OrbyGUI\orby.log` (`src-tauri/src/log.rs`). En desarrollo,
   `npm run tauri:dev` saca además la consola por el terminal.

@@ -18,6 +18,7 @@
 #include "hardware_oled.h"
 #include "oled_ui.h"
 #include "oled_anim.h"
+#include "macro_store.h"
 #include "oled_intro.h"
 #include "hid_hires.h"
 #include "hid_out.h"
@@ -440,11 +441,13 @@ static inline bool cur_scroll_invert() {
 // ==========================================
 // DISPOSICIÓN DE LA FLASH
 // ==========================================
-//   0 –  115 KB   el programa
+//   0 –  200 KB   el programa (con los iconos y la fuente de las pantallas)
 //        ...libre...
 //   1024 – 1536 KB  banco de iconos: 64 tramos (16 perfiles × 4 páginas) de 8 KB
 //   1536 – 1560 KB  ajustes: perfiles con sus páginas y las máscaras de iconos
+//   1560 – 1592 KB  secuencias que reproduce el propio teclado
 //        ...libre...
+//   1600 – 2048 KB  copia de las macros del PC, dos bancos de 224 KB (macro_store.h)
 //
 // El banco acaba justo donde empiezan los ajustes. Está debajo y no encima
 // porque encima no cabía: 1536 + 512 se sale de los 2 MB del módulo.
@@ -730,6 +733,48 @@ static void load_macros() {
         memset(macros, 0, sizeof(macros));
     }
 }
+
+// ==========================================
+// ALMACÉN DE LAS MACROS DEL PC (ver include/macro_store.h)
+// ==========================================
+static_assert(FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES <= MStore::OFFSET,
+              "El almacén de macros pisa las secuencias del teclado");
+static_assert(MStore::OFFSET + 2 * MStore::BANK <= PICO_FLASH_SIZE_BYTES,
+              "El almacén de macros se sale de la Flash del módulo");
+static_assert(MStore::PAGE == FLASH_PAGE_SIZE && MStore::SECTOR == FLASH_SECTOR_SIZE,
+              "macro_store.h asume la página y el sector de la Flash del RP2040");
+
+static const uint8_t* mstore_read(uint32_t off) {
+    return (const uint8_t*)(XIP_BASE + off);
+}
+
+// Las dos operaciones de Flash con Core 1 apartado, como write_oled_slice.
+static void mstore_erase(uint32_t off, uint32_t len) {
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_erase(off, len);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+}
+
+static void mstore_program(uint32_t off, const uint8_t* data, uint32_t len) {
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_program(off, data, len);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+}
+
+// El almacén se revisa al arrancar, antes de que exista el USB: ahí solo toca
+// alimentar el perro guardián.
+static void mstore_idle() {
+    if (tud_inited()) tud_task();
+    watchdog_update();
+}
+
+static MStore::Store mstore({ mstore_read, mstore_erase, mstore_program, mstore_idle });
 
 // ==========================================
 // ACCESO A LOS ICONOS
@@ -2364,7 +2409,9 @@ void process_command(const char* cmd) {
         // el menú físico de perfiles (MODE_MENU_PERF).
         // HOSTAPP=1: este firmware entiende HOST_APP y tacha en las pantallas las
         // teclas que necesitan la app de PC mientras no esté anunciada.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MODE=%s\n",
+        // MSTORE=1: guarda una copia de las macros del PC (MSTORE_*), para que
+        // otro ordenador sepa qué hace cada tecla de macro.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2635,6 +2682,82 @@ void process_command(const char* cmd) {
         }
         page_of((uint8_t)idx, cmd_page((uint8_t)idx)).rotary[slot] = { (uint8_t)type, (uint8_t)mod, (uint8_t)key };
         cdc_printf("ROTARY:OK:%d:%d\n", idx, slot);
+        return;
+    }
+
+    // ---------- Almacén de las macros del PC (include/macro_store.h) ----------
+    // MSTORE_INFO → MSTORE:INFO:<longitud>:<crc>:<máximo>. Longitud 0 = vacío.
+    if (strcmp(cmd, "MSTORE_INFO") == 0) {
+        cdc_printf("MSTORE:INFO:%lu:%08lx:%lu\n", (unsigned long)mstore.len(),
+                   (unsigned long)mstore.crc(), (unsigned long)MStore::MAX);
+        return;
+    }
+
+    // MSTORE_GET:<desde>:<cuántos> → MSTORE:DATA:<desde>:<hex>
+    if (strncmp(cmd, "MSTORE_GET:", 11) == 0) {
+        int off = 0, n = 0;
+        const char* p = next_field(cmd + 11, &off);
+        p = next_field(p, &n);
+        if (!p || !mstore.data() || off < 0 || n <= 0 || n > (int)MStore::CHUNK
+            || (uint32_t)off >= mstore.len()) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        if ((uint32_t)(off + n) > mstore.len()) n = (int)(mstore.len() - (uint32_t)off);
+        const uint8_t* src = mstore.data() + off;
+        static const char HEX[] = "0123456789abcdef";
+        char line[24 + 2 * MStore::CHUNK];
+        int len = snprintf(line, sizeof(line), "MSTORE:DATA:%d:", off);
+        for (int i = 0; i < n; i++) {
+            line[len++] = HEX[src[i] >> 4];
+            line[len++] = HEX[src[i] & 0x0F];
+        }
+        line[len++] = '\n';
+        cdc_write_all(line, (uint32_t)len);
+        return;
+    }
+
+    // MSTORE_BEGIN:<longitud>:<crc en hex> — prepara el banco libre.
+    if (strncmp(cmd, "MSTORE_BEGIN:", 13) == 0) {
+        char* end = nullptr;
+        const unsigned long len = strtoul(cmd + 13, &end, 10);
+        if (!end || *end != ':') { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        const unsigned long crc = strtoul(end + 1, nullptr, 16);
+        if (mstore.begin((uint32_t)len, (uint32_t)crc) != MStore::OK) {
+            cdc_printf("ERR:MSTORE_SIZE:%lu\n", (unsigned long)MStore::MAX);
+            return;
+        }
+        cdc_printf("MSTORE:READY\n");
+        return;
+    }
+
+    // MSTORE_DATA:<desde>:<hex>
+    if (strncmp(cmd, "MSTORE_DATA:", 12) == 0) {
+        int off = 0;
+        const char* p = next_field(cmd + 12, &off);
+        uint8_t buf[MStore::CHUNK];
+        uint32_t n = 0;
+        while (p && p[0] && p[1] && n < sizeof(buf)) {
+            const int hi = hex_nibble(p[0]), lo = hex_nibble(p[1]);
+            if (hi < 0 || lo < 0) break;
+            buf[n++] = (uint8_t)((hi << 4) | lo);
+            p += 2;
+        }
+        if (!p || off < 0 || mstore.write((uint32_t)off, buf, n) != MStore::OK) {
+            cdc_printf("ERR:MSTORE_ORDER:%lu\n", (unsigned long)mstore.written());
+            return;
+        }
+        cdc_printf("MSTORE:ACK:%lu\n", (unsigned long)mstore.written());
+        return;
+    }
+
+    // MSTORE_END — solo si lo escrito cuadra pasa a ser la copia vigente.
+    if (strcmp(cmd, "MSTORE_END") == 0) {
+        uint32_t crc = 0;
+        const MStore::Result r = mstore.end(&crc);
+        if (r == MStore::OK)           cdc_printf("MSTORE:OK:%08lx\n", (unsigned long)crc);
+        else if (r == MStore::ERR_CRC) cdc_printf("ERR:MSTORE_CRC:%08lx\n", (unsigned long)crc);
+        else                           cdc_printf("ERR:MSTORE_SHORT:%lu\n", (unsigned long)mstore.written());
         return;
     }
 
@@ -2918,6 +3041,7 @@ int main() {
     // Cargar configuración de Flash
     load_settings();
     load_macros();
+    mstore.scan();
 
     // Si venimos de un reinicio por watchdog, algo se colgó: nada de intro, a
     // dejar el teclado operativo cuanto antes.

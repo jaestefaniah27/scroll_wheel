@@ -11,7 +11,7 @@ if (-not (Get-Command g++ -ErrorAction SilentlyContinue)) {
 
 $failed = $false
 
-foreach ($t in @('test_hid_out', 'test_wheel', 'test_ui', 'test_anim')) {
+foreach ($t in @('test_hid_out', 'test_wheel', 'test_ui', 'test_anim', 'test_macro_store')) {
     Write-Host "Compilando $t..." -ForegroundColor Gray
     & g++ -O1 -Wall -Wextra -Wno-unused-function -I"$here" -I"$here\..\..\include" `
           -o "$here\$t.exe" "$here\$t.cpp"

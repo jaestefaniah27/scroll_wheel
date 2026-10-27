@@ -11,7 +11,8 @@ import * as variants from '../../variants.js';
 import { view, currentProfile, selectedKeyIndex, isActiveView, currentMacroId,
          rerender } from './view-state.js';
 import { macroById, nextMacroId, ensureMacro, savePCMacros, removeMacro, allMacros,
-         loadPCMacros, isRecordingMacro, isResetMacro, isRecordOrResetMacro } from './macros-store.js';
+         loadPCMacros, isRecordingMacro, isResetMacro, isRecordOrResetMacro,
+         scheduleStoreUpload } from './macros-store.js';
 import { applyKeymap } from './keys.js';
 
 // --- Pestaña "Grabar": capturar una operación y repetirla -------------------
@@ -263,6 +264,9 @@ export async function onRecorderState({ id, phase }) {
     // El proceso principal ha escrito los eventos en la configuración: hay que
     // releerla antes de volver a guardarla desde aquí, o se perdería.
     await loadPCMacros();
+    // La grabación nueva no ha pasado por savePCMacros: se apunta a mano para
+    // que llegue también a la copia del teclado.
+    scheduleStoreUpload();
     await showKeyStatus(id, phase === 'saved' ? 'OK' : 'VACIO');
     restoreTimer = setTimeout(async () => {
       recordPhase = { id: null, phase: 'idle' };
@@ -275,6 +279,7 @@ export async function onRecorderState({ id, phase }) {
   } else if (phase === 'reset') {
     // Se ha pulsado SUPER + la tecla: lo grabado se ha ido y vuelve a RECORD.
     await loadPCMacros();
+    scheduleStoreUpload();
     recordPhase = { id: null, phase: 'idle' };
     screenBackup = null;
     await refreshRecordIcons(id);
@@ -325,6 +330,7 @@ export async function toggleRecording() {
     if (!confirm('Se sustituirá la operación grabada en esta tecla.\n\n¿Grabar de nuevo?')) return;
     m.events = [];
     await window.orby.setConfig({ macros: allMacros() });
+    scheduleStoreUpload();
     await refreshRecordIcons(m.id);
     rerender();
   }

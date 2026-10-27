@@ -8,10 +8,11 @@
 // distinguen por lo que llevan dentro.
 
 import * as device from '../../device.js';
-import { state, markDirty } from '../../store.js';
+import { state, markDirty, notify } from '../../store.js';
 import { MACRO_MODIFIER, ROTARY_TYPES, describeAction, describeRotary } from '../../hid-keys.js';
 import * as plugins from '../../plugins.js';
 import * as compat from '../../compat.js';
+import { encode, decode, merge, canonical, crc32 } from '../../web/macro-blob.mjs';
 
 // --- Macros (secuencias ejecutadas en el PC) --------------------------------
 // Viven en la configuración local (window.orby.getConfig/setConfig), no en el
@@ -48,6 +49,7 @@ export async function loadPCMacros() {
 export function savePCMacros(id) {
   window.orby.setConfig({ macros: pcMacros });
   if (id !== undefined) syncMacroToDevice(id);
+  scheduleStoreUpload();
 }
 
 export function macroById(id) {
@@ -374,4 +376,133 @@ export function keyNeedsApp(action) {
 export function rotaryNeedsApp(action) {
   if (!action || action.type !== ROTARY_TYPES.KEY) return false;
   return keyNeedsApp(action);
+}
+
+
+// --- Copia de las macros en el propio teclado --------------------------------
+// La tecla de una macro solo guarda su id; lo que hace la macro estaba solo en
+// la configuración de ESTE PC. Enchufado en otro ordenador, el teclado llevaba
+// «la macro 7» y nadie sabía qué era. Desde el firmware 4.7 el teclado guarda
+// además una copia de todas las definiciones (MSTORE_* en main.cpp), así que la
+// app de cualquier PC las recupera al conectar. Las sigue ejecutando el PC: el
+// teclado solo las guarda.
+//
+// Qué copia es la buena: la del teclado. Es la que viaja, y es la que sus
+// teclas tienen asignada. Al conectar se juntan las dos (web/macro-blob.mjs,
+// merge) y, si el PC tenía algo que el teclado no, se le sube.
+//
+// En la configuración del PC se apunta el CRC de lo último que se ha leído o
+// escrito en el teclado (`macroStore.crc`): si al conectar sigue igual, no hay
+// nada que bajar. Y `pending` dice que hay cambios del PC sin subir, para no
+// perderlos si se desenchufa antes de que se suban.
+const STORE_CHUNK = 192;           // == MSTORE_CHUNK en main.cpp
+const STORE_UPLOAD_DELAY_MS = 2000; // agrupa ráfagas de cambios en una escritura
+
+let storeTimer = null;
+let storeRunning = null;
+let storeAgain = false;
+
+function storeSupported() {
+  return state.connected && compat.supports(state.deviceInfo, 'macroStore');
+}
+
+async function storeState() {
+  try {
+    const cfg = await window.orby.getConfig();
+    return cfg?.macroStore || {};
+  } catch {
+    return {};
+  }
+}
+
+async function setStoreState(patch) {
+  const next = { ...(await storeState()), ...patch };
+  await window.orby.setConfig({ macroStore: next });
+}
+
+const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+// Se llama en cada cambio de macro. Apunta que hay algo por subir al momento
+// (por si se desenchufa) y sube un par de segundos después del último cambio.
+export function scheduleStoreUpload() {
+  setStoreState({ pending: true }).catch(() => {});
+  clearTimeout(storeTimer);
+  storeTimer = setTimeout(() => { uploadStore().catch(() => { /* queda pendiente */ }); },
+                          STORE_UPLOAD_DELAY_MS);
+}
+
+// Escribe en el teclado la copia de todas las macros de este PC. Si llega otro
+// cambio mientras se escribe, se vuelve a escribir al acabar: el teclado tiene
+// que acabar con la última versión, no con la que había al empezar.
+export async function uploadStore() {
+  if (!storeSupported()) return;
+  if (storeRunning) {
+    storeAgain = true;
+    return storeRunning;
+  }
+  storeRunning = (async () => {
+    do {
+      storeAgain = false;
+      const bytes = await encode(pcMacros);
+      const crc = crc32(bytes);
+      const info = await device.mstoreInfo();
+      if (info.len === bytes.length && info.crc === crc) {
+        await setStoreState({ crc, pending: false });
+        continue;
+      }
+      if (bytes.length > info.max) {
+        throw new Error(`las macros ocupan ${Math.ceil(bytes.length / 1024)} KB y en el teclado caben `
+                        + `${Math.floor(info.max / 1024)} KB`);
+      }
+      await device.mstoreBegin(bytes.length, crc);
+      for (let off = 0; off < bytes.length; off += STORE_CHUNK) {
+        await device.mstoreData(off, toHex(bytes.subarray(off, off + STORE_CHUNK)));
+      }
+      await device.mstoreEnd();
+      await setStoreState({ crc, pending: false });
+    } while (storeAgain);
+  })().finally(() => { storeRunning = null; });
+  return storeRunning;
+}
+
+async function readStore(len) {
+  const out = new Uint8Array(len);
+  for (let off = 0; off < len; off += STORE_CHUNK) {
+    out.set(await device.mstoreGet(off, Math.min(STORE_CHUNK, len - off)), off);
+  }
+  return out;
+}
+
+// Al conectar: baja lo que tenga el teclado si ha cambiado desde la última vez,
+// lo junta con lo del PC y sube lo que falte. Devuelve cuántas macros han
+// llegado o cambiado desde el teclado.
+export async function syncMacroStore() {
+  if (!storeSupported()) return 0;
+  await loadPCMacros();
+  const saved = await storeState();
+  const info = await device.mstoreInfo();
+  let recovered = 0;
+  let pending = !!saved.pending;
+
+  if (info.len > 0 && info.crc !== saved.crc) {
+    const bytes = await readStore(info.len);
+    if (crc32(bytes) !== info.crc) throw new Error('la copia de las macros llegó dañada del teclado');
+    const fromKeyboard = await decode(bytes);
+    const { macros, changed } = merge(pcMacros, fromKeyboard);
+    if (changed) {
+      pcMacros = macros;
+      await window.orby.setConfig({ macros: pcMacros });
+      recovered = changed;
+      notify();
+    }
+    // Si el PC tenía macros que el teclado no, la copia del teclado se queda
+    // corta: hay que subir la unión.
+    if (canonical(macros) !== canonical(fromKeyboard)) pending = true;
+    await setStoreState({ crc: info.crc, pending });
+  } else if (info.len === 0 && pcMacros.length) {
+    pending = true;   // teclado recién estrenado o reflasheado
+  }
+
+  if (pending) await uploadStore();
+  return recovered;
 }

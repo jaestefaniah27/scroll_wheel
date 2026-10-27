@@ -175,6 +175,41 @@ export const macroTrunc = (id, count) =>
 export const macroClear = (id) =>
   request(`MACRO_CLEAR:${id}`, { match: (l) => l === `MACRO:CLEARED:${id}`, fail: REJECTED });
 
+// --- Almacén de las macros del PC (MSTORE_*, firmware 4.7) ------------------
+// Una copia de lo que hace cada macro, guardada en el teclado para que otro PC
+// la recupere. Para el firmware es un bloque opaco: el formato está en
+// web/macro-blob.mjs. Las respuestas de error se aceptan en el `match` para
+// fallar al momento en vez de esperar a que la petición caduque.
+function mstoreRequest(command, prefix, timeout = 4000) {
+  return request(command, {
+    timeout,
+    match: (l) => l.startsWith(prefix) || l.startsWith('ERR:'),
+  }).then((line) => {
+    if (line.startsWith('ERR:')) throw new Error(line.slice(4));
+    return line;
+  });
+}
+
+export async function mstoreInfo() {
+  const [len, crc, max] = (await mstoreRequest('MSTORE_INFO', 'MSTORE:INFO:')).slice(12).split(':');
+  return { len: parseInt(len, 10) || 0, crc: parseInt(crc, 16) >>> 0, max: parseInt(max, 10) || 0 };
+}
+
+export async function mstoreGet(offset, count) {
+  const line = await mstoreRequest(`MSTORE_GET:${offset}:${count}`, `MSTORE:DATA:${offset}:`);
+  const hex = line.slice(`MSTORE:DATA:${offset}:`.length);
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+}
+
+// Borrar el banco antes de escribir puede llevar un par de segundos.
+export const mstoreBegin = (len, crc) =>
+  mstoreRequest(`MSTORE_BEGIN:${len}:${(crc >>> 0).toString(16)}`, 'MSTORE:READY', 15000);
+export const mstoreData = (offset, hex) =>
+  mstoreRequest(`MSTORE_DATA:${offset}:${hex}`, 'MSTORE:ACK:');
+export const mstoreEnd = () => mstoreRequest('MSTORE_END', 'MSTORE:OK:', 8000);
+
 // Los pasos que el teclado tiene guardados de una secuencia.
 //
 // Hace falta para no reescribirla si ya es la que toca: al conectar se
