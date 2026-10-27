@@ -1373,6 +1373,13 @@ static void next_page() {
     set_active_page((uint8_t)((active_page + 1) % count));
 }
 
+// SUPER + pulsación corta de menú: la misma vuelta, hacia atrás.
+static void prev_page() {
+    uint8_t count = profiles[active_profile_idx].page_count;
+    if (count <= 1) return;
+    set_active_page((uint8_t)((active_page + count - 1) % count));
+}
+
 // Añade una página al perfil, copiando la actual para no partir de un lienzo en
 // blanco. Devuelve false si ya está en el tope.
 static bool page_add(uint8_t profile, bool copy_current) {
@@ -3684,6 +3691,10 @@ int main() {
         }
 
         // --- TECLA DE MENÚ: CORTA CAMBIA DE PÁGINA, LARGA ABRE LOS PERFILES ---
+        // Con SUPER sujeta, lo mismo pero al revés o más arriba: la corta
+        // retrocede de página y la larga abre el menú principal (ajustes). Se
+        // mira SUPER en el momento en que se decide, no al empezar: da igual
+        // en qué orden se pongan los dedos mientras estén las dos a la vez.
         bool menu_key_pressed = key_stable[KEY_IDX_MENU];
         static uint32_t menu_hold_start = 0;
         static bool     menu_long_fired = false;
@@ -3691,6 +3702,19 @@ int main() {
             if (menu_hold_start == 0) {
                 menu_hold_start = now;
                 menu_long_fired = false;
+            } else if (!menu_long_fired && now - menu_hold_start >= 150 && key_stable[KEY_IDX_SUPER]) {
+                // SUPER + menú mantenido: el menú principal, que se queda
+                // abierto al soltar (como al abrirlo con su tecla de siempre).
+                // La tecla de menú se da por ya pulsada: si no, el bucle de las
+                // teclas vería ahora su flanco, dentro del menú, como una
+                // pulsación nueva.
+                menu_long_fired = true;
+                activity_detected = true;
+                current_mode = MODE_MENU_MAIN;
+                selected_menu_idx = 0;
+                last_key_state[KEY_IDX_MENU] = true;
+                push_system_refresh();
+                cdc_printf("MODE:MENU\n");
             } else if (!menu_long_fired && now - menu_hold_start >= 150) {
                 menu_long_fired = true;
                 activity_detected = true;
@@ -3712,6 +3736,10 @@ int main() {
                 while (!gpio_get(key_pins[KEY_IDX_MENU])) {
                     tud_task();
                     watchdog_update(); // el usuario puede tenerla apretada un buen rato
+                    // El bucle principal no corre mientras tanto: sin esto la
+                    // app no se enteraba de que el menú se había abierto, y el
+                    // dashboard saltaba al perfil nuevo sin animación.
+                    mirror_pump(0);
 
                     if (picked_ki < 0) {
                         for (uint8_t s = 1; s <= PERF_MENU_SCREENS; s++) {
@@ -3742,6 +3770,7 @@ int main() {
                 if (picked_ki >= 0) {
                     while (!gpio_get(key_pins[picked_ki])) {
                         tud_task();
+                        mirror_pump(0);
                         sleep_ms(5);
                     }
                 } else {
@@ -3768,7 +3797,8 @@ int main() {
             if (menu_hold_start != 0 && !menu_long_fired && current_mode == MODE_NORMAL) {
                 if ((uint32_t)(now - menu_hold_start) >= MENU_TAP_MIN_MS) {
                     activity_detected = true;
-                    next_page();
+                    if (key_stable[KEY_IDX_SUPER]) prev_page();
+                    else next_page();
                 } else {
                     menu_tap_glitches++;
                 }

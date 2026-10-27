@@ -56,9 +56,14 @@ function setLive(v) {
 }
 
 // --- Pintar -------------------------------------------------------------------
-// Un canvas de 72x40 por pantalla, ampliado por CSS con image-rendering:
-// pixelated. Es lo más barato que hay: un putImageData por pantalla que
-// cambia, y el navegador escala sin suavizar.
+// Cada canvas mide lo mismo que su pantalla en píxeles reales del monitor, y
+// cada píxel del OLED se pinta como un rectángulo ajustado a esa rejilla.
+//
+// Antes era un canvas de 72x40 ampliado por CSS con image-rendering:
+// pixelated. Con la ventana estrecha la pantalla de la réplica mide menos de
+// 72 píxeles de ancho, y el escalado sin suavizar se come columnas enteras: el
+// trazo de un píxel de la P de «PLAY» desaparecía según el tamaño. Aquí cada
+// píxel encendido ocupa al menos uno de pantalla, así que ninguno se pierde.
 let onRGB = [214, 246, 255];
 
 export function setPixelColor(hex) {
@@ -71,29 +76,59 @@ function paint(i) {
   const cv = canvases[i];
   if (!cv) return;
   const ctx = cv.getContext('2d');
-  const img = ctx.createImageData(A.W, A.H);
-  const d = img.data;
+  const sx = cv.width / A.W, sy = cv.height / A.H;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = `rgb(${onRGB[0]},${onRGB[1]},${onRGB[2]})`;
   const src = shown[i];
   // El negativo de la tecla sujeta va por hardware en el SSD1306: invierte el
   // panel entero, encima de lo que esté dibujando la animación.
   const inv = displaysOn && ((inversions >> i) & 1) === 1;
+  const edge = (v, s) => Math.round(v * s);
   for (let y = 0; y < A.H; y++) {
     const row = (y >> 3) * A.W, bit = 1 << (y & 7);
-    for (let x = 0; x < A.W; x++) {
-      let on = displaysOn && (src[row + x] & bit) !== 0;
-      if (inv) on = !on;
-      const k = (y * A.W + x) * 4;
-      if (on) { d[k] = onRGB[0]; d[k + 1] = onRGB[1]; d[k + 2] = onRGB[2]; d[k + 3] = 255; }
-      // Apagado es transparente: debajo está el negro del cristal, y así el
-      // brillo de los píxeles encendidos no tiñe el fondo.
+    const y0 = edge(y, sy), h = Math.max(1, edge(y + 1, sy) - y0);
+    // Por tramos seguidos: un rectángulo por racha de píxeles encendidos, no
+    // uno por píxel. Apagado es transparente: debajo está el negro del
+    // cristal, y así el brillo de los encendidos no tiñe el fondo.
+    let x = 0;
+    while (x < A.W) {
+      const lit = (k) => displaysOn && (((src[row + k] & bit) !== 0) !== inv);
+      if (!lit(x)) { x++; continue; }
+      let x1 = x + 1;
+      while (x1 < A.W && lit(x1)) x1++;
+      const x0 = edge(x, sx);
+      ctx.fillRect(x0, y0, Math.max(1, edge(x1, sx) - x0), h);
+      x = x1;
     }
   }
-  ctx.putImageData(img, 0, 0);
 }
 
+// El tamaño del lienzo sigue al de la pantalla en la réplica, que escala con la
+// ventana.
+const sizer = typeof ResizeObserver === 'function' ? new ResizeObserver((entries) => {
+  for (const e of entries) {
+    const cv = e.target;
+    const dpr = window.devicePixelRatio || 1;
+    const box = e.devicePixelContentBoxSize?.[0];
+    const w = box ? box.inlineSize : Math.round(e.contentRect.width * dpr);
+    const h = box ? box.blockSize : Math.round(e.contentRect.height * dpr);
+    if (w > 0 && h > 0 && (cv.width !== w || cv.height !== h)) {
+      cv.width = w;
+      cv.height = h;
+      paint(canvases.indexOf(cv));
+    }
+  }
+}) : null;
+
 export function attach(list) {
+  sizer?.disconnect();
   canvases = list;
-  for (const cv of canvases) { if (cv) { cv.width = A.W; cv.height = A.H; } }
+  for (const cv of canvases) {
+    if (!cv) continue;
+    cv.width = A.W;
+    cv.height = A.H;
+    sizer?.observe(cv);
+  }
   for (let i = 0; i < A.N; i++) paint(i);
 }
 
