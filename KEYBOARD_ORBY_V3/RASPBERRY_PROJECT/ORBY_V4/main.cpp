@@ -1565,6 +1565,9 @@ struct MacroPlayer {
     // MSTEP_LOOP con a = 1: la vuelta solo sigue mientras la tecla que la
     // lanzó siga hundida. La suelta llega por macro_key_released.
     bool     hold_released;
+
+    // Cortada a medio clic del ratón relativo: hay que soltar el botón.
+    bool     rel_release_needed;
 };
 static MacroPlayer macro_player = {};
 
@@ -1612,6 +1615,7 @@ static void macro_player_start(uint8_t id) {
     macro_player.toggles = 0;
     macro_player.ev_ready = false;
     macro_player.hold_released = false;
+    macro_player.rel_release_needed = false;
 }
 
 // Corta la secuencia en curso. No se para en seco: lo que tenga hundido (una
@@ -1619,6 +1623,11 @@ static void macro_player_start(uint8_t id) {
 // se suelta antes, en MPH_STOPPING, o se quedaría pegado en el PC.
 static void macro_player_stop() {
     if (!macro_player.active) return;
+    const uint8_t ph = macro_player.phase;
+    macro_player.rel_release_needed =
+        (ph == MPH_CLICK_PRESSED || ph == MPH_CLICK_HOLD || ph == MPH_CLICK_RELEASED);
+    // Un movimiento a medias se descarta; la suelta del clic va aparte, abajo.
+    macro_player.report_pending = false;
     macro_player.phase = MPH_STOPPING;
     macro_player.deadline = to_ms_since_boot(get_absolute_time());
 }
@@ -1855,6 +1864,11 @@ static void macro_player_tick(uint32_t now) {
         // Primero se deja de mantener nada; después, si el puntero absoluto
         // tenía un botón hundido, se suelta en su sitio.
         HidOut::macro_release_all();
+        if (mp.rel_release_needed) {
+            macro_queue_report(0, 0, 0);
+            if (!macro_try_send_report()) return;
+            mp.rel_release_needed = false;
+        }
         if (mp.abs_buttons) { macro_queue_abs(0, mp.abs_x, mp.abs_y); macro_try_send_abs(); return; }
         if (mp.toggles && HidOut::idle()) {
             if (mp.toggles & TOGGLE_CAPS) HidOut::tap(0, HID_KEY_CAPS_LOCK);
@@ -3950,14 +3964,14 @@ int main() {
                 last_key_state[i] = is_pressed;
                 activity_detected = true;
 
-                // Con el PC suspendido, una tecla lo despierta (remote wakeup,
-                // ver el descriptor de configuración) y no hace nada más: la
-                // pulsación que despierta no debe escribir nada al volver.
-                // Solo las teclas: la rueda y los encoders se rozan sin querer.
-                if (tud_suspended()) {
-                    if (is_pressed) tud_remote_wakeup();
-                    continue;
-                }
+                // Con el bus suspendido, una tecla lo despierta (remote wakeup,
+                // ver el descriptor de configuración). Solo las teclas: la rueda
+                // y los encoders se rozan sin querer. La pulsación no se tira:
+                // Windows también suspende el USB por inactividad con el PC
+                // despierto, y ahí perderla sería comerse la primera letra. Lo
+                // que no puede salir ahora (tud_hid_ready es false) sale al
+                // reanudar.
+                if (is_pressed && tud_suspended()) tud_remote_wakeup();
 
                 if (current_mode == MODE_NORMAL) {
                     // El realce de la pantalla ya no se toca aquí: se recalcula
