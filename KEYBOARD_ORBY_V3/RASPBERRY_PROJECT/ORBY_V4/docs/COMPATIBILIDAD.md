@@ -23,6 +23,7 @@ commit, más este documento.
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
 |---|---|---|
+| **4.7** | Lo que antes solo hacía el PC, en el propio teclado (bandera `NATIVE=1`): escribir texto, multimedia dentro de una secuencia, suspender por HID *System Control*, colocar el ratón con un puntero **absoluto**, reproducir grabaciones y repetir en bucle. Pool de datos en Flash para textos y grabaciones (`POOL=<sectores>`, comandos `POOL_HASH`/`POOL_BEGIN`/`POOL_DATA`/`POOL_COMMIT`). Lee los LEDs del host (Bloq Mayús, Bloq Num). Una tecla despierta al PC suspendido (*remote wakeup*). Arregla el uso HID de la calculadora (`0x0192`). **Cambia el descriptor USB**: Windows lo reenumera al flashear | La primera que traiga `src/native/` (1.1.0) |
 | **4.6** | Sin funciones nuevas. Arregla el antirrebote de las teclas, que era por bloqueo y daba por buena una pulsación entera a partir de dos picos de ruido: en la tecla de menú eso salía como páginas pasando solas sin parar. Añade `STATE:MENUGLITCH:<n>` a `GET_STATE`, el contador de pulsos descartados por demasiado cortos | Cualquiera |
 | **4.5** | Comando `HOST_APP:<0\|1>` y bandera `HOSTAPP=1`: el teclado tacha con una barra diagonal las pantallas de las teclas que solo puede ejecutar la app de PC mientras esta no esté anunciada | OrbyGUI 0.4.x o posterior |
 | **4.4** | Icono propio por perfil, visible en el menú de perfiles del teclado | OrbyGUI 0.4.x o posterior |

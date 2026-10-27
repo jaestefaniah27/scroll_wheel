@@ -109,6 +109,21 @@ if not mig:
     errors.append('no veo migrate_oled_bank() seguido de save_settings(): '
                   'si se graban los ajustes antes de copiar, se pierden los iconos')
 
+# 7. Secuencias y pool de datos: uno detras de otro, detras de los ajustes, y
+#    sin salirse de la Flash. El pool se escribe sector a sector, asi que tiene
+#    que empezar alineado.
+MACROS_SECT = define('FLASH_MACROS_SECTORS')
+POOL_SECT   = define('POOL_SECTORS')
+macros_off  = SETTINGS_OFFSET + SETTINGS_BYTES
+pool_off    = macros_off + MACROS_SECT * SECTOR
+pool_end    = pool_off + POOL_SECT * SECTOR
+print('macros  : %d - %d KB' % (macros_off // K, pool_off // K))
+print('pool    : %d - %d KB (%d sectores)' % (pool_off // K, pool_end // K, POOL_SECT))
+if pool_off % SECTOR:
+    errors.append('el pool no empieza alineado a sector')
+if pool_end > FLASH_SIZE:
+    errors.append('el pool se sale de los 2 MB (acaba en %d KB)' % (pool_end // K))
+
 if errors:
     print()
     for e in errors:

@@ -46,6 +46,7 @@ enum {
 // dos independientes: el host puede activar la alta resolución en un eje y no
 // en el otro.
 volatile uint8_t g_hires_multiplier = 0;
+volatile uint8_t g_host_leds = 0;
 volatile uint8_t g_hires_pan        = 0;
 
 //--------------------------------------------------------------------+
@@ -168,10 +169,49 @@ uint8_t const * tud_descriptor_device_cb(void) {
     0xC0,              /*   End Collection                      */ \
     0xC0               /* End Collection                        */
 
+// Puntero absoluto, como el de las tabletas USB de las máquinas virtuales.
+// Existe porque con el ratón relativo no hay forma de llevar el cursor a un
+// punto exacto: Windows multiplica cada desplazamiento por la "velocidad del
+// puntero" del usuario, que el teclado no puede leer. Las coordenadas
+// absolutas no pasan por ese multiplicador ni por la aceleración.
+//
+// Es una colección de aplicación aparte, así que Windows lo ve como un
+// segundo ratón: sus botones no se mezclan con los del relativo.
+#define ORBY_HID_REPORT_DESC_ABS_POINTER \
+    0x05, 0x01,        /* Usage Page (Generic Desktop)          */ \
+    0x09, 0x02,        /* Usage (Mouse)                         */ \
+    0xA1, 0x01,        /* Collection (Application)              */ \
+    0x85, REPORT_ID_ABS, /*   Report ID                         */ \
+    0x09, 0x01,        /*   Usage (Pointer)                     */ \
+    0xA1, 0x00,        /*   Collection (Physical)               */ \
+    0x05, 0x09,        /*     Usage Page (Button)               */ \
+    0x19, 0x01,        /*     Usage Minimum (1)                 */ \
+    0x29, 0x03,        /*     Usage Maximum (3)                 */ \
+    0x15, 0x00,        /*     Logical Minimum (0)               */ \
+    0x25, 0x01,        /*     Logical Maximum (1)               */ \
+    0x95, 0x03,        /*     Report Count (3)                  */ \
+    0x75, 0x01,        /*     Report Size (1)                   */ \
+    0x81, 0x02,        /*     Input (Data,Var,Abs)              */ \
+    0x95, 0x01,        /*     Report Count (1)                  */ \
+    0x75, 0x05,        /*     Report Size (5)                   */ \
+    0x81, 0x03,        /*     Input (Const) -> relleno a 1 byte */ \
+    0x05, 0x01,        /*     Usage Page (Generic Desktop)      */ \
+    0x09, 0x30,        /*     Usage (X)                         */ \
+    0x09, 0x31,        /*     Usage (Y)                         */ \
+    0x15, 0x00,        /*     Logical Minimum (0)               */ \
+    0x26, 0xFF, 0x7F,  /*     Logical Maximum (32767)           */ \
+    0x75, 0x10,        /*     Report Size (16)                  */ \
+    0x95, 0x02,        /*     Report Count (2)                  */ \
+    0x81, 0x02,        /*     Input (Data,Var,Abs)              */ \
+    0xC0,              /*   End Collection                      */ \
+    0xC0               /* End Collection                        */
+
 uint8_t const desc_hid_report[] = {
     TUD_HID_REPORT_DESC_KEYBOARD( HID_REPORT_ID(REPORT_ID_KEYBOARD) ),
     ORBY_HID_REPORT_DESC_MOUSE_HIRES,
-    TUD_HID_REPORT_DESC_CONSUMER( HID_REPORT_ID(REPORT_ID_CONSUMER) )
+    TUD_HID_REPORT_DESC_CONSUMER( HID_REPORT_ID(REPORT_ID_CONSUMER) ),
+    TUD_HID_REPORT_DESC_SYSTEM_CONTROL( HID_REPORT_ID(REPORT_ID_SYSTEM) ),
+    ORBY_HID_REPORT_DESC_ABS_POINTER
 };
 
 uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance) {
@@ -199,7 +239,10 @@ enum {
 
 uint8_t const desc_configuration[] = {
     // Config number, interface count, string index, total length, attribute, power in mA
-    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 500),
+    // Remote wakeup: deja que una tecla despierte al PC suspendido. Sin este
+    // atributo Windows ni ofrece "Permitir que este dispositivo reactive el
+    // equipo", y el teclado no tiene forma de sacarlo de la suspensión.
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
 
     // Interface number, string index, EP notification address and size, EP data address (out, in) and size.
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, CFG_TUD_CDC_EP_BUFSIZE),
@@ -300,7 +343,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
     (void) instance;
 
-    if (report_type != HID_REPORT_TYPE_FEATURE || bufsize == 0) return;
+    if (bufsize == 0) return;
 
     uint8_t id = report_id;
     uint8_t const* data = buffer;
@@ -312,6 +355,15 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
         data++;
         len--;
     }
+
+    // LEDs del teclado: Windows los manda a todos los teclados a la vez cada
+    // vez que cambian, así que esto sigue al Bloq Mayús aunque se pulse en otro.
+    if (report_type == HID_REPORT_TYPE_OUTPUT) {
+        if (id == REPORT_ID_KEYBOARD && len >= 1) g_host_leds = data[0];
+        return;
+    }
+
+    if (report_type != HID_REPORT_TYPE_FEATURE) return;
 
     if (id == REPORT_ID_MOUSE && len >= 1) {
         g_hires_multiplier = (uint8_t)(data[0] & 0x03);

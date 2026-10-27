@@ -27,16 +27,23 @@
 namespace HidOut
 {
 
-// Doce teclas físicas más un hueco para modificadores pegajosos: el Ctrl del
-// zoom, que aguanta mientras se sigue girando.
-#define HID_SLOTS 13
+// Doce teclas físicas, un hueco para modificadores pegajosos (el Ctrl del
+// zoom, que aguanta mientras se sigue girando) y los del reproductor de
+// secuencias: seis teclas que una grabación puede dejar hundidas a la vez y
+// uno para los modificadores que mantiene (el Alt de un código Alt+numérico,
+// o el Shift que se hundió en una grabación).
 #define HID_SLOT_STICKY 12
+#define HID_SLOT_MACRO_FIRST 13
+#define HID_MACRO_KEYS 6
+#define HID_SLOT_MACRO_MODS (HID_SLOT_MACRO_FIRST + HID_MACRO_KEYS)
+#define HID_SLOTS (HID_SLOT_MACRO_MODS + 1)
 #define HID_QUEUE 32
 
     enum : uint8_t
     {
         EV_KEY = 0,
-        EV_CONSUMER = 1
+        EV_CONSUMER = 1,
+        EV_SYSTEM = 2
     };
 
     struct Event
@@ -57,7 +64,7 @@ namespace HidOut
     // --- Cola de pulsaciones puntuales ------------------------------------------
     static Event queue[HID_QUEUE];
     static uint8_t q_head, q_tail;
-    static uint8_t pending_release; // 0 nada, 1 teclado, 2 multimedia
+    static uint8_t pending_release; // 0 nada, 1 teclado, 2 multimedia, 3 sistema
 
     static inline uint8_t q_next(uint8_t i) { return (uint8_t)((i + 1) % HID_QUEUE); }
     static inline bool q_empty() { return q_head == q_tail; }
@@ -174,6 +181,88 @@ namespace HidOut
         push(e);
     }
 
+    // Suspender / apagar (SYSCTL_* en hid_hires.h). Va por la misma cola que
+    // el resto para que una secuencia no lo adelante a los pasos de antes.
+    static void system_tap(uint8_t code)
+    {
+        if (!code)
+            return;
+        Event e = {EV_SYSTEM, 0, 0, code};
+        push(e);
+    }
+
+    // --- Teclas que mantiene el reproductor de secuencias -----------------------
+    // Una pulsación puntual (tap) no basta para reproducir una grabación, que
+    // hunde y suelta cada tecla por separado, ni para un código Alt+numérico,
+    // que necesita el Alt hundido durante varios taps. Estas teclas viven en sus
+    // propios huecos para no pisar las físicas.
+
+    static uint8_t free_space()
+    {
+        return (uint8_t)((q_tail + HID_QUEUE - q_head - 1) % HID_QUEUE);
+    }
+
+    // Nada pendiente de salir: ni pulsaciones en la cola, ni una suelta, ni un
+    // cambio de estado. El reproductor espera a esto antes de cambiar lo que
+    // mantiene hundido; si no, el cambio se adelantaría a los taps encolados
+    // (el estado se recompone al momento, la cola sale de uno en uno).
+    static bool idle()
+    {
+        return q_empty() && pending_release == 0 && !state_differs();
+    }
+
+    static void macro_key_down(uint8_t key)
+    {
+        if (!key)
+            return;
+        for (int i = 0; i < HID_MACRO_KEYS; i++)
+            if (slot_key[HID_SLOT_MACRO_FIRST + i] == key)
+                return;
+        for (int i = 0; i < HID_MACRO_KEYS; i++)
+        {
+            if (!slot_key[HID_SLOT_MACRO_FIRST + i])
+            {
+                slot_key[HID_SLOT_MACRO_FIRST + i] = key;
+                recompute();
+                return;
+            }
+        }
+    }
+
+    static void macro_key_up(uint8_t key)
+    {
+        for (int i = 0; i < HID_MACRO_KEYS; i++)
+        {
+            if (slot_key[HID_SLOT_MACRO_FIRST + i] == key)
+            {
+                slot_key[HID_SLOT_MACRO_FIRST + i] = 0;
+                recompute();
+                return;
+            }
+        }
+    }
+
+    static void macro_set_mods(uint8_t mods)
+    {
+        if (slot_mod[HID_SLOT_MACRO_MODS] == mods)
+            return;
+        slot_mod[HID_SLOT_MACRO_MODS] = mods;
+        recompute();
+    }
+
+    static uint8_t macro_mods() { return slot_mod[HID_SLOT_MACRO_MODS]; }
+
+    // Al parar una secuencia a medias: que no quede nada suyo hundido.
+    static void macro_release_all()
+    {
+        for (int i = HID_SLOT_MACRO_FIRST; i < HID_SLOTS; i++)
+        {
+            slot_mod[i] = 0;
+            slot_key[i] = 0;
+        }
+        recompute();
+    }
+
     // Modificadores que el host tiene puestos ahora mismo de verdad. El zoom lo
     // consulta para no mandar la rueda antes de que el Ctrl haya llegado.
     static inline uint8_t sent_modifiers() { return sent_mods; }
@@ -212,6 +301,13 @@ namespace HidOut
                 pending_release = 0;
             return;
         }
+        if (pending_release == 3)
+        {
+            uint8_t zero = 0;
+            if (tud_hid_report(REPORT_ID_SYSTEM, &zero, 1))
+                pending_release = 0;
+            return;
+        }
 
         if (!q_empty())
         {
@@ -238,6 +334,15 @@ namespace HidOut
                     memcpy(sent_keys, keys, sizeof(sent_keys));
                     q_tail = q_next(q_tail);
                     pending_release = 1;
+                }
+            }
+            else if (e.type == EV_SYSTEM)
+            {
+                uint8_t code = (uint8_t)e.consumer;
+                if (tud_hid_report(REPORT_ID_SYSTEM, &code, 1))
+                {
+                    q_tail = q_next(q_tail);
+                    pending_release = 3;
                 }
             }
             else

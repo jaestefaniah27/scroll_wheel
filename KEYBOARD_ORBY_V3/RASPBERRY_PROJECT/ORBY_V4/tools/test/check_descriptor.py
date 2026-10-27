@@ -133,3 +133,75 @@ if errors:
     sys.exit(1)
 
 print('\n  ok   descriptor coherente')
+
+# --- Puntero absoluto -------------------------------------------------------
+# Lo mismo para el segundo ratón, el que coloca el cursor en un punto exacto:
+# collections cuadradas, informe del tamaño de orby_abs_report_t y un X/Y
+# absoluto de 16 bits.
+m = re.search(r'#define ORBY_HID_REPORT_DESC_ABS_POINTER(.*?)\n\n', text, re.S)
+if not m:
+    print('No encuentro el macro del puntero absoluto'); sys.exit(1)
+body = re.sub(r'/\*.*?\*/', '', m.group(1), flags=re.S)
+tokens = []
+for line in body.splitlines():
+    for tok in line.replace('\\', '').split(','):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if tok == 'REPORT_ID_ABS':
+            tokens.append(5)
+        elif re.fullmatch(r'0x[0-9a-fA-F]+', tok):
+            tokens.append(int(tok, 16))
+        else:
+            print('Token que no entiendo: %r' % tok); sys.exit(1)
+
+i = depth = report_size = report_count = input_bits = 0
+logical_max = 0
+abs_axes = 0
+errors = []
+while i < len(tokens):
+    b = tokens[i]
+    size = 4 if (b & 0x03) == 3 else (b & 0x03)
+    typ = (b >> 2) & 0x03
+    tag = (b >> 4) & 0x0F
+    data = 0
+    for k in range(size):
+        data |= tokens[i + 1 + k] << (8 * k)
+    i += 1 + size
+    if typ == 1:
+        if tag == 0x7:   report_size = data
+        elif tag == 0x9: report_count = data
+        elif tag == 0x2: logical_max = data
+    elif typ == 0:
+        if tag == 0xA: depth += 1
+        elif tag == 0xC: depth -= 1
+        elif tag == 0x8:
+            input_bits += report_size * report_count
+            # Input (Data,Var,Abs) = 0x02 con ejes de 16 bits: X e Y.
+            if data == 0x02 and report_size == 16:
+                abs_axes += report_count
+
+struct = re.search(r'typedef struct[^{]*\{([^}]*)\}\s*orby_abs_report_t', hdr, re.S).group(1)
+struct_bits = 0
+for line in struct.splitlines():
+    line = re.sub(r'//.*', '', line).strip()
+    if line and line.split()[0] in widths:
+        struct_bits += widths[line.split()[0]]
+
+print('\nPuntero absoluto: %d bytes' % len(tokens))
+print('  informe de entrada : %d bits, orby_abs_report_t: %d bits' % (input_bits, struct_bits))
+if depth != 0:
+    errors.append('Collections descuadradas en el puntero absoluto')
+if input_bits != struct_bits:
+    errors.append('El informe absoluto (%d bits) no coincide con la struct (%d bits)'
+                  % (input_bits, struct_bits))
+if abs_axes != 2:
+    errors.append('El puntero absoluto deberia tener 2 ejes absolutos de 16 bits, tiene %d' % abs_axes)
+if logical_max != 32767:
+    errors.append('El maximo logico de los ejes deberia ser 32767 (ABS_POINTER_MAX), es %d' % logical_max)
+if errors:
+    print()
+    for e in errors:
+        print('  FALLA %s' % e)
+    sys.exit(1)
+print('\n  ok   puntero absoluto coherente')

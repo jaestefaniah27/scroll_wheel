@@ -663,6 +663,32 @@ enum MacroStepType : uint8_t {
     // reproductor y el protocolo (SET_MACRO_STEP tipo 5, MACRO_TEST para
     // depurar) se dejan tal cual para retomarlo con la calibración.
     MSTEP_HOME_MOVE = 5,
+
+    // --- Firmware 4.7: lo que antes solo sabía hacer el PC ---
+    // a = uso de la página de consumo (multimedia dentro de una secuencia).
+    // Admite repeat/gap, como MSTEP_KEY.
+    MSTEP_CONSUMER  = 6,
+    // Escribir un texto. La app ya lo ha traducido a pulsaciones con la
+    // distribución de teclado del PC y lo ha dejado en el pool de Flash:
+    // a = desplazamiento en el pool en unidades de POOL_ALIGN, b = bytes,
+    // gap = CRC-16 del contenido (15 bits). Ver text_entry_* abajo.
+    MSTEP_TEXT      = 7,
+    // a = SYSCTL_POWER_DOWN / SYSCTL_SLEEP (hid_hires.h).
+    MSTEP_SYSTEM    = 8,
+    // a = x, b = y en 0..ABS_POINTER_MAX: el cursor a un punto exacto, por el
+    // puntero absoluto. Sustituye al homing de MSTEP_HOME_MOVE.
+    MSTEP_ABS_MOVE  = 9,
+    // Una grabación (o un trozo: b no pasa de 32767). Mismo direccionamiento
+    // que MSTEP_TEXT; el formato es el de los EVT_* de abajo.
+    MSTEP_EVENTS    = 10,
+    // Marca, siempre en el paso 0: la secuencia la hace mejor el PC (pega el
+    // texto en vez de teclearlo, abre la app sin enseñar el diálogo Ejecutar…),
+    // así que se le manda a él si la app está viva y solo se reproduce aquí si
+    // no lo está. El reproductor la salta.
+    MSTEP_PREFER_PC = 11,
+    // Volver al paso 0. a = 0: hasta que se vuelva a pulsar la tecla; a = 1:
+    // mientras siga hundida (el modo "Mientras se pulsa" de las grabaciones).
+    MSTEP_LOOP      = 12,
 };
 
 struct MacroStep {
@@ -703,6 +729,67 @@ static_assert(FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES <= PICO_FLASH_SIZE_BYTES,
               "Las secuencias se salen de la Flash del módulo");
 static_assert(MACROS_BLOB_SIZE <= FLASH_MACROS_BYTES,
               "Las secuencias ya no caben en su región reservada de Flash");
+
+// ==========================================
+// POOL DE DATOS DE LAS SECUENCIAS
+// ==========================================
+// Textos y grabaciones no caben en un MacroStep (cinco bytes útiles). Viven
+// aquí, en todo lo que queda de Flash detrás de las secuencias, y los pasos
+// solo apuntan a su trozo. La app es la dueña del reparto: decide dónde va
+// cada cosa, escribe sectores enteros (POOL_BEGIN/DATA/COMMIT) y compara por
+// CRC (POOL_HASH) para no reescribir lo que ya está igual.
+//
+// Se escribe directamente en Flash, no espera al SAVE como los pasos. Un paso
+// que se quedara sin guardar podría acabar apuntando a datos que ya no son los
+// suyos tras un reinicio; por eso cada paso lleva la CRC de su trozo y el
+// reproductor no toca nada que no cuadre (ver pool_blob).
+#define FLASH_POOL_OFFSET  (FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES)
+#define POOL_SECTORS       112
+#define POOL_BYTES         (POOL_SECTORS * FLASH_SECTOR_SIZE)
+#define POOL_ALIGN         16
+
+static_assert(FLASH_POOL_OFFSET + POOL_BYTES <= PICO_FLASH_SIZE_BYTES,
+              "El pool de las secuencias se sale de la Flash del módulo");
+static_assert((uint32_t)32767 * POOL_ALIGN >= POOL_BYTES,
+              "El desplazamiento del pool no cabe en el campo a de un paso");
+
+static uint8_t pool_stage[FLASH_SECTOR_SIZE];
+static int     pool_stage_sector = -1;
+
+// CRC-16/CCITT-FALSE, la misma que calcula la app (src/native/pool.mjs).
+static uint16_t crc16_ccitt(const uint8_t* p, uint32_t n) {
+    uint16_t crc = 0xFFFF;
+    for (uint32_t i = 0; i < n; i++) {
+        crc ^= (uint16_t)p[i] << 8;
+        for (int b = 0; b < 8; b++) crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+    }
+    return crc;
+}
+
+// El trozo del pool al que apunta un paso, o nullptr si no cuadra: fuera de
+// rango, vacío o con otra CRC (datos de otra versión de la secuencia).
+static const uint8_t* pool_blob(const MacroStep& s, uint32_t* len) {
+    const uint32_t off = (uint32_t)(uint16_t)s.a * POOL_ALIGN;
+    const uint32_t n   = (uint32_t)(uint16_t)s.b;
+    if (n == 0 || off + n > POOL_BYTES) return nullptr;
+    const uint8_t* p = (const uint8_t*)(XIP_BASE + FLASH_POOL_OFFSET + off);
+    if ((crc16_ccitt(p, n) & 0x7FFF) != (uint16_t)s.gap) return nullptr;
+    *len = n;
+    return p;
+}
+
+static void pool_commit_sector(int sector) {
+    tud_task();
+    watchdog_update();
+    const uint32_t at = FLASH_POOL_OFFSET + (uint32_t)sector * FLASH_SECTOR_SIZE;
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_erase(at, FLASH_SECTOR_SIZE);
+    flash_range_program(at, pool_stage, FLASH_SECTOR_SIZE);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+}
 
 static void save_macros() {
     MacrosBlob* b = (MacrosBlob*)macros_blob;
@@ -1355,7 +1442,9 @@ static void reset_menu_open() {
 uint16_t get_consumer_key_from_index(uint8_t idx) {
     switch (idx) {
         case 1:  return 0x0194; // AL Local Machine Browser
-        case 2:  return 0x011A; // AL Calculator
+        // Era 0x011A, que no es nada en la página de consumo: la calculadora
+        // es 0x0192 en las HID Usage Tables.
+        case 2:  return 0x0192; // AL Calculator
         case 3:  return 0x00CD; // Play/Pause
         case 4:  return 0x00B7; // Stop
         case 5:  return 0x00B5; // Next Track
@@ -1404,7 +1493,36 @@ enum MacroPhase : uint8_t {
     MPH_CLICK_RELEASED = 4, // tras mandar la suelta
     MPH_CHUNK_HOME    = 5, // empujón hacia la esquina, a trozos de ±127
     MPH_CHUNK_TARGET  = 6, // desde la esquina hasta (x, y), a trozos de ±127
+    MPH_ABS_SENT      = 7, // tras mandar un MSTEP_ABS_MOVE
+    MPH_TEXT          = 8, // tecleando un MSTEP_TEXT, una entrada por vuelta
+    MPH_EVENTS        = 9, // reproduciendo un MSTEP_EVENTS
+    MPH_STOPPING      = 10, // cortada a medias: soltando lo que dejó hundido
 };
+
+// Entradas de un MSTEP_TEXT: pares (modificador, keycode). Los keycodes por
+// encima de 0xE7 no existen en HID, así que se usan como órdenes: mantener
+// unos modificadores durante las entradas siguientes y soltarlos. Hace falta
+// para los códigos Alt+teclado numérico (Alt hundido, cuatro dígitos, soltar),
+// con los que se escribe lo que no está en la distribución del usuario.
+#define TEXT_HOLD_MODS    0xF0
+#define TEXT_RELEASE_MODS 0xF1
+
+// Registros de un MSTEP_EVENTS. Cada uno empieza con la espera desde el
+// anterior en ms (LEB128) y sigue con el tipo y sus datos.
+enum : uint8_t {
+    EVT_KEY_DOWN = 1, // uso HID (los modificadores, E0-E7, también)
+    EVT_KEY_UP   = 2,
+    EVT_ABS      = 3, // x, y: uint16 LE, 0..ABS_POINTER_MAX
+    EVT_BTN_DOWN = 4, // bit del botón: 1 izquierdo, 2 derecho, 4 central
+    EVT_BTN_UP   = 5,
+    EVT_WHEEL    = 6, // int8, muescas, positivo hacia arriba (como el HID)
+    EVT_HWHEEL   = 7, // int8, muescas, positivo hacia la derecha
+};
+
+// Teclas que hay que conmutar antes de teclear un texto y dejar como estaban
+// al acabar (ver macro_text_start).
+#define TOGGLE_CAPS 0x01
+#define TOGGLE_NUM  0x02
 
 struct MacroPlayer {
     bool     active;
@@ -1426,8 +1544,29 @@ struct MacroPlayer {
     // Repeticiones que le quedan al paso actual (MSTEP_KEY/MSTEP_CLICK), 0 =
     // todavía no se ha cargado para este paso (ver macro_player_tick).
     uint8_t  rep_left;
+
+    // Trozo del pool en curso (MSTEP_TEXT / MSTEP_EVENTS).
+    const uint8_t* blob;
+    uint32_t blob_len;
+    uint32_t blob_pos;
+    // TOGGLE_*: lo que se conmutó al empezar el texto y hay que devolver.
+    uint8_t  toggles;
+    // MSTEP_EVENTS: cuándo toca el registro siguiente, ya con su espera leída.
+    uint32_t ev_target;
+    bool     ev_ready;
+
+    // Puntero absoluto: su propio informe pendiente (comparte endpoint con
+    // todo lo demás, así que también se reintenta) y dónde lo dejó.
+    bool     abs_pending;
+    orby_abs_report_t abs_report;
+    uint8_t  abs_buttons;
+    uint16_t abs_x, abs_y;
+
+    // MSTEP_LOOP con a = 1: la vuelta solo sigue mientras la tecla que la
+    // lanzó siga hundida. La suelta llega por macro_key_released.
+    bool     hold_released;
 };
-static MacroPlayer macro_player = { false, 0, 0, 0, 0, false, { 0, 0, 0, 0, 0 }, 0, 0, false, 0 };
+static MacroPlayer macro_player = {};
 
 static void macro_queue_report(uint8_t buttons, int8_t dx, int8_t dy) {
     macro_player.pending_report = { buttons, dx, dy, 0, 0 };
@@ -1443,6 +1582,23 @@ static bool macro_try_send_report() {
     return true;
 }
 
+static void macro_queue_abs(uint8_t buttons, uint16_t x, uint16_t y) {
+    if (x > ABS_POINTER_MAX) x = ABS_POINTER_MAX;
+    if (y > ABS_POINTER_MAX) y = ABS_POINTER_MAX;
+    macro_player.abs_report = { buttons, x, y };
+    macro_player.abs_buttons = buttons;
+    macro_player.abs_x = x;
+    macro_player.abs_y = y;
+    macro_player.abs_pending = true;
+}
+
+static bool macro_try_send_abs() {
+    if (!tud_hid_ready()) return false;
+    if (!tud_hid_report(REPORT_ID_ABS, &macro_player.abs_report, sizeof(macro_player.abs_report))) return false;
+    macro_player.abs_pending = false;
+    return true;
+}
+
 static void macro_player_start(uint8_t id) {
     macro_player.active = true;
     macro_player.id = id;
@@ -1452,6 +1608,196 @@ static void macro_player_start(uint8_t id) {
     macro_player.deadline = to_ms_since_boot(get_absolute_time());
     macro_player.debug = false;
     macro_player.rep_left = 0;
+    macro_player.blob = nullptr;
+    macro_player.toggles = 0;
+    macro_player.ev_ready = false;
+    macro_player.hold_released = false;
+}
+
+// Corta la secuencia en curso. No se para en seco: lo que tenga hundido (una
+// tecla de una grabación, un botón del puntero absoluto, el Alt de un código)
+// se suelta antes, en MPH_STOPPING, o se quedaría pegado en el PC.
+static void macro_player_stop() {
+    if (!macro_player.active) return;
+    macro_player.phase = MPH_STOPPING;
+    macro_player.deadline = to_ms_since_boot(get_absolute_time());
+}
+
+static bool macro_has_step(uint8_t id, uint8_t type) {
+    const FlashMacro& m = macros[id];
+    for (uint8_t i = 0; i < m.step_count; i++) if (m.steps[i].type == type) return true;
+    return false;
+}
+
+// La tecla que lanzó la secuencia se ha soltado. Igual que en el PC (ver
+// quizas_soltar_hold en recorder.rs), vale cualquier suelta.
+static void macro_key_released() {
+    macro_player.hold_released = true;
+}
+
+// --- MSTEP_TEXT ---
+
+static bool text_has_keypad(const uint8_t* p, uint32_t n) {
+    for (uint32_t i = 1; i < n; i += 2) {
+        if (p[i] >= HID_KEY_KEYPAD_1 && p[i] <= HID_KEY_KEYPAD_0) return true;
+    }
+    return false;
+}
+
+// Antes de la primera letra: con Bloq Mayús puesto, cada Shift que mande la
+// app saldría al revés, así que se quita. Y si hay códigos Alt+numérico, se
+// pone Bloq Num, sin el cual el teclado numérico mueve el cursor. Al acabar se
+// devuelven las dos como estaban.
+static void macro_text_start(const uint8_t* p, uint32_t n) {
+    MacroPlayer& mp = macro_player;
+    mp.blob = p;
+    mp.blob_len = n;
+    mp.blob_pos = 0;
+    mp.toggles = 0;
+    if (g_host_leds & HOST_LED_CAPSLOCK) {
+        HidOut::tap(0, HID_KEY_CAPS_LOCK);
+        mp.toggles |= TOGGLE_CAPS;
+    }
+    if (!(g_host_leds & HOST_LED_NUMLOCK) && text_has_keypad(p, n)) {
+        HidOut::tap(0, HID_KEY_NUM_LOCK);
+        mp.toggles |= TOGGLE_NUM;
+    }
+    mp.phase = MPH_TEXT;
+}
+
+// Una entrada por vuelta, y solo con la salida vacía: cada letra son dos
+// informes (pulsar y soltar), y meterlas de golpe en la cola dejaría el Alt
+// mantenido de un código cambiando antes de que salieran sus dígitos.
+// Resultado: unas 400 letras por segundo, de sobra para que ninguna app se
+// coma ninguna.
+static bool macro_text_tick() {
+    MacroPlayer& mp = macro_player;
+    if (!HidOut::idle()) return false;
+
+    if (mp.blob_pos + 1 < mp.blob_len) {
+        const uint8_t mod = mp.blob[mp.blob_pos];
+        const uint8_t key = mp.blob[mp.blob_pos + 1];
+        mp.blob_pos += 2;
+        if (key == TEXT_HOLD_MODS) HidOut::macro_set_mods(mod);
+        else if (key == TEXT_RELEASE_MODS) HidOut::macro_set_mods(0);
+        else HidOut::tap(mod, key);
+        return false;
+    }
+
+    if (HidOut::macro_mods()) { HidOut::macro_set_mods(0); return false; }
+    if (mp.toggles & TOGGLE_CAPS) { HidOut::tap(0, HID_KEY_CAPS_LOCK); mp.toggles &= ~TOGGLE_CAPS; return false; }
+    if (mp.toggles & TOGGLE_NUM)  { HidOut::tap(0, HID_KEY_NUM_LOCK);  mp.toggles &= ~TOGGLE_NUM;  return false; }
+    return true; // terminado
+}
+
+// --- MSTEP_EVENTS ---
+
+static bool blob_read_varint(uint32_t* out) {
+    MacroPlayer& mp = macro_player;
+    uint32_t v = 0;
+    for (int shift = 0; shift < 32; shift += 7) {
+        if (mp.blob_pos >= mp.blob_len) return false;
+        const uint8_t b = mp.blob[mp.blob_pos++];
+        v |= (uint32_t)(b & 0x7F) << shift;
+        if (!(b & 0x80)) { *out = v; return true; }
+    }
+    return false;
+}
+
+static void macro_events_start(const uint8_t* p, uint32_t n, uint32_t now) {
+    MacroPlayer& mp = macro_player;
+    mp.blob = p;
+    mp.blob_len = n;
+    mp.blob_pos = 0;
+    mp.ev_target = now;
+    mp.ev_ready = false;
+    mp.phase = MPH_EVENTS;
+}
+
+// Un registro por vuelta como mucho. Devuelve true al acabar el trozo (o al
+// encontrar uno roto: mejor parar que interpretar basura como teclas).
+static bool macro_events_tick(uint32_t now) {
+    MacroPlayer& mp = macro_player;
+
+    if (!mp.ev_ready) {
+        if (mp.blob_pos >= mp.blob_len) return true;
+        uint32_t dt = 0;
+        if (!blob_read_varint(&dt)) return true;
+        // Contra el objetivo anterior, no contra `now`: así un registro que sale
+        // tarde (endpoint ocupado) no retrasa a todos los que vienen detrás.
+        mp.ev_target += dt;
+        mp.ev_ready = true;
+    }
+    if ((int32_t)(now - mp.ev_target) < 0) return false;
+    if (mp.blob_pos >= mp.blob_len) return true;
+
+    const uint8_t type = mp.blob[mp.blob_pos];
+    const uint8_t* d = &mp.blob[mp.blob_pos + 1];
+    const uint32_t left = mp.blob_len - mp.blob_pos - 1;
+
+    switch (type) {
+        case EVT_KEY_DOWN:
+        case EVT_KEY_UP: {
+            if (left < 1) return true;
+            // Con la salida vacía: si no, un abajo y un arriba seguidos de la
+            // misma tecla se fundirían en el estado y el PC no vería ninguno.
+            if (!HidOut::idle()) return false;
+            const uint8_t usage = d[0];
+            if (usage >= HID_KEY_CONTROL_LEFT && usage <= HID_KEY_GUI_RIGHT) {
+                const uint8_t bit = (uint8_t)(1u << (usage - HID_KEY_CONTROL_LEFT));
+                const uint8_t mods = HidOut::macro_mods();
+                HidOut::macro_set_mods(type == EVT_KEY_DOWN ? (uint8_t)(mods | bit) : (uint8_t)(mods & ~bit));
+            } else if (type == EVT_KEY_DOWN) {
+                HidOut::macro_key_down(usage);
+            } else {
+                HidOut::macro_key_up(usage);
+            }
+            mp.blob_pos += 2;
+            break;
+        }
+        case EVT_ABS: {
+            if (left < 4) return true;
+            if (mp.abs_pending) return false;
+            macro_queue_abs(mp.abs_buttons, (uint16_t)(d[0] | (d[1] << 8)), (uint16_t)(d[2] | (d[3] << 8)));
+            macro_try_send_abs();
+            mp.blob_pos += 5;
+            break;
+        }
+        case EVT_BTN_DOWN:
+        case EVT_BTN_UP: {
+            if (left < 1) return true;
+            if (mp.abs_pending) return false;
+            const uint8_t bits = (type == EVT_BTN_DOWN) ? (uint8_t)(mp.abs_buttons | d[0])
+                                                        : (uint8_t)(mp.abs_buttons & ~d[0]);
+            macro_queue_abs(bits, mp.abs_x, mp.abs_y);
+            macro_try_send_abs();
+            mp.blob_pos += 2;
+            break;
+        }
+        case EVT_WHEEL:
+        case EVT_HWHEEL: {
+            if (left < 1) return true;
+            const int32_t notches = (int8_t)d[0];
+            if (type == EVT_WHEEL) WheelOut::add_wheel(notches * (g_hires_multiplier ? HID_HIRES_MULTIPLIER : 1));
+            // add_pan invierte el sentido por defecto de la rueda de ORBY: se
+            // le da la vuelta aquí para que llegue tal cual se grabó.
+            else WheelOut::add_pan(-notches * (g_hires_pan ? HID_HIRES_MULTIPLIER : 1));
+            mp.blob_pos += 2;
+            break;
+        }
+        default:
+            return true;
+    }
+    mp.ev_ready = false;
+    return false;
+}
+
+static inline void macro_advance(uint32_t now) {
+    MacroPlayer& mp = macro_player;
+    mp.step++;
+    mp.rep_left = 0;
+    mp.deadline = now;
+    mp.phase = MPH_IDLE;
 }
 
 // Tras completar un MSTEP_KEY o la suelta de un MSTEP_CLICK: si al paso le
@@ -1499,6 +1845,35 @@ static void macro_queue_chunk() {
 static void macro_player_tick(uint32_t now) {
     if (!macro_player.active) return;
     MacroPlayer& mp = macro_player;
+
+    if (mp.abs_pending) {
+        if (!macro_try_send_abs()) return;
+        if (mp.phase == MPH_ABS_SENT) { macro_advance(now); return; }
+    }
+
+    if (mp.phase == MPH_STOPPING) {
+        // Primero se deja de mantener nada; después, si el puntero absoluto
+        // tenía un botón hundido, se suelta en su sitio.
+        HidOut::macro_release_all();
+        if (mp.abs_buttons) { macro_queue_abs(0, mp.abs_x, mp.abs_y); macro_try_send_abs(); return; }
+        if (mp.toggles && HidOut::idle()) {
+            if (mp.toggles & TOGGLE_CAPS) HidOut::tap(0, HID_KEY_CAPS_LOCK);
+            if (mp.toggles & TOGGLE_NUM)  HidOut::tap(0, HID_KEY_NUM_LOCK);
+            mp.toggles = 0;
+        }
+        if (!mp.toggles) mp.active = false;
+        return;
+    }
+
+    if (mp.phase == MPH_TEXT) {
+        if (macro_text_tick()) macro_advance(now);
+        else return;
+    }
+
+    if (mp.phase == MPH_EVENTS) {
+        if (macro_events_tick(now)) macro_advance(now);
+        else return;
+    }
 
     if (mp.report_pending) {
         if (!macro_try_send_report()) return;
@@ -1593,30 +1968,84 @@ static void macro_player_tick(uint32_t now) {
             // El paso avanza cuando el trozo hacia el objetivo termine, no aquí.
             break;
 
+        case MSTEP_CONSUMER:
+            HidOut::consumer_tap((uint16_t)s.a);
+            macro_repeat_or_advance(now, s);
+            break;
+
+        case MSTEP_SYSTEM:
+            HidOut::system_tap((uint8_t)s.a);
+            macro_advance(now);
+            break;
+
+        case MSTEP_ABS_MOVE:
+            macro_queue_abs(0, (uint16_t)(s.a < 0 ? 0 : s.a), (uint16_t)(s.b < 0 ? 0 : s.b));
+            mp.phase = MPH_ABS_SENT;
+            if (macro_try_send_abs()) macro_advance(now);
+            break;
+
+        case MSTEP_TEXT:
+        case MSTEP_EVENTS: {
+            uint32_t n = 0;
+            const uint8_t* p = pool_blob(s, &n);
+            // Sin datos que cuadren (ver pool_blob) el paso se salta: teclear
+            // lo que haya en ese trozo del pool podría ser cualquier cosa.
+            if (!p) { macro_advance(now); break; }
+            if (s.type == MSTEP_TEXT) macro_text_start(p, n);
+            else macro_events_start(p, n, now);
+            break;
+        }
+
+        case MSTEP_LOOP:
+            // Sin el paso 0 por delante no hay nada que repetir, y volver a
+            // él sin más sería un bucle que no avanza nunca.
+            if (mp.step == 0 || (s.a == 1 && mp.hold_released)) { macro_advance(now); break; }
+            mp.step = 0;
+            mp.rep_left = 0;
+            mp.deadline = now;
+            mp.phase = MPH_IDLE;
+            return;
+
         default:
             mp.step++;
             mp.rep_left = 0;
             break;
     }
 
-    if (mp.phase == MPH_IDLE && mp.step >= macros[mp.id].step_count) mp.active = false;
+    if (mp.phase == MPH_IDLE && mp.step >= macros[mp.id].step_count) {
+        mp.active = false;
+        // Por si acaso: una secuencia nunca deja nada suyo hundido al acabar.
+        HidOut::macro_release_all();
+    }
 }
+
+static inline bool host_app_alive();
 
 // Dispara una macro. Se reproduce en el propio teclado siempre que la app la
 // haya subido (device_has_it): es HID real, así que funciona igual con la
 // app cerrada, en la pantalla de bloqueo o en otra sesión, y sin el retardo
-// que mete nut.js en el PC. Solo se manda por CDC para que la ejecute el PC
-// cuando el teclado NO tiene copia jugable — hoy eso es exactamente lo que
-// exige saber algo que el teclado no puede saber (posición ABSOLUTA del
-// ratón, ver MSTEP_HOME_MOVE arriba); el resto de tipos de paso siempre caben
-// en el teclado.
+// que mete nut.js en el PC. Se manda por CDC para que la ejecute el PC cuando
+// el teclado NO tiene copia jugable (lo que de verdad no sabe hacer: un
+// complemento, un carácter fuera de Windows-1252…) o cuando la tiene pero la
+// secuencia lleva MSTEP_PREFER_PC y la app está delante para hacerla mejor.
 static void trigger_macro(uint8_t id) {
     const bool device_has_it = (id < MACRO_MAX_COUNT && macros[id].step_count > 0);
+    const bool pc_does_it_better = device_has_it &&
+        macros[id].steps[0].type == MSTEP_PREFER_PC && host_app_alive();
 
-    if (device_has_it) {
-        // Si ya hay una en marcha se ignora el reintento en vez de encolarla o
-        // mandarla también al PC, que la ejecutaría dos veces por dos caminos.
-        if (!macro_player.active) macro_player_start(id);
+    if (device_has_it && !pc_does_it_better) {
+        if (macro_player.active) {
+            // Una grabación o una secuencia en bucle se cortan volviendo a
+            // pulsar, como en el PC. Cualquier otra pulsación con una en marcha
+            // se ignora en vez de encolarla o mandarla también al PC, que la
+            // ejecutaría dos veces por dos caminos.
+            if (macro_player.id == id &&
+                (macro_has_step(id, MSTEP_LOOP) || macro_has_step(id, MSTEP_EVENTS))) {
+                macro_player_stop();
+            }
+            return;
+        }
+        macro_player_start(id);
         return;
     }
 
@@ -2344,8 +2773,12 @@ void process_command(const char* cmd) {
         // el menú físico de perfiles (MODE_MENU_PERF).
         // HOSTAPP=1: este firmware entiende HOST_APP y tacha en las pantallas las
         // teclas que necesitan la app de PC mientras no esté anunciada.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MODE=%s\n",
-                   (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
+        // NATIVE=1: sabe los pasos MSTEP_CONSUMER..MSTEP_LOOP (texto, energía,
+        // puntero absoluto, grabaciones, preferir el PC) y los LEDs del host.
+        // POOL=<sectores>: tamaño del pool de datos de las secuencias, con sus
+        // comandos POOL_*.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:NATIVE=1:POOL=%d:MODE=%s\n",
+                   (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT, POOL_SECTORS,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
     }
@@ -2659,6 +3092,7 @@ void process_command(const char* cmd) {
             return;
         }
         const bool jugable = (macros[id].step_count > 0);
+        if (macro_player.active && macro_player.id == id) macro_player_stop();
         macros[id].step_count = (uint8_t)count;
         if (jugable != (count > 0)) push_system_refresh(); // pasa a depender del PC, o deja de hacerlo
         cdc_printf("MACRO:TRUNC:OK:%d:%d\n", id, count);
@@ -2671,6 +3105,7 @@ void process_command(const char* cmd) {
         int id = atoi(cmd + 12);
         if (id < 0 || id >= MACRO_MAX_COUNT) { cdc_printf("ERR:BAD_ARGS\n"); return; }
         const bool jugable = (macros[id].step_count > 0);
+        if (macro_player.active && macro_player.id == id) macro_player_stop();
         memset(&macros[id], 0, sizeof(macros[id]));
         if (jugable) push_system_refresh(); // vuelve a depender del PC: se tacha
         cdc_printf("MACRO:CLEARED:%d\n", id);
@@ -2688,6 +3123,78 @@ void process_command(const char* cmd) {
                        (int)m.steps[i].repeat, (int)m.steps[i].gap);
         }
         cdc_printf("MACRO:%d:END\n", id);
+        return;
+    }
+
+    // ---------- Pool de datos de las secuencias (ver FLASH_POOL_OFFSET) ----------
+    // POOL_HASH:<primer sector>:<cuántos> — CRC-32 de cada sector, para que la
+    // app solo reescriba los que no tengan ya lo que quiere. Por tramos: los
+    // 448 KB de golpe pararían el bucle (y la rueda) un rato que se nota.
+    if (strncmp(cmd, "POOL_HASH:", 10) == 0) {
+        int first = 0, count = 0;
+        const char* p = next_field(cmd + 10, &first);
+        p = next_field(p, &count);
+        if (!p || first < 0 || count < 1 || count > 16 || first + count > POOL_SECTORS) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        for (int i = first; i < first + count; i++) {
+            const uint8_t* at = (const uint8_t*)(XIP_BASE + FLASH_POOL_OFFSET + (uint32_t)i * FLASH_SECTOR_SIZE);
+            const uint32_t crc = crc32_feed(CFGHASH_INIT, at, FLASH_SECTOR_SIZE) ^ 0xFFFFFFFFu;
+            cdc_printf("POOL:HASH:%d:%08lx\n", i, (unsigned long)crc);
+        }
+        cdc_printf("POOL:HASH:END\n");
+        return;
+    }
+
+    // POOL_BEGIN:<sector> — empieza a preparar un sector entero en RAM
+    // (relleno a 0xFF, como la Flash borrada). Lo que no se escriba con
+    // POOL_DATA queda así.
+    if (strncmp(cmd, "POOL_BEGIN:", 11) == 0) {
+        int sector = atoi(cmd + 11);
+        if (sector < 0 || sector >= POOL_SECTORS) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        memset(pool_stage, 0xFF, sizeof(pool_stage));
+        pool_stage_sector = sector;
+        cdc_printf("POOL:BEGIN:OK:%d\n", sector);
+        return;
+    }
+
+    // POOL_DATA:<desplazamiento en el sector>:<hex>
+    if (strncmp(cmd, "POOL_DATA:", 10) == 0) {
+        int offset = 0;
+        const char* p = next_field(cmd + 10, &offset);
+        if (!p || pool_stage_sector < 0 || offset < 0 || offset >= FLASH_SECTOR_SIZE) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        int written = 0;
+        while (p[0] && p[1] && offset + written < FLASH_SECTOR_SIZE) {
+            int hi = hex_nibble(p[0]), lo = hex_nibble(p[1]);
+            if (hi < 0 || lo < 0) break;
+            pool_stage[offset + written] = (uint8_t)((hi << 4) | lo);
+            written++;
+            p += 2;
+        }
+        cdc_printf("POOL:DATA:OK:%d\n", offset);
+        return;
+    }
+
+    // POOL_COMMIT:<sector> — graba en Flash el sector preparado. Contesta con
+    // la CRC de lo grabado, que es lo que la app compara con lo que mandó.
+    if (strncmp(cmd, "POOL_COMMIT:", 12) == 0) {
+        int sector = atoi(cmd + 12);
+        if (sector < 0 || sector >= POOL_SECTORS || sector != pool_stage_sector) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        // El reproductor lee el pool directamente de la Flash: si estuviera a
+        // medio texto en este sector, seguiría leyendo otra cosa.
+        if (macro_player.active && macro_player.blob) macro_player_stop();
+        pool_commit_sector(sector);
+        pool_stage_sector = -1;
+        const uint8_t* at = (const uint8_t*)(XIP_BASE + FLASH_POOL_OFFSET + (uint32_t)sector * FLASH_SECTOR_SIZE);
+        const uint32_t crc = crc32_feed(CFGHASH_INIT, at, FLASH_SECTOR_SIZE) ^ 0xFFFFFFFFu;
+        cdc_printf("POOL:COMMIT:OK:%d:%08lx\n", sector, (unsigned long)crc);
         return;
     }
 
@@ -3443,6 +3950,15 @@ int main() {
                 last_key_state[i] = is_pressed;
                 activity_detected = true;
 
+                // Con el PC suspendido, una tecla lo despierta (remote wakeup,
+                // ver el descriptor de configuración) y no hace nada más: la
+                // pulsación que despierta no debe escribir nada al volver.
+                // Solo las teclas: la rueda y los encoders se rozan sin querer.
+                if (tud_suspended()) {
+                    if (is_pressed) tud_remote_wakeup();
+                    continue;
+                }
+
                 if (current_mode == MODE_NORMAL) {
                     // El realce de la pantalla ya no se toca aquí: se recalcula
                     // entero más abajo, una vez por vuelta (ver "REALCE DE LAS
@@ -3492,6 +4008,7 @@ int main() {
                         }
                     } else {
                         HidOut::key_up((uint8_t)i);
+                        macro_key_released();
                     }
                 } else if (is_pressed && current_mode == MODE_MENU_PAGES) {
                     // Gestor de páginas: cada tecla con número salta a su página.

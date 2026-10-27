@@ -35,6 +35,7 @@ extern "C" bool tud_hid_report(uint8_t id, const void* report, uint16_t len) {
     if (!endpoint_ready) return false;
     Report r = { id, 0, {0,0,0,0,0,0}, 0 };
     if (len >= 2) memcpy(&r.consumer, report, 2);
+    else if (len == 1) r.consumer = *(const uint8_t*)report;
     sent.push_back(r);
     return true;
 }
@@ -242,6 +243,62 @@ static void test_zoom_con_tecla() {
     check(kb_is(2, 0, KEY_A), "al soltarse el zoom, la tecla sigue hundida");
 }
 
+// System Control (suspender/apagar): un valor y su suelta a 0, como la
+// multimedia, y en su propio informe.
+static void test_sistema() {
+    printf("\nSuspender por System Control\n");
+    reset();
+
+    HidOut::system_tap(SYSCTL_SLEEP);
+    pumps(3);
+    check(sent.size() == 2 && sent[0].id == REPORT_ID_SYSTEM && sent[0].consumer == SYSCTL_SLEEP,
+          "sale el informe de sistema con Sleep");
+    check(sent.size() == 2 && sent[1].id == REPORT_ID_SYSTEM && sent[1].consumer == 0,
+          "y después su suelta");
+}
+
+// El código Alt+numérico de un texto: el Alt aguanta durante todos los dígitos.
+static void test_alt_mantenido() {
+    printf("\nAlt mantenido por el reproductor (código Alt+numérico)\n");
+    reset();
+    const uint8_t ALT = 0x04, KP0 = 0x62, KP2 = 0x5A;
+
+    check(HidOut::idle(), "sin nada pendiente, la salida está libre");
+    HidOut::macro_set_mods(ALT);
+    check(!HidOut::idle(), "con un cambio sin mandar, no lo está");
+    pumps(1);
+    check(kb_is(0, ALT), "sale el Alt solo");
+
+    HidOut::tap(0, KP0); pumps(2);
+    HidOut::tap(0, KP2); pumps(2);
+    check(kb_is(1, ALT, KP0) && kb_is(2, ALT), "el 0 del numérico sale con el Alt y se suelta sin soltarlo");
+    check(kb_is(3, ALT, KP2) && kb_is(4, ALT), "el 2 también");
+
+    HidOut::macro_set_mods(0); pumps(1);
+    check(kb_is(5, 0), "al acabar se suelta el Alt");
+    check(HidOut::idle(), "y la salida vuelve a estar libre");
+}
+
+// Una grabación hunde y suelta cada tecla por separado, sin tocar las físicas.
+static void test_teclas_del_reproductor() {
+    printf("\nTeclas que mantiene el reproductor\n");
+    reset();
+
+    HidOut::key_down(0, 0, KEY_A); pumps(1);
+    HidOut::macro_key_down(KEY_B); pumps(1);
+    check(kb_is(1, 0, KEY_A, KEY_B), "la de la grabación se suma a la física");
+
+    HidOut::macro_key_up(KEY_B); pumps(1);
+    check(kb_is(2, 0, KEY_A), "al soltarla, la física sigue");
+
+    HidOut::macro_key_down(KEY_C);
+    HidOut::macro_set_mods(SHIFT);
+    HidOut::macro_release_all(); pumps(1);
+    check(sent.size() == 3, "soltarlo todo antes de mandar no deja nada a medias");
+    HidOut::key_up(0); pumps(1);
+    check(kb_is(3, 0), "y no queda nada hundido");
+}
+
 int main() {
     printf("=== Pruebas de la salida HID ===\n");
     test_rollover();
@@ -254,6 +311,9 @@ int main() {
     test_release_all();
     test_zoom_sticky();
     test_zoom_con_tecla();
+    test_sistema();
+    test_alt_mantenido();
+    test_teclas_del_reproductor();
 
     printf("\n%d comprobaciones, %d fallos\n", checks, fails);
     return fails ? 1 : 0;
