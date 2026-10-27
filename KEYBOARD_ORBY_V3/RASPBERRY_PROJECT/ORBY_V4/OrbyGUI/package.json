@@ -1,6 +1,6 @@
 {
   "name": "orbygui",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Orby V4 Macro Keyboard Companion App",
   "main": "electron/main.js",
   "scripts": {

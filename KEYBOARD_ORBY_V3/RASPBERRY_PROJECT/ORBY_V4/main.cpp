@@ -1445,8 +1445,13 @@ static bool page_remove(uint8_t profile, uint8_t pg) {
 // ventanas de diez que siguen al cursor.
 #define PERF_MENU_SCREENS 10
 
+// Abierto manteniendo la tecla de menú no lleva BACK: soltarla ya cancela, y
+// la pantalla de BACK solo ocupaba una tecla que no hacía nada distinto. Desde
+// el menú principal sí lo lleva, porque es la única forma de volver a él.
+volatile bool perf_menu_back = true;
+
 static inline uint8_t perf_menu_count() {
-    return (uint8_t)(profile_count + 1);  // + BACK
+    return (uint8_t)(profile_count + (perf_menu_back ? 1 : 0));
 }
 
 // Primera opción visible en las pantallas.
@@ -1463,7 +1468,8 @@ static void perf_menu_follow() {
 
 // Al abrir el menú el cursor arranca en el perfil que está puesto: con muchos
 // perfiles, empezar siempre en el primero obligaba a recorrer la lista entera.
-static void perf_menu_open() {
+static void perf_menu_open(bool con_volver = true) {
+    perf_menu_back = con_volver;
     selected_menu_idx = (active_profile_idx < profile_count) ? active_profile_idx : 0;
     perf_menu_first = 0;
     perf_menu_follow();
@@ -2046,11 +2052,12 @@ static void render_screen(uint8_t screen_num, uint8_t* out) {
 
     case MODE_MENU_PERF: {
         // Cada pantalla enseña una opción de la ventana visible: los perfiles y,
-        // tras el último, Volver. Con más de diez perfiles la ventana se desplaza.
+        // tras el último, Volver (salvo si se abrió manteniendo la tecla de
+        // menú). Con más de diez perfiles la ventana se desplaza.
         uint8_t option = (uint8_t)(perf_menu_first + idx);
         if (option < profile_count)       render_profile_tile(fb, option);
-        else if (option == profile_count) screen_system(fb, SYS_BACK);
-        if (option <= profile_count) elegida = (selected_menu_idx == option);
+        else if (option == profile_count && perf_menu_back) screen_system(fb, SYS_BACK);
+        if (option < perf_menu_count()) elegida = (selected_menu_idx == option);
         break;
     }
 
@@ -3596,7 +3603,7 @@ int main() {
                 menu_long_fired = true;
                 activity_detected = true;
                 current_mode = MODE_MENU_PERF;
-                perf_menu_open();
+                perf_menu_open(false);
                 push_system_refresh();
                 
                 // Notificar por CDC
