@@ -177,6 +177,9 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
   salen de los tokens de `:root` (colores de sistema de Apple, `--fill*` para
   controles, `--ease-out`/`--spring`): no escribas un `rgba()` de color a mano,
   usa `rgba(var(--primary-rgb), a)` y compañía.
+  Hay modo claro: `:root[data-theme="light"]` redefine los mismos tokens, y
+  `src/theme.js` pone el atributo (sigue al sistema o a lo elegido en Ajustes).
+  Un color nuevo necesita su valor en los dos bloques.
 - `ui.js` — avisos (`toast`) y `confirmar()`, la alerta al estilo iOS. No uses
   `confirm()`: en WebView2 sale como diálogo de navegador con "localhost dice".
 

@@ -13,6 +13,7 @@ import * as firmware from '../firmware.js';
 import * as platform from '../platform.js';
 import { icon } from '../icons.js';
 import * as dashboard from './dashboard.js';
+import * as theme from '../theme.js';
 
 // Giro acumulado de la rueda para la prueba en vivo de esta tarjeta.
 let liveTotal = 0;
@@ -51,6 +52,18 @@ export function init() {
 
   document.getElementById('btn-backup-save').addEventListener('click', () => runExport(backupBusy));
   document.getElementById('btn-backup-load').addEventListener('click', () => runImport(backupBusy));
+
+  // La apariencia no depende del teclado: se puede cambiar en solo lectura y
+  // en la WebGUI sin conectar nada.
+  const pintarTema = () => {
+    const p = theme.preferencia();
+    document.querySelectorAll('#theme-selector .opt-btn')
+      .forEach((b) => b.classList.toggle('active', b.dataset.val === p));
+  };
+  document.querySelectorAll('#theme-selector .opt-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { theme.elegir(btn.dataset.val); pintarTema(); });
+  });
+  pintarTema();
 
   document.querySelectorAll('#timeout-selector .opt-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {

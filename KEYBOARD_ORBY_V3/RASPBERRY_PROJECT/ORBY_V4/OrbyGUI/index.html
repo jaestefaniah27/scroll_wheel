@@ -90,6 +90,22 @@
       0%   { transform: translateX(-110%); }
       100% { transform: translateX(260%); }
     }
+    /* Modo claro. Dos selectores para lo mismo porque aquí todavía no hay
+       hoja de estilos: con "automático" manda el sistema, y src/theme.js pone
+       data-theme en cuanto carga, que es lo que cuenta si se ha elegido uno
+       a mano en Ajustes. Ver :root[data-theme="light"] en index.css. */
+    @media (prefers-color-scheme: light) {
+      html:not([data-theme="dark"]), html:not([data-theme="dark"]) body,
+      html:not([data-theme="dark"]) #app-splash { background: #f5f5f7; color: #1d1d1f; }
+      html:not([data-theme="dark"]) .splash-bar { background: rgba(0, 0, 0, .1); }
+      html:not([data-theme="dark"]) .splash-bar::after { background: #1d1d1f; }
+      html:not([data-theme="dark"]) .splash-msg { color: #6e6e73; }
+    }
+    html[data-theme="light"], html[data-theme="light"] body,
+    html[data-theme="light"] #app-splash { background: #f5f5f7; color: #1d1d1f; }
+    html[data-theme="light"] .splash-bar { background: rgba(0, 0, 0, .1); }
+    html[data-theme="light"] .splash-bar::after { background: #1d1d1f; }
+    html[data-theme="light"] .splash-msg { color: #6e6e73; }
     /* Sin animaciones si el sistema las tiene desactivadas. */
     @media (prefers-reduced-motion: reduce) {
       .splash-logo, .splash-name, .splash-bar, .splash-bar::after { animation: none; }
@@ -234,6 +250,21 @@
       <!-- Ajustes -->
       <section id="view-settings" class="view">
         <div class="settings-grid">
+          <div class="settings-card glass-panel">
+            <div class="card-header">
+              <span data-icon="invert" data-icon-size="22"></span>
+              <h2>Apariencia</h2>
+            </div>
+            <div class="setting-body">
+              <div class="timeout-selector" id="theme-selector">
+                <button class="opt-btn" data-val="auto">Automático</button>
+                <button class="opt-btn" data-val="light">Claro</button>
+                <button class="opt-btn" data-val="dark">Oscuro</button>
+              </div>
+              <p class="setting-desc">En automático sigue al modo claro u oscuro del sistema y cambia con él.</p>
+            </div>
+          </div>
+
           <div class="settings-card glass-panel">
             <div class="card-header">
               <span data-icon="moon" data-icon-size="22"></span>
