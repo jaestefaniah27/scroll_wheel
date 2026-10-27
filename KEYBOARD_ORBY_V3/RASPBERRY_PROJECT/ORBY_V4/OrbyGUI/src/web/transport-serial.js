@@ -222,7 +222,7 @@ export async function pedirPuerto() {
     // En Windows solo un proceso puede tener el COM abierto: con OrbyGUI de
     // escritorio corriendo, esto falla siempre y el motivo no se adivina.
     emitir('error', err.name === 'NetworkError'
-      ? 'No se pudo abrir el puerto. Si tienes OrbyGUI de escritorio abierta, ciérrala: solo un programa puede usar el teclado a la vez.'
+      ? 'No se pudo abrir el puerto. Si tienes Orvy de escritorio abierta, ciérrala: solo un programa puede usar el teclado a la vez.'
       : `No se pudo abrir el puerto: ${err.message}`);
     return false;
   }

@@ -241,17 +241,17 @@ export function renderSequenceEditor(macroId) {
 
       <div class="row-inline mt-4">
         <button class="secondary-btn ${capturingPos ? 'is-capturing' : ''} ${platform.can('pcSequences') ? '' : 'unsupported'}"
-                ${platform.can('pcSequences') ? '' : 'disabled title="Necesita OrbyGUI de escritorio"'}
+                ${platform.can('pcSequences') ? '' : 'disabled title="Necesita Orvy de escritorio"'}
                 data-act="seq-add-position">
           ${icon('fit', 16)} ${capturingPos ? (capturePosEditIndex !== null ? 'Recapturando… (Esc fija)' : 'Capturando… (Esc fija)') : 'Posición de ratón'}
         </button>
         <button class="secondary-btn" data-act="seq-add-click">${icon('bolt', 16)} Clic</button>
         <button class="secondary-btn" data-act="seq-add-move">${icon('reset', 16)} Mover ratón</button>
         <button class="secondary-btn ${platform.can('text') ? '' : 'unsupported'}"
-                ${platform.can('text') ? '' : 'disabled title="Necesita OrbyGUI de escritorio"'}
+                ${platform.can('text') ? '' : 'disabled title="Necesita Orvy de escritorio"'}
                 data-act="seq-add-text">${icon('pencil', 16)} Escribir texto</button>
         <button class="secondary-btn ${platform.can('openApp') ? '' : 'unsupported'}"
-                ${platform.can('openApp') ? '' : 'disabled title="Necesita OrbyGUI de escritorio"'}
+                ${platform.can('openApp') ? '' : 'disabled title="Necesita Orvy de escritorio"'}
                 data-act="seq-add-open">${icon('upload', 16)} Abrir app/archivo</button>
       </div>
       ${capturingPos ? `<p class="setting-desc" id="seq-live-pos">(${lastMousePos.x}, ${lastMousePos.y}) — mueve el ratón y pulsa Esc para fijarla</p>` : ''}

@@ -96,7 +96,7 @@ pub fn esconder(app: &AppHandle) {
         let _ = app
             .notification()
             .builder()
-            .title("OrbyGUI sigue activo")
+            .title("Orvy sigue activo")
             .body(
                 "Se quedó en la bandeja del sistema para poder seguir ejecutando \
                  secuencias. Para cerrarlo del todo, usa «Salir» en el icono de la bandeja.",
@@ -106,13 +106,13 @@ pub fn esconder(app: &AppHandle) {
 }
 
 pub fn montar_bandeja(app: &AppHandle) -> tauri::Result<()> {
-    let abrir = MenuItem::with_id(app, "abrir", "Abrir OrbyGUI", true, None::<&str>)?;
+    let abrir = MenuItem::with_id(app, "abrir", "Abrir Orvy", true, None::<&str>)?;
     let separador = PredefinedMenuItem::separator(app)?;
     let salir = MenuItem::with_id(app, "salir", "Salir", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&abrir, &separador, &salir])?;
 
     let mut constructor = TrayIconBuilder::with_id("principal")
-        .tooltip("OrbyGUI")
+        .tooltip("Orvy")
         .menu(&menu)
         // Con el menú en el clic izquierdo no quedaría forma de esconder la ventana desde
         // la bandeja: el clic izquierdo alterna, el derecho abre el menú.

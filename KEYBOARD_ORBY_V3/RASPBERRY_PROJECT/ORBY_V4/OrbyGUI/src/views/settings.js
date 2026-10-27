@@ -282,7 +282,7 @@ async function initAutostart() {
   btn.addEventListener('click', async () => {
     const enabled = await window.orby.autostart.set(!btn.classList.contains('on'));
     btn.classList.toggle('on', enabled);
-    toast(enabled ? 'OrbyGUI arrancará con Windows' : 'Autoarranque desactivado');
+    toast(enabled ? 'Orvy arrancará con Windows' : 'Autoarranque desactivado');
   });
 }
 

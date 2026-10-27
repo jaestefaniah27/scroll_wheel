@@ -612,9 +612,16 @@ button { font-family: inherit; }
 .hw-wheel { width: calc(75 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
 .hw-encoder { width: calc(15.5 * var(--u)); aspect-ratio: 1; border-radius: 50%; }
 .hw-wheel::before, .hw-encoder::before {
-  /* Holgura de la ranura: en el modelo va de 0,4 a 0,7 mm alrededor de la pieza. */
+  /* Holgura de la ranura: en el modelo va de 0,4 a 0,7 mm alrededor de la pieza.
+     La sombra de borde y la de elevación de la pieza van aquí, en la ranura, y
+     no en la cara (más abajo): así no pintan por encima del anillo y se queda
+     completo y centrado en vez de desaparecer por un lado. */
   content: ''; position: absolute; inset: calc(-0.9 * var(--u)); border-radius: 50%;
-  background: #3a3c3e; box-shadow: inset 0 calc(0.6 * var(--u)) calc(1.2 * var(--u)) rgba(0,0,0,0.7);
+  background: #3a3c3e;
+  box-shadow:
+    inset 0 calc(0.6 * var(--u)) calc(1.2 * var(--u)) rgba(0,0,0,0.7),
+    0 calc(1.2 * var(--u)) 0 #c9c7c0,
+    0 calc(2.4 * var(--u)) calc(4 * var(--u)) rgba(0,0,0,0.35);
   transition: box-shadow 0.25s var(--ease-out);
 }
 /* Rueda y mandos son piezas impresas, lisas y con la misma textura que la
@@ -625,9 +632,7 @@ button { font-family: inherit; }
   background: radial-gradient(circle at 42% 34%, #fcfbf8, #eeede8 55%, #dedcd5 100%);
   box-shadow:
     inset 0 0 0 1px rgba(0,0,0,0.07),
-    inset 0 calc(-0.8 * var(--u)) calc(1.6 * var(--u)) rgba(0,0,0,0.12),
-    0 calc(1.2 * var(--u)) 0 #c9c7c0,
-    0 calc(2.4 * var(--u)) calc(4 * var(--u)) rgba(0,0,0,0.35);
+    inset 0 calc(-0.8 * var(--u)) calc(1.6 * var(--u)) rgba(0,0,0,0.12);
 }
 .hw-wheel-face::before, .hw-encoder-face::before, .wheel-dial-face::before {
   content: ''; position: absolute; inset: 0; border-radius: 50%; opacity: 0.4; mix-blend-mode: multiply;
@@ -643,6 +648,8 @@ button { font-family: inherit; }
    actividad que no se inventa nada del aparato. */
 .hw-wheel.active::before, .hw-encoder.active::before {
   box-shadow: inset 0 calc(0.6 * var(--u)) calc(1.2 * var(--u)) rgba(0,0,0,0.7),
+              0 calc(1.2 * var(--u)) 0 #c9c7c0,
+              0 calc(2.4 * var(--u)) calc(4 * var(--u)) rgba(0,0,0,0.35),
               0 0 0 calc(1 * var(--u)) rgba(var(--primary-rgb), 0.85),
               0 0 calc(4 * var(--u)) rgba(var(--primary-rgb), 0.5);
 }
@@ -652,9 +659,9 @@ button { font-family: inherit; }
 /* Marcador de la rueda. Gira siguiendo el ángulo absoluto del sensor, así que
    se queda donde esté la rueda de verdad; el desfase y el sentido se calibran
    desde Ajustes para que coincida con la marca de la tapa.
-   El punto se dibuja como la pieza real: un tapón de un 20 % del diámetro, a
-   un 63 % del radio desde el centro, con una ranura tangencial como la de un
-   tornillo. La raya es la alternativa para quien marque la tapa a rotulador. */
+   El punto se dibuja como la pieza real: un tapón liso de un 20 % del
+   diámetro, a un 63 % del radio desde el centro, sin ranura — se fabrica liso.
+   La raya es la alternativa para quien marque la tapa a rotulador. */
 .dial-marker {
   position: absolute; inset: 0; border-radius: 50%;
   transition: transform 0.1s linear; pointer-events: none;
@@ -664,9 +671,7 @@ button { font-family: inherit; }
 }
 .dial-marker.as-dot::after {
   top: 8.5%; width: 20%; aspect-ratio: 1; border-radius: 50%;
-  background:
-    linear-gradient(100deg, transparent 47%, rgba(0,0,0,0.28) 48%, rgba(0,0,0,0.28) 51%, rgba(255,255,255,0.7) 52%, transparent 54%),
-    radial-gradient(circle at 45% 35%, #fbfbf8, #e7e5df 75%);
+  background: radial-gradient(circle at 45% 35%, #fbfbf8, #e7e5df 75%);
   box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 -1px 2px rgba(0,0,0,0.12), inset 0 1px 0 #fff;
 }
 .dial-marker.as-line::after {

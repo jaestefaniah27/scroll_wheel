@@ -112,7 +112,7 @@ function initUpdateBadge() {
     // Se pregunta porque este camino es el de los cambios sin guardar: aceptar aquí
     // es aceptar perder la escritura a Flash que estuviera pendiente.
     if (!await confirmar({
-      titulo: `¿Instalar OrbyGUI ${newVersion}?`,
+      titulo: `¿Instalar Orvy ${newVersion}?`,
       mensaje: 'La app se cerrará y volverá a abrirse sola.',
       aceptar: 'Instalar',
     })) return;
@@ -138,10 +138,10 @@ function renderUpdateBadge() {
 
   if (status === 'downloading') {
     label.textContent = `Descargando ${percent}%`;
-    btn.title = `Bajando OrbyGUI ${newVersion}`;
+    btn.title = `Bajando Orvy ${newVersion}`;
   } else if (status === 'downloaded') {
     label.textContent = `Actualizar a ${newVersion}`;
-    btn.title = `OrbyGUI ${newVersion} descargada. Se instalará sola en cuanto se guarden `
+    btn.title = `Orvy ${newVersion} descargada. Se instalará sola en cuanto se guarden `
               + 'los cambios en la Flash; haz clic para instalarla ahora';
   }
 }

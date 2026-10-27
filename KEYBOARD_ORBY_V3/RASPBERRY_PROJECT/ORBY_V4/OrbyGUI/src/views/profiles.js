@@ -1290,7 +1290,7 @@ function renderKeyGridInner() {
     const label = lslot >= 0 ? variants.effectiveLabel(prof, variant, i, view.layer) : '';
     const bmp = lslot >= 0 ? cache.get(view.editingProfile, lslot) : null;
     const assigned = action.modifier || action.keycode;
-    // Esta tecla la ejecuta el PC, no el teclado: sin OrbyGUI abierta no hace nada.
+    // Esta tecla la ejecuta el PC, no el teclado: sin Orvy abierta no hace nada.
     const necesitaApp = keyNeedsApp(action);
     // Marca las teclas que la variación redefine respecto al perfil base.
     const changed = variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
@@ -1308,7 +1308,7 @@ function renderKeyGridInner() {
         </span>
         <span class="okey-action ${assigned ? 'assigned' : ''}">${escape(describeKey(action))}${
           necesitaApp
-            ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esta tecla no hace nada">${icon('plug', 11)}</i>`
+            ? `<i class="okey-pc" title="La ejecuta el PC: sin Orvy abierta esta tecla no hace nada">${icon('plug', 11)}</i>`
             : ''}</span>
       </button>`;
   }
@@ -1368,7 +1368,7 @@ function renderRotaryGroups() {
         <em>${part.label}</em>
         <strong>${escape(describeRotaryFull(action))}${
           rotaryNeedsApp(action)
-            ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esto no hace nada">${icon('plug', 11)}</i>`
+            ? `<i class="okey-pc" title="La ejecuta el PC: sin Orvy abierta esto no hace nada">${icon('plug', 11)}</i>`
             : ''}</strong>
       </span>
     </button>`;
@@ -1475,7 +1475,7 @@ function renderWheelCard() {
               <span class="rp-dir">↓</span>
               <span class="rp-body"><em>Hacia abajo</em><strong>${escape(describeRotaryFull(cw))}${
                 rotaryNeedsApp(cw)
-                  ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esto no hace nada">${icon('plug', 11)}</i>`
+                  ? `<i class="okey-pc" title="La ejecuta el PC: sin Orvy abierta esto no hace nada">${icon('plug', 11)}</i>`
                   : ''}</strong></span>
             </button>
             <button class="rotary-part ${selectedRotarySlot() === ROTARY_SLOTS.WHEEL_CCW ? 'selected' : ''}"
@@ -1483,7 +1483,7 @@ function renderWheelCard() {
               <span class="rp-dir">↑</span>
               <span class="rp-body"><em>Hacia arriba</em><strong>${escape(describeRotaryFull(ccw))}${
                 rotaryNeedsApp(ccw)
-                  ? `<i class="okey-pc" title="La ejecuta el PC: sin OrbyGUI abierta esto no hace nada">${icon('plug', 11)}</i>`
+                  ? `<i class="okey-pc" title="La ejecuta el PC: sin Orvy abierta esto no hace nada">${icon('plug', 11)}</i>`
                   : ''}</strong></span>
             </button>
           </div>
@@ -1620,11 +1620,11 @@ function renderRotaryInspector() {
             </button>` : ''}
           <p class="setting-desc">
             ${isClick
-              ? 'Esto lo maneja el PC, así que OrbyGUI tiene que estar abierto.'
+              ? 'Esto lo maneja el PC, así que Orvy tiene que estar abierto.'
               : `Cada muesca mueve el valor un paso, y el sentido lo pone el propio giro: pon lo
                  mismo en los dos sentidos del encoder y ya sube y baja. Si el mando está montado
                  al revés, <em>Invertir giro</em> le da la vuelta a los dos sentidos a la vez.
-                 Esto lo maneja el PC, así que OrbyGUI tiene que estar abierto.`}
+                 Esto lo maneja el PC, así que Orvy tiene que estar abierto.`}
           </p>
         </div>` : ''}
 
@@ -1775,7 +1775,7 @@ function renderKeyInspector() {
           // hacer nunca.
           const apagada = cap && !platform.can(cap);
           return `<button class="inspector-tab ${tab === id ? 'active' : ''} ${apagada ? 'unsupported' : ''}"
-                          ${apagada ? 'disabled title="Necesita OrbyGUI de escritorio"' : ''}
+                          ${apagada ? 'disabled title="Necesita Orvy de escritorio"' : ''}
                           data-act="set-tab" data-tab="${id}">${label}</button>`;
         }).join('')}
         ${hasPages() ? `<button class="inspector-tab ${tab === 'pages' ? 'active' : ''}" data-act="set-tab" data-tab="pages">Páginas</button>` : ''}
@@ -1830,7 +1830,7 @@ function renderKeyInspector() {
                       data-act="set-power" data-mode="${mode}">${label}</button>`).join('')}
           </div>
           <p class="setting-desc">
-            Esta acción la ejecuta el PC, no el teclado, así que OrbyGUI tiene que estar abierto
+            Esta acción la ejecuta el PC, no el teclado, así que Orvy tiene que estar abierto
             —vale con el icono de la bandeja— para que funcione.
           </p>
         </div>
@@ -1842,7 +1842,7 @@ function renderKeyInspector() {
 
 // Un bloque por complemento instalado dentro de la pestaña Multimedia, con sus
 // acciones asignables a una tecla. Sin complementos no pinta nada: la
-// instalación por defecto de OrbyGUI no trae ninguno, y una sección vacía solo
+// instalación por defecto de Orvy no trae ninguno, y una sección vacía solo
 // haría preguntarse qué falta.
 function renderPluginKeyActions(macroId) {
   const paso = macroId === null ? null : pluginMacroOf(macroId);
@@ -1862,7 +1862,7 @@ function renderPluginKeyActions(macroId) {
       ${pick.open && pick.mode === 'key' && pick.plugin === p.id
         ? renderPluginValuePicker(p, pick.op) : ''}
       <p class="setting-desc">
-        ${escape(p.description || 'Lo ejecuta el PC, así que OrbyGUI tiene que estar abierto.')}
+        ${escape(p.description || 'Lo ejecuta el PC, así que Orvy tiene que estar abierto.')}
         Lo que necesite sentido de giro (subir, bajar) se asigna a un mando, no a una tecla.
       </p>
     </div>`).join('') + renderPluginViewActions(macroId);

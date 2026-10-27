@@ -447,7 +447,7 @@ export function renderRecordTab(macroId) {
 
     <p class="setting-desc">
       Esta acción la ejecuta siempre el PC (el teclado no puede saber dónde está el ratón), así que
-      OrbyGUI tiene que estar abierto —vale con el icono de la bandeja— para que funcione.
+      Orvy tiene que estar abierto —vale con el icono de la bandeja— para que funcione.
     </p>`;
 }
 

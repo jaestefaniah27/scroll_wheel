@@ -60,7 +60,7 @@ export function init() {
   device.on('connected', (info) => push(`Conectado: ${info?.raw || 'ORBY_V4'}`, 'system'));
   device.on('disconnected', () => push('Dispositivo desconectado.', 'error'));
 
-  push('Terminal OrbyGUI. Escribe GET_STATE para volcar la configuración.', 'system');
+  push('Terminal Orvy. Escribe GET_STATE para volcar la configuración.', 'system');
 }
 
 export function push(text, type = 'system') {

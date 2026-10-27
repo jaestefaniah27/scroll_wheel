@@ -100,7 +100,7 @@ export function check(info) {
     return {
       level: 'blocked', fw,
       title: `Firmware ${fw}: demasiado antiguo`,
-      detail: `Esta versión de OrbyGUI necesita el firmware ${FW_MIN} o posterior. `
+      detail: `Esta versión de Orvy necesita el firmware ${FW_MIN} o posterior. `
             + `Flashea el ${FW_RECOMMENDED} para usar el editor.`,
     };
   }
@@ -109,7 +109,7 @@ export function check(info) {
     return {
       level: 'app-vieja', fw,
       title: `Firmware ${fw}: más nuevo que esta app`,
-      detail: `OrbyGUI conoce hasta el ${FW_RECOMMENDED}. Lo que ya funciona sigue `
+      detail: `Orvy conoce hasta el ${FW_RECOMMENDED}. Lo que ya funciona sigue `
             + `funcionando, pero las funciones nuevas del teclado no se ven hasta `
             + `que actualices la app.`,
     };
