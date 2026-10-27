@@ -1,6 +1,18 @@
-# OrbyGUI 1.0.5
+# OrbyGUI 1.0.6
 
 Va con el **firmware 4.7**: la app avisa al conectar y lo instala desde Ajustes.
+
+(La 1.0.5 se publicó solo con el cambio de número: todo lo de estas notas llega
+en la 1.0.6.)
+
+## Diseño nuevo
+
+- La app tiene el aspecto de macOS e iOS: controles, listas, avisos y alertas
+  de confirmación como los de un iPhone, y transiciones con la misma curva.
+- **Modo claro.** Sigue al modo del sistema y cambia con él; en
+  Ajustes → Apariencia se puede fijar Claro u Oscuro.
+- El dashboard dibuja el Orby real, con sus medidas: carcasa blanca, teclas con
+  cap transparente, la rueda y los dos mandos donde están de verdad.
 
 ## Biblioteca de perfiles
 

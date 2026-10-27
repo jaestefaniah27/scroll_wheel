@@ -11,10 +11,10 @@
   como una carpeta, el cambio de perfil llega en onda desde el centro y la
   tecla pulsada se hunde con un muelle. Las curvas son las de la pantalla de
   inicio del iPhone.
-- Iconos para los perfiles de la biblioteca de OrbyGUI 1.0.5.
+- Iconos para los perfiles de la biblioteca de OrbyGUI 1.0.6.
 
 ## Las macros viajan con el teclado
 
 El teclado guarda una copia de lo que hace cada macro del PC (comandos
 `MSTORE_*`, bandera `MSTORE=1`), para que la app de otro ordenador la recupere.
-Hace falta OrbyGUI 1.0.5 o posterior.
+Hace falta OrbyGUI 1.0.6 o posterior.
