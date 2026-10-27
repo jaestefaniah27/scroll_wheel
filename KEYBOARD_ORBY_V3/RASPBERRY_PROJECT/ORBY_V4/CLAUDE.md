@@ -60,11 +60,33 @@ firma, el `.sig` que necesita el actualizador automático no se genera. Ver
 
 ### Firmware (`main.cpp`, ~3400 líneas)
 Un solo fichero grande + cabeceras en `include/` (drivers: OLED, AS5600, encoder,
-HID, pinout) y `src/` (descriptores USB, bitmaps).
+HID, pinout, pantallas) y `src/` (descriptores USB).
 
 - `pico_multicore`: núcleo 0 USB/HID, núcleo 1 entrada+OLED.
 - `encoder.pio` genera la cabecera del PIO del encoder en tiempo de build.
 - stdio por UART y USB **desactivados** — el CDC es el canal de control, no una consola.
+- Pantallas: `render_screen()` en `main.cpp` decide QUÉ va en cada una y lo dibuja
+  con `include/oled_ui.h`; Core 1 lo lleva al panel animado con `include/oled_anim.h`.
+  Iconos, fuente y catálogo se generan desde `tools/oled_ui/` (ver su README):
+  `include/oled_ui_data.h` no se edita a mano.
+- Transiciones al estilo de la pantalla de inicio del iPhone (carrusel de páginas,
+  menús que se abren como carpetas, onda al cambiar de perfil, pulsación con muelle).
+  Los muelles y fundidos son los de SpringBoardHome de iOS 27.2, con su origen
+  apuntado en `oled_anim.h`. Core 1 compara cada fotograma con lo que ya tiene el
+  panel y solo manda por SPI lo que cambia.
+- La selección de los menús va dibujada en la imagen (`invert_pill`), no invertida
+  por hardware: así se anima con lo demás. La inversión por hardware queda solo
+  para la tecla pulsada, que tiene que responder al instante.
+- Biblioteca de perfiles (Altium, KiCad, VS Code, Office en español, Photoshop...):
+  se define en `tools/perfiles/biblioteca.py` y se genera a
+  `OrbyGUI/src/profile-library.json`; la app los instala desde Perfiles → Biblioteca
+  (`src/profile-library.js`). Ver `tools/perfiles/README.md`.
+- Las macros del PC (abrir apps, textos, grabaciones...) se guardan además en el
+  teclado (`include/macro_store.h`, comandos `MSTORE_*`, firmware 4.7): un bloque
+  opaco en dos bancos de 224 KB que la app escribe y lee (`src/web/macro-blob.mjs`).
+  Así otro PC sabe qué hace cada tecla de macro. El teclado no las ejecuta: solo
+  las guarda. La copia del teclado manda; la app junta y sube al conectar
+  (`syncMacroStore` en `views/profiles/macros-store.js`).
 - El dispatch de comandos serie está sobre la línea ~2180 de `main.cpp`: cadena de
   `strncmp(cmd, "...")`. Al añadir un comando, tócalo ahí **y** en `OrbyGUI/src/device.js`.
 
@@ -151,6 +173,20 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
 - `firmware.js` — espejo de `src-tauri/src/firmware.rs`; pone el tope de versión desde `compat.js`.
 - `updater.js` — espejo de `src-tauri/src/updater.rs`; le cuenta al backend si hay
   cambios sin guardar, para que no reinicie la app a media escritura en Flash.
+- `styles/index.css` — aspecto de macOS/iOS en oscuro. Colores, radios y curvas
+  salen de los tokens de `:root` (colores de sistema de Apple, `--fill*` para
+  controles, `--ease-out`/`--spring`): no escribas un `rgba()` de color a mano,
+  usa `rgba(var(--primary-rgb), a)` y compañía.
+  Hay modo claro: `:root[data-theme="light"]` redefine los mismos tokens, y
+  `src/theme.js` pone el atributo (sigue al sistema o a lo elegido en Ajustes).
+  Un color nuevo necesita su valor en los dos bloques.
+  Excepciones a propósito: la réplica del teclado (dashboard) y las pantallas
+  OLED tienen colores fijos, porque son el objeto físico. La réplica se coloca
+  con medidas en mm sacadas de una foto cenital del teclado montado
+  (`views/dashboard.js`); el modelo de orvy.es tiene el paso de teclas y la
+  posición de mandos y rueda algo distintos, no lo copies.
+- `ui.js` — avisos (`toast`) y `confirmar()`, la alerta al estilo iOS. No uses
+  `confirm()`: en WebView2 sale como diálogo de navegador con "localhost dice".
 
 ### OrbyGUI — las tres vías
 El mismo renderer arranca en tres sitios, y `src/entry.js` decide cuál montando el
@@ -206,9 +242,16 @@ y se ven en la lista, pero **todavía no hay quién los ejecute**: devuelven un 
 
 ## Trampas conocidas
 
-- **El firmware no tiene tests automatizados.** `tools/test/*.py` son comprobaciones
-  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano. La app sí los
-  tiene: 132 en `cargo test -p orby-core` y 3 ficheros en `npm test`.
+- **El firmware casi no tiene tests automatizados.** `tools/test/*.py` son comprobaciones
+  sueltas (descriptor USB, mapa de Flash, teclas) que se lanzan a mano. Lo que sí se
+  prueba en el PC son las pantallas: `test_ui.cpp` compara `oled_ui.h` píxel a píxel
+  con `tools/oled_ui/layout.py`, y `test_anim.cpp` comprueba que cada transición
+  empieza y acaba exactamente donde debe (con una carpeta de argumento vuelca los
+  fotogramas para verlos), y `test_macro_store.cpp` prueba el almacén de macros
+  sobre una Flash simulada, cortes de corriente incluidos. Todo entra en
+  `tools/test/run.ps1`. La app sí los tiene: 132 en `cargo test -p orby-core` y
+  los de `OrbyGUI/test/` (con Node 22, `node --test test/*.mjs`: el
+  `node --test test/` del `npm test` ya no acepta una carpeta).
 - **La app instalada no tiene consola.** Cuando no detecta el teclado, el rastro
   está en `%APPDATA%\OrbyGUI\orby.log` (`src-tauri/src/log.rs`). En desarrollo,
   `npm run tauri:dev` saca además la consola por el terminal.

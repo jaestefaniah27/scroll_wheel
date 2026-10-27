@@ -24,7 +24,7 @@ export const FW_MIN = '2.0';
 
 // La que trae este repositorio (include/orby_version.h). Con una anterior la
 // app funciona recortada; con una posterior, la app es la vieja.
-export const FW_RECOMMENDED = '4.6';
+export const FW_RECOMMENDED = '4.7';
 
 // Qué versión hace falta para cada función, y qué bandera del handshake la
 // confirma cuando el firmware la anuncia.
@@ -39,6 +39,7 @@ export const FEATURES = {
   bootsel:    { since: '4.2', label: 'actualizar el firmware desde la app sin tocar el botón', flag: 'bootsel' },
   profileIcon: { since: '4.4', label: 'icono propio para cada perfil', flag: 'picon' },
   hostApp:    { since: '4.5', label: 'tachar en las pantallas las teclas que necesitan la app', flag: 'hostapp' },
+  macroStore: { since: '4.7', label: 'llevar en el teclado lo que hace cada macro, para usarlo en otro PC', flag: 'mstore' },
 };
 
 // Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y

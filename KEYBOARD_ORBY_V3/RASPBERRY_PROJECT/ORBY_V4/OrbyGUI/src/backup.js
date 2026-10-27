@@ -5,8 +5,9 @@
 // Esto permite recuperarlos sin volver a dibujarlos.
 
 import * as device from './device.js';
-import { state, markDirty, syncFromDevice, pageCountOf } from './store.js';
-import { toast } from './ui.js';
+import { state, markDirty, syncFromDevice, pageCountOf, withPinnedPage } from './store.js';
+import { writeAllPages } from './profile-library.js';
+import { toast, confirmar } from './ui.js';
 import * as cache from './oled-cache.js';
 
 const FORMAT = 'orby-backup';
@@ -160,40 +161,43 @@ export async function importAll(data, onProgress = () => {}) {
 
     if (prof.name) await device.setName(p, prof.name);
 
-    // Las páginas que traiga la copia y no existan en el teclado hay que crearlas
-    // antes de escribir: el firmware rechaza una página que no está.
-    const wanted = Math.min(prof.pageCount || 1, state.maxPages || 1);
-    while (pageCountOf(state.profiles[p]) < wanted) {
-      onProgress(`Perfil ${p + 1}: creando página ${pageCountOf(state.profiles[p]) + 1}…`);
-      await device.addPage(p, false);
-      await syncFromDevice();
-    }
-
-    for (let s = 0; s < 20; s++) {
-      await device.setLabel(p, s, prof.labels?.[s] ?? '');
-    }
-    for (let s = 0; s < 24; s++) {
-      const k = prof.keys?.[s] || { modifier: 0, keycode: 0 };
-      await device.setKeymap(p, s, k.modifier, k.keycode);
-    }
-    // Las copias antiguas traen 8 mandos (solo capa normal) y ninguna rueda por
-    // perfil; se escribe lo que haya y el resto conserva lo del teclado.
-    for (let s = 0; s < 16; s++) {
-      const r = prof.rotary?.[s];
-      if (r) await device.setRotary(p, s, r.type, r.modifier, r.keycode);
-    }
-    for (let layer = 0; layer < 2; layer++) {
-      const sc = prof.scroll?.[layer] ?? data.scroll; // v1 guardaba una rueda global
-      if (sc?.detentsPerRev) await device.setProfileScroll(p, layer, sc.detentsPerRev, sc.invert);
+    if (prof.pages?.length) {
+      // Todas las páginas, cada una en la suya. Antes se escribía solo la que
+      // estuviera puesta y las demás se quedaban como estaban en el teclado:
+      // una copia de un perfil de cuatro páginas se restauraba con una.
+      await writeAllPages(p, prof.pages, (msg) => onProgress(`Perfil ${p + 1}: ${msg}`));
+    } else {
+      // Copias anteriores a las páginas (v1/v2): una sola, en la primera.
+      for (let s = 0; s < 20; s++) {
+        await device.setLabel(p, s, prof.labels?.[s] ?? '');
+      }
+      for (let s = 0; s < 24; s++) {
+        const k = prof.keys?.[s] || { modifier: 0, keycode: 0 };
+        await device.setKeymap(p, s, k.modifier, k.keycode);
+      }
+      // Las copias antiguas traen 8 mandos (solo capa normal) y ninguna rueda por
+      // perfil; se escribe lo que haya y el resto conserva lo del teclado.
+      for (let s = 0; s < 16; s++) {
+        const r = prof.rotary?.[s];
+        if (r) await device.setRotary(p, s, r.type, r.modifier, r.keycode);
+      }
+      for (let layer = 0; layer < 2; layer++) {
+        const sc = prof.scroll?.[layer] ?? data.scroll; // v1 guardaba una rueda global
+        if (sc?.detentsPerRev) await device.setProfileScroll(p, layer, sc.detentsPerRev, sc.invert);
+      }
     }
 
     const icons = prof.icons || {};
     const slots = Object.keys(icons);
-    for (let i = 0; i < slots.length; i++) {
-      const slot = Number(slots[i]);
-      onProgress(`Perfil ${p + 1}: icono ${i + 1} de ${slots.length}…`);
-      await device.uploadOled(p, slot, hexToBytes(icons[slot]));
-    }
+    // Los iconos son de una página concreta (la que se exportó, `iconsPage`).
+    const iconsPage = Math.min(prof.iconsPage || 0, Math.max(0, pageCountOf(state.profiles[p]) - 1));
+    await withPinnedPage(p, iconsPage, async () => {
+      for (let i = 0; i < slots.length; i++) {
+        const slot = Number(slots[i]);
+        onProgress(`Perfil ${p + 1}: icono ${i + 1} de ${slots.length}…`);
+        await device.uploadOled(p, slot, hexToBytes(icons[slot]));
+      }
+    });
 
     // Copias anteriores a la v4 no traen este campo: se dejan tal cual, sin
     // tocar lo que ya tuviera el teclado.
@@ -201,6 +205,12 @@ export async function importAll(data, onProgress = () => {}) {
       onProgress(`Perfil ${p + 1}: icono del perfil…`);
       await device.uploadOled(p, 20, hexToBytes(prof.profileIcon));
     }
+  }
+
+  // Escribir páginas obliga a ir activando cada perfil: se deja puesto el que
+  // estaba activo cuando se hizo la copia.
+  if (Number.isInteger(data.activeProfile) && data.activeProfile < total) {
+    await device.setProfile(data.activeProfile);
   }
 
   // Los iconos del teclado ya no son los que hay en la caché de la app.
@@ -234,9 +244,14 @@ export async function runImport(setBusy) {
     if (!res.ok) throw new Error(res.error || 'error desconocido');
 
     const count = res.data?.profiles?.length ?? 0;
-    if (!confirm(`Se sobrescribirán los ${count} perfiles del teclado con la copia del `
-               + `${new Date(res.data.savedAt).toLocaleString('es-ES')}.\n\n`
-               + 'El cambio no será permanente hasta que pulses "Guardar en Flash".\n\n¿Continuar?')) return;
+    if (!await confirmar({
+      titulo: '¿Restaurar la copia?',
+      mensaje: `Se sobrescribirán los ${count} perfiles del teclado con la copia del `
+             + `${new Date(res.data.savedAt).toLocaleString('es-ES')}.\n\n`
+             + 'El cambio no será permanente hasta que pulses "Guardar en Flash".',
+      aceptar: 'Restaurar',
+      peligro: true,
+    })) return;
 
     setBusy('Restaurando…');
     await importAll(res.data, setBusy);

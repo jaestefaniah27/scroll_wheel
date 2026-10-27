@@ -455,7 +455,7 @@ export function renderToCanvas(fb, canvas, { zoom = 8, grid = true, color = '#e9
     ctx.stroke();
 
     // Marcas de página: el firmware direcciona la pantalla en bandas de 8 px.
-    ctx.strokeStyle = 'rgba(139,92,246,0.25)';
+    ctx.strokeStyle = 'rgba(125,122,255,0.3)';
     ctx.beginPath();
     for (let p = 1; p < OLED_PAGES; p++) {
       ctx.moveTo(0, p * 8 * zoom + 0.5);
@@ -466,14 +466,14 @@ export function renderToCanvas(fb, canvas, { zoom = 8, grid = true, color = '#e9
 
   if (outline) {
     ctx.save();
-    ctx.strokeStyle = '#f59e0b';
+    ctx.strokeStyle = '#ff9f0a';
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(outline.x * zoom, outline.y * zoom, outline.width * zoom, outline.height * zoom);
 
     // Tiradores en las esquinas para que se vea que se puede redimensionar.
     ctx.setLineDash([]);
-    ctx.fillStyle = '#f59e0b';
+    ctx.fillStyle = '#ff9f0a';
     const handle = Math.max(5, Math.min(10, zoom));
     const corners = [
       [outline.x, outline.y],

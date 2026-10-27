@@ -1,0 +1,5781 @@
+{
+ "version": 1,
+ "profiles": [
+  {
+   "id": "altium",
+   "name": "Altium",
+   "app": "Altium Designer",
+   "group": "Ingeniería",
+   "description": "Esquemático, rutado de PCB y vista/fabricación, una página cada uno.",
+   "processes": [
+    "x2.exe"
+   ],
+   "pages": [
+    {
+     "title": "Esquemático",
+     "labels": [
+      "WIRE",
+      "NETLBL",
+      "COMP",
+      "POWER",
+      "PORT",
+      "BUS",
+      "UNDO",
+      "ROTATE",
+      "REDO",
+      "SAVE",
+      "NOERC",
+      "ANNOT",
+      "COMPILE",
+      "SIMILAR",
+      "PROPS",
+      "XSEL",
+      "MIRRORX",
+      "CLEAR",
+      "MIRRORY",
+      "TOPCB"
+     ],
+     "keys": [
+      {
+       "modifier": 1,
+       "keycode": 26
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 17
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 19
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 18
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 21
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 5
+        }
+       ]
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 25
+        },
+        {
+         "modifier": 0,
+         "keycode": 17
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 23
+        },
+        {
+         "modifier": 0,
+         "keycode": 4
+        },
+        {
+         "modifier": 0,
+         "keycode": 4
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 6
+        },
+        {
+         "modifier": 0,
+         "keycode": 6
+        }
+       ]
+      },
+      {
+       "modifier": 2,
+       "keycode": 9
+      },
+      {
+       "modifier": 0,
+       "keycode": 68
+      },
+      {
+       "modifier": 3,
+       "keycode": 27
+      },
+      {
+       "modifier": 0,
+       "keycode": 27
+      },
+      {
+       "modifier": 2,
+       "keycode": 6
+      },
+      {
+       "modifier": 0,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 7
+        },
+        {
+         "modifier": 0,
+         "keycode": 24
+        }
+       ]
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 75
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 43
+      },
+      {
+       "type": 2,
+       "modifier": 3,
+       "keycode": 43
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "PCB",
+     "labels": [
+      "ROUTE",
+      "VIA",
+      "DIFFPR",
+      "LAYPREV",
+      "ONELAY",
+      "LAYNEXT",
+      "UNDO",
+      "ROTATE",
+      "REDO",
+      "SAVE",
+      "POLYGON",
+      "FILL",
+      "COMP",
+      "RTMODE",
+      "WIDTH",
+      "VIASIZE",
+      "FLIPSD",
+      "TUNING",
+      "CLEAR",
+      "MEAS"
+     ],
+     "keys": [
+      {
+       "modifier": 1,
+       "keycode": 26
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 25
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 12
+        }
+       ]
+      },
+      {
+       "modifier": 0,
+       "keycode": 86
+      },
+      {
+       "modifier": 2,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 87
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 10
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 9
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 19
+        },
+        {
+         "modifier": 0,
+         "keycode": 6
+        }
+       ]
+      },
+      {
+       "modifier": 2,
+       "keycode": 21
+      },
+      {
+       "modifier": 2,
+       "keycode": 26
+      },
+      {
+       "modifier": 2,
+       "keycode": 25
+      },
+      {
+       "modifier": 0,
+       "keycode": 15
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 23
+        },
+        {
+         "modifier": 0,
+         "keycode": 21
+        }
+       ]
+      },
+      {
+       "modifier": 2,
+       "keycode": 6
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 16
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 75
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 87
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 86
+      },
+      {
+       "type": 2,
+       "modifier": 2,
+       "keycode": 22
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Vista y salida",
+     "labels": [
+      "VIEW2D",
+      "3D",
+      "FLIPBRD",
+      "LAYERS",
+      "FIT",
+      "UNITS",
+      "REPOUR",
+      "DRC",
+      "TEARDRP",
+      "COMPILE",
+      "SMRTPDF",
+      "BOM",
+      "TOSCH",
+      "DOCPREV",
+      "GRID",
+      "DOCNEXT",
+      "SIMILAR",
+      "PROPS",
+      "ALL",
+      "SAVE"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 31
+      },
+      {
+       "modifier": 0,
+       "keycode": 32
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 25
+        },
+        {
+         "modifier": 0,
+         "keycode": 5
+        }
+       ]
+      },
+      {
+       "modifier": 0,
+       "keycode": 15
+      },
+      {
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "modifier": 0,
+       "keycode": 20
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 23
+        },
+        {
+         "modifier": 0,
+         "keycode": 10
+        },
+        {
+         "modifier": 0,
+         "keycode": 4
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 23
+        },
+        {
+         "modifier": 0,
+         "keycode": 7
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 23
+        },
+        {
+         "modifier": 0,
+         "keycode": 8
+        }
+       ]
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 6
+        },
+        {
+         "modifier": 0,
+         "keycode": 6
+        }
+       ]
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 9
+        },
+        {
+         "modifier": 0,
+         "keycode": 16
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 21
+        },
+        {
+         "modifier": 0,
+         "keycode": 12
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 0,
+         "keycode": 7
+        },
+        {
+         "modifier": 0,
+         "keycode": 24
+        }
+       ]
+      },
+      {
+       "modifier": 3,
+       "keycode": 43
+      },
+      {
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "modifier": 1,
+       "keycode": 43
+      },
+      {
+       "modifier": 2,
+       "keycode": 9
+      },
+      {
+       "modifier": 0,
+       "keycode": 68
+      },
+      {
+       "modifier": 1,
+       "keycode": 4
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 75
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 75
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "kicad",
+   "name": "KiCad",
+   "app": "KiCad",
+   "group": "Ingeniería",
+   "description": "Esquemático y PCB de KiCad 8/9.",
+   "processes": [
+    "eeschema.exe",
+    "pcbnew.exe",
+    "kicad.exe"
+   ],
+   "pages": [
+    {
+     "title": "Esquemático",
+     "labels": [
+      "WIRE",
+      "NETLBL",
+      "COMP",
+      "POWER",
+      "NOCONN",
+      "JUNCT",
+      "UNDO",
+      "ROTATE",
+      "REDO",
+      "SAVE",
+      "GLOBLBL",
+      "HIERLBL",
+      "BUS",
+      "MOVE",
+      "PROPS",
+      "DRAG",
+      "MIRRORX",
+      "REPEAT",
+      "MIRRORY",
+      "TOPCB"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 26
+      },
+      {
+       "modifier": 0,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 4
+      },
+      {
+       "modifier": 0,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 20
+      },
+      {
+       "modifier": 0,
+       "keycode": 13
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 21
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "modifier": 0,
+       "keycode": 5
+      },
+      {
+       "modifier": 0,
+       "keycode": 16
+      },
+      {
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "modifier": 0,
+       "keycode": 27
+      },
+      {
+       "modifier": 0,
+       "keycode": 73
+      },
+      {
+       "modifier": 0,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 65
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 58
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 59
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 74
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 58
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 59
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 74
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "PCB",
+     "labels": [
+      "ROUTE",
+      "VIA",
+      "DIFFPR",
+      "LAYPREV",
+      "FLIPSD",
+      "LAYNEXT",
+      "UNDO",
+      "ROTATE",
+      "REDO",
+      "SAVE",
+      "FILLZN",
+      "UNFILL",
+      "FOOTPR",
+      "WIDTH",
+      "DRAG",
+      "SELCONN",
+      "CONTRST",
+      "MEAS",
+      "3D",
+      "FIT"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 27
+      },
+      {
+       "modifier": 3,
+       "keycode": 25
+      },
+      {
+       "modifier": 0,
+       "keycode": 35
+      },
+      {
+       "modifier": 0,
+       "keycode": 86
+      },
+      {
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "modifier": 0,
+       "keycode": 87
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 21
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 5
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 0,
+       "keycode": 4
+      },
+      {
+       "modifier": 0,
+       "keycode": 26
+      },
+      {
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "modifier": 0,
+       "keycode": 24
+      },
+      {
+       "modifier": 1,
+       "keycode": 11
+      },
+      {
+       "modifier": 3,
+       "keycode": 16
+      },
+      {
+       "modifier": 4,
+       "keycode": 32
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 74
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 58
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 59
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 74
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 87
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 86
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fusion",
+   "name": "Fusion",
+   "app": "Fusion 360",
+   "group": "Ingeniería",
+   "description": "Boceto y modelado de sólidos.",
+   "processes": [
+    "fusion360.exe"
+   ],
+   "pages": [
+    {
+     "title": "Boceto",
+     "labels": [
+      "LINE",
+      "RECT",
+      "CIRCLE",
+      "DIM",
+      "TRIM",
+      "OFFSET",
+      "UNDO",
+      "CONSTR",
+      "REDO",
+      "PROJECT",
+      "TOOLBOX",
+      "MEAS",
+      "VISIBLE",
+      "APPEAR",
+      "FIT",
+      "COMPUTE",
+      "UNDO",
+      "DELETE",
+      "REDO",
+      "SAVE"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 21
+      },
+      {
+       "modifier": 0,
+       "keycode": 6
+      },
+      {
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "modifier": 0,
+       "keycode": 23
+      },
+      {
+       "modifier": 0,
+       "keycode": 18
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 27
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 12
+      },
+      {
+       "modifier": 0,
+       "keycode": 25
+      },
+      {
+       "modifier": 0,
+       "keycode": 4
+      },
+      {
+       "modifier": 0,
+       "keycode": 63
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 76
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 63
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 63
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Sólidos",
+     "labels": [
+      "EXTRUDE",
+      "PRESSPL",
+      "FILLET",
+      "HOLE",
+      "MOVE",
+      "JOINT",
+      "UNDO",
+      "MEAS",
+      "REDO",
+      "FIT",
+      "TOOLBOX",
+      "MEAS",
+      "VISIBLE",
+      "APPEAR",
+      "FIT",
+      "COMPUTE",
+      "UNDO",
+      "DELETE",
+      "REDO",
+      "SAVE"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "modifier": 0,
+       "keycode": 20
+      },
+      {
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "modifier": 0,
+       "keycode": 16
+      },
+      {
+       "modifier": 0,
+       "keycode": 13
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 12
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 63
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 12
+      },
+      {
+       "modifier": 0,
+       "keycode": 25
+      },
+      {
+       "modifier": 0,
+       "keycode": 4
+      },
+      {
+       "modifier": 0,
+       "keycode": 63
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 76
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 63
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 63
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ltspice",
+   "name": "LTspice",
+   "app": "LTspice",
+   "group": "Ingeniería",
+   "description": "Dibujo del esquema y componentes básicos.",
+   "processes": [
+    "ltspice.exe",
+    "xviix64.exe"
+   ],
+   "pages": [
+    {
+     "title": "Esquema",
+     "labels": [
+      "WIRE",
+      "COMP",
+      "NETLBL",
+      "RES",
+      "CAP",
+      "IND",
+      "UNDO",
+      "ROTATE",
+      "REDO",
+      "GND",
+      "DIODE",
+      "SPICE",
+      "TEXT",
+      "MOVE",
+      "DRAG",
+      "DUPL",
+      "MIRROR",
+      "DELETE",
+      "FIT",
+      "SAVE"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 60
+      },
+      {
+       "modifier": 0,
+       "keycode": 59
+      },
+      {
+       "modifier": 0,
+       "keycode": 61
+      },
+      {
+       "modifier": 0,
+       "keycode": 21
+      },
+      {
+       "modifier": 0,
+       "keycode": 6
+      },
+      {
+       "modifier": 0,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 66
+      },
+      {
+       "modifier": 1,
+       "keycode": 21
+      },
+      {
+       "modifier": 2,
+       "keycode": 66
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "modifier": 0,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 23
+      },
+      {
+       "modifier": 0,
+       "keycode": 64
+      },
+      {
+       "modifier": 0,
+       "keycode": 65
+      },
+      {
+       "modifier": 0,
+       "keycode": 63
+      },
+      {
+       "modifier": 1,
+       "keycode": 8
+      },
+      {
+       "modifier": 0,
+       "keycode": 62
+      },
+      {
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "vscode",
+   "name": "VSCode",
+   "app": "Visual Studio Code",
+   "group": "Programación",
+   "description": "Edición, paneles y depuración.",
+   "processes": [
+    "code.exe"
+   ],
+   "pages": [
+    {
+     "title": "Edición",
+     "labels": [
+      "PALETTE",
+      "GOFILE",
+      "FINDALL",
+      "MULTSEL",
+      "LINEUP",
+      "DUPLINE",
+      "UNDO",
+      "LINEDN",
+      "REDO",
+      "SAVE",
+      "FORMAT",
+      "RENAME",
+      "REPLACE",
+      "GODEF",
+      "REFS",
+      "NAVBACK",
+      "DELLINE",
+      "QFIX",
+      "SYMBOL",
+      "COMMENT"
+     ],
+     "keys": [
+      {
+       "modifier": 3,
+       "keycode": 19
+      },
+      {
+       "modifier": 1,
+       "keycode": 19
+      },
+      {
+       "modifier": 3,
+       "keycode": 9
+      },
+      {
+       "modifier": 1,
+       "keycode": 7
+      },
+      {
+       "modifier": 4,
+       "keycode": 82
+      },
+      {
+       "modifier": 6,
+       "keycode": 81
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 4,
+       "keycode": 81
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 6,
+       "keycode": 9
+      },
+      {
+       "modifier": 0,
+       "keycode": 59
+      },
+      {
+       "modifier": 1,
+       "keycode": 11
+      },
+      {
+       "modifier": 0,
+       "keycode": 69
+      },
+      {
+       "modifier": 2,
+       "keycode": 69
+      },
+      {
+       "modifier": 4,
+       "keycode": 80
+      },
+      {
+       "modifier": 3,
+       "keycode": 14
+      },
+      {
+       "modifier": 1,
+       "keycode": 55
+      },
+      {
+       "modifier": 3,
+       "keycode": 18
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 1,
+         "keycode": 6
+        }
+       ]
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Paneles",
+     "labels": [
+      "EXPLR",
+      "GIT",
+      "EXTENS",
+      "SIDEBAR",
+      "PANEL",
+      "PROBLEM",
+      "TABPREV",
+      "TABCLOS",
+      "TABNEXT",
+      "ZEN",
+      "NEWFILE",
+      "OPENFLD",
+      "SETTING",
+      "WRAP",
+      "MDPREV",
+      "CLOSEAL",
+      "FOLDALL",
+      "SAVEALL",
+      "UNFOLD",
+      "REOPEN"
+     ],
+     "keys": [
+      {
+       "modifier": 3,
+       "keycode": 8
+      },
+      {
+       "modifier": 3,
+       "keycode": 10
+      },
+      {
+       "modifier": 3,
+       "keycode": 27
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 1,
+       "keycode": 13
+      },
+      {
+       "modifier": 3,
+       "keycode": 16
+      },
+      {
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "modifier": 1,
+       "keycode": 26
+      },
+      {
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 0,
+         "keycode": 29
+        }
+       ]
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 17
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 1,
+         "keycode": 18
+        }
+       ]
+      },
+      {
+       "modifier": 1,
+       "keycode": 54
+      },
+      {
+       "modifier": 4,
+       "keycode": 29
+      },
+      {
+       "modifier": 3,
+       "keycode": 25
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 0,
+         "keycode": 26
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 1,
+         "keycode": 39
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 0,
+         "keycode": 22
+        }
+       ]
+      },
+      {
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 1,
+         "keycode": 13
+        }
+       ]
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 3,
+       "keycode": 23
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Depuración",
+     "labels": [
+      "DEBUG",
+      "RUN",
+      "DBGSTOP",
+      "STEPOVR",
+      "STEPIN",
+      "STEPOUT",
+      "BREAKPT",
+      "DBGRST",
+      "BUILD",
+      "PANEL",
+      "GODEF",
+      "REFS",
+      "SYMBOL",
+      "NAVBACK",
+      "PROBLEM",
+      "NAVFWD",
+      "UNDO",
+      "GIT",
+      "REDO",
+      "SAVE"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 62
+      },
+      {
+       "modifier": 1,
+       "keycode": 62
+      },
+      {
+       "modifier": 2,
+       "keycode": 62
+      },
+      {
+       "modifier": 0,
+       "keycode": 67
+      },
+      {
+       "modifier": 0,
+       "keycode": 68
+      },
+      {
+       "modifier": 2,
+       "keycode": 68
+      },
+      {
+       "modifier": 0,
+       "keycode": 66
+      },
+      {
+       "modifier": 3,
+       "keycode": 62
+      },
+      {
+       "modifier": 3,
+       "keycode": 5
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 13
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 69
+      },
+      {
+       "modifier": 2,
+       "keycode": 69
+      },
+      {
+       "modifier": 3,
+       "keycode": 18
+      },
+      {
+       "modifier": 4,
+       "keycode": 80
+      },
+      {
+       "modifier": 3,
+       "keycode": 16
+      },
+      {
+       "modifier": 4,
+       "keycode": 79
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 3,
+       "keycode": 10
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "windows",
+   "name": "Windows",
+   "app": "Windows",
+   "group": "Programación",
+   "description": "Ventanas y escritorios virtuales; música y utilidades del sistema.",
+   "processes": [],
+   "pages": [
+    {
+     "title": "Ventanas",
+     "labels": [
+      "DESK",
+      "TASKV",
+      "FILES",
+      "SNAPL",
+      "MAXIM",
+      "SNAPR",
+      "MONITOR",
+      "MINIM",
+      "CLOSEW",
+      "SNAP",
+      "DESKL",
+      "DESKN",
+      "DESKR",
+      "CLIPB",
+      "EMOJI",
+      "LOCK",
+      "SETTING",
+      "TASK",
+      "DESKX",
+      "SEARCH"
+     ],
+     "keys": [
+      {
+       "modifier": 8,
+       "keycode": 7
+      },
+      {
+       "modifier": 8,
+       "keycode": 43
+      },
+      {
+       "modifier": 8,
+       "keycode": 8
+      },
+      {
+       "modifier": 8,
+       "keycode": 80
+      },
+      {
+       "modifier": 8,
+       "keycode": 82
+      },
+      {
+       "modifier": 8,
+       "keycode": 79
+      },
+      {
+       "modifier": 10,
+       "keycode": 80
+      },
+      {
+       "modifier": 8,
+       "keycode": 81
+      },
+      {
+       "modifier": 4,
+       "keycode": 61
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 10,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 9,
+       "keycode": 80
+      },
+      {
+       "modifier": 9,
+       "keycode": 7
+      },
+      {
+       "modifier": 9,
+       "keycode": 79
+      },
+      {
+       "modifier": 8,
+       "keycode": 25
+      },
+      {
+       "modifier": 8,
+       "keycode": 55
+      },
+      {
+       "modifier": 8,
+       "keycode": 15
+      },
+      {
+       "modifier": 8,
+       "keycode": 12
+      },
+      {
+       "modifier": 3,
+       "keycode": 41
+      },
+      {
+       "modifier": 9,
+       "keycode": 61
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 8,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Multimedia",
+     "labels": [
+      "PREV",
+      "PLAY",
+      "NEXT",
+      "MUTE",
+      "STOP",
+      "MICMUTE",
+      "BROW",
+      "MAIL",
+      "CALC",
+      "PROJ",
+      "REC",
+      "GAMEBAR",
+      "SHOTFUL",
+      "DICTATE",
+      "NOTIF",
+      "QUICK",
+      "RUN",
+      "WIDGET",
+      "SETTING",
+      "SEARCH"
+     ],
+     "keys": [
+      {
+       "modifier": 254,
+       "keycode": 6
+      },
+      {
+       "modifier": 254,
+       "keycode": 3
+      },
+      {
+       "modifier": 254,
+       "keycode": 5
+      },
+      {
+       "modifier": 254,
+       "keycode": 9
+      },
+      {
+       "modifier": 254,
+       "keycode": 4
+      },
+      {
+       "modifier": 12,
+       "keycode": 14
+      },
+      {
+       "modifier": 254,
+       "keycode": 12
+      },
+      {
+       "modifier": 254,
+       "keycode": 13
+      },
+      {
+       "modifier": 254,
+       "keycode": 2
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 8,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 12,
+       "keycode": 21
+      },
+      {
+       "modifier": 8,
+       "keycode": 10
+      },
+      {
+       "modifier": 8,
+       "keycode": 70
+      },
+      {
+       "modifier": 8,
+       "keycode": 11
+      },
+      {
+       "modifier": 8,
+       "keycode": 17
+      },
+      {
+       "modifier": 8,
+       "keycode": 4
+      },
+      {
+       "modifier": 8,
+       "keycode": 21
+      },
+      {
+       "modifier": 8,
+       "keycode": 26
+      },
+      {
+       "modifier": 8,
+       "keycode": 12
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 8,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web",
+   "name": "Web",
+   "app": "Navegador (Chrome, Edge, Firefox)",
+   "group": "Programación",
+   "description": "Pestañas y navegación; y una página para YouTube.",
+   "processes": [
+    "chrome.exe",
+    "msedge.exe",
+    "firefox.exe",
+    "brave.exe",
+    "opera.exe"
+   ],
+   "pages": [
+    {
+     "title": "Pestañas",
+     "labels": [
+      "TABPREV",
+      "TABNEW",
+      "TABNEXT",
+      "NAVBACK",
+      "RELOAD",
+      "NAVFWD",
+      "TABUNDO",
+      "URL",
+      "TABCLOS",
+      "FIND",
+      "WINNEW",
+      "PRIVATE",
+      "DOWNLD",
+      "HISTORY",
+      "BOOKMRK",
+      "FULLSCR",
+      "ZOOMRST",
+      "DEVTOOL",
+      "HRELOAD",
+      "PRINT"
+     ],
+     "keys": [
+      {
+       "modifier": 3,
+       "keycode": 43
+      },
+      {
+       "modifier": 1,
+       "keycode": 23
+      },
+      {
+       "modifier": 1,
+       "keycode": 43
+      },
+      {
+       "modifier": 4,
+       "keycode": 80
+      },
+      {
+       "modifier": 0,
+       "keycode": 62
+      },
+      {
+       "modifier": 4,
+       "keycode": 79
+      },
+      {
+       "modifier": 3,
+       "keycode": 23
+      },
+      {
+       "modifier": 1,
+       "keycode": 15
+      },
+      {
+       "modifier": 1,
+       "keycode": 26
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 9
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 17
+      },
+      {
+       "modifier": 3,
+       "keycode": 17
+      },
+      {
+       "modifier": 1,
+       "keycode": 13
+      },
+      {
+       "modifier": 1,
+       "keycode": 11
+      },
+      {
+       "modifier": 1,
+       "keycode": 7
+      },
+      {
+       "modifier": 0,
+       "keycode": 68
+      },
+      {
+       "modifier": 1,
+       "keycode": 39
+      },
+      {
+       "modifier": 0,
+       "keycode": 69
+      },
+      {
+       "modifier": 3,
+       "keycode": 21
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 5,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 5,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 39
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 5,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 5,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 39
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 43
+      },
+      {
+       "type": 2,
+       "modifier": 3,
+       "keycode": 43
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "YouTube",
+     "labels": [
+      "YTBACK",
+      "PLAY",
+      "YTFWD",
+      "YTPREV",
+      "FULLSCR",
+      "YTNEXT",
+      "YTMUTE",
+      "CAPTION",
+      "YTSTART",
+      "THEATER",
+      "TABPREV",
+      "MINIPL",
+      "TABNEXT",
+      "NAVBACK",
+      "RELOAD",
+      "NAVFWD",
+      "HISTORY",
+      "URL",
+      "TABCLOS",
+      "TABUNDO"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 13
+      },
+      {
+       "modifier": 0,
+       "keycode": 14
+      },
+      {
+       "modifier": 0,
+       "keycode": 15
+      },
+      {
+       "modifier": 2,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "modifier": 2,
+       "keycode": 17
+      },
+      {
+       "modifier": 0,
+       "keycode": 16
+      },
+      {
+       "modifier": 0,
+       "keycode": 6
+      },
+      {
+       "modifier": 0,
+       "keycode": 39
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 23
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 3,
+       "keycode": 43
+      },
+      {
+       "modifier": 0,
+       "keycode": 12
+      },
+      {
+       "modifier": 1,
+       "keycode": 43
+      },
+      {
+       "modifier": 4,
+       "keycode": 80
+      },
+      {
+       "modifier": 0,
+       "keycode": 62
+      },
+      {
+       "modifier": 4,
+       "keycode": 79
+      },
+      {
+       "modifier": 1,
+       "keycode": 11
+      },
+      {
+       "modifier": 1,
+       "keycode": 15
+      },
+      {
+       "modifier": 1,
+       "keycode": 26
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 3,
+       "keycode": 23
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 80
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 79
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 14
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 80
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 79
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 14
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "excel",
+   "name": "Excel",
+   "app": "Microsoft Excel",
+   "group": "Office",
+   "description": "Edición de celdas; filas, columnas y hojas.",
+   "processes": [
+    "excel.exe"
+   ],
+   "pages": [
+    {
+     "title": "Edición",
+     "labels": [
+      "COPY",
+      "PAST",
+      "PASTESP",
+      "EDITCEL",
+      "FILLDN",
+      "ABSREF",
+      "UNDO",
+      "AUTOSUM",
+      "REDO",
+      "SAVE",
+      "FMTCELL",
+      "BOLD",
+      "FILTER",
+      "CELLNL",
+      "NOTE",
+      "FILLRT",
+      "FIND",
+      "RECALC",
+      "REPLACE",
+      "CHART"
+     ],
+     "keys": [
+      {
+       "modifier": 1,
+       "keycode": 6
+      },
+      {
+       "modifier": 1,
+       "keycode": 25
+      },
+      {
+       "modifier": 5,
+       "keycode": 25
+      },
+      {
+       "modifier": 0,
+       "keycode": 59
+      },
+      {
+       "modifier": 1,
+       "keycode": 13
+      },
+      {
+       "modifier": 0,
+       "keycode": 61
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 6,
+       "keycode": 39
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 10
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 30
+      },
+      {
+       "modifier": 1,
+       "keycode": 17
+      },
+      {
+       "modifier": 3,
+       "keycode": 15
+      },
+      {
+       "modifier": 4,
+       "keycode": 40
+      },
+      {
+       "modifier": 2,
+       "keycode": 59
+      },
+      {
+       "modifier": 1,
+       "keycode": 7
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 0,
+       "keycode": 66
+      },
+      {
+       "modifier": 1,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 4,
+       "keycode": 58
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Filas y hojas",
+     "labels": [
+      "SELROW",
+      "INSROW",
+      "SELCOL",
+      "HIDEROW",
+      "DELROW",
+      "GOTO",
+      "SHEETPV",
+      "NEWSHT",
+      "SHEETNX",
+      "TOEND",
+      "TOSTART",
+      "ALL",
+      "PRINT",
+      "COPY",
+      "PAST",
+      "CUT",
+      "UNDO",
+      "FIND",
+      "REDO",
+      "SAVE"
+     ],
+     "keys": [
+      {
+       "modifier": 2,
+       "keycode": 44
+      },
+      {
+       "modifier": 1,
+       "keycode": 87
+      },
+      {
+       "modifier": 1,
+       "keycode": 44
+      },
+      {
+       "modifier": 1,
+       "keycode": 38
+      },
+      {
+       "modifier": 1,
+       "keycode": 86
+      },
+      {
+       "modifier": 1,
+       "keycode": 12
+      },
+      {
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "modifier": 2,
+       "keycode": 68
+      },
+      {
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 77
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 74
+      },
+      {
+       "modifier": 1,
+       "keycode": 8
+      },
+      {
+       "modifier": 1,
+       "keycode": 19
+      },
+      {
+       "modifier": 1,
+       "keycode": 6
+      },
+      {
+       "modifier": 1,
+       "keycode": 25
+      },
+      {
+       "modifier": 1,
+       "keycode": 27
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 10
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "word",
+   "name": "Word",
+   "app": "Microsoft Word",
+   "group": "Office",
+   "description": "Formato de texto; documento y revisión.",
+   "processes": [
+    "winword.exe"
+   ],
+   "pages": [
+    {
+     "title": "Texto",
+     "labels": [
+      "BOLD",
+      "ITALIC",
+      "UNDERLN",
+      "ALIGNL",
+      "ALIGNC",
+      "ALIGNR",
+      "UNDO",
+      "JUSTIFY",
+      "REDO",
+      "SAVE",
+      "COPYFMT",
+      "PASTFMT",
+      "CLRFMT",
+      "HEAD1",
+      "HEAD2",
+      "HEAD3",
+      "HLINK",
+      "PGBREAK",
+      "FIND",
+      "REPLACE"
+     ],
+     "keys": [
+      {
+       "modifier": 1,
+       "keycode": 17
+      },
+      {
+       "modifier": 1,
+       "keycode": 14
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 1,
+       "keycode": 20
+      },
+      {
+       "modifier": 1,
+       "keycode": 23
+      },
+      {
+       "modifier": 1,
+       "keycode": 7
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 1,
+       "keycode": 13
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 10
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 3,
+       "keycode": 6
+      },
+      {
+       "modifier": 3,
+       "keycode": 25
+      },
+      {
+       "modifier": 1,
+       "keycode": 44
+      },
+      {
+       "modifier": 5,
+       "keycode": 30
+      },
+      {
+       "modifier": 5,
+       "keycode": 31
+      },
+      {
+       "modifier": 5,
+       "keycode": 32
+      },
+      {
+       "modifier": 5,
+       "keycode": 14
+      },
+      {
+       "modifier": 1,
+       "keycode": 40
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Documento",
+     "labels": [
+      "NEWDOC",
+      "OPEN",
+      "PRINT",
+      "SPELL",
+      "THESAUR",
+      "GOTO",
+      "TOSTART",
+      "ALL",
+      "TOEND",
+      "CLOSEDC",
+      "COPY",
+      "PAST",
+      "CUT",
+      "BOLD",
+      "ITALIC",
+      "UNDERLN",
+      "UNDO",
+      "SAVE",
+      "REDO",
+      "FIND"
+     ],
+     "keys": [
+      {
+       "modifier": 1,
+       "keycode": 24
+      },
+      {
+       "modifier": 1,
+       "keycode": 4
+      },
+      {
+       "modifier": 1,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 64
+      },
+      {
+       "modifier": 2,
+       "keycode": 64
+      },
+      {
+       "modifier": 1,
+       "keycode": 12
+      },
+      {
+       "modifier": 1,
+       "keycode": 74
+      },
+      {
+       "modifier": 1,
+       "keycode": 8
+      },
+      {
+       "modifier": 1,
+       "keycode": 77
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 61
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 6
+      },
+      {
+       "modifier": 1,
+       "keycode": 25
+      },
+      {
+       "modifier": 1,
+       "keycode": 27
+      },
+      {
+       "modifier": 1,
+       "keycode": 17
+      },
+      {
+       "modifier": 1,
+       "keycode": 14
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 1,
+       "keycode": 10
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ppoint",
+   "name": "PPoint",
+   "app": "Microsoft PowerPoint",
+   "group": "Office",
+   "description": "Presentar con puntero y tinta; con SUPER, editar diapositivas.",
+   "processes": [
+    "powerpnt.exe"
+   ],
+   "pages": [
+    {
+     "title": "Presentar",
+     "labels": [
+      "FROMBEG",
+      "FROMCUR",
+      "PRESVW",
+      "PREVSLD",
+      "BLACK",
+      "NEXTSLD",
+      "LASER",
+      "PEN",
+      "ERASINK",
+      "ENDSHOW",
+      "NEWSLD",
+      "BOLD",
+      "ITALIC",
+      "ALIGNL",
+      "ALIGNC",
+      "ALIGNR",
+      "UNDO",
+      "COPYFMT",
+      "REDO",
+      "SAVE"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 62
+      },
+      {
+       "modifier": 2,
+       "keycode": 62
+      },
+      {
+       "modifier": 4,
+       "keycode": 62
+      },
+      {
+       "modifier": 0,
+       "keycode": 75
+      },
+      {
+       "modifier": 0,
+       "keycode": 55
+      },
+      {
+       "modifier": 0,
+       "keycode": 78
+      },
+      {
+       "modifier": 1,
+       "keycode": 15
+      },
+      {
+       "modifier": 1,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 41
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 16
+      },
+      {
+       "modifier": 1,
+       "keycode": 17
+      },
+      {
+       "modifier": 1,
+       "keycode": 14
+      },
+      {
+       "modifier": 1,
+       "keycode": 20
+      },
+      {
+       "modifier": 1,
+       "keycode": 23
+      },
+      {
+       "modifier": 1,
+       "keycode": 7
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 3,
+       "keycode": 6
+      },
+      {
+       "modifier": 1,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 10
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 78
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 75
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pshop",
+   "name": "PShop",
+   "app": "Adobe Photoshop",
+   "group": "Creativos",
+   "description": "Herramientas, capas y ajustes de imagen.",
+   "processes": [
+    "photoshop.exe"
+   ],
+   "pages": [
+    {
+     "title": "Herramientas",
+     "labels": [
+      "MOVE",
+      "MARQ",
+      "LASS",
+      "QSELECT",
+      "CROP",
+      "EYE",
+      "BRSH",
+      "ERAS",
+      "HEAL",
+      "CLONE",
+      "PEN",
+      "TEXT",
+      "SHAP",
+      "GRAD",
+      "DODGE",
+      "PATH",
+      "HAND",
+      "ZOOM",
+      "ROTVIEW",
+      "QMASK"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 25
+      },
+      {
+       "modifier": 0,
+       "keycode": 16
+      },
+      {
+       "modifier": 0,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 26
+      },
+      {
+       "modifier": 0,
+       "keycode": 6
+      },
+      {
+       "modifier": 0,
+       "keycode": 12
+      },
+      {
+       "modifier": 0,
+       "keycode": 5
+      },
+      {
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "modifier": 0,
+       "keycode": 13
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 23
+      },
+      {
+       "modifier": 0,
+       "keycode": 24
+      },
+      {
+       "modifier": 0,
+       "keycode": 10
+      },
+      {
+       "modifier": 0,
+       "keycode": 18
+      },
+      {
+       "modifier": 0,
+       "keycode": 4
+      },
+      {
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "modifier": 0,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 21
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 20
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 48
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 56
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 39
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 3,
+       "keycode": 29
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Capas",
+     "labels": [
+      "NEWL",
+      "DUPL",
+      "MERGE",
+      "GROUP",
+      "CLIPMSK",
+      "STAMP",
+      "UNDO",
+      "TRANSF",
+      "REDO",
+      "SAVE",
+      "DESELEC",
+      "INVSEL",
+      "ALL",
+      "FILLDLG",
+      "SWAPCLR",
+      "DEFCLR",
+      "FIT",
+      "ZOOM100",
+      "SCRMODE",
+      "SAVEAS"
+     ],
+     "keys": [
+      {
+       "modifier": 3,
+       "keycode": 17
+      },
+      {
+       "modifier": 1,
+       "keycode": 13
+      },
+      {
+       "modifier": 1,
+       "keycode": 8
+      },
+      {
+       "modifier": 1,
+       "keycode": 10
+      },
+      {
+       "modifier": 5,
+       "keycode": 10
+      },
+      {
+       "modifier": 7,
+       "keycode": 8
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 1,
+       "keycode": 23
+      },
+      {
+       "modifier": 3,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 7
+      },
+      {
+       "modifier": 3,
+       "keycode": 12
+      },
+      {
+       "modifier": 1,
+       "keycode": 4
+      },
+      {
+       "modifier": 2,
+       "keycode": 62
+      },
+      {
+       "modifier": 0,
+       "keycode": 27
+      },
+      {
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "modifier": 1,
+       "keycode": 39
+      },
+      {
+       "modifier": 1,
+       "keycode": 30
+      },
+      {
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 3,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 48
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 56
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 39
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 3,
+       "keycode": 29
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Ajustes",
+     "labels": [
+      "LEVELS",
+      "CURVES",
+      "HUESAT",
+      "COLORBL",
+      "INVERT",
+      "DESAT",
+      "IMGSIZE",
+      "CANVAS",
+      "AUTOTN",
+      "EXPORT",
+      "AUTOCON",
+      "AUTOCLR",
+      "BW",
+      "FIT",
+      "ZOOM100",
+      "TRANSF",
+      "UNDO",
+      "SAVE",
+      "REDO",
+      "SAVEAS"
+     ],
+     "keys": [
+      {
+       "modifier": 1,
+       "keycode": 15
+      },
+      {
+       "modifier": 1,
+       "keycode": 16
+      },
+      {
+       "modifier": 1,
+       "keycode": 24
+      },
+      {
+       "modifier": 1,
+       "keycode": 5
+      },
+      {
+       "modifier": 1,
+       "keycode": 12
+      },
+      {
+       "modifier": 3,
+       "keycode": 24
+      },
+      {
+       "modifier": 5,
+       "keycode": 12
+      },
+      {
+       "modifier": 5,
+       "keycode": 6
+      },
+      {
+       "modifier": 3,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 7,
+       "keycode": 26
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 7,
+       "keycode": 15
+      },
+      {
+       "modifier": 3,
+       "keycode": 5
+      },
+      {
+       "modifier": 7,
+       "keycode": 5
+      },
+      {
+       "modifier": 1,
+       "keycode": 39
+      },
+      {
+       "modifier": 1,
+       "keycode": 30
+      },
+      {
+       "modifier": 1,
+       "keycode": 23
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 3,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 3,
+       "keycode": 22
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 48
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 56
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 39
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 3,
+       "keycode": 29
+      },
+      {
+       "type": 2,
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "type": 0,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 4,
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "premier",
+   "name": "Premier",
+   "app": "Adobe Premiere Pro",
+   "group": "Creativos",
+   "description": "Montaje en la línea de tiempo y herramientas.",
+   "processes": [
+    "adobe premiere pro.exe"
+   ],
+   "pages": [
+    {
+     "title": "Montaje",
+     "labels": [
+      "CUT",
+      "SELC",
+      "ADDEDIT",
+      "TRIMPRV",
+      "RIPL",
+      "TRIMNXT",
+      "UNDO",
+      "MARK",
+      "REDO",
+      "PLAY",
+      "MARKIN",
+      "MARKCLP",
+      "MARKOUT",
+      "PREVEDT",
+      "MATCHFR",
+      "NEXTEDT",
+      "LINK",
+      "SNAPTL",
+      "SPED",
+      "RENDER"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 6
+      },
+      {
+       "modifier": 0,
+       "keycode": 25
+      },
+      {
+       "modifier": 1,
+       "keycode": 14
+      },
+      {
+       "modifier": 0,
+       "keycode": 20
+      },
+      {
+       "modifier": 2,
+       "keycode": 76
+      },
+      {
+       "modifier": 0,
+       "keycode": 26
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 16
+      },
+      {
+       "modifier": 3,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 12
+      },
+      {
+       "modifier": 0,
+       "keycode": 27
+      },
+      {
+       "modifier": 0,
+       "keycode": 18
+      },
+      {
+       "modifier": 0,
+       "keycode": 82
+      },
+      {
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "modifier": 0,
+       "keycode": 81
+      },
+      {
+       "modifier": 1,
+       "keycode": 15
+      },
+      {
+       "modifier": 0,
+       "keycode": 22
+      },
+      {
+       "modifier": 1,
+       "keycode": 21
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 40
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 79
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 80
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 81
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 82
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 48
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 56
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    },
+    {
+     "title": "Herramientas",
+     "labels": [
+      "RIPEDIT",
+      "ROLL",
+      "RATE",
+      "SLIP",
+      "SLID",
+      "TRKSEL",
+      "PEN",
+      "HAND",
+      "TEXT",
+      "ZOOM",
+      "VTRANS",
+      "ATRANS",
+      "BTRANS",
+      "EXPFRM",
+      "EXPO",
+      "SAVE",
+      "UNDO",
+      "PLAY",
+      "REDO",
+      "RENDER"
+     ],
+     "keys": [
+      {
+       "modifier": 0,
+       "keycode": 5
+      },
+      {
+       "modifier": 0,
+       "keycode": 17
+      },
+      {
+       "modifier": 0,
+       "keycode": 21
+      },
+      {
+       "modifier": 0,
+       "keycode": 28
+      },
+      {
+       "modifier": 0,
+       "keycode": 24
+      },
+      {
+       "modifier": 0,
+       "keycode": 4
+      },
+      {
+       "modifier": 0,
+       "keycode": 19
+      },
+      {
+       "modifier": 0,
+       "keycode": 11
+      },
+      {
+       "modifier": 0,
+       "keycode": 23
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 1,
+       "keycode": 7
+      },
+      {
+       "modifier": 3,
+       "keycode": 7
+      },
+      {
+       "modifier": 2,
+       "keycode": 7
+      },
+      {
+       "modifier": 3,
+       "keycode": 8
+      },
+      {
+       "modifier": 1,
+       "keycode": 16
+      },
+      {
+       "modifier": 1,
+       "keycode": 22
+      },
+      {
+       "modifier": 1,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "modifier": 3,
+       "keycode": 29
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "modifier": 0,
+       "keycode": 40
+      },
+      {
+       "modifier": 0,
+       "keycode": 0
+      }
+     ],
+     "rotary": [
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 79
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 80
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 3,
+       "modifier": 0,
+       "keycode": 0
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 7
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 8
+      },
+      {
+       "type": 1,
+       "modifier": 0,
+       "keycode": 9
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 81
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 82
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 44
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 48
+      },
+      {
+       "type": 2,
+       "modifier": 0,
+       "keycode": 56
+      }
+     ],
+     "scroll": [
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      },
+      {
+       "detentsPerRev": 60,
+       "invert": false
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

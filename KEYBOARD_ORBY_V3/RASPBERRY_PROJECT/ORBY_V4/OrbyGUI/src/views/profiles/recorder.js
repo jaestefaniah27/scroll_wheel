@@ -3,7 +3,7 @@
 import * as device from '../../device.js';
 import { state, markDirty, keymapSlot, labelSlot } from '../../store.js';
 import { MACRO_MODIFIER } from '../../hid-keys.js';
-import { toast } from '../../ui.js';
+import { toast, confirmar } from '../../ui.js';
 import { icon } from '../../icons.js';
 import * as cache from '../../oled-cache.js';
 import * as fb from '../../oled-fb.js';
@@ -11,7 +11,8 @@ import * as variants from '../../variants.js';
 import { view, currentProfile, selectedKeyIndex, isActiveView, currentMacroId,
          rerender } from './view-state.js';
 import { macroById, nextMacroId, ensureMacro, savePCMacros, removeMacro, allMacros,
-         loadPCMacros, isRecordingMacro, isResetMacro, isRecordOrResetMacro } from './macros-store.js';
+         loadPCMacros, isRecordingMacro, isResetMacro, isRecordOrResetMacro,
+         scheduleStoreUpload } from './macros-store.js';
 import { applyKeymap } from './keys.js';
 
 // --- Pestaña "Grabar": capturar una operación y repetirla -------------------
@@ -263,6 +264,9 @@ export async function onRecorderState({ id, phase }) {
     // El proceso principal ha escrito los eventos en la configuración: hay que
     // releerla antes de volver a guardarla desde aquí, o se perdería.
     await loadPCMacros();
+    // La grabación nueva no ha pasado por savePCMacros: se apunta a mano para
+    // que llegue también a la copia del teclado.
+    scheduleStoreUpload();
     await showKeyStatus(id, phase === 'saved' ? 'OK' : 'VACIO');
     restoreTimer = setTimeout(async () => {
       recordPhase = { id: null, phase: 'idle' };
@@ -275,6 +279,7 @@ export async function onRecorderState({ id, phase }) {
   } else if (phase === 'reset') {
     // Se ha pulsado SUPER + la tecla: lo grabado se ha ido y vuelve a RECORD.
     await loadPCMacros();
+    scheduleStoreUpload();
     recordPhase = { id: null, phase: 'idle' };
     screenBackup = null;
     await refreshRecordIcons(id);
@@ -305,7 +310,12 @@ export function setRecordSpeed(speed) {
 export async function clearRecording() {
   const m = recordMacro(currentMacroId());
   if (!m || !m.events?.length) return;
-  if (!confirm('Se borrará la operación grabada en esta tecla.\n\n¿Continuar?')) return;
+  if (!await confirmar({
+    titulo: '¿Borrar la grabación?',
+    mensaje: 'Se borrará la operación grabada en esta tecla.',
+    aceptar: 'Borrar',
+    peligro: true,
+  })) return;
   m.events = [];
   savePCMacros(m.id);
   await refreshRecordIcons(m.id);  // vuelve a RECORD
@@ -322,9 +332,14 @@ export async function toggleRecording() {
   // proceso principal de la configuración del PC, así que hay que esperar a que
   // quede escrita o leería todavía los viejos y se pondría a reproducir.
   if (recordPhase.phase !== 'recording' && m.events?.length) {
-    if (!confirm('Se sustituirá la operación grabada en esta tecla.\n\n¿Grabar de nuevo?')) return;
+    if (!await confirmar({
+      titulo: '¿Grabar de nuevo?',
+      mensaje: 'Se sustituirá la operación grabada en esta tecla.',
+      aceptar: 'Grabar',
+    })) return;
     m.events = [];
     await window.orby.setConfig({ macros: allMacros() });
+    scheduleStoreUpload();
     await refreshRecordIcons(m.id);
     rerender();
   }

@@ -11,7 +11,7 @@ if (-not (Get-Command g++ -ErrorAction SilentlyContinue)) {
 
 $failed = $false
 
-foreach ($t in @('test_hid_out', 'test_wheel')) {
+foreach ($t in @('test_hid_out', 'test_wheel', 'test_ui', 'test_anim', 'test_macro_store')) {
     Write-Host "Compilando $t..." -ForegroundColor Gray
     & g++ -O1 -Wall -Wextra -Wno-unused-function -I"$here" -I"$here\..\..\include" `
           -o "$here\$t.exe" "$here\$t.cpp"
@@ -19,6 +19,18 @@ foreach ($t in @('test_hid_out', 'test_wheel')) {
     & "$here\$t.exe"
     if ($LASTEXITCODE -ne 0) { $failed = $true }
 }
+
+# Los iconos y la fuente del firmware se generan desde tools/oled_ui: lo que
+# está en include/ tiene que ser lo que sale de ahí.
+Write-Host "`nComprobando que los iconos están regenerados..." -ForegroundColor Gray
+& python "$here\..\oled_ui\build.py" --check
+if ($LASTEXITCODE -ne 0) { $failed = $true }
+
+# La biblioteca de perfiles: etiquetas válidas, todas con icono, y el JSON de la
+# app al día con biblioteca.py.
+Write-Host "`nComprobando la biblioteca de perfiles..." -ForegroundColor Gray
+& python "$here\..\perfiles\build.py" --check
+if ($LASTEXITCODE -ne 0) { $failed = $true }
 
 # La huella con la que el teclado y la app deciden si hay que sincronizar esta
 # escrita dos veces, en C++ y en JavaScript. Si dejan de dar lo mismo, la app

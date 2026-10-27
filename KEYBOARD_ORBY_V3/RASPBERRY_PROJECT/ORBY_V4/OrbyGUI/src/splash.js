@@ -38,5 +38,5 @@ export function hide() {
   el.classList.add('gone');
   // Se espera a que acabe el fundido antes de sacarlo del DOM: quitarlo de
   // golpe se lleva la transición por delante.
-  setTimeout(() => { el?.remove(); el = null; msgEl = null; }, 320);
+  setTimeout(() => { el?.remove(); el = null; msgEl = null; }, 520);
 }

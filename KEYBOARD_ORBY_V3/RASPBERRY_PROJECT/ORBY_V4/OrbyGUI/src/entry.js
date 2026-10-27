@@ -11,6 +11,11 @@
 // `window.orby` propio, la rama de Electron se lo tragaría y arrancaría por la vía
 // equivocada sin decir nada.
 
+// El tema va antes que nada: la hoja de estilos llega con main.js y tiene que
+// encontrarse ya puesto el data-theme, o se vería un fotograma del tema
+// equivocado.
+import './theme.js';
+
 if (window.__TAURI_INTERNALS__) {
   await import('./tauri-main.js');
 } else if (window.orby) {

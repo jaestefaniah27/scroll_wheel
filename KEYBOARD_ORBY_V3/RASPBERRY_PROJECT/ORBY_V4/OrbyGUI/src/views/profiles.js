@@ -22,7 +22,7 @@ import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, CONSUMER_TURN_OPTIONS, 
          MACRO_MODIFIER, KEY_GROUPS, describeAction, eventToAction,
          ROTARY_TYPES, ROTARY_SLOTS, isScrollType, describeRotary } from '../hid-keys.js';
 import { icon } from '../icons.js';
-import { toast, requireDevice } from '../ui.js';
+import { toast, requireDevice, confirmar } from '../ui.js';
 import { goTo } from '../nav.js';
 import * as cache from '../oled-cache.js';
 import * as fb from '../oled-fb.js';
@@ -30,6 +30,8 @@ import * as variants from '../variants.js';
 import * as plugins from '../plugins.js';
 import * as platform from '../platform.js';
 import * as compat from '../compat.js';
+import { LIBRARY, installProfile } from '../profile-library.js';
+import { addRulesFor } from './auto.js';
 
 import { ROTARY_GROUPS, ROTARY_TYPE_OPTIONS, SCROLL_PRESETS } from './profiles/constants.js';
 import { view, setRenderers, currentPageIdx, editingVariant, selectedKeyIndex, selectedRotarySlot,
@@ -56,7 +58,7 @@ import { getCurrentWindowInfo, keycodeOptions, escape } from './profiles/util.js
 
 // Subir las secuencias al teclado lo hace ahora macros-store.js, pero main.js
 // se lo sigue pidiendo a esta vista: era parte de su interfaz antes del corte.
-export { syncAllMacrosToDevice } from './profiles/macros-store.js';
+export { syncAllMacrosToDevice, syncMacroStore } from './profiles/macros-store.js';
 
 
 export function init() {
@@ -229,6 +231,11 @@ function onClick(e) {
     if (current.modifier >= CONSUMER_MODIFIER || current.modifier === GOTO_PAGE_MODIFIER
         || current.modifier === PAGE_STATE_MODIFIER) applyKeymap(bit, 0);
     else applyKeymap(current.modifier ^ bit, current.keycode);
+  } else if (act === 'library-toggle') {
+    view.libraryOpen = !view.libraryOpen;
+    render();
+  } else if (act === 'library-add') {
+    addFromLibrary(el.dataset.id);
   } else if (act === 'profile-new') {
     createProfile(null);
   } else if (act === 'profile-dup') {
@@ -589,8 +596,12 @@ async function addCurrentApp() {
 async function removeVariant() {
   const variant = editingVariant();
   if (!variant) return;
-  if (!confirm(`Se borrará la variación "${variant.name}" y sus ${variants.countOverrides(variant)} cambios.\n\n`
-             + 'El perfil base no se toca.\n\n¿Continuar?')) return;
+  if (!await confirmar({
+    titulo: `¿Borrar la variación «${variant.name}»?`,
+    mensaje: `Se van sus ${variants.countOverrides(variant)} cambios. El perfil base no se toca.`,
+    aceptar: 'Borrar',
+    peligro: true,
+  })) return;
 
   await variants.remove(variant.id);
   view.variantId = null;
@@ -664,14 +675,93 @@ async function createProfile(copyFrom) {
   }
 }
 
+// Añade un perfil de la biblioteca. Son unas doscientas órdenes por el CDC y
+// tarda unos segundos: el panel enseña por qué página va.
+async function addFromLibrary(id) {
+  if (view.busy) return;
+  if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
+  const def = LIBRARY.find((p) => p.id === id);
+  if (!def) return;
+
+  view.busy = true;
+  view.libraryMsg = `Añadiendo ${def.app}…`;
+  render();
+  try {
+    const idx = await installProfile(def, (msg) => {
+      view.libraryMsg = `${def.app}: ${msg}`;
+      const el = document.getElementById('library-status');
+      if (el) el.textContent = view.libraryMsg;
+    });
+    view.editingProfile = idx;
+    view.selected = null;
+    const rules = addRulesFor(def.processes, idx);
+    toast(rules ? `${def.app} añadido; se pondrá solo al abrir el programa`
+                : `${def.app} añadido`);
+  } catch (err) {
+    toast(`No se pudo añadir ${def.app}: ${err.message}`, 'error');
+    // A medias, lo que haya en el teclado manda: que la app no enseñe otra cosa.
+    try { await syncFromDevice(); } catch { /* sin teclado no hay nada que releer */ }
+  } finally {
+    view.busy = false;
+    view.libraryMsg = null;
+    render();
+  }
+}
+
+function renderLibrary() {
+  const full = state.profiles.length >= state.maxProfiles;
+  const groups = [...new Set(LIBRARY.map((p) => p.group))];
+  const installed = new Set(state.profiles.map((p) => (p.name || '').toLowerCase()));
+  return `
+    <div class="library-panel glass-panel">
+      <div class="library-head">
+        <div>
+          <h3>Biblioteca de perfiles</h3>
+          <p class="setting-desc">Perfiles con los atajos más usados de cada programa, una página
+            por tarea y más órdenes con SUPER. Cada tecla trae su icono en las pantallas.
+            Se añaden al final de la lista; luego se editan como cualquier otro.</p>
+        </div>
+        <button class="secondary-btn" data-act="library-toggle">${icon('close', 16)} Cerrar</button>
+      </div>
+      ${view.libraryMsg ? `<div class="library-status" id="library-status">${escape(view.libraryMsg)}</div>` : ''}
+      ${full ? `<div class="plugin-empty">El teclado ya tiene ${state.maxProfiles} perfiles: borra alguno para
+        añadir otro.</div>` : ''}
+      ${groups.map((g) => `
+        <div class="library-group">
+          <h4>${escape(g)}</h4>
+          ${LIBRARY.filter((p) => p.group === g).map((p) => `
+            <div class="plugin-row">
+              <span class="plugin-row-icon">${icon('profiles', 18)}</span>
+              <div class="plugin-row-main">
+                <span class="plugin-row-name">${escape(p.app)} <b>${escape(p.name)}</b></span>
+                <span class="plugin-row-desc">${escape(p.description)}</span>
+                <span class="library-pages">${p.pages.map((pg) => `<span class="pill">${escape(pg.title)}</span>`).join('')}</span>
+              </div>
+              <div class="plugin-row-actions">
+                ${installed.has(p.name.toLowerCase()) ? '<span class="pill">Ya está</span>' : ''}
+                <button class="secondary-btn" data-act="library-add" data-id="${escape(p.id)}"
+                        ${full || view.busy || !state.connected ? 'disabled' : ''}>
+                  ${icon('plus', 16)} Añadir
+                </button>
+              </div>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+}
+
 async function removeProfile() {
   if (view.busy) return;
   if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
   if (state.profiles.length <= 1) { toast('Tiene que quedar al menos un perfil', 'error'); return; }
 
   const prof = currentProfile();
-  if (!confirm(`Se borrará el perfil "${prof?.name || ''}" con sus atajos, mandos e iconos.\n\n`
-             + 'El cambio no será permanente hasta que pulses "Guardar en Flash".\n\n¿Continuar?')) return;
+  if (!await confirmar({
+    titulo: `¿Eliminar el perfil «${prof?.name || ''}»?`,
+    mensaje: 'Se van con él sus atajos, mandos e iconos.\n\n'
+           + 'El cambio no será permanente hasta que pulses "Guardar en Flash".',
+    aceptar: 'Eliminar',
+    peligro: true,
+  })) return;
 
   view.busy = true;
   render();
@@ -850,6 +940,7 @@ export function render() {
 
   body.innerHTML = `
     <div class="profile-bar" id="profile-bar">${renderTabsInner()}</div>
+    ${view.libraryOpen ? renderLibrary() : ''}
     ${renderVariantBar()}
 
     <div class="editor-layout">
@@ -933,6 +1024,10 @@ function renderTabsInner() {
       <button class="secondary-btn" data-act="profile-new" ${full || view.busy ? 'disabled' : ''}
               title="${full ? `Máximo ${state.maxProfiles} perfiles` : 'Crear un perfil vacío'}">
         ${icon('plus', 16)} Nuevo
+      </button>
+      <button class="secondary-btn${view.libraryOpen ? ' active' : ''}" data-act="library-toggle"
+              title="Perfiles listos para Altium, KiCad, VS Code, Office, Photoshop...">
+        ${icon('download', 16)} Biblioteca
       </button>
       <button class="secondary-btn" data-act="profile-dup" ${full || view.busy ? 'disabled' : ''}
               title="Copiar el perfil actual con sus iconos">
@@ -1055,9 +1150,14 @@ async function deletePage(idx) {
     toast('Activa este perfil en el teclado para borrarle páginas');
     return;
   }
-  if (!confirm(`¿Eliminar la página ${idx + 1} de ${escape(prof.name)}?\n\n`
-             + 'Se van sus teclas, etiquetas, mandos e iconos. Las páginas siguientes '
-             + 'se recolocan.')) return;
+  // Sin escape(): confirmar() pone el texto con textContent, y escapado se
+  // vería un &amp; literal en el título.
+  if (!await confirmar({
+    titulo: `¿Eliminar la página ${idx + 1} de ${prof.name}?`,
+    mensaje: 'Se van sus teclas, etiquetas, mandos e iconos. Las páginas siguientes se recolocan.',
+    aceptar: 'Eliminar',
+    peligro: true,
+  })) return;
   try {
     await removePage(idx);
     variants.shiftPages(view.editingProfile, idx);

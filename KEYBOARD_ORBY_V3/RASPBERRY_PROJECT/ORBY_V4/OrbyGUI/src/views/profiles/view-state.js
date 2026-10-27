@@ -34,6 +34,8 @@ export const view = {
   tab: 'shortcut',  // pestaña del inspector de tecla: shortcut | sequence | text | record | app | media | pages
   capturing: false, // false | true (atajo) | 'sequence' (grabando una macro) | 'position' (capturando dónde poner el ratón)
   busy: false,      // hay un alta/baja de perfil en marcha
+  libraryOpen: false, // panel de la biblioteca de perfiles desplegado
+  libraryMsg: null,   // progreso de la instalación en curso
 };
 
 // Página del perfil que se está editando en esta vista.

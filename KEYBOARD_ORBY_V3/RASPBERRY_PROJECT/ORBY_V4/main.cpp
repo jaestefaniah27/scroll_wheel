@@ -16,8 +16,9 @@
 #include "config_hash.h"
 #include "hardware_encoder.h"
 #include "hardware_oled.h"
-#include "oled_text.h"
-#include "oled_bitmaps.h"
+#include "oled_ui.h"
+#include "oled_anim.h"
+#include "macro_store.h"
 #include "oled_intro.h"
 #include "hid_hires.h"
 #include "hid_out.h"
@@ -440,11 +441,13 @@ static inline bool cur_scroll_invert() {
 // ==========================================
 // DISPOSICIÓN DE LA FLASH
 // ==========================================
-//   0 –  115 KB   el programa
+//   0 –  200 KB   el programa (con los iconos y la fuente de las pantallas)
 //        ...libre...
 //   1024 – 1536 KB  banco de iconos: 64 tramos (16 perfiles × 4 páginas) de 8 KB
 //   1536 – 1560 KB  ajustes: perfiles con sus páginas y las máscaras de iconos
+//   1560 – 1592 KB  secuencias que reproduce el propio teclado
 //        ...libre...
+//   1600 – 2048 KB  copia de las macros del PC, dos bancos de 224 KB (macro_store.h)
 //
 // El banco acaba justo donde empiezan los ajustes. Está debajo y no encima
 // porque encima no cabía: 1536 + 512 se sale de los 2 MB del módulo.
@@ -730,6 +733,48 @@ static void load_macros() {
         memset(macros, 0, sizeof(macros));
     }
 }
+
+// ==========================================
+// ALMACÉN DE LAS MACROS DEL PC (ver include/macro_store.h)
+// ==========================================
+static_assert(FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES <= MStore::OFFSET,
+              "El almacén de macros pisa las secuencias del teclado");
+static_assert(MStore::OFFSET + 2 * MStore::BANK <= PICO_FLASH_SIZE_BYTES,
+              "El almacén de macros se sale de la Flash del módulo");
+static_assert(MStore::PAGE == FLASH_PAGE_SIZE && MStore::SECTOR == FLASH_SECTOR_SIZE,
+              "macro_store.h asume la página y el sector de la Flash del RP2040");
+
+static const uint8_t* mstore_read(uint32_t off) {
+    return (const uint8_t*)(XIP_BASE + off);
+}
+
+// Las dos operaciones de Flash con Core 1 apartado, como write_oled_slice.
+static void mstore_erase(uint32_t off, uint32_t len) {
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_erase(off, len);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+}
+
+static void mstore_program(uint32_t off, const uint8_t* data, uint32_t len) {
+    const bool lock = multicore_lockout_victim_is_initialized(1);
+    uint32_t ints = save_and_disable_interrupts();
+    if (lock) multicore_lockout_start_blocking();
+    flash_range_program(off, data, len);
+    if (lock) multicore_lockout_end_blocking();
+    restore_interrupts(ints);
+}
+
+// El almacén se revisa al arrancar, antes de que exista el USB: ahí solo toca
+// alimentar el perro guardián.
+static void mstore_idle() {
+    if (tud_inited()) tud_task();
+    watchdog_update();
+}
+
+static MStore::Store mstore({ mstore_read, mstore_erase, mstore_program, mstore_idle });
 
 // ==========================================
 // ACCESO A LOS ICONOS
@@ -1789,20 +1834,6 @@ static inline bool key_needs_app(const KeyAction& a) {
 // ==========================================
 // CORE 1: MANEJA EXCLUSIVAMENTE LAS PANTALLAS
 // ==========================================
-// Dibuja un marco rectangular premium en el framebuffer (72x40)
-void draw_premium_frame(uint8_t* fb) {
-    // Línea superior (bit 0 de la página 0) e inferior (bit 7 de la página 4)
-    for (int x = 0; x < 72; x++) {
-        fb[0 * 72 + x] |= 0x01;
-        fb[4 * 72 + x] |= 0x80;
-    }
-    // Líneas laterales izquierda (x=0) y derecha (x=71)
-    for (int p = 0; p < 5; p++) {
-        fb[p * 72] = 0xFF;
-        fb[p * 72 + 71] = 0xFF;
-    }
-}
-
 // Tacha la pantalla entera con una barra diagonal: esta tecla la ejecuta el PC y
 // la app no está delante, así que no va a hacer nada.
 //
@@ -1830,239 +1861,261 @@ static void draw_disabled_slash(uint8_t* fb) {
     }
 }
 
-// Dibuja el contenido de una pantalla según el modo y perfil actual
-void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
-    uint8_t fb[360];
-    memset(fb, 0, sizeof(fb));
+// Copia a la salida un icono subido por el usuario, que vive en la Flash.
+static inline void emit(uint8_t* out, const uint8_t* src) {
+    if (src != out) memcpy(out, src, OLED_FB_SIZE);
+}
 
-    if (current_mode == MODE_NORMAL) {
-        uint8_t slot = (uint8_t)((screen_num - 1) + (super_active ? 10 : 0));
+// Las etiquetas y los nombres ocupan 8 bytes justos y nada obliga a la app a
+// dejar sitio para el terminador: se copian a un búfer con uno garantizado.
+static inline void copy_name(char (&dst)[9], const char* src) {
+    memcpy(dst, src, 8);
+    dst[8] = '\0';
+}
+
+// Pantalla de un perfil en el menú: su icono propio si lo tiene, el de
+// fábrica si es uno de los de fábrica, y si no su nombre en grande.
+static void render_profile_tile(uint8_t* fb, uint8_t option) {
+    if (oled_slot_used(option, 0, OLED_PROFILE_SLOT)) {
+        emit(fb, oled_slot_ptr(option, 0, OLED_PROFILE_SLOT));
+        return;
+    }
+    char name[9];
+    copy_name(name, profiles[option].name);
+    const int e = OledUi::lookup_profile(name);
+    if (e >= 0) OledUi::screen_icon(fb, OledUiData::entries[e].icon, OledUiData::entries[e].caption);
+    else        OledUi::screen_text(fb, name);
+}
+
+// __DATE__ llega como "Oct 26 2026". En pantalla, a la española: "26 oct 2026".
+static void build_date(char* out, size_t n) {
+    static const char* const en[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    static const char* const es[12] = {"ene", "feb", "mar", "abr", "may", "jun",
+                                       "jul", "ago", "sep", "oct", "nov", "dic"};
+    const char* d = __DATE__;
+    const char* mes = "";
+    for (int i = 0; i < 12; i++) if (!strncmp(d, en[i], 3)) mes = es[i];
+    const int dia = atoi(d + 4);
+    snprintf(out, n, "%d %s %s", dia, mes, d + 7);
+}
+
+// Dibuja el contenido de una pantalla según el modo y perfil actual. Solo
+// dibuja: mandarlo al panel es cosa de Core 1, que antes lo anima.
+//
+// La opción elegida de un menú sale aquí ya en negativo (invert_pill), en vez
+// de invertir el panel por hardware como antes: así la selección forma parte
+// de la imagen y se anima con ella.
+static void render_screen(uint8_t screen_num, uint8_t* out) {
+    using namespace OledUi;
+    using namespace OledUiData;
+    uint8_t* fb = out;
+    memset(fb, 0, OLED_FB_SIZE);
+    bool elegida = false;
+    const int idx = screen_num - 1;
+
+    switch (current_mode) {
+    case MODE_NORMAL: {
+        uint8_t slot = (uint8_t)(idx + (super_active ? 10 : 0));
 
         // Una tecla configurada como estado de páginas enseña en qué página
         // estás, así que su pantalla no la manda el icono sino el estado.
         uint8_t ki = key_index_for_screen(screen_num);
         const KeyAction& act = cur_page().key_mappings[ki + (super_active ? 12 : 0)];
         if (act.modifier == KEYACT_PAGE_STATE) {
-            char txt[8];
-            snprintf(txt, sizeof(txt), "P%u/%u",
-                     (unsigned)(active_page + 1),
-                     (unsigned)profiles[active_profile_idx].page_count);
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(txt, fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
+            char cap[24];
+            const unsigned total = profiles[active_profile_idx].page_count;
+            snprintf(cap, sizeof(cap), "Página %u de %u", (unsigned)(active_page + 1), total);
+            screen_dots(fb, active_page, (int)total, cap);
             return;
         }
 
         // Una acción que ejecuta el PC no hace nada con la app cerrada, así que
-        // su pantalla se tacha entera. Los dos primeros caminos pintan un bitmap
-        // que vive en la Flash: para tacharlo hay que copiarlo antes, porque el
-        // original no se toca.
+        // su pantalla se tacha entera.
         const bool tachada = key_needs_app(act) && !host_app_alive();
 
         if (slot < OLED_SLOTS && oled_slot_used(active_profile_idx, active_page, slot)) {
             // Icono personalizado subido desde la app con OLED_CHUNK
-            const uint8_t* icono = oled_slot_ptr(active_profile_idx, active_page, slot);
-            if (!tachada) {
-                oleds.paint_screen(screen_num, icono);
-            } else {
-                memcpy(fb, icono, sizeof(fb));
-                draw_disabled_slash(fb);
-                oleds.paint_screen(screen_num, fb);
-            }
-        } else if (active_profile_idx == 0 && active_page == 0 && !super_active) {
-            // Perfil por defecto (OFIM) -> Carga mapas de bits pre-horneados
-            const uint8_t* bmp = OledBitmaps::get_bitmap_by_index(screen_num - 1);
-            if (!tachada) {
-                oleds.paint_screen(screen_num, bmp);
-            } else {
-                memcpy(fb, bmp, sizeof(fb));
-                draw_disabled_slash(fb);
-                oleds.paint_screen(screen_num, fb);
-            }
+            emit(fb, oled_slot_ptr(active_profile_idx, active_page, slot));
         } else {
-            // Perfiles de fábrica de texto personalizado con contorno premium (o OFIM en SUPER)
-            int label_idx = (screen_num - 1) + (super_active ? 10 : 0);
-            const char* label = cur_page().oled_labels[label_idx];
-            // Sin etiqueta, la pantalla se queda a negro: el marco solo enmarca el
-            // texto. Dibujarlo igualmente convertía una página recién creada en una
-            // rejilla de recuadros vacíos en vez de un lienzo por pintar.
-            if (label[0] != '\0') {
-                OledText::render_string_to_framebuffer(label, fb);
-                draw_premium_frame(fb); // El renderizador limpia el búfer, así que el marco va después
-            }
-            // Sin etiqueta la pantalla está a negro, pero la tecla puede tener
-            // acción igual: la barra es entonces lo único que se ve, y es
-            // justamente el aviso que hace falta.
-            if (tachada) draw_disabled_slash(fb);
-            oleds.paint_screen(screen_num, fb);
+            // Icono y nombre del catálogo si la etiqueta es conocida; si no, la
+            // etiqueta tal cual. Sin etiqueta la pantalla queda a negro: una
+            // página recién creada es un lienzo por pintar, no una rejilla de
+            // marcos vacíos.
+            char label[9], perfil[9];
+            copy_name(label, cur_page().oled_labels[slot]);
+            copy_name(perfil, profiles[active_profile_idx].name);
+            screen_key(fb, perfil, label);
         }
+        // Sin etiqueta la barra es lo único que se ve, y es justo el aviso.
+        if (tachada) draw_disabled_slash(fb);
+        return;
     }
-    else if (current_mode == MODE_MENU_MAIN) {
-        if (screen_num >= 1 && screen_num <= 6) {
-            draw_premium_frame(fb);
-            const char* menu_opts[6] = {"PERF", "REPO", "SCRL", "RSET", "INFO", "EXIT"};
-            OledText::render_string_to_framebuffer(menu_opts[screen_num - 1], fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else {
-            // Pantallas 7-10 vacías
-            oleds.paint_screen(screen_num, fb);
-        }
-    }
-    else if (current_mode == MODE_MENU_PERF) {
-        // Cada pantalla enseña una opción de la ventana visible: los perfiles y,
-        // tras el último, BACK. Con más de diez perfiles la ventana se desplaza.
-        uint8_t option = (uint8_t)(perf_menu_first + screen_num - 1);
 
-        if (option < profile_count) {
-            // Con icono propio, la pantalla entera es el icono: nada de marco ni
-            // nombre debajo, igual que MODE_NORMAL con una tecla personalizada.
-            if (oled_slot_used(option, 0, OLED_PROFILE_SLOT)) {
-                oleds.paint_screen(screen_num, oled_slot_ptr(option, 0, OLED_PROFILE_SLOT));
-            } else {
-                draw_premium_frame(fb);
-                OledText::render_string_to_framebuffer(profiles[option].name, fb);
-                draw_premium_frame(fb);
-                oleds.paint_screen(screen_num, fb);
-            }
-        } else if (option == profile_count) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("BACK", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else {
-            oleds.paint_screen(screen_num, fb);
+    case MODE_MENU_MAIN: {
+        static const uint8_t opciones[6] = {SYS_MENU_PROFILES, SYS_MENU_SLEEP, SYS_MENU_WHEEL,
+                                            SYS_MENU_RESET, SYS_MENU_INFO, SYS_MENU_EXIT};
+        if (screen_num <= 6) {
+            screen_system(fb, opciones[idx]);
+            elegida = (selected_menu_idx == idx);
         }
+        break;
     }
-    else if (current_mode == MODE_MENU_REPO) {
-        if (screen_num >= 1 && screen_num <= 4) {
-            draw_premium_frame(fb);
-            const char* repo_opts[4] = {"1 MIN", "5 MIN", "10MIN", "OFF"};
-            OledText::render_string_to_framebuffer(repo_opts[screen_num - 1], fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else if (screen_num == 5) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("BACK", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else {
-            oleds.paint_screen(screen_num, fb);
+
+    case MODE_MENU_PERF: {
+        // Cada pantalla enseña una opción de la ventana visible: los perfiles y,
+        // tras el último, Volver. Con más de diez perfiles la ventana se desplaza.
+        uint8_t option = (uint8_t)(perf_menu_first + idx);
+        if (option < profile_count)       render_profile_tile(fb, option);
+        else if (option == profile_count) screen_system(fb, SYS_BACK);
+        if (option <= profile_count) elegida = (selected_menu_idx == option);
+        break;
+    }
+
+    case MODE_MENU_REPO: {
+        static const uint8_t opciones[5] = {SYS_SLEEP_1, SYS_SLEEP_5, SYS_SLEEP_10, SYS_SLEEP_OFF, SYS_BACK};
+        if (screen_num <= 5) {
+            screen_system(fb, opciones[idx]);
+            elegida = (selected_menu_idx == idx);
         }
+        break;
     }
-    else if (current_mode == MODE_MENU_INFO) {
+
+    case MODE_MENU_INFO: {
         // Diagnóstico real: útil precisamente cuando no hay app a mano para
         // mirar este mismo estado por CDC.
-        char txt[12];
         if (screen_num == 1) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(profiles[active_profile_idx].name, fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
+            render_profile_tile(fb, active_profile_idx);
         } else if (screen_num == 2) {
-            snprintf(txt, sizeof(txt), "PAG %u/%u",
-                     (unsigned)(active_page + 1),
-                     (unsigned)profiles[active_profile_idx].page_count);
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(txt, fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
+            char cap[24];
+            const unsigned total = profiles[active_profile_idx].page_count;
+            snprintf(cap, sizeof(cap), "Página %u de %u", (unsigned)(active_page + 1), total);
+            screen_dots(fb, active_page, (int)total, cap);
         } else if (screen_num == 3) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(tud_cdc_n_connected(0) ? "HOST OK" : "SIN HOST", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
+            screen_system(fb, tud_cdc_n_connected(0) ? SYS_HOST_OK : SYS_HOST_NONE);
         } else if (screen_num == 4) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(__DATE__, fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
+            char fecha[16];
+            build_date(fecha, sizeof(fecha));
+            screen_icon(fb, system_entries[SYS_BUILD_DATE].icon, fecha);
         } else if (screen_num == 5) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("BACK", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else {
-            oleds.paint_screen(screen_num, fb);
+            // Volver es lo único que se puede pulsar aquí: va siempre marcado.
+            screen_system(fb, SYS_BACK);
+            elegida = true;
         }
+        break;
     }
-    else if (current_mode == MODE_MENU_PAGES) {
-        // Gestor de páginas: una pantalla por página con su número. La página en
-        // la que estás se marca invirtiendo la pantalla (lo hace el bucle de
-        // Core 1, aquí solo va el número).
+
+    case MODE_MENU_PAGES: {
+        // Gestor de páginas: una pantalla por página con su número. La página
+        // en la que estás va marcada: se ve de un golpe cuál es sin leer.
         uint8_t count = profiles[active_profile_idx].page_count;
         if (screen_num <= count) {
-            char txt[8];
+            char txt[4];
             snprintf(txt, sizeof(txt), "%u", (unsigned)screen_num);
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(txt, fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
+            screen_text(fb, txt);
+            elegida = (idx == (int)active_page);
         } else if (screen_num == 10) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("BACK", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else {
-            oleds.paint_screen(screen_num, fb);
+            screen_system(fb, SYS_BACK);
         }
+        break;
     }
-    else if (current_mode == MODE_MENU_SCROLL) {
+
+    case MODE_MENU_SCROLL: {
         // Invierte la rueda de la capa normal y de SUPER por separado: cada
         // pantalla muestra su estado actual y lo cambia al confirmarla, sin
         // salir del submenú (para poder tantear varias veces seguidas).
-        if (screen_num == 1) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(cur_page().scroll_invert[0] ? "NORM ON" : "NORM OFF", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else if (screen_num == 2) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer(cur_page().scroll_invert[1] ? "SUP ON" : "SUP OFF", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else if (screen_num == 3) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("BACK", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else {
-            oleds.paint_screen(screen_num, fb);
-        }
+        if (screen_num == 1)      screen_toggle(fb, cur_page().scroll_invert[0], "Invertir");
+        else if (screen_num == 2) screen_toggle(fb, cur_page().scroll_invert[1], "Invertir SUPER");
+        else if (screen_num == 3) screen_system(fb, SYS_BACK);
+        if (screen_num <= 3) elegida = (selected_menu_idx == idx);
+        break;
     }
-    else if (current_mode == MODE_MENU_RESET) {
-        if (screen_num == 1) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("SI, BORRAR", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else if (screen_num == 2) {
-            draw_premium_frame(fb);
-            OledText::render_string_to_framebuffer("NO", fb);
-            draw_premium_frame(fb);
-            oleds.paint_screen(screen_num, fb);
-        } else {
-            oleds.paint_screen(screen_num, fb);
-        }
+
+    case MODE_MENU_RESET: {
+        if (screen_num == 1)      screen_system(fb, SYS_RESET_YES);
+        else if (screen_num == 2) screen_system(fb, SYS_RESET_NO);
+        if (screen_num <= 2) elegida = (selected_menu_idx == idx);
+        break;
     }
+    }
+
+    if (elegida) invert_pill(fb);
+}
+
+// --- Lo que enseñan las pantallas (todo esto es solo de Core 1) ---
+// `oled_shown` es lo que hay ahora mismo en cada panel, bit a bit: se compara
+// con cada fotograma nuevo y solo viaja por SPI lo que cambia. Una transición
+// va de `oled_from` (la foto de los paneles al empezar) a `oled_target`. Si
+// llega otro cambio a mitad, la nueva sale de lo que haya en ese instante: no
+// hay saltos aunque se encadenen. Son 11 KB de RAM, estáticos porque la pila
+// de Core 1 es de 2 KB.
+static uint8_t oled_shown[10][OLED_FB_SIZE];
+static uint8_t oled_from[10][OLED_FB_SIZE];
+static uint8_t oled_target[10][OLED_FB_SIZE];
+static uint8_t oled_frame[OLED_FB_SIZE];
+static uint8_t oled_pressed[OLED_FB_SIZE];
+
+// Pinta una pantalla con su contenido normal, sin animar. Lo usa la intro.
+static void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
+    render_screen(screen_num, oled_shown[screen_num - 1]);
+    oleds.paint_screen(screen_num, oled_shown[screen_num - 1]);
+}
+
+// Lo que hace falta del estado para saber QUÉ ha cambiado entre dos refrescos,
+// y con ello qué transición toca.
+struct ScreenCtx { uint8_t mode, profile, page, pages; };
+
+static ScreenCtx screen_ctx() {
+    return { (uint8_t)current_mode, active_profile_idx, active_page,
+             profiles[active_profile_idx].page_count };
+}
+
+static OledAnim::Kind classify(const ScreenCtx& a, const ScreenCtx& b) {
+    using namespace OledAnim;
+    const bool en_menu_a = a.mode != MODE_NORMAL, en_menu_b = b.mode != MODE_NORMAL;
+    if (!en_menu_a && en_menu_b) return MENU_OPEN;
+    if (en_menu_a && !en_menu_b) return MENU_CLOSE;   // elegir perfil desde el menú también
+    if (en_menu_a) {
+        if (a.mode == b.mode)          return CROSSFADE;   // se ha movido el cursor
+        if (a.mode == MODE_MENU_MAIN)  return PUSH;
+        if (b.mode == MODE_MENU_MAIN)  return POP;
+        return CROSSFADE;
+    }
+    if (a.profile != b.profile) return PROFILE;
+    if (a.page != b.page) {
+        // La tecla de menú avanza en círculo: de la última a la primera también
+        // es «siguiente», no un viaje de vuelta por todas.
+        if (b.pages > 1 && b.page == (a.page + 1) % b.pages) return PAGE_NEXT;
+        if (b.pages > 1 && a.page == (b.page + 1) % b.pages) return PAGE_PREV;
+        return b.page > a.page ? PAGE_NEXT : PAGE_PREV;
+    }
+    return CROSSFADE;   // capa SUPER, un icono nuevo, una tecla tachada...
 }
 
 void core1_entry() {
     multicore_lockout_victim_init(); // Permitir que Core 0 pause este core durante escrituras Flash
     HardwareOled oleds;
     oleds.init_all_screens();
+    OledAnim::init();
 
     // Intro de arranque. Si no hay animación horneada se limita a pintar el
-    // contenido normal, que es lo que había aquí antes.
+    // contenido normal. Termine como termine, deja `oled_shown` al día.
     intro_running = true;
     OledIntro::run(oleds, intro_should_skip, refresh_single_screen);
     intro_running = false;
+    memcpy(oled_target, oled_shown, sizeof(oled_target));
 
+    ScreenCtx ctx = screen_ctx();
+    OledAnim::Kind kind = OledAnim::CUT;
+    bool animando = false;
+    uint64_t t0 = 0;
+    OledAnim::Press pulsada[10];
     uint16_t current_inversions = 0;
+    uint64_t antes = time_us_64();
 
     while (true) {
         core1_heartbeat++; // Core 0 no alimenta el watchdog si esto se para
+        const uint64_t ahora = time_us_64();
 
         // El encendido y apagado del reposo lo pide Core 0 pero lo ejecuta este
         // core, que es el único dueño del bus SPI y de los pines del OLED.
@@ -2074,61 +2127,73 @@ void core1_entry() {
         if (system_refresh_req) {
             system_refresh_req = false;
 
-            // Restablecer la inversión de todas las pantallas a NORMAL (false)
-            // Esto soluciona que queden pantallas invertidas al entrar o salir de menús
-            for (int i = 1; i <= 10; i++) {
-                oleds.invert_screen(i, false);
-            }
+            // La inversión por hardware queda solo para la tecla pulsada; los
+            // menús llevan la selección dibujada. Se pone todo a normal en cada
+            // refresco por si algún panel se quedó invertido (reset a medias,
+            // un comando perdido): sale barato y no deja restos.
+            for (int i = 1; i <= 10; i++) oleds.invert_screen(i, false);
+            current_inversions = 0;
 
-            // Refrescar todas las pantallas de acuerdo al estado compartido
-            for (int i = 1; i <= 10; i++) {
-                refresh_single_screen(oleds, i);
-            }
+            const ScreenCtx nuevo = screen_ctx();
+            // Con las pantallas apagadas no hay nada que animar: se cambia y ya.
+            kind = displays_on ? classify(ctx, nuevo) : OledAnim::CUT;
+            ctx = nuevo;
+            memcpy(oled_from, oled_shown, sizeof(oled_from));
+            for (int i = 0; i < 10; i++) render_screen((uint8_t)(i + 1), oled_target[i]);
+            t0 = ahora;
+            animando = true;
+        }
 
-            // Si estamos en un menú con cursor, aplicar inversiones
-            if (current_mode == MODE_MENU_PERF) {
-                // El cursor se marca sobre la ventana visible, que con muchos
-                // perfiles no empieza necesariamente en el primero.
-                for (int i = 1; i <= PERF_MENU_SCREENS; i++) {
-                    oleds.invert_screen(i, (selected_menu_idx == perf_menu_first + i - 1));
-                }
-            } else if (current_mode == MODE_MENU_MAIN) {
-                for (int i = 1; i <= 6; i++) {
-                    oleds.invert_screen(i, (selected_menu_idx == (i - 1)));
-                }
-            } else if (current_mode == MODE_MENU_REPO || current_mode == MODE_MENU_SCROLL
-                       || current_mode == MODE_MENU_RESET) {
-                for (int i = 1; i <= 5; i++) {
-                    oleds.invert_screen(i, (selected_menu_idx == (i - 1)));
-                }
-            } else if (current_mode == MODE_MENU_INFO) {
-                // Destacar siempre "BACK" en la tecla 5
-                for (int i = 1; i <= 5; i++) {
-                    oleds.invert_screen(i, (i == 5));
-                }
-            } else if (current_mode == MODE_MENU_PAGES) {
-                // La página en la que estás, en negativo: así se ve de un golpe
-                // cuál es sin tener que leer los números.
-                uint8_t count = profiles[active_profile_idx].page_count;
-                for (int i = 1; i <= count; i++) {
-                    oleds.invert_screen(i, (i - 1) == (int)active_page);
-                }
+        // Muelle de la pulsación de cada tecla. Se le da el tiempo real que ha
+        // pasado, con tope: si Core 0 nos ha tenido parados escribiendo la
+        // Flash, el muelle no debe dar un salto de golpe.
+        float dt = (float)(ahora - antes) * 1e-6f;
+        if (dt > 0.05f) dt = 0.05f;
+        antes = ahora;
+        const uint16_t sujetas = (current_mode == MODE_NORMAL) ? active_inversions : 0;
+        bool muelles = false;
+        for (int i = 0; i < 10; i++)
+            if (OledAnim::press_step(pulsada[i], ((sujetas >> i) & 1) ? 1.0f : 0.0f, dt)) muelles = true;
+
+        const float t = animando ? (float)(ahora - t0) * 1e-6f : 0.0f;
+        for (int i = 0; i < 10; i++) {
+            if (animando) OledAnim::render(kind, t, i, oled_from, oled_target, oled_frame);
+            else          memcpy(oled_frame, oled_target[i], OLED_FB_SIZE);
+
+            const uint8_t* f = oled_frame;
+            if (pulsada[i].x > 0.0f) {
+                OledAnim::render_press(oled_frame, pulsada[i], oled_pressed);
+                f = oled_pressed;
             }
-            current_inversions = 0; // Reiniciar estado local tras refresco
-        } else if (current_mode == MODE_NORMAL) {
-            uint16_t new_inversions = active_inversions;
-            if (new_inversions != current_inversions) {
-                for (int i = 1; i <= 10; i++) {
-                    bool should_invert = (new_inversions & (1 << (i - 1))) != 0;
-                    bool is_inverted = (current_inversions & (1 << (i - 1))) != 0;
-                    if (should_invert != is_inverted) {
-                        oleds.invert_screen(i, should_invert);
-                    }
-                }
-                current_inversions = new_inversions;
+            if (memcmp(f, oled_shown[i], OLED_FB_SIZE) != 0) {
+                oleds.paint_screen((uint8_t)(i + 1), f);
+                memcpy(oled_shown[i], f, OLED_FB_SIZE);
             }
         }
-        sleep_ms(10); // Polling ligero para no acaparar CPU si no hay mensajes
+        if (animando && t >= OledAnim::duration(kind)) animando = false;
+
+        // El negativo de la tecla pulsada va por hardware: es instantáneo, que
+        // es lo que tiene que ser la respuesta a un dedo. El muelle de arriba
+        // es la parte que se mueve.
+        const uint16_t new_inversions = sujetas;
+        if (new_inversions != current_inversions) {
+            for (int i = 1; i <= 10; i++) {
+                bool should_invert = (new_inversions & (1 << (i - 1))) != 0;
+                bool is_inverted = (current_inversions & (1 << (i - 1))) != 0;
+                if (should_invert != is_inverted) oleds.invert_screen(i, should_invert);
+            }
+            current_inversions = new_inversions;
+        }
+
+        if (animando || muelles) {
+            // A 60 fotogramas por segundo mientras algo se mueve. El tiempo de
+            // la animación sale del reloj, no de contar fotogramas: si uno va
+            // lento, el siguiente simplemente llega más lejos.
+            const int64_t resto = 16667 - (int64_t)(time_us_64() - ahora);
+            if (resto > 0) sleep_us((uint64_t)resto);
+        } else {
+            sleep_ms(10); // Polling ligero para no acaparar CPU si no hay mensajes
+        }
     }
 }
 
@@ -2344,7 +2409,9 @@ void process_command(const char* cmd) {
         // el menú físico de perfiles (MODE_MENU_PERF).
         // HOSTAPP=1: este firmware entiende HOST_APP y tacha en las pantallas las
         // teclas que necesitan la app de PC mientras no esté anunciada.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MODE=%s\n",
+        // MSTORE=1: guarda una copia de las macros del PC (MSTORE_*), para que
+        // otro ordenador sepa qué hace cada tecla de macro.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2615,6 +2682,82 @@ void process_command(const char* cmd) {
         }
         page_of((uint8_t)idx, cmd_page((uint8_t)idx)).rotary[slot] = { (uint8_t)type, (uint8_t)mod, (uint8_t)key };
         cdc_printf("ROTARY:OK:%d:%d\n", idx, slot);
+        return;
+    }
+
+    // ---------- Almacén de las macros del PC (include/macro_store.h) ----------
+    // MSTORE_INFO → MSTORE:INFO:<longitud>:<crc>:<máximo>. Longitud 0 = vacío.
+    if (strcmp(cmd, "MSTORE_INFO") == 0) {
+        cdc_printf("MSTORE:INFO:%lu:%08lx:%lu\n", (unsigned long)mstore.len(),
+                   (unsigned long)mstore.crc(), (unsigned long)MStore::MAX);
+        return;
+    }
+
+    // MSTORE_GET:<desde>:<cuántos> → MSTORE:DATA:<desde>:<hex>
+    if (strncmp(cmd, "MSTORE_GET:", 11) == 0) {
+        int off = 0, n = 0;
+        const char* p = next_field(cmd + 11, &off);
+        p = next_field(p, &n);
+        if (!p || !mstore.data() || off < 0 || n <= 0 || n > (int)MStore::CHUNK
+            || (uint32_t)off >= mstore.len()) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        if ((uint32_t)(off + n) > mstore.len()) n = (int)(mstore.len() - (uint32_t)off);
+        const uint8_t* src = mstore.data() + off;
+        static const char HEX[] = "0123456789abcdef";
+        char line[24 + 2 * MStore::CHUNK];
+        int len = snprintf(line, sizeof(line), "MSTORE:DATA:%d:", off);
+        for (int i = 0; i < n; i++) {
+            line[len++] = HEX[src[i] >> 4];
+            line[len++] = HEX[src[i] & 0x0F];
+        }
+        line[len++] = '\n';
+        cdc_write_all(line, (uint32_t)len);
+        return;
+    }
+
+    // MSTORE_BEGIN:<longitud>:<crc en hex> — prepara el banco libre.
+    if (strncmp(cmd, "MSTORE_BEGIN:", 13) == 0) {
+        char* end = nullptr;
+        const unsigned long len = strtoul(cmd + 13, &end, 10);
+        if (!end || *end != ':') { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        const unsigned long crc = strtoul(end + 1, nullptr, 16);
+        if (mstore.begin((uint32_t)len, (uint32_t)crc) != MStore::OK) {
+            cdc_printf("ERR:MSTORE_SIZE:%lu\n", (unsigned long)MStore::MAX);
+            return;
+        }
+        cdc_printf("MSTORE:READY\n");
+        return;
+    }
+
+    // MSTORE_DATA:<desde>:<hex>
+    if (strncmp(cmd, "MSTORE_DATA:", 12) == 0) {
+        int off = 0;
+        const char* p = next_field(cmd + 12, &off);
+        uint8_t buf[MStore::CHUNK];
+        uint32_t n = 0;
+        while (p && p[0] && p[1] && n < sizeof(buf)) {
+            const int hi = hex_nibble(p[0]), lo = hex_nibble(p[1]);
+            if (hi < 0 || lo < 0) break;
+            buf[n++] = (uint8_t)((hi << 4) | lo);
+            p += 2;
+        }
+        if (!p || off < 0 || mstore.write((uint32_t)off, buf, n) != MStore::OK) {
+            cdc_printf("ERR:MSTORE_ORDER:%lu\n", (unsigned long)mstore.written());
+            return;
+        }
+        cdc_printf("MSTORE:ACK:%lu\n", (unsigned long)mstore.written());
+        return;
+    }
+
+    // MSTORE_END — solo si lo escrito cuadra pasa a ser la copia vigente.
+    if (strcmp(cmd, "MSTORE_END") == 0) {
+        uint32_t crc = 0;
+        const MStore::Result r = mstore.end(&crc);
+        if (r == MStore::OK)           cdc_printf("MSTORE:OK:%08lx\n", (unsigned long)crc);
+        else if (r == MStore::ERR_CRC) cdc_printf("ERR:MSTORE_CRC:%08lx\n", (unsigned long)crc);
+        else                           cdc_printf("ERR:MSTORE_SHORT:%lu\n", (unsigned long)mstore.written());
         return;
     }
 
@@ -2898,6 +3041,7 @@ int main() {
     // Cargar configuración de Flash
     load_settings();
     load_macros();
+    mstore.scan();
 
     // Si venimos de un reinicio por watchdog, algo se colgó: nada de intro, a
     // dejar el teclado operativo cuanto antes.

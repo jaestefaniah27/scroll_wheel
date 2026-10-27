@@ -16,7 +16,7 @@ import { state, markDirty, subscribe, KEY_TO_SCREEN, hasPages, pageCountOf,
          ensureEditTarget } from '../store.js';
 import { icon } from '../icons.js';
 import * as lib from '../icon-library.js';
-import { toast, requireDevice } from '../ui.js';
+import { toast, requireDevice, confirmar } from '../ui.js';
 import { goTo } from '../nav.js';
 import * as fb from '../oled-fb.js';
 import * as cache from '../oled-cache.js';
@@ -155,8 +155,13 @@ function backToProfiles() {
 
 // Salir sin guardar: lo dibujado se descarta y la tecla se queda con el icono
 // que ya tuviera el teclado. Se pregunta solo si de verdad hay algo que perder.
-function exitWithoutSaving() {
-  if (view.dirty && !confirm('Se perderá lo que hayas dibujado en este icono.\n\n¿Salir sin guardar?')) return;
+async function exitWithoutSaving() {
+  if (view.dirty && !await confirmar({
+    titulo: '¿Salir sin guardar?',
+    mensaje: 'Se perderá lo que hayas dibujado en este icono.',
+    aceptar: 'Salir',
+    peligro: true,
+  })) return;
   backToProfiles();
 }
 
