@@ -135,10 +135,11 @@ static constexpr Fade CLOSE_INNER = {0.0f,  0.2f, EASE_OUT};
 // se notaba que creciera, solo que aparecía debajo. Aquí lo que entra empieza a
 // moverse justo cuando empieza a verse (mismo retardo en su muelle) y aparece
 // con EaseOut, así que se le ve crecer; lo que sale se va en 0,25 s con EaseIn,
-// que lo deja a la vista mientras se agranda. Las dos opacidades suman ~1 en
-// todo el recorrido: casi no comparten píxeles del Bayer.
+// que lo deja a la vista mientras se agranda. Lo nuevo espera a que lo viejo
+// esté casi ido (0,2 s): solapados, en 1 bit los dos dibujos se mezclan en una
+// trama que no se lee como ninguno de los dos.
 static constexpr Fade FOLDER_OUT = {0.0f,  0.25f, EASE_IN};
-static constexpr Fade FOLDER_IN  = {0.1f,  0.2f,  EASE_OUT};
+static constexpr Fade FOLDER_IN  = {0.2f,  0.2f,  EASE_OUT};
 
 // Fundido corto para lo que cambia sin cambiar de sitio: la capa SUPER, el
 // cursor de un menú, un icono recién subido. Es el innerFolderFade de cerrar.
@@ -179,12 +180,13 @@ enum Kind : uint8_t {
     PROFILE       // otro perfil: los iconos nuevos crecen en onda desde el centro
 };
 
-// Escalas de la carpeta. Al abrir, el contenido del menú nace al 40 % y la
-// pantalla de fondo se acerca un 60 % mientras se va, como la rejilla de iconos
-// cuando se abre una carpeta; al cerrar, al revés. Con el 60 % y el 25 % de
-// antes, en 72x40 el cambio de tamaño se quedaba en dos o tres píxeles y no se
-// leía como zoom.
-static constexpr float FOLDER_MIN  = 0.40f;
+// Escalas de la carpeta. Al abrir, el contenido del menú nace casi de un punto
+// (3 %: dos píxeles de ancho) y la pantalla de fondo se acerca un 60 % mientras
+// se va, como la rejilla de iconos cuando se abre una carpeta; al cerrar, al
+// revés: el menú se encoge hasta un punto. Con el 60 % y el 25 % de antes, en
+// 72x40 el cambio de tamaño se quedaba en dos o tres píxeles y no se leía como
+// zoom.
+static constexpr float FOLDER_MIN  = 0.03f;
 static constexpr float BG_ZOOM     = 1.60f;
 static constexpr float PROFILE_MIN = 0.60f;
 
