@@ -63,6 +63,9 @@ export function init() {
   document.querySelectorAll('#theme-selector .opt-btn').forEach((btn) => {
     btn.addEventListener('click', () => { theme.elegir(btn.dataset.val); pintarTema(); });
   });
+  // El botón de tema de la barra superior lo cambia sin pasar por aquí.
+  new MutationObserver(pintarTema)
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   pintarTema();
 
   document.querySelectorAll('#timeout-selector .opt-btn').forEach((btn) => {

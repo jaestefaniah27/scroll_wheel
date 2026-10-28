@@ -17,6 +17,9 @@ import * as firmware from './firmware.js';
 import * as platform from './platform.js';
 import * as liveOled from './live-oled.js';
 import * as oledMirror from './oled-mirror.js';
+import * as topbar from './topbar.js';
+import * as theme from './theme.js';
+import { icon } from './icons.js';
 
 import * as dashboard from './views/dashboard.js';
 import * as profiles from './views/profiles.js';
@@ -76,7 +79,7 @@ function initChrome() {
     document.querySelector('.titlebar-controls')?.classList.add('hidden');
   }
   if (!platform.can('autoProfile')) {
-    document.querySelector('.nav-item[data-target="view-auto"]')?.classList.add('hidden');
+    document.querySelector('[data-goto="view-auto"]')?.classList.add('hidden');
   }
   if (!platform.can('appUpdate')) {
     document.getElementById('btn-update')?.classList.add('hidden');
@@ -86,9 +89,26 @@ function initChrome() {
   document.getElementById('btn-maximize').addEventListener('click', () => window.orby.maximize());
   document.getElementById('btn-close').addEventListener('click', () => window.orby.close());
 
-  document.querySelectorAll('.nav-item').forEach((item) => {
-    item.addEventListener('click', () => switchView(item.dataset.target));
+  // Sin barra lateral, todo lo que no es el Inicio cuelga de los botones de la
+  // derecha de la barra, y de Ajustes lo que se usa poco (cambio automático,
+  // consola): las filas con data-goto.
+  document.getElementById('btn-back').addEventListener('click', goBack);
+  document.getElementById('btn-settings').addEventListener('click', () => switchView('view-settings'));
+  document.getElementById('btn-profiles').addEventListener('click', () => switchView('view-profiles'));
+  document.querySelectorAll('[data-goto]').forEach((row) => {
+    row.addEventListener('click', () => switchView(row.dataset.goto));
   });
+
+  // Un toque cambia entre claro y oscuro, como el control del Centro de
+  // control. "Automático" (seguir al sistema) sigue en Ajustes → Apariencia.
+  document.getElementById('btn-theme').addEventListener('click', () => {
+    theme.elegir(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  });
+  // El tema cambia también desde Ajustes y con el del sistema: se mira el
+  // atributo, que es lo único que tienen en común los tres caminos.
+  new MutationObserver(renderThemeButton)
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  renderThemeButton();
 
   document.getElementById('btn-save-flash').addEventListener('click', saveToFlash);
   initUpdateBadge();
@@ -148,16 +168,25 @@ function renderUpdateBadge() {
   }
 }
 
-// `params` permite abrir una vista apuntando a algo concreto: es lo que usa el
-// botón "Editar icono" del editor de perfiles para caer en la tecla correcta.
-//
-// El editor de iconos no tiene botón en la barra lateral (solo se entra desde
-// una tecla concreta), así que mientras esté abierto se deja encendido el de
-// Perfiles: es de donde se viene y a donde se vuelve al guardar o salir.
-const NAV_FOR_VIEW = { 'view-oled': 'view-profiles' };
+function renderThemeButton() {
+  const claro = document.documentElement.dataset.theme === 'light';
+  const btn = document.getElementById('btn-theme');
+  // Enseña a dónde lleva, no dónde está: la luna en claro, el sol en oscuro.
+  btn.innerHTML = icon(claro ? 'moon' : 'sun', 17);
+  btn.title = claro ? 'Pasar a modo oscuro' : 'Pasar a modo claro';
+}
 
-// El título grande de la barra de herramientas, como en Ajustes del Sistema:
-// las vistas no llevan cabecera propia, así que es lo que dice dónde estás.
+// De dónde cuelga cada vista: es a donde lleva la flecha de volver. El editor
+// de iconos solo se abre desde una tecla, y la consola y el cambio automático
+// desde Ajustes, así que vuelven allí y no al Inicio.
+const PARENT = {
+  'view-oled': 'view-profiles',
+  'view-auto': 'view-settings',
+  'view-console': 'view-settings',
+};
+
+// El título que ocupa el centro de la barra fuera del Inicio: las vistas no
+// llevan cabecera propia, así que es lo que dice dónde estás.
 const VIEW_TITLES = {
   'view-dashboard': 'Inicio',
   'view-profiles': 'Perfiles y macros',
@@ -167,14 +196,33 @@ const VIEW_TITLES = {
   'view-console': 'Consola serie',
 };
 
+function goBack() {
+  switchView(PARENT[activeView] || 'view-dashboard');
+}
+
+// `params` permite abrir una vista apuntando a algo concreto: es lo que usan la
+// réplica del Inicio (la tecla o el mando pulsado) y el botón "Editar icono"
+// del editor de perfiles para caer en la pieza correcta.
 function switchView(target, params) {
   activeView = target;
-  const navTarget = NAV_FOR_VIEW[target] || target;
-  document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.target === navTarget));
+  const home = target === 'view-dashboard';
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === target));
-  document.getElementById('view-title').textContent = VIEW_TITLES[target] || '';
 
-  if (params && target === 'view-oled') oled.openTarget(params);
+  // En el Inicio la barra lleva los perfiles; en el resto, el título y la
+  // flecha de volver a donde se vino.
+  document.getElementById('profile-strip').classList.toggle('hidden', !home);
+  if (home) topbar.refit();
+  document.getElementById('topbar-brand').classList.toggle('hidden', !home);
+  const title = document.getElementById('view-title');
+  title.textContent = VIEW_TITLES[target] || '';
+  title.classList.toggle('hidden', home);
+  const back = document.getElementById('btn-back');
+  back.classList.toggle('hidden', home);
+  back.lastElementChild.textContent = VIEW_TITLES[PARENT[target] || 'view-dashboard'];
+  document.getElementById('btn-settings').classList.toggle('on', target === 'view-settings');
+  document.getElementById('btn-profiles').classList.toggle('on', target === 'view-profiles');
+
+  if (params && VIEWS[target]?.openTarget) VIEWS[target].openTarget(params);
   else VIEWS[target]?.render?.();
 }
 
@@ -227,22 +275,27 @@ function renderChrome() {
   const badge = document.getElementById('connection-status-badge');
   const text = badge.querySelector('.status-text');
 
+  // En la barra, solo si está o no. La versión de firmware y si las pantallas
+  // del Inicio son las de verdad van en el globo: son el primer dato para
+  // saber si un fallo es del teclado o de la app, pero no hace falta leerlos
+  // cada vez que se mira la ventana.
   if (state.connected) {
     badge.className = 'status-badge connected';
-    // La versión de firmware va aquí y no solo en Ajustes: es el primer dato
-    // que hace falta para saber si un fallo es del teclado o de la app, y
-    // tenerla a la vista ahorra tener que ir a buscarla.
-    const fw = state.deviceInfo?.fw ? ` · fw ${state.deviceInfo.fw}` : '';
-    text.textContent = state.syncing ? 'Sincronizando…' : `Conectado${fw}`;
+    text.textContent = state.syncing ? 'Sincronizando…' : 'Conectado';
+    const fw = state.deviceInfo?.fw ? `Firmware ${state.deviceInfo.fw}` : 'Orvy conectado';
+    badge.title = `${fw}\n${oledMirror.isLive()
+      ? 'Pantallas del Inicio en directo'
+      : 'Pantallas del Inicio aproximadas: el firmware 4.12 las da exactas'}`;
   } else {
+    // Sin teclado la app enseña la copia local, pero no deja tocarla (ver
+    // requireDevice en ui.js). Hay que decirlo, o parece que la app se ha
+    // quedado tonta cuando un clic no hace nada. Si se pudiera editar sin él,
+    // al reconectar habría dos versiones de la misma configuración y alguien
+    // tendría que perder sus cambios (ver src/mirror.js).
     badge.className = 'status-badge disconnected';
-    text.textContent = 'Desconectado';
+    text.textContent = 'Desconectado · solo lectura';
+    badge.title = 'Sin teclado se enseña la copia del PC; conecta el Orvy por USB para editar';
   }
-
-  // Sin teclado la app enseña la copia local, pero no deja tocarla (ver
-  // requireDevice en ui.js). Hay que decirlo, o parece que la app se ha quedado
-  // tonta cuando un clic no hace nada.
-  document.getElementById('readonly-banner').classList.toggle('hidden', state.connected);
   document.body.classList.toggle('read-only', !state.connected);
 
   if (state.dirty && state.connected) scheduleAutoSave();
@@ -475,6 +528,7 @@ function arrancarApp() {
   // asigne: sondea el complemento y empuja el bitmap sin tocar Flash.
   liveOled.init();
   oledMirror.init();
+  oledMirror.onLiveChange(renderChrome);
 
   // Variaciones de perfil por aplicación: se leen del disco antes de que el
   // detector de ventanas empiece a pedir evaluaciones.
@@ -506,6 +560,7 @@ function arrancarApp() {
     }, BOOT_GRACE_MS);
   });
 
+  topbar.init();
   dashboard.init();
   profiles.init();
   oled.init();

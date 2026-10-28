@@ -184,8 +184,11 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
 - `firmware.js` — espejo de `src-tauri/src/firmware.rs`; pone el tope de versión desde `compat.js`.
 - `updater.js` — espejo de `src-tauri/src/updater.rs`; le cuenta al backend si hay
   cambios sin guardar, para que no reinicie la app a media escritura en Flash.
-- `styles/index.css` — aspecto de macOS (barra lateral de Ajustes del Sistema,
-  título grande) con la identidad de la landing: negro y el cian de los OLED como
+- `topbar.js` — pestañas de perfil (con sus páginas en puntos) de la barra superior.
+  No hay barra lateral: el Inicio es la réplica del teclado y lo demás cuelga de los
+  botones de la derecha de la barra (perfiles, ajustes; consola y cambio automático,
+  desde Ajustes → Herramientas). La flecha de volver sigue `PARENT` en `main.js`.
+- `styles/index.css` — aspecto de app de Apple con la identidad de la landing: negro y el cian de los OLED como
   acento (`--on-primary` es el texto encima del acento). Colores, radios y curvas
   salen de los tokens de `:root` (colores de sistema de Apple, `--fill*` para
   controles, `--ease-out`/`--spring`): no escribas un `rgba()` de color a mano,

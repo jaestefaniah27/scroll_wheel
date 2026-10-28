@@ -124,65 +124,47 @@
     <div class="splash-msg" id="splash-msg">Iniciando…</div>
   </div>
 
-  <!-- Armazón de una ventana de macOS: la barra lateral llega de arriba abajo
-       y lleva la marca, el estado del teclado y el guardado; a la derecha, una
-       barra de herramientas con el título grande de la vista y los botones de
-       la ventana. Las dos zonas de arrastre sustituyen a la barra de título
-       (la ventana va sin decoraciones del sistema). -->
+  <!-- Armazón: sin barra lateral. Arriba, una sola barra que hace de barra de
+       título: a la izquierda el aparato y si está conectado, en el centro los
+       perfiles (en Inicio) o el título de la vista (en las demás), y a la
+       derecha los pocos botones que llevan a todo lo demás. Debajo, la vista.
+       La zona de arrastre va detrás de todo; lo que se pulsa queda encima con
+       no-drag (la ventana va sin decoraciones del sistema). -->
   <div class="app-shell">
-    <!-- Sin `title=` en los botones: la etiqueta ya se ve entera, y el globo
-         del sistema solo la repetiría encima.
-         El icono va en un `<span>` aparte porque hydrateIcons() sustituye el
-         innerHTML del elemento con data-icon. -->
-    <nav class="sidebar">
-      <div class="sidebar-brand">
-        <span class="brand-mark"></span>
-        <span class="brand-name">ORVY</span>
-      </div>
+    <header class="topbar">
+      <div class="titlebar-drag-region"></div>
 
-      <!-- La tarjeta del aparato: lo primero que se mira es si está ahí. -->
-      <div class="device-chip">
-        <div class="device-chip-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><b></b></div>
-        <div class="device-chip-text">
-          <span class="device-chip-name">Orvy</span>
-          <div id="connection-status-badge" class="status-badge disconnected">
-            <span class="status-dot"></span>
-            <span class="status-text">Desconectado</span>
-          </div>
+      <div class="topbar-lead">
+        <!-- Fuera de Inicio, la marca se cambia por la flecha de volver: como
+             en iOS, el sitio de "dónde estoy" es también el de "cómo salgo". -->
+        <button class="topbar-back hidden" id="btn-back">
+          <span data-icon="back" data-icon-size="16"></span>
+          <span>Inicio</span>
+        </button>
+        <span class="brand-mark" id="topbar-brand" aria-hidden="true"></span>
+        <!-- Lo primero que se mira es si el teclado está ahí. El detalle (versión
+             de firmware, si las pantallas van en directo) va en el globo. -->
+        <div id="connection-status-badge" class="status-badge disconnected">
+          <span class="status-dot"></span>
+          <span class="status-text">Desconectado</span>
         </div>
-      </div>
-
-      <div class="sidebar-group">
-        <button class="nav-item active" data-target="view-dashboard" data-tint="cyan">
-          <span class="nav-icon" data-icon="home" data-icon-size="15"></span>
-          <span class="nav-label">Inicio</span>
-        </button>
-        <button class="nav-item" data-target="view-profiles" data-tint="violet">
-          <span class="nav-icon" data-icon="keyboard" data-icon-size="15"></span>
-          <span class="nav-label">Perfiles y macros</span>
-        </button>
-        <!-- El editor de iconos no tiene entrada propia: se abre siempre desde la
-             tecla que se esté configurando en Perfiles, y edita solo ese icono. -->
-        <button class="nav-item" data-target="view-auto" data-tint="orange">
-          <span class="nav-icon" data-icon="bolt" data-icon-size="15"></span>
-          <span class="nav-label">Cambio automático</span>
-        </button>
-        <button class="nav-item" data-target="view-settings" data-tint="gray">
-          <span class="nav-icon" data-icon="settings" data-icon-size="15"></span>
-          <span class="nav-label">Ajustes</span>
+        <!-- Solo se ve mientras hay algo pendiente de escribir en la Flash: el
+             guardado es automático, así que en reposo no hay nada que enseñar. -->
+        <button class="save-flash-btn" id="btn-save-flash" title="Escribe ya la configuración en la memoria del teclado">
+          <span data-icon="refresh" data-icon-size="13"></span>
+          <span class="save-label">Guardando…</span>
         </button>
       </div>
 
-      <div class="sidebar-spacer"></div>
-
-      <div class="sidebar-group">
-        <button class="nav-item" data-target="view-console" data-tint="graphite">
-          <span class="nav-icon" data-icon="console" data-icon-size="15"></span>
-          <span class="nav-label">Consola serie</span>
-        </button>
+      <div class="topbar-center">
+        <!-- Perfiles como pestañas, con su icono; la del activo enseña además
+             sus páginas como los puntos de la pantalla de inicio del iPhone.
+             Lo pinta src/topbar.js. -->
+        <div class="profile-strip" id="profile-strip" role="tablist" aria-label="Perfiles"></div>
+        <h1 class="view-title hidden" id="view-title">Inicio</h1>
       </div>
 
-      <div class="sidebar-foot">
+      <div class="topbar-trail">
         <!-- Solo aparece cuando hay una versión nueva: la app vive en la bandeja
              y puede pasar semanas sin cerrarse, así que la actualización tiene
              que poder instalarse desde aquí (ver src/updater.js). -->
@@ -190,67 +172,25 @@
           <span data-icon="download" data-icon-size="14"></span>
           <span class="update-label">Actualizar</span>
         </button>
-        <button class="save-flash-btn" id="btn-save-flash" title="Escribe la configuración actual en la memoria del teclado">
-          <span data-icon="check" data-icon-size="14"></span>
-          <span class="save-label">Guardado</span>
-        </button>
-      </div>
-    </nav>
-
-    <div class="main-col">
-      <header class="toolbar">
-        <div class="titlebar-drag-region"></div>
-        <h1 class="view-title" id="view-title">Inicio</h1>
+        <button class="topbar-btn" id="btn-theme" title="Modo claro u oscuro"></button>
+        <button class="topbar-btn" id="btn-profiles" title="Perfiles" data-icon="profiles" data-icon-size="17"></button>
+        <button class="topbar-btn" id="btn-settings" title="Ajustes" data-icon="gear" data-icon-size="17"></button>
         <div class="titlebar-controls">
           <button class="window-btn" id="btn-minimize" data-icon="minus" data-icon-size="14"></button>
           <button class="window-btn" id="btn-maximize" data-icon="square" data-icon-size="12"></button>
           <button class="window-btn close" id="btn-close" data-icon="close" data-icon-size="14"></button>
         </div>
-      </header>
+      </div>
+    </header>
 
-      <main class="content-area">
+    <main class="content-area">
 
-        <!-- Inicio: la réplica del teclado, viva. Las pantallas las anima
-             src/oled-mirror.js con el mismo motor que el firmware. -->
+        <!-- Inicio: la réplica del teclado, viva, y nada más. Las pantallas las
+             anima src/oled-mirror.js con el mismo motor que el firmware; debajo
+             de cada zona, su botón de configurar (src/views/dashboard.js). -->
         <section id="view-dashboard" class="view active">
           <div class="dash">
-            <div class="dash-stage">
-              <div id="keyboard-visualizer"></div>
-              <div class="dash-live" id="dash-live">
-                <span class="live-dot"></span><span id="dash-live-text">Sin teclado</span>
-              </div>
-            </div>
-
-            <div class="dash-profiles" id="dash-profiles" role="tablist" aria-label="Perfiles"></div>
-
-            <div class="dash-widgets">
-              <div class="widget">
-                <span class="widget-label">Perfil</span>
-                <span class="widget-big" id="lbl-active-profile">--</span>
-                <!-- Solo con un firmware que tenga páginas: con uno anterior al
-                     4.0 no hay más que una y no dice nada. -->
-                <div class="widget-sub" id="row-active-page" hidden>
-                  <span class="page-dots" id="page-dots"></span>
-                  <span id="lbl-active-page">--</span>
-                </div>
-              </div>
-              <div class="widget">
-                <span class="widget-label">Capa SUPER</span>
-                <span class="widget-big" id="lbl-super-state">Inactiva</span>
-                <span class="widget-sub">Modo <b id="lbl-active-mode">NORMAL</b></span>
-              </div>
-              <div class="widget">
-                <span class="widget-label">Rueda</span>
-                <span class="widget-big" id="lbl-scroll-mode">--</span>
-                <span class="widget-sub" id="lbl-scroll-sub">clics por vuelta</span>
-              </div>
-              <div class="widget widget-event">
-                <span class="widget-label">Último evento</span>
-                <div class="event-feed" id="live-event-feed">
-                  <div class="empty-state">Pulsa una tecla o gira la rueda</div>
-                </div>
-              </div>
-            </div>
+            <div id="keyboard-visualizer"></div>
           </div>
         </section>
 
@@ -432,6 +372,28 @@
                  misma columna que las demás. -->
             <div id="plugin-settings-cards" class="settings-card-host"></div>
 
+            <!-- Lo que antes tenía entrada propia en la barra lateral y se usa
+                 poco: filas que llevan a su vista, como las de Ajustes de iOS. -->
+            <h2 class="settings-section">Herramientas</h2>
+            <div class="settings-card glass-panel nav-list">
+              <button class="nav-row" data-goto="view-auto" data-tint="orange">
+                <span class="nav-icon" data-icon="bolt" data-icon-size="15"></span>
+                <span class="nav-row-text">
+                  <span class="nav-row-title">Cambio automático</span>
+                  <span class="nav-row-sub">Cambia de perfil según la aplicación que tengas delante</span>
+                </span>
+                <span class="nav-row-chev" data-icon="chevron" data-icon-size="14"></span>
+              </button>
+              <button class="nav-row" data-goto="view-console" data-tint="graphite">
+                <span class="nav-icon" data-icon="console" data-icon-size="15"></span>
+                <span class="nav-row-text">
+                  <span class="nav-row-title">Consola serie</span>
+                  <span class="nav-row-sub">Lo que dice el teclado por USB, y comandos a mano</span>
+                </span>
+                <span class="nav-row-chev" data-icon="chevron" data-icon-size="14"></span>
+              </button>
+            </div>
+
             <h2 class="settings-section">Datos y aplicación</h2>
 
             <div class="settings-card glass-panel" data-tint="blue">
@@ -517,19 +479,7 @@
             </div>
           </div>
         </section>
-      </main>
-    </div>
-  </div>
-
-  <!-- Sin el Orby delante la app enseña la copia local del PC, pero no deja
-       tocarla: si se pudiera editar sin él, al reconectar habría dos versiones
-       distintas de la misma configuración y alguien tendría que perder sus
-       cambios. Ver src/mirror.js.
-       Va fijo abajo a la izquierda para no pelearse con los avisos, que salen
-       por la derecha, ni robarle alto a la vista. -->
-  <div class="readonly-banner hidden" id="readonly-banner">
-    <span data-icon="lock" data-icon-size="15"></span>
-    <span>Solo lectura · conecta el teclado para editar</span>
+    </main>
   </div>
 
   <!-- Pantalla de conexión de la versión de navegador. Vive aquí y no en un

@@ -88,7 +88,6 @@
   --stage-bg: #07090b;
 
   --toolbar-height: 56px;
-  --sidebar-w: 236px;
 
   color-scheme: dark;
 }
@@ -200,106 +199,110 @@ button { font-family: inherit; }
 :hover::-webkit-scrollbar-thumb { background-color: var(--fill-strong); }
 
 /* ================= ARMAZÓN ================= */
+/* Sin barra lateral: una barra arriba que hace de barra de título, y la vista
+   debajo ocupando todo el ancho. El Inicio es la réplica del teclado, y lo
+   demás cuelga de los botones de la derecha. */
 .app-shell {
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-rows: var(--toolbar-height) minmax(0, 1fr);
   height: 100vh;
 }
 
-/* ---- Barra lateral, la de Ajustes del Sistema ---- */
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-height: 0;
-  padding: 0 10px 12px;
-  background: var(--chrome-bg);
-  border-right: 1px solid var(--chrome-edge);
+/* ---- Barra superior ----
+   Tres columnas: lo del aparato a la izquierda, los perfiles (o el título) en
+   el centro de la ventana de verdad y los botones a la derecha. Las de los
+   lados se reparten lo que sobra a partes iguales, y por eso lo del medio
+   queda centrado aunque una lleve más cosas que la otra. */
+.topbar {
   position: relative;
   z-index: 60; /* por debajo de los avisos (999) */
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding-left: 14px;
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--chrome-edge);
 }
 
-/* La cabecera de la barra es también zona de arrastre de la ventana. */
-.sidebar-brand {
-  height: var(--toolbar-height);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 8px;
+/* Detrás de todo: lo que se pulsa va encima con no-drag. */
+.titlebar-drag-region {
+  position: absolute;
+  inset: 0;
   -webkit-app-region: drag;
 }
 
+.topbar-lead, .topbar-center, .topbar-trail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.topbar-lead { gap: 10px; justify-self: start; }
+.topbar-center { justify-self: center; max-width: 100%; }
+.topbar-trail { gap: 2px; justify-self: end; align-self: stretch; }
+.topbar-lead > *, .topbar-center > *, .topbar-trail > * { -webkit-app-region: no-drag; }
+
 /* El mismo icono que la pantalla de carga: una squircle negra con el punto
    de luz cian de un píxel OLED encendido. */
-.brand-mark, .splash-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 7px;
   background:
     radial-gradient(circle at 50% 50%, #c8f5ff 0 16%, rgba(79, 227, 255, 0.55) 26%, transparent 46%),
     linear-gradient(160deg, #1b2229, #05070a);
   box-shadow: inset 0 0 0 1px rgba(157, 233, 255, 0.28), 0 2px 10px rgba(79, 227, 255, 0.25);
+  -webkit-app-region: drag;
 }
 
-/* Wordmark como el de la landing: negrita ancha y espaciada. */
-.brand-name {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 15px;
-  letter-spacing: 0.16em;
-  color: var(--text-main);
-}
-
-/* Tarjeta del aparato: la miniatura del teclado y si está conectado. */
-.device-chip {
+/* Volver: el chevron y el nombre de donde se vuelve, en el color de acento,
+   como el botón de atrás de una barra de navegación de iOS. */
+.topbar-back {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 0 0 14px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--fill-soft);
-}
-
-/* Miniatura: carcasa blanca con seis teclas y la rueda. Es un objeto físico,
-   así que no sigue al tema. */
-.device-chip-art {
-  position: relative;
-  flex-shrink: 0;
-  width: 46px;
-  height: 28px;
-  border-radius: 4px;
-  background: linear-gradient(165deg, #f6f5f1, #d6d4cc);
-  box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(0, 0, 0, 0.35);
-  display: grid;
-  grid-template-columns: repeat(3, 6px);
-  grid-auto-rows: 6px;
   gap: 2px;
-  padding: 5px 0 0 5px;
+  height: 30px;
+  padding: 0 10px 0 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--primary);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s var(--ease-out), transform 0.3s var(--spring);
 }
-.device-chip-art i { border-radius: 1.5px; background: #1c1f23; }
-.device-chip-art b {
-  position: absolute; right: 5px; top: 6px;
-  width: 15px; height: 15px; border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #fff, #e3e1db 70%);
-  box-shadow: 0 0 0 1.5px #3a3c3e;
-}
-.device-chip-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.device-chip-name { font-size: 13px; font-weight: 600; }
+.topbar-back:hover { background: var(--hover); }
+.topbar-back:active { transform: scale(0.96); }
 
-/* Estado: solo el punto lleva color, como los indicadores del Centro de control. */
+/* El título fuera del Inicio: centrado y discreto, el de una barra de
+   herramientas de macOS con título centrado. */
+.view-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  -webkit-app-region: drag;
+}
+
+/* Estado: cápsula con un punto, como los indicadores del Centro de control. */
 .status-badge {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: 7px;
+  height: 26px;
+  padding: 0 11px 0 9px;
+  border-radius: 999px;
+  background: var(--fill-soft);
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-muted);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  cursor: default;
 }
-.status-badge .status-text { overflow: hidden; text-overflow: ellipsis; }
+.status-badge.connected { color: var(--text-main); }
 .status-badge .status-dot {
   width: 7px; height: 7px; flex-shrink: 0;
   border-radius: 50%;
@@ -321,31 +324,154 @@ button { font-family: inherit; }
   100% { opacity: 0.4; transform: scale(0.8); }
 }
 
-.sidebar-group { display: flex; flex-direction: column; gap: 2px; }
-.sidebar-spacer { flex-grow: 1; }
-
-/* Fila de la barra lateral: baldosa de color con el icono en blanco y la
-   etiqueta, como en Ajustes del Sistema. */
-.nav-item {
-  height: 34px;
-  flex-shrink: 0;
-  padding: 0 8px;
-  border-radius: 8px;
+/* Guardado en la Flash: el guardado es automático, así que solo se enseña
+   mientras hay algo pendiente. Pulsarlo escribe ya, sin esperar. */
+.save-flash-btn {
+  display: none;
+  align-items: center; gap: 6px;
+  height: 26px; padding: 0 11px 0 9px; border-radius: 999px; cursor: pointer;
+  font-size: 12px; font-weight: 500;
   border: none;
+  background: rgba(var(--warning-rgb), 0.16);
+  color: var(--warning);
+  animation: popIn 0.35s var(--spring);
+  transition: background 0.25s var(--ease-out), color 0.25s, transform 0.35s var(--spring);
+}
+.save-flash-btn.has-changes { display: flex; }
+.save-flash-btn .icn { animation: spin 1.1s linear infinite; }
+.save-flash-btn:hover { background: var(--warning); color: #1c1c1e; }
+.save-flash-btn:disabled { opacity: 0.45; cursor: default; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes nudge { 0%,90%,100% { transform: none; } 95% { transform: scale(1.04); } }
+
+/* Aviso de versión nueva. Descargando todavía no se puede pulsar; lista, sí. */
+.update-badge {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  align-self: center;
+  height: 28px; padding: 0 12px; margin-right: 6px; border-radius: 999px; cursor: default;
+  font-size: 12px; font-weight: 600;
+  background: rgba(var(--info-rgb), 0.16); border: none;
+  color: var(--info); transition: background 0.25s, color 0.25s, transform 0.35s var(--spring);
+}
+
+/* Botones de la derecha: solo el icono, como los de una barra de
+   herramientas de macOS. El de la vista abierta se queda encendido. */
+.topbar-btn {
+  align-self: center;
+  width: 34px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
   background: transparent;
-  color: var(--text-main);
+  color: var(--text-muted);
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
   cursor: pointer;
-  text-align: left;
-  transition: background 0.2s var(--ease-out), transform 0.3s var(--spring);
+  transition: background 0.2s var(--ease-out), color 0.2s, transform 0.3s var(--spring);
 }
-.nav-item:active { transform: scale(0.97); }
-.nav-item:hover { background: var(--hover); }
-.nav-item.active { background: var(--sidebar-sel); }
-.nav-item.active .nav-label { font-weight: 600; }
+.topbar-btn:hover { background: var(--hover-strong); color: var(--text-main); }
+.topbar-btn:active { transform: scale(0.92); }
+.topbar-btn.on { background: var(--sidebar-sel); color: var(--primary); }
 
+/* ---- Pestañas de perfil ----
+   Un control segmentado de iOS con el icono de cada perfil. La del activo se
+   levanta y enseña sus páginas en puntos, los de debajo de la rejilla de
+   iconos del iPhone. */
+.profile-strip {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--fill-soft);
+  border: 1px solid var(--border-light);
+}
+.profile-strip:empty { display: none; }
+.strip-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 13px 0 5px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.2s, background 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out), transform 0.35s var(--spring);
+}
+.strip-tab:hover { color: var(--text-main); }
+.strip-tab:active { transform: scale(0.95); }
+.strip-tab.on {
+  background: var(--segment-on);
+  color: var(--segment-on-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  cursor: default;
+}
+/* Si no caben todas con su nombre, las que no están activas se quedan en el
+   icono (el nombre sigue en el globo). Lo decide topbar.js midiendo. */
+.profile-strip.compact .strip-tab:not(.on) { padding: 0 5px; }
+.profile-strip.compact .strip-tab:not(.on) .strip-name { display: none; }
+
+/* Baldosa con el icono decorativo del perfil, en su color. */
+.strip-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--accent, #8e8e93);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);
+  opacity: 0.75;
+  transition: opacity 0.2s;
+}
+.strip-tab.on .strip-icon, .strip-tab:hover .strip-icon { opacity: 1; }
+/* El icono de verdad: una pantallita negra de 72x40, como en el aparato. */
+.strip-icon.is-oled {
+  width: 40px;
+  height: 24px;
+  border-radius: 5px;
+  background: #000;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+/* A la mitad de su tamaño: con `pixelated` el escalado se come las líneas de
+   un píxel, y suavizado se sigue leyendo. */
+.strip-icon.is-oled canvas {
+  width: 36px;
+  height: 20px;
+  display: block;
+}
+
+.strip-dots { display: inline-flex; align-items: center; margin-left: 2px; }
+/* El punto se ve de 6 px pero se pulsa en 14: si no, acertar es cosa de suerte. */
+.strip-dot {
+  width: 14px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.strip-dot::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fill-strong);
+  transition: background 0.3s var(--ease-out), transform 0.3s var(--spring);
+}
+.strip-dot:hover::after { background: var(--text-muted); transform: scale(1.25); }
+.strip-dot.on::after { background: var(--primary); }
+
+/* La baldosa de color con el icono en blanco de Ajustes del Sistema. Hoy la
+   usan las filas que llevan a otra vista (Ajustes → Herramientas). */
 .nav-icon {
   width: 24px; height: 24px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -354,10 +480,9 @@ button { font-family: inherit; }
   background: var(--tile, #8e8e93);
   box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
 }
-.nav-label { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Colores de las baldosas, los de sistema de Apple. La de Inicio es el cian
-   de la marca, y lleva el texto oscuro porque sobre cian el blanco no se lee. */
+/* Colores de las baldosas, los de sistema de Apple. La cian lleva el texto
+   oscuro porque sobre cian el blanco no se lee. */
 [data-tint="cyan"]     { --tile: linear-gradient(160deg, #6ff0ff, #18b4d8); }
 [data-tint="violet"]   { --tile: linear-gradient(160deg, #b79bff, #7a5af0); }
 [data-tint="orange"]   { --tile: linear-gradient(160deg, #ffb340, #ff8a00); }
@@ -370,77 +495,33 @@ button { font-family: inherit; }
 [data-tint="red"]      { --tile: linear-gradient(160deg, #ff6961, #e0352b); }
 [data-tint="cyan"] .nav-icon, .settings-card[data-tint="cyan"] > .card-header > span:first-child { color: #021015; }
 
-/* Pie: guardado en la Flash y aviso de versión nueva. */
-.sidebar-foot { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-
-.save-flash-btn {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  height: 30px; padding: 0 12px; border-radius: 8px; cursor: pointer;
-  font-size: 12px; font-weight: 500;
-  background: var(--fill-soft); border: none;
-  color: var(--text-muted);
-  transition: background 0.25s var(--ease-out), color 0.25s, transform 0.35s var(--spring);
-}
-.save-flash-btn .icn { color: var(--success); }
-.save-flash-btn:disabled { opacity: 0.45; cursor: default; }
-.save-flash-btn.has-changes {
-  background: rgba(var(--warning-rgb), 0.16);
-  color: var(--warning);
-}
-.save-flash-btn.has-changes .icn { color: var(--warning); animation: spin 1.1s linear infinite; }
-.save-flash-btn.has-changes:hover { background: var(--warning); color: #1c1c1e; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes nudge { 0%,90%,100% { transform: none; } 95% { transform: scale(1.04); } }
-
-/* Aviso de versión nueva. Descargando todavía no se puede pulsar; lista, sí. */
-.update-badge {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  height: 30px; padding: 0 12px; border-radius: 8px; cursor: default;
-  font-size: 12px; font-weight: 600;
-  background: rgba(var(--info-rgb), 0.16); border: none;
-  color: var(--info); transition: background 0.25s, color 0.25s, transform 0.35s var(--spring);
-}
-
-/* ---- Columna principal: barra de herramientas + vista ---- */
-.main-col {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.toolbar {
-  height: var(--toolbar-height);
-  flex-shrink: 0;
+/* Filas que llevan a otra vista, las de una lista de Ajustes de iOS. */
+.nav-list { padding: 4px 0; }
+.nav-row {
   display: flex;
   align-items: center;
-  padding-left: 32px;
-  position: relative;
-  z-index: 50;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s var(--ease-out);
 }
-
-.titlebar-drag-region {
-  position: absolute;
-  inset: 0 140px 0 0;
-  -webkit-app-region: drag;
-}
-
-/* El título grande de macOS Ventura en adelante: Display, 22 px, negrita. */
-.view-title {
-  position: relative; /* encima de la zona de arrastre, pero sin capturar clics */
-  pointer-events: none;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-}
+.nav-row + .nav-row { box-shadow: 0 -1px 0 var(--separator); }
+.nav-row:hover { background: var(--hover); }
+.nav-row-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.nav-row-title { font-size: 13px; font-weight: 600; }
+.nav-row-sub { font-size: 12px; color: var(--text-muted); }
+.nav-row-chev { color: var(--text-faint); }
 
 .titlebar-controls {
   display: flex;
-  margin-left: auto;
   align-self: flex-start;
   height: 36px;
-  -webkit-app-region: no-drag;
-  position: relative;
+  margin-left: 10px;
 }
 
 .window-btn {
@@ -496,35 +577,27 @@ button { font-family: inherit; }
 }
 
 /* ================= INICIO ================= */
-.dash {
-  display: grid;
-  grid-template-rows: minmax(340px, 1fr) auto auto;
-  gap: 18px;
-  min-height: 100%;
-  max-width: 1280px;
-  margin: 0 auto;
-}
+/* La vista entera es el escenario: la réplica bajo un foco de luz, como la
+   portada de la landing, sin tarjetas alrededor. */
+#view-dashboard { background: var(--stage-glow), var(--stage-bg); }
 
-/* El escenario: la réplica bajo un foco de luz, como la portada de la landing. */
-.dash-stage {
+.dash {
   position: relative;
+  min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 36px 40px;
-  border-radius: 24px;
-  background: var(--stage-glow), var(--stage-bg);
-  border: 1px solid var(--border-light);
-  overflow: hidden;
+  padding: 12px 0 20px;
   isolation: isolate;
 }
 /* Rejilla de suelo en perspectiva, la de la landing, muy apagada. */
-.dash-stage::after {
+.dash::after {
   content: '';
   position: absolute;
-  left: -20%; right: -20%; bottom: -8%;
-  height: 48%;
+  left: -20%; right: -20%; bottom: -32px;
+  height: 46%;
   z-index: -1;
+  pointer-events: none;
   background-image:
     linear-gradient(rgba(157, 233, 255, 0.07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(157, 233, 255, 0.07) 1px, transparent 1px);
@@ -534,7 +607,7 @@ button { font-family: inherit; }
   -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 85%);
   mask-image: linear-gradient(to top, #000 10%, transparent 85%);
 }
-:root[data-theme="light"] .dash-stage::after { opacity: 0; }
+:root[data-theme="light"] .dash::after { opacity: 0; }
 
 #keyboard-visualizer {
   width: 100%;
@@ -543,102 +616,67 @@ button { font-family: inherit; }
   justify-content: center;
 }
 
-/* Cartel de directo: si lo que se ve son las pantallas reales o una aproximación. */
-.dash-live {
-  position: absolute;
-  top: 16px; right: 16px;
-  display: flex; align-items: center; gap: 7px;
-  padding: 5px 11px 5px 9px;
-  border-radius: 999px;
-  font-size: 11.5px; font-weight: 500;
-  color: var(--text-muted);
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* La réplica y, debajo, los botones de cada zona. El conjunto escala como una
+   pieza: los botones se colocan en tanto por ciento del ancho de la carcasa,
+   así que siguen debajo de su zona a cualquier tamaño de ventana. */
+.orby-rig {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  width: min(100%, 960px);
+  /* Que quepa de alto: barra, márgenes y la fila de botones fuera. */
+  max-width: calc((100vh - var(--toolbar-height) - 150px) * 210 / 125);
+  min-width: 520px;
 }
-:root[data-theme="light"] .dash-live { background: rgba(255, 255, 255, 0.7); border-color: var(--border-light); }
-.dash-live .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
-.dash-live.off .live-dot { background: var(--text-faint); }
-.dash-live.on { color: var(--text-main); }
-.dash-live.on .live-dot { background: #ff453a; box-shadow: 0 0 8px rgba(255, 69, 58, 0.8); animation: livePulse 1.6s ease-in-out infinite; }
-@keyframes livePulse { 50% { opacity: 0.35; } }
 
-/* Perfiles en píldoras: el selector de apps de la landing. */
-.dash-profiles {
-  justify-self: center;
-  display: flex; flex-wrap: wrap; justify-content: center;
-  gap: 4px; padding: 4px;
+.rig-actions {
+  position: relative;
+  height: 36px;
+}
+.rig-btn {
+  position: absolute;
+  left: calc(var(--x) * 1%);
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 18px 0 14px;
+  border: 1px solid var(--border-light);
   border-radius: 999px;
   background: var(--fill-soft);
-  border: 1px solid var(--border-light);
-}
-.dash-profiles:empty { display: none; }
-.dash-pill {
-  padding: 7px 16px;
-  border: none; border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px; font-weight: 600;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
-  transition: color 0.2s, background 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out), transform 0.35s var(--spring);
+  transition: background 0.25s var(--ease-out), color 0.2s, border-color 0.25s, transform 0.35s var(--spring), box-shadow 0.3s var(--ease-out);
 }
-.dash-pill:hover { color: var(--text-main); }
-.dash-pill:active { transform: scale(0.95); }
-.dash-pill.on {
-  background: var(--primary);
-  color: var(--on-primary);
-  box-shadow: 0 0 18px rgba(var(--primary-rgb), 0.45);
+.rig-btn .icn { color: var(--primary); }
+.rig-btn:hover {
+  background: var(--fill);
+  border-color: rgba(var(--primary-rgb), 0.35);
+  box-shadow: 0 0 22px rgba(var(--primary-rgb), 0.18);
+}
+.rig-btn:active { transform: scale(0.96); }
+
+/* Las piezas de la réplica también se pulsan: llevan a configurarlas. */
+.orby-board .hw-key, .orby-board .hw-wheel, .orby-board .hw-encoder { cursor: pointer; }
+.orby-board .hw-key:hover .hw-cap { box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.5),
+    inset 0 calc(0.6 * var(--u)) 0 rgba(255,255,255,0.4),
+    inset 0 calc(-1.2 * var(--u)) calc(2 * var(--u)) rgba(0,0,0,0.3),
+    0 calc(1.4 * var(--u)) 0 rgba(150,160,170,0.75),
+    0 calc(2.4 * var(--u)) calc(3 * var(--u)) rgba(0,0,0,0.35),
+    0 0 0 calc(0.7 * var(--u)) rgba(79, 227, 255, 0.75); }
+.orby-board .hw-wheel:hover::before, .orby-board .hw-encoder:hover::before {
+  box-shadow: inset 0 calc(0.6 * var(--u)) calc(1.2 * var(--u)) rgba(0,0,0,0.7),
+              0 calc(1.2 * var(--u)) 0 #c9c7c0,
+              0 calc(2.4 * var(--u)) calc(4 * var(--u)) rgba(0,0,0,0.35),
+              0 0 0 calc(0.6 * var(--u)) rgba(79, 227, 255, 0.6);
 }
 
-/* Widgets de iOS: etiqueta pequeña arriba y la cifra grande. */
-.dash-widgets {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.35fr);
-  gap: 14px;
-}
-.widget {
-  display: flex; flex-direction: column; gap: 4px;
-  min-width: 0;
-  padding: 16px 18px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-panel-solid);
-  border: 1px solid var(--border-light);
-}
-.widget-label {
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-muted);
-}
-.widget-big {
-  font-family: ui-rounded, 'SF Pro Rounded', var(--font-display);
-  font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.widget-big.is-on { color: var(--primary); }
-.widget-sub {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 12px; color: var(--text-muted);
-}
-.widget-sub b { font-weight: 600; color: var(--text-main); }
-
-/* Puntos de página: los de debajo de la rejilla de iconos del iPhone. */
-.page-dots { display: inline-flex; gap: 5px; }
-.page-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--fill-strong); transition: background 0.3s; }
-.page-dots i.on { background: var(--text-main); }
-
-.widget-event .event-feed { flex: 1; display: flex; align-items: center; min-height: 40px; }
-.event-feed .empty-state { color: var(--text-faint); font-size: 13px; }
-.big-event { display: flex; align-items: baseline; gap: 10px; animation: popIn 0.45s var(--spring); min-width: 0; }
-.big-event-title { font-size: 20px; font-weight: 700; color: var(--primary); white-space: nowrap; }
-.big-event-detail {
-  font-family: var(--font-mono); font-size: 13px; color: var(--text-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
 @keyframes popIn { 0% { transform: scale(0.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-
-@media (max-width: 1180px) {
-  .dash-widgets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 
 /* ---- La réplica del teclado ----
    Medidas en milímetros sacadas de una foto cenital del real: carcasa de
@@ -651,13 +689,10 @@ button { font-family: inherit; }
    transparente y pantallas OLED. Es la misma pieza que la landing. */
 .orby-board {
   position: relative;
-  width: min(100%, 780px);
+  width: 100%;              /* el tamaño lo pone .orby-rig */
   aspect-ratio: 210 / 125;
   container-type: inline-size;
   --u: calc(100cqw / 210);
-  /* Que siempre quepa de alto en el escenario, aunque la ventana sea baja. */
-  max-width: calc((100vh - 400px) * 210 / 125);
-  min-width: 380px;
 }
 
 .orby-case {
@@ -1063,9 +1098,6 @@ button { font-family: inherit; }
 
 /* ================= ICONOS SVG EN LÍNEA ================= */
 .icn { display: block; flex-shrink: 0; }
-/* `.nav-item` ya no entra aquí: ahora es icono + etiqueta alineados a la
-   izquierda, y este `justify-content: center` le sacaba el icono del botón al
-   desbordar la etiqueta. */
 [data-icon], .window-btn, .tool-btn { display: flex; align-items: center; justify-content: center; }
 
 /* ================= CONTROLES DE FORMULARIO ================= */
@@ -1819,30 +1851,6 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
    Sin el Orby conectado la app enseña la copia local del PC pero no deja
    cambiarla: dos versiones distintas de la misma configuracion obligarian a que
    al reconectar alguien perdiese sus cambios (ver src/mirror.js).
-
-   El bloqueo de verdad esta en el codigo -requireDevice() en ui.js y el rechazo
-   de comandos en device.js-; esto es la senal visual, para que no parezca que la
-   app se ha quedado tonta cuando un clic no hace nada. */
-.readonly-banner {
-  /* En la barra de herramientas, a la izquierda de los botones de la ventana:
-     ahí no tapa contenido ni compite con los avisos, que salen abajo. */
-  position: fixed;
-  top: 12px;
-  right: 156px;
-  z-index: 998;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 13px 6px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--warning);
-  background: rgba(var(--warning-rgb), 0.12);
-  border: 1px solid rgba(var(--warning-rgb), 0.25);
-  animation: alertFade 0.4s var(--ease-out);
-  pointer-events: none;      /* es un cartel, no se pulsa */
-}
 
 /* Los botones que solo tienen sentido con el teclado delante se apagan a la
    vista. No se usa pointer-events: los clics tienen que seguir llegando para

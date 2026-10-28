@@ -138,6 +138,23 @@ export function init() {
   });
 }
 
+// Entrada desde el Inicio: la tecla o el mando que se ha pulsado en la réplica,
+// del perfil que tiene puesto el teclado (que es el que se está mirando allí).
+export function openTarget({ key = null, rotary = null } = {}) {
+  view.editingProfile = state.activeProfileIdx;
+  view.variantId = null;
+  view.capturing = false;
+  if (key !== null) {
+    view.selected = { kind: 'key', index: key };
+    view.tab = tabForAction(currentAction());
+  } else if (rotary !== null) {
+    view.selected = { kind: 'rotary', slot: rotary };
+  }
+  render();
+  // render() conserva el scroll que hubiera; aquí lo que se quiere es ver la pieza.
+  document.querySelector('#profiles-body .selected')?.scrollIntoView({ block: 'center' });
+}
+
 // --- Interacción -----------------------------------------------------------
 
 function onClick(e) {
