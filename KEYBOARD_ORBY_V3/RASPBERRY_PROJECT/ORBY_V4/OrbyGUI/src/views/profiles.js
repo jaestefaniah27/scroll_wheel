@@ -55,6 +55,7 @@ import { seqAddAction, currentAppStep, setAppKind, currentTextStep, setPowerActi
          confirmPluginValuePick } from './profiles/macro-tabs.js';
 import { renderSequenceEditor } from './profiles/sequence-editor.js';
 import { getCurrentWindowInfo, keycodeOptions, escape } from './profiles/util.js';
+import { keyScreen as screenOfKey, profileScreen, paintProfileScreens } from '../key-screen.js';
 
 // Subir las secuencias al teclado lo hace ahora macros-store.js, pero main.js
 // se lo sigue pidiendo a esta vista: era parte de su interfaz antes del corte.
@@ -92,9 +93,9 @@ export function init() {
     if (inPanel()) { renderKeyGrid(); return; }
     const body = document.getElementById('profiles-body');
     const pintados = body.querySelectorAll('.pm-row-icon.is-oled').length;
-    const esperados = state.profiles.filter((p, i) => cache.profileIcon(i)).length;
+    const esperados = state.profiles.filter((p, i) => profileScreen(p, i)).length;
     if (pintados !== esperados) render();
-    else cache.paintThumbs(body);
+    else paintProfileScreens(body, state.profiles);
   });
 
   // Las macros (secuencias) viven en la configuración local del PC, no en el
@@ -296,13 +297,25 @@ function renderKeyPanel() {
   return view.panelNav ? renderKeyKind(i, view.panelNav) : renderKeyRoot(i);
 }
 
+// La pantalla de la tecla tal como la dibuja el teclado (key-screen.js): el
+// icono subido, el del catálogo con su nombre o la etiqueta en su fuente. El
+// <canvas> se pinta después de insertar el HTML (paintKeyScreens).
 function keyScreen(i, lslot, cls) {
-  const prof = currentProfile();
   if (lslot < 0) return `<span class="${cls} is-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`;
-  const hasIcon = Boolean(cache.get(view.editingProfile, lslot));
-  return `<span class="${cls}">${hasIcon
-    ? `<canvas data-bmp="${cache.cacheKey(view.editingProfile, lslot)}"></canvas>`
-    : `<span class="kp-screen-text">${escape(prof.labels[lslot] || '')}</span>`}</span>`;
+  return `<span class="${cls}"><canvas data-key-screen="${i}"></canvas></span>`;
+}
+
+function paintKeyScreens(root) {
+  const prof = currentProfile();
+  const variant = editingVariant();
+  root.querySelectorAll('canvas[data-key-screen]').forEach((cv) => {
+    const i = Number(cv.dataset.keyScreen);
+    const scr = screenOfKey(prof, view.editingProfile, i, view.layer, currentPageIdx(), {
+      action: variants.effectiveKey(prof, variant, i, view.layer),
+      label: variants.effectiveLabel(prof, variant, i, view.layer),
+    });
+    if (scr) fb.renderToCanvas(scr, cv, { zoom: 1, grid: false });
+  });
 }
 
 function renderKeyRoot(i) {
@@ -1257,6 +1270,7 @@ export function render() {
 
   // Los <canvas> de los iconos no se pueden serializar en la plantilla.
   cache.paintThumbs(body);
+  paintProfileScreens(body, state.profiles);
 
   if (scrollList) body.querySelector('.pm-list-scroll').scrollTop = scrollList;
   if (scrollDetail) body.querySelector('.pm-detail').scrollTop = scrollDetail;
@@ -1265,8 +1279,8 @@ export function render() {
 // El icono de un perfil: el suyo de verdad (el que enseña su menú en el
 // teclado) en una pantallita negra, o la baldosa de color si no tiene.
 function profileTile(i, cls) {
-  return cache.profileIcon(i)
-    ? `<span class="${cls} is-oled"><canvas data-bmp="${i}:0:20"></canvas></span>`
+  return profileScreen(state.profiles[i], i)
+    ? `<span class="${cls} is-oled"><canvas data-profile-screen="${i}"></canvas></span>`
     : `<span class="${cls}" style="--accent:${profileMeta(i).accent}">${icon(profileMeta(i).icon, 16)}</span>`;
 }
 
@@ -1449,6 +1463,7 @@ function renderPanel() {
   view.navDir = null;
 
   cache.paintThumbs(host);
+  paintKeyScreens(host);
   if (piece?.id === 'wheel' && !view.panelNav) updateDerived(currentScroll().detentsPerRev);
   const scroller = host.querySelector('.zp-scroll');
   if (scroller && scrollTop) scroller.scrollTop = scrollTop;

@@ -25,7 +25,7 @@
 // sabe que hay en ellas.
 
 import * as device from '../device.js';
-import { state, notify, labelForKey, labelSlot, profile, KEY_TO_SCREEN, KEY_SUPER,
+import { state, notify, profile, KEY_TO_SCREEN, KEY_SUPER,
          pageCountOf } from '../store.js';
 import * as wheelDial from '../wheel-dial.js';
 import * as cache from '../oled-cache.js';
@@ -33,6 +33,7 @@ import * as oledMirror from '../oled-mirror.js';
 import { icon } from '../icons.js';
 import { ROTARY_SLOTS } from '../hid-keys.js';
 import * as profiles from './profiles.js';
+import { keyScreen } from '../key-screen.js';
 
 let wheelDecay = null;
 
@@ -91,7 +92,7 @@ export function init() {
     html += `
       <div class="hw-key ${screen ? '' : 'no-screen'}" id="hw-key-${i}" data-key="${i - 1}" style="${at(keyPos(i - 1))}">
         <div class="hw-cap">
-          ${screen ? `<div class="oled-screen"><canvas class="oled-px" data-screen="${screen - 1}"></canvas><span class="oled-text" id="hw-oled-${i}"></span></div>`
+          ${screen ? `<div class="oled-screen"><canvas class="oled-px" data-screen="${screen - 1}"></canvas></div>`
                    : `<span class="hw-key-role">${i === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`}
         </div>
       </div>`;
@@ -370,15 +371,16 @@ function pulse(id) {
   setTimeout(() => el.classList.remove('active'), 160);
 }
 
-// Lo que la app sabe de cada pantalla sin preguntarle al teclado: el icono
-// subido si lo hay. Las teclas con solo etiqueta llevan el texto encima.
+// Lo que la app sabe de cada pantalla sin preguntarle al teclado: lo mismo
+// que dibujaría él (key-screen.js), con el icono subido, el del catálogo o la
+// etiqueta en su fuente.
 function fallbackScreens(prof, layer) {
   const screens = new Array(10).fill(null);
+  const page = Math.min(state.pageIdx, (prof ? pageCountOf(prof) : 1) - 1);
   for (let ki = 0; ki < 12; ki++) {
     const screen = KEY_TO_SCREEN[ki];
     if (!screen) continue;
-    const slot = labelSlot(ki, layer);
-    screens[screen - 1] = prof && slot >= 0 ? cache.get(state.activeProfileIdx, slot, state.pageIdx) : null;
+    screens[screen - 1] = keyScreen(prof, state.activeProfileIdx, ki, layer, page);
   }
   return screens;
 }
@@ -388,17 +390,8 @@ function fallbackScreens(prof, layer) {
 // suyas son las de la capa normal (ver preview() en oled-mirror.js).
 function renderBoardFallback(prof, layer, preview = false) {
   const live = oledMirror.isLive() && !preview;
-  const screens = live ? null : fallbackScreens(prof, layer);
-
-  for (let ki = 0; ki < 12; ki++) {
-    const el = document.getElementById(`hw-oled-${ki + 1}`);
-    if (!el) continue;
-    // Con espejo, lo que se ve es exactamente lo del teclado: nada encima.
-    const text = live || screens[KEY_TO_SCREEN[ki] - 1] ? '' : (prof && labelForKey(prof, ki, layer)) || '';
-    el.textContent = text;
-  }
-
   if (live) return;
+  const screens = fallbackScreens(prof, layer);
   const count = prof ? pageCountOf(prof) : 1;
   oledMirror[preview ? 'preview' : 'fallback']({
     profile: state.activeProfileIdx,

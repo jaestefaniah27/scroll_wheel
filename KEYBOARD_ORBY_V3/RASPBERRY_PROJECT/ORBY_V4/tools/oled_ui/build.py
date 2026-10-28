@@ -1,6 +1,11 @@
 # Genera include/oled_ui_data.h (fuente, iconos y catálogo para el firmware)
 # y tools/test/ui_fixture.h (pantallas de referencia para test_ui.cpp).
 #
+# Y lo mismo para la app: OrbyGUI/src/oled-ui-data.mjs, que usa oled-ui.mjs
+# (la copia en JS de oled_ui.h) para dibujar en el Inicio lo que dibujaría el
+# teclado, y OrbyGUI/test/fixtures/oled-ui-cases.json, los mismos casos de
+# referencia para test/oled-ui.test.mjs.
+#
 #   python3 tools/oled_ui/build.py           # regenera
 #   python3 tools/oled_ui/build.py --check   # falla si lo generado está viejo
 #
@@ -14,6 +19,8 @@ import font, icons, catalog, layout
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..'))
 OUT = os.path.join(ROOT, 'include', 'oled_ui_data.h')
 FIX = os.path.join(ROOT, 'tools', 'test', 'ui_fixture.h')
+APP_DATA = os.path.join(ROOT, 'OrbyGUI', 'src', 'oled-ui-data.mjs')
+APP_FIX = os.path.join(ROOT, 'OrbyGUI', 'test', 'fixtures', 'oled-ui-cases.json')
 
 
 def cols(bm):
@@ -160,6 +167,35 @@ def main():
         F.append('    }},')
     F.append('};')
     salidas[FIX] = '\n'.join(F) + '\n'
+
+    # --- lo mismo para la app ---------------------------------------------------------
+    import json
+    J = ['// GENERADO por tools/oled_ui/build.py a partir de font.py, icons.py y',
+         '// catalog.py: los mismos datos que include/oled_ui_data.h, para oled-ui.mjs.',
+         '// No se edita a mano: se cambia el dibujo y se regenera.', '']
+    J.append('export const FONT_COLS = new Uint16Array(%s);' % json.dumps(small))
+    J.append('export const FONT_SMALL = %s;' % json.dumps(sg))
+    J.append('export const BIG_COLS = new Uint32Array(%s);' % json.dumps(big))
+    J.append('export const FONT_BIG = %s;' % json.dumps(bg))
+    J.append('export const FOLD = %s;' % json.dumps([[ord(a), ord(b)] for a, b in sorted(font.FOLD.items())]))
+    J.append('export const SPRITE_COLS = new Uint32Array(%s);' % json.dumps(data))
+    J.append('export const SPRITES = %s;' % json.dumps([[sw, sh, off] for _n, sw, sh, off in table]))
+    J.append('export const SPR = %s;' % json.dumps({cid(n): k for k, (n, *_r) in enumerate(table)
+                                                    if n in icons.SPRITES or n in icons.ASCII_SPRITES}))
+    J.append('export const ENTRIES = %s;' % json.dumps(
+        [[key, [n for n, *_r in table].index(ic), cap] for key, (ic, cap) in catalog.ENTRIES.items()],
+        ensure_ascii=False))
+    salidas[APP_DATA] = '\n'.join(J) + '\n'
+
+    casos = []
+    for name, scr in cases:
+        fb = [0] * 360
+        for y in range(40):
+            for x in range(72):
+                if scr[y][x]:
+                    fb[(y >> 3) * 72 + x] |= 1 << (y & 7)
+        casos.append({'what': name, 'fb': ''.join('%02x' % v for v in fb)})
+    salidas[APP_FIX] = json.dumps(casos, ensure_ascii=False, indent=1) + '\n'
 
     if '--check' in sys.argv:
         # Para run.ps1: si alguien toca un icono y no regenera, el firmware

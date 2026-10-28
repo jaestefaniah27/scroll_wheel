@@ -175,6 +175,13 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
 - `oled-anim.mjs` — **copia en JS de `include/oled_anim.h`**, bit a bit. Si tocas una
   constante o una rama del `.h`, tócala aquí y regenera el fichero dorado
   (`tools/test/anim_golden.cpp`): `test/oled-anim.test.mjs` compara los dos.
+- `oled-ui.mjs` — **copia en JS de `include/oled_ui.h`**: el icono del catálogo con
+  su nombre, o la etiqueta en la fuente del teclado. Sus datos (`oled-ui-data.mjs`)
+  los genera `tools/oled_ui/build.py` junto con los del firmware; si tocas un icono
+  o el catálogo, regenera, y `test/oled-ui.test.mjs` compara con los casos de
+  `test_ui.cpp`. `key-screen.js` decide qué va en cada pantalla con las reglas de
+  `render_screen()`: estado de páginas, icono subido, catálogo o texto. Sin esto los
+  perfiles de la biblioteca (que no suben iconos) salían como texto donde no hay espejo.
 - `oled-mirror.js` — las diez pantallas del Inicio. Con el espejo del firmware corre
   las mismas transiciones que Core 1; sin él, las aproxima con los iconos de la app.
 - `variants.js` — variaciones de perfil por aplicación. Viven **solo en la RAM** del

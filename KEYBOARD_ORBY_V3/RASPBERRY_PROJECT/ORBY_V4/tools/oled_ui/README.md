@@ -10,7 +10,7 @@ qué icono lleva cada etiqueta. Está dibujado para lo que son las pantallas,
 | `icons.py` | Los iconos (24×22, trazo de 2 px) y las piezas de interfaz (interruptor, puntos de página). |
 | `catalog.py` | Etiqueta de tecla → icono y nombre en castellano. También las pantallas de los menús. |
 | `layout.py` | Dónde va cada cosa en la pantalla. Es el modelo que copia `include/oled_ui.h`. |
-| `build.py` | Genera `include/oled_ui_data.h` y el fixture de `tools/test/test_ui.cpp`. |
+| `build.py` | Genera `include/oled_ui_data.h` y el fixture de `tools/test/test_ui.cpp`, y lo mismo para la app: `OrbyGUI/src/oled-ui-data.mjs` y `OrbyGUI/test/fixtures/oled-ui-cases.json`. |
 | `preview.py` | Hojas PNG con los cuatro perfiles de fábrica y todos los iconos. |
 
 ## Cambiar un icono o añadir uno
@@ -21,7 +21,9 @@ qué icono lleva cada etiqueta. Está dibujado para lo que son las pantallas,
 4. `python3 tools/oled_ui/build.py` y compila el firmware.
 
 `include/oled_ui_data.h` va al repositorio: compilar el firmware no necesita
-Python. Lo que sí hace `tools/test/run.ps1` es comprobar con `build.py --check`
+Python. Lo mismo `OrbyGUI/src/oled-ui-data.mjs`: la app dibuja con él, en
+`src/oled-ui.mjs` (copia en JS de `oled_ui.h`), las pantallas que el teclado no
+le manda, y `test/oled-ui.test.mjs` comprueba que salen iguales píxel a píxel. Lo que sí hace `tools/test/run.ps1` es comprobar con `build.py --check`
 que nadie ha tocado un dibujo sin regenerar.
 
 ## Cómo elige el firmware qué enseñar en una tecla

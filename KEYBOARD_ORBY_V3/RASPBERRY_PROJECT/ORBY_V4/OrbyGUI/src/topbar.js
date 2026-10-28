@@ -12,6 +12,7 @@
 import * as device from './device.js';
 import { state, notify, subscribe, profileMeta, hasPages, pageCountOf, selectPage } from './store.js';
 import * as cache from './oled-cache.js';
+import { profileScreen, paintProfileScreens } from './key-screen.js';
 import { icon } from './icons.js';
 import { toast, requireDevice } from './ui.js';
 
@@ -102,10 +103,11 @@ function pageDots(prof) {
 }
 
 function tabIcon(i) {
-  // El icono de verdad del perfil (el que enseña su menú en el teclado) va en
-  // una pantallita negra, como en el aparato. Sin él, la baldosa de color.
-  if (cache.profileIcon(i)) {
-    return `<span class="strip-icon is-oled"><canvas data-bmp="${i}:0:20"></canvas></span>`;
+  // El icono de verdad del perfil (el que enseña su menú en el teclado, subido
+  // o de fábrica) va en una pantallita negra, como en el aparato. Sin él, la
+  // baldosa de color.
+  if (profileScreen(state.profiles[i], i)) {
+    return `<span class="strip-icon is-oled"><canvas data-profile-screen="${i}"></canvas></span>`;
   }
   const meta = profileMeta(i);
   return `<span class="strip-icon" style="--accent:${meta.accent}">${icon(meta.icon, 14)}</span>`;
@@ -115,11 +117,11 @@ export function render() {
   if (!host) return;
   const prof = state.profiles[state.activeProfileIdx];
   const nueva = JSON.stringify([
-    state.profiles.map((p, i) => [p.name, Boolean(cache.profileIcon(i))]),
+    state.profiles.map((p, i) => [p.name, Boolean(cache.profileIcon(i)), Boolean(profileScreen(p, i))]),
     state.activeProfileIdx, state.pageIdx, prof ? pageCountOf(prof) : 1, hasPages(),
   ]);
   if (nueva === firma) {
-    cache.paintThumbs(host);
+    paintProfileScreens(host, state.profiles);
     return;
   }
   firma = nueva;
@@ -136,7 +138,7 @@ export function render() {
   }).join('');
 
   // Los <canvas> no se pueden serializar en la plantilla: se pintan después.
-  cache.paintThumbs(host);
+  paintProfileScreens(host, state.profiles);
   fit();
 }
 
