@@ -94,7 +94,8 @@ function initChrome() {
   // consola): las filas con data-goto.
   document.getElementById('btn-back').addEventListener('click', goBack);
   document.getElementById('btn-settings').addEventListener('click', () => switchView('view-settings'));
-  document.getElementById('btn-profiles').addEventListener('click', () => switchView('view-profiles'));
+  document.getElementById('btn-profiles').addEventListener('click',
+    () => switchView('view-profiles', { profile: state.activeProfileIdx }));
   document.querySelectorAll('[data-goto]').forEach((row) => {
     row.addEventListener('click', () => switchView(row.dataset.goto));
   });
@@ -188,7 +189,7 @@ const PARENT = {
 // llevan cabecera propia, así que es lo que dice dónde estás.
 const VIEW_TITLES = {
   'view-dashboard': 'Inicio',
-  'view-profiles': 'Perfiles y macros',
+  'view-profiles': 'Perfiles',
   'view-oled': 'Icono de la tecla',
   'view-auto': 'Cambio automático',
   'view-settings': 'Ajustes',

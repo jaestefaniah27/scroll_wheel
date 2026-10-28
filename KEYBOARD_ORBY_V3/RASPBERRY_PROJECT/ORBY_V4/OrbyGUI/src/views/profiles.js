@@ -69,22 +69,20 @@ export function init() {
   wire(document.getElementById('profiles-body'));
   window.addEventListener('keydown', onCapture, true);
 
-  // Las miniaturas llegan por el puerto serie con retraso: cuando la caché se
-  // completa hay que repintar la rejilla, no la vista entera. El icono del
-  // perfil vive en la barra de pestañas, no en la rejilla, así que se atiende
-  // aparte: si su bitmap todavía no estaba, la pestaña se dibujó con el icono
-  // decorativo y NO hay ningún <canvas> donde pintarlo, así que hay que rehacer
-  // la barra. Solo cuando cambia esa cuenta: repintar en cada bitmap que entra
-  // sería rehacerla veinte veces seguidas al conectar.
+  // Las miniaturas llegan por el puerto serie con retraso. En el panel las
+  // repinta la réplica; en la vista de perfiles basta con pintar los <canvas>
+  // que ya hay, salvo que un perfil estrene icono: entonces se dibujó con la
+  // baldosa decorativa y no hay <canvas> donde pintarlo, así que se rehace.
+  // Solo cuando cambia esa cuenta: repintar en cada bitmap que entra sería
+  // rehacerla veinte veces seguidas al conectar.
   cache.onChange(() => {
     if (!isActiveView()) return;
-    renderKeyGrid();
-    const bar = document.getElementById('profile-bar');
-    if (!bar) return;
-    const pintados = bar.querySelectorAll('.tab-icon-canvas').length;
+    if (inPanel()) { renderKeyGrid(); return; }
+    const body = document.getElementById('profiles-body');
+    const pintados = body.querySelectorAll('.pm-row-icon.is-oled').length;
     const esperados = state.profiles.filter((p, i) => cache.profileIcon(i)).length;
-    if (pintados !== esperados) renderTabs();
-    else cache.paintThumbs(bar);
+    if (pintados !== esperados) render();
+    else cache.paintThumbs(body);
   });
 
   // Las macros (secuencias) viven en la configuración local del PC, no en el
@@ -161,15 +159,31 @@ function selectTarget({ key = null, rotary = null }) {
   }
 }
 
-// Entrada desde el Inicio: la tecla o el mando que se ha pulsado en la réplica,
-// del perfil que tiene puesto el teclado (que es el que se está mirando allí).
-export function openTarget(target = {}) {
-  view.editingProfile = state.activeProfileIdx;
+// Entrada desde el botón de perfiles de la barra: se abre por el perfil que
+// tiene puesto el teclado.
+export function openTarget({ profile = state.activeProfileIdx } = {}) {
+  view.editingProfile = profile;
   view.variantId = null;
-  selectTarget(target);
+  view.libraryOpen = false;
   render();
-  // render() conserva el scroll que hubiera; aquí lo que se quiere es ver la pieza.
-  document.querySelector('#profiles-body .selected')?.scrollIntoView({ block: 'center' });
+}
+
+// "Configurar teclas, rueda y mandos": se editan en el Inicio, sobre la
+// réplica, que enseña siempre el perfil del teclado. Si no es este, se pone
+// antes.
+async function editKeysOf(idx) {
+  if (idx !== state.activeProfileIdx) {
+    if (!requireDevice()) return;
+    try {
+      await device.setProfile(idx);
+      state.activeProfileIdx = idx;
+      notify();
+    } catch {
+      toast('El teclado no confirmó el cambio de perfil', 'error');
+      return;
+    }
+  }
+  goTo('view-dashboard', { zoom: 'keys' });
 }
 
 // ---- Panel lateral del Inicio ----------------------------------------------
@@ -368,12 +382,14 @@ function onClick(e) {
   if (act === 'pick-profile') {
     view.editingProfile = Number(el.dataset.idx);
     view.variantId = null;
-    view.selected = null;
+    view.libraryOpen = false;
     render();
   } else if (act === 'pick-variant') {
-    view.variantId = el.dataset.id || null;
-    view.selected = null;
+    // Pulsar la que ya está abierta la cierra, como una fila desplegable.
+    view.variantId = el.dataset.id && el.dataset.id !== view.variantId ? el.dataset.id : null;
     render();
+  } else if (act === 'pm-edit-keys') {
+    editKeysOf(view.editingProfile);
   } else if (act === 'new-variant') {
     createVariant();
   } else if (act === 'del-variant') {
@@ -421,15 +437,6 @@ function onClick(e) {
     view.panelNav = 'gesture';
     view.navDir = 'fwd';
     render();
-  } else if (act === 'pick-key') {
-    view.selected = { kind: 'key', index: Number(el.dataset.key) };
-    view.capturing = false;
-    view.tab = tabForAction(currentAction());
-    render();
-  } else if (act === 'pick-rotary') {
-    view.selected = { kind: 'rotary', slot: Number(el.dataset.slot) };
-    view.capturing = false;
-    render();
   } else if (act === 'edit-icon') {
     // Salta al editor de iconos con este perfil, esta tecla y esta capa.
     goTo('view-oled', { profile: view.editingProfile, key: Number(el.dataset.key), layer: view.layer });
@@ -447,6 +454,7 @@ function onClick(e) {
     const cur = currentRotary();
     applyRotary({ type: ROTARY_TYPES.KEY, modifier: cur.modifier ^ Number(el.dataset.bit), keycode: cur.keycode });
   } else if (act === 'activate') {
+    if (!requireDevice()) return;
     device.setProfile(view.editingProfile)
       .then(() => {
         state.activeProfileIdx = view.editingProfile;
@@ -593,7 +601,11 @@ function onClick(e) {
 
 function onChange(e) {
   const act = e.target.dataset.act;
-  if (act === 'pick-keycode') {
+  if (act === 'panel-variant') {
+    view.variantId = e.target.value || null;
+    view.panelNav = null;
+    render();
+  } else if (act === 'pick-keycode') {
     // Multimedia, páginas y secuencias se apropian del campo del modificador;
     // elegir una tecla desde la pestaña Atajo sale de esos modos igual que
     // tocar un modificador (ver toggle-mod).
@@ -712,7 +724,10 @@ function onInput(e) {
         await device.setName(view.editingProfile, text);
         markDirty();
         notify();
-        renderTabs();
+        // Sin repintar la vista, que le quitaría el foco al campo: basta con
+        // la fila de la lista.
+        const name = document.querySelector('.pm-row.on .pm-row-name');
+        if (name) name.textContent = text;
       } catch {
         toast('El teclado no confirmó el nombre', 'error');
       }
@@ -1163,95 +1178,160 @@ export function render() {
   const body = document.getElementById('profiles-body');
   if (!body) return;
 
-  // El repintado sustituye TODO el innerHTML (rejilla e inspector incluidos),
-  // así que sin esto cada tecleo en un campo o cada clic perdía el scroll de
-  // las dos columnas y las devolvía arriba del todo.
-  const scrollMain = body.querySelector('.editor-main')?.scrollTop;
-  const scrollInspector = body.querySelector('.editor-inspector')?.scrollTop;
-
-  // Cualquier repintado que no sea "seguimos capturando una posición" corta
-  // el sondeo: evita dejarlo corriendo de fondo si se sale del modo por otro
-  // sitio (elegir otra tecla, cambiar de pestaña...).
-  if (view.capturing !== 'position') cancelPositionPoll();
+  // El repintado sustituye todo el innerHTML: sin esto cada clic devolvía las
+  // dos columnas arriba del todo.
+  const scrollList = body.querySelector('.pm-list-scroll')?.scrollTop;
+  const scrollDetail = body.querySelector('.pm-detail')?.scrollTop;
 
   if (!state.profiles.length) {
     body.innerHTML = `<div class="empty-panel glass-panel">
       ${icon('plug', 40)}
       <h3>Sin perfiles cargados</h3>
-      <p>Conecta el Orby una vez: a partir de ahí queda una copia en el PC y podrás
-         editarlos aunque no lo tengas enchufado.</p>
+      <p>Conecta el Orvy una vez: a partir de ahí queda una copia en el PC y podrás
+         verlos aunque no lo tengas enchufado.</p>
     </div>`;
     return;
   }
 
   if (view.editingProfile >= state.profiles.length) view.editingProfile = 0;
-  const prof = currentProfile();
+  const full = state.profiles.length >= state.maxProfiles;
 
   body.innerHTML = `
-    <div class="profile-bar" id="profile-bar">${renderTabsInner()}</div>
-    ${view.libraryOpen ? renderLibrary() : ''}
-    ${renderVariantBar()}
-
-    <div class="editor-layout">
-      <div class="editor-main">
-        ${renderVariantSettings()}
-        <div class="editor-board glass-panel">
-          <div class="editor-board-head">
-            <div class="head-row">
-              <label class="field-inline">
-                <span>Nombre</span>
-                <input type="text" maxlength="7" value="${escape(prof.name)}"
-                       data-act="edit-name" class="text-input compact">
-              </label>
-              ${view.editingProfile === state.activeProfileIdx
-                ? '<span class="pill pill-live">Perfil activo</span>'
-                : '<button class="secondary-btn" data-act="activate">Activar en el teclado</button>'}
-            </div>
-            <div class="head-row">
-              <div class="layer-toggle">
-                <button class="toggle-btn ${view.layer === 'normal' ? 'active' : ''}" data-act="layer" data-layer="normal">NORMAL</button>
-                <button class="toggle-btn ${view.layer === 'super' ? 'active' : ''}" data-act="layer" data-layer="super">SUPER</button>
-              </div>
-              ${renderPageBar()}
-            </div>
-          </div>
-          ${renderPageHint()}
-
-          <div class="okey-grid" id="profile-key-grid">${renderKeyGridInner()}</div>
-          <p class="grid-status" id="profile-grid-status"></p>
+    <div class="pm">
+      <aside class="pm-list">
+        <div class="pm-list-scroll">
+          ${state.profiles.map((p, i) => `
+            <button class="pm-row ${i === view.editingProfile && !view.libraryOpen ? 'on' : ''}"
+                    data-act="pick-profile" data-idx="${i}">
+              ${profileTile(i, 'pm-row-icon')}
+              <span class="pm-row-text">
+                <span class="pm-row-name">${escape(p.name)}</span>
+                <span class="pm-row-sub">${i === state.activeProfileIdx ? 'En uso' : ''}${
+                  hasPages() && pageCountOf(p) > 1 ? `${i === state.activeProfileIdx ? ' · ' : ''}${pageCountOf(p)} páginas` : ''}</span>
+              </span>
+            </button>`).join('')}
         </div>
-
-        <div class="glass-panel oled-card">
-          <div class="card-header">${icon('reset', 20)}<h2>Encoders</h2></div>
-          <div class="rotary-groups">${renderRotaryGroups()}</div>
-          <p class="setting-desc mt-4">
-            Cada capa guarda sus propias acciones: con <strong>SUPER</strong> mantenida los encoders
-            hacen lo que configures aquí en la capa SUPER. Dentro del menú del teclado siguen
-            sirviendo para navegar.
-          </p>
+        <div class="pm-list-foot">
+          <button class="pm-foot-btn" data-act="profile-new" ${full || view.busy ? 'disabled' : ''}
+                  title="${full ? `Máximo ${state.maxProfiles} perfiles` : 'Crear un perfil vacío'}">
+            ${icon('plus', 15)} Nuevo
+          </button>
+          <button class="pm-foot-btn ${view.libraryOpen ? 'on' : ''}" data-act="library-toggle"
+                  title="Perfiles listos para Altium, KiCad, VS Code, Office, Photoshop...">
+            ${icon('download', 15)} Biblioteca
+          </button>
+          <span class="pm-count">${state.profiles.length} / ${state.maxProfiles}</span>
         </div>
+      </aside>
 
-        ${renderWheelCard()}
-      </div>
-
-      ${renderInspector()}
+      <section class="pm-detail">
+        ${view.libraryOpen ? renderLibrary() : renderProfileDetail()}
+      </section>
     </div>`;
 
-  // Los <canvas> de las miniaturas no se pueden serializar en la plantilla: se
-  // pintan después de insertar el HTML, tanto en la rejilla como en el inspector.
+  // Los <canvas> de los iconos no se pueden serializar en la plantilla.
   cache.paintThumbs(body);
-  paintKeyGrid();
-  updateDerived(currentScroll().detentsPerRev);
-  cache.loadProfile(view.editingProfile);
 
-  if (scrollMain !== undefined) {
-    const el = body.querySelector('.editor-main');
-    if (el) el.scrollTop = scrollMain;
-  }
-  if (scrollInspector !== undefined) {
-    const el = body.querySelector('.editor-inspector');
-    if (el) el.scrollTop = scrollInspector;
-  }
+  if (scrollList) body.querySelector('.pm-list-scroll').scrollTop = scrollList;
+  if (scrollDetail) body.querySelector('.pm-detail').scrollTop = scrollDetail;
+}
+
+// El icono de un perfil: el suyo de verdad (el que enseña su menú en el
+// teclado) en una pantallita negra, o la baldosa de color si no tiene.
+function profileTile(i, cls) {
+  return cache.profileIcon(i)
+    ? `<span class="${cls} is-oled"><canvas data-bmp="${i}:0:20"></canvas></span>`
+    : `<span class="${cls}" style="--accent:${profileMeta(i).accent}">${icon(profileMeta(i).icon, 16)}</span>`;
+}
+
+// Ficha de un perfil, en grupos como Ajustes de iOS. Las teclas no se editan
+// aquí: se editan en el Inicio, sobre la réplica, y desde aquí se va allí.
+function renderProfileDetail() {
+  const i = view.editingProfile;
+  const prof = currentProfile();
+  const live = i === state.activeProfileIdx;
+  const full = state.profiles.length >= state.maxProfiles;
+  const hasProfileIcon = compat.supports(state.deviceInfo, 'profileIcon');
+  const count = pageCountOf(prof);
+  const cur = currentPageIdx();
+  const list = variants.forProfile(i, cur);
+
+  const row = ({ act, ic, tint, title, sub = '', attrs = '', danger = false, chev = true }) => `
+    <button class="nav-row ${danger ? 'is-danger' : ''}" data-act="${act}" data-tint="${tint}" ${attrs}>
+      <span class="nav-icon">${icon(ic, 15)}</span>
+      <span class="nav-row-text">
+        <span class="nav-row-title">${title}</span>
+        ${sub ? `<span class="nav-row-sub">${sub}</span>` : ''}
+      </span>
+      ${chev ? `<span class="nav-row-chev">${icon('chevron', 14)}</span>` : ''}
+    </button>`;
+
+  return `
+    <div class="pm-hero">
+      ${profileTile(i, 'pm-hero-icon')}
+      <div class="pm-hero-text">
+        <input type="text" maxlength="7" value="${escape(prof.name)}" data-act="edit-name"
+               class="pm-name" spellcheck="false" aria-label="Nombre del perfil">
+        <span class="pm-hero-sub">Hasta 7 letras: es lo que cabe en la pantalla del teclado</span>
+      </div>
+      ${live
+        ? '<span class="pill pill-live">En uso</span>'
+        : '<button class="primary-btn" data-act="activate">Usar en el teclado</button>'}
+    </div>
+
+    <div class="kp-list">
+      ${row({ act: 'pm-edit-keys', ic: 'keyboard', tint: 'blue', title: 'Configurar teclas, rueda y mandos',
+              sub: live ? 'En el Inicio, sobre la réplica' : 'Lo pone en el teclado y te lleva al Inicio' })}
+      ${row({ act: 'profile-icon', ic: 'oled', tint: 'violet', title: 'Icono del perfil',
+              sub: hasProfileIcon ? 'El que enseña el menú de perfiles del teclado'
+                : `Necesita firmware ${compat.FEATURES.profileIcon.since} o posterior`,
+              attrs: hasProfileIcon ? '' : 'disabled' })}
+      ${row({ act: 'profile-dup', ic: 'copy', tint: 'gray', title: 'Duplicar', sub: 'Una copia con sus iconos, al final de la lista',
+              attrs: full || view.busy ? 'disabled' : '', chev: false })}
+    </div>
+
+    ${hasPages() ? `
+      <h4 class="kp-section">Páginas</h4>
+      <div class="kp-list">
+        ${Array.from({ length: count }, (_, n) => `
+          <div class="nav-row pm-page ${n === cur ? 'on' : ''}">
+            <button class="pm-page-pick" data-act="page" data-page="${n}" ${live ? '' : 'disabled'}>
+              <span class="pm-page-num">${n + 1}</span>
+              <span class="nav-row-title">Página ${n + 1}</span>
+              ${n === cur ? `<span class="pm-check">${icon('check', 15)}</span>` : ''}
+            </button>
+            ${count > 1 ? `<button class="pm-page-del" data-act="page-del" data-page="${n}" title="Eliminar la página ${n + 1}"
+                                    ${live ? '' : 'disabled'}>${icon('minus', 14)}</button>` : ''}
+          </div>`).join('')}
+        ${count < maxPages() ? `
+          <button class="nav-row pm-add" data-act="page-add" ${live ? '' : 'disabled'}>
+            <span class="pm-add-icon">${icon('plus', 14)}</span>
+            <span class="nav-row-title">Añadir página</span>
+          </button>` : ''}
+      </div>
+      <p class="kp-note">${live
+        ? 'Cada página tiene sus teclas, mandos, rueda e iconos. En el teclado se pasa de una a otra con una pulsación corta del botón de menú.'
+        : 'Las páginas se cambian sobre el perfil que tiene puesto el teclado: úsalo primero.'}</p>` : ''}
+
+    <h4 class="kp-section">Según la app${hasPages() && count > 1 ? ` · página ${cur + 1}` : ''}</h4>
+    <div class="kp-list">
+      ${list.map((v) => row({ act: 'pick-variant', ic: 'bolt', tint: 'orange', title: escape(v.name),
+        sub: `${variants.countOverrides(v)} cambios${v.matches.length ? ` · ${escape(v.matches.join(', '))}` : ' · sin apps'}${
+          variants.isApplied(v.id) ? ' · aplicada ahora' : ''}`,
+        attrs: `data-id="${v.id}"` })).join('')}
+      <button class="nav-row pm-add" data-act="new-variant" ${platform.can('autoProfile') ? '' : 'disabled'}>
+        <span class="pm-add-icon">${icon('plus', 14)}</span>
+        <span class="nav-row-title">Nueva variación</span>
+      </button>
+    </div>
+    <p class="kp-note">Una variación cambia un par de teclas de este perfil cuando tienes delante
+      una app concreta. Lo que cambia se edita en el Inicio, eligiéndola arriba del panel.</p>
+    ${renderVariantSettings()}
+
+    <div class="kp-list pm-danger">
+      ${row({ act: 'profile-del', ic: 'trash', tint: 'red', title: 'Eliminar perfil', danger: true, chev: false,
+              attrs: state.profiles.length <= 1 || view.busy ? 'disabled' : '' })}
+    </div>`;
 }
 
 // Piezas de la zona de la rueda, en el orden en que están en el aparato. Cada
@@ -1286,10 +1366,18 @@ function renderPanel() {
       <div class="zp-scroll"><p class="setting-desc">Conecta el Orvy una vez y quedará una copia en el PC.</p></div>`;
     return;
   }
-  if (view.editingProfile >= state.profiles.length) view.editingProfile = 0;
+  // Siempre el perfil del teclado, que es el que enseña la réplica. La vista
+  // de perfiles puede haber elegido otro mientras el panel estaba abierto.
+  if (view.editingProfile !== state.activeProfileIdx) {
+    view.editingProfile = state.activeProfileIdx;
+    view.variantId = null;
+  }
 
   const prof = currentProfile();
   const count = pageCountOf(prof);
+  // Variaciones de esta página: con alguna, el panel deja elegir si se edita
+  // el perfil base o lo que cambia una de ellas.
+  const vlist = variants.forProfile(view.editingProfile, currentPageIdx());
   const where = hasPages() && count > 1 ? `${prof.name} · página ${currentPageIdx() + 1} de ${count}` : prof.name;
   const piece = view.zone === 'wheel' && view.selected?.kind === 'rotary' ? pieceOf(view.selected.slot) : null;
 
@@ -1306,6 +1394,12 @@ function renderPanel() {
         <button class="toggle-btn ${view.layer === 'normal' ? 'active' : ''}" data-act="layer" data-layer="normal">NORMAL</button>
         <button class="toggle-btn ${view.layer === 'super' ? 'active' : ''}" data-act="layer" data-layer="super">SUPER</button>
       </div>
+      ${vlist.length ? `
+        <select class="select-input zp-variant" data-act="panel-variant" title="Qué se edita">
+          <option value="" ${!view.variantId ? 'selected' : ''}>Perfil base</option>
+          ${vlist.map((v) => `<option value="${v.id}" ${view.variantId === v.id ? 'selected' : ''}>
+            Variación: ${escape(v.name)}</option>`).join('')}
+        </select>` : ''}
       ${view.zone === 'wheel' ? `
         <div class="layer-toggle zp-pieces">
           ${WHEEL_PIECES.map((p) => `
@@ -1376,7 +1470,7 @@ function gestureName(part, piece) {
 
 // Una fila por gesto. Un giro que se edita como uno solo (desplazar, zoom,
 // pareja multimedia, complemento: ver isUnifiedTurnAction) sale como una sola
-// fila "Girar"; si no, una por sentido, igual que en renderRotaryGroups.
+// fila "Girar"; si no, una por sentido.
 function gestureRows(piece) {
   const prof = currentProfile();
   const variant = editingVariant();
@@ -1453,86 +1547,6 @@ function renderWheelTune() {
         : 'Windows todavía no ha pedido la alta resolución: las aplicaciones antiguas saltarán de tres en tres líneas.'}
       Cada perfil, y cada capa, guarda su propia sensibilidad.
     </p>`;
-}
-
-function renderTabsInner() {
-  const full = state.profiles.length >= state.maxProfiles;
-  const hasProfileIcon = compat.supports(state.deviceInfo, 'profileIcon');
-  return `
-    <div class="profile-tabs">
-      ${state.profiles.map((p, i) => `
-        <button class="profile-tab ${i === view.editingProfile ? 'active' : ''} ${i === state.activeProfileIdx ? 'is-live' : ''}"
-                data-act="pick-profile" data-idx="${i}">
-          <span class="tab-icon" style="--accent:${profileMeta(i).accent}">${cache.profileIcon(i)
-            ? `<canvas class="tab-icon-canvas" data-bmp="${i}:0:20"></canvas>`
-            : icon(profileMeta(i).icon, 18)}</span>
-          <span class="tab-name">${escape(p.name)}</span>
-          ${i === state.activeProfileIdx ? '<span class="tab-live">EN USO</span>' : ''}
-        </button>`).join('')}
-    </div>
-    <div class="profile-bar-actions">
-      <button class="secondary-btn" data-act="profile-new" ${full || view.busy ? 'disabled' : ''}
-              title="${full ? `Máximo ${state.maxProfiles} perfiles` : 'Crear un perfil vacío'}">
-        ${icon('plus', 16)} Nuevo
-      </button>
-      <button class="secondary-btn${view.libraryOpen ? ' active' : ''}" data-act="library-toggle"
-              title="Perfiles listos para Altium, KiCad, VS Code, Office, Photoshop...">
-        ${icon('download', 16)} Biblioteca
-      </button>
-      <button class="secondary-btn" data-act="profile-dup" ${full || view.busy ? 'disabled' : ''}
-              title="Copiar el perfil actual con sus iconos">
-        ${icon('profiles', 16)} Duplicar
-      </button>
-      <button class="secondary-btn danger" data-act="profile-del"
-              ${state.profiles.length <= 1 || view.busy ? 'disabled' : ''}>
-        ${icon('trash', 16)} Eliminar
-      </button>
-      <button class="secondary-btn" data-act="profile-icon" ${hasProfileIcon ? '' : 'disabled'}
-              title="${hasProfileIcon ? 'Icono que enseña este perfil en el menú del teclado'
-                : `Necesita firmware ${compat.FEATURES.profileIcon.since} o posterior`}">
-        ${icon('oled', 16)} Icono del perfil
-      </button>
-      <span class="profile-count">${state.profiles.length} / ${state.maxProfiles}</span>
-    </div>`;
-}
-
-function renderTabs() {
-  const bar = document.getElementById('profile-bar');
-  if (!bar) return;
-  bar.innerHTML = renderTabsInner();
-  // Los <canvas> del icono de perfil no sobreviven al innerHTML de arriba:
-  // hay que rellenarlos otra vez, igual que hace render() con el cuerpo entero.
-  cache.paintThumbs(bar);
-}
-
-// Variaciones del perfil: el mismo juego de atajos con un par de teclas
-// distintas para una aplicación concreta, sin duplicar el perfil entero.
-function renderVariantBar() {
-  // Solo las de esta página: la misma tecla en otra página es otro atajo, así
-  // que una variación de la 2 no tiene nada que decir mientras se edita la 1.
-  const list = variants.forProfile(view.editingProfile, currentPageIdx());
-
-  const prof = state.profiles[view.editingProfile];
-  const pageTxt = (hasPages() && prof && pageCountOf(prof) > 1)
-    ? ` · página ${currentPageIdx() + 1}` : '';
-
-  return `
-    <div class="variant-bar">
-      <span class="variant-bar-label">${icon('bolt', 14)} Según la app${pageTxt}</span>
-      <div class="chip-row">
-        <button class="chip ${!view.variantId ? 'on' : ''}" data-act="pick-variant" data-id="">
-          Perfil base
-        </button>
-        ${list.map((v) => `
-          <button class="chip ${view.variantId === v.id ? 'on' : ''} ${variants.isApplied(v.id) ? 'is-live' : ''}"
-                  data-act="pick-variant" data-id="${v.id}"
-                  title="${escape(v.matches.length ? `Se aplica con: ${v.matches.join(', ')}` : 'Sin aplicaciones asignadas')}">
-            ${escape(v.name)}
-            <em class="chip-count">${variants.countOverrides(v)}</em>
-          </button>`).join('')}
-        <button class="chip ghost" data-act="new-variant">${icon('plus', 14)} Nueva variación</button>
-      </div>
-    </div>`;
 }
 
 // ---------- Páginas ----------
@@ -1621,47 +1635,6 @@ async function deletePage(idx) {
   }
 }
 
-// Pestañas de página. Solo aparecen si el firmware las soporta: con uno anterior
-// al 4.0, maxPages es 1 y la barra no se dibuja, así que la vista queda como antes.
-function renderPageBar() {
-  if (!hasPages()) return '';
-  const prof = state.profiles[view.editingProfile];
-  if (!prof) return '';
-  const count = pageCountOf(prof);
-  const cur = prof.pageIdx || 0;
-
-  let tabs = '';
-  for (let i = 0; i < count; i++) {
-    tabs += `<button class="toggle-btn ${i === cur ? 'active' : ''}"
-                     data-act="page" data-page="${i}" title="Página ${i + 1}">${i + 1}</button>`;
-  }
-  const canAdd = count < maxPages();
-  return `
-    <div class="layer-toggle page-toggle">
-      ${tabs}
-      ${canAdd ? `<button class="toggle-btn page-add" data-act="page-add"
-                          title="Añadir una página copiando la actual">+</button>` : ''}
-      ${count > 1 ? `<button class="toggle-btn page-del" data-act="page-del" data-page="${cur}"
-                             title="Eliminar la página ${cur + 1}">−</button>` : ''}
-    </div>`;
-}
-
-function renderPageHint() {
-  if (!hasPages()) return '';
-  const prof = state.profiles[view.editingProfile];
-  if (!prof) return '';
-  const count = pageCountOf(prof);
-  if (count <= 1) {
-    return `<p class="grid-status">Este perfil tiene una sola página. Con
-      <strong>+</strong> añades otra en blanco, y el teclado alterna entre ellas
-      con una pulsación corta del botón de menú.</p>`;
-  }
-  const live = view.editingProfile === state.activeProfileIdx;
-  return `<p class="grid-status">Editando la <strong>página ${(prof.pageIdx || 0) + 1}</strong>
-    de ${count}. Cada página tiene sus teclas, etiquetas, mandos, rueda e iconos.
-    ${live ? 'La página que elijas aquí es la que se pone en el teclado, así que las pantallas enseñan lo que estás tocando.' : ''}</p>`;
-}
-
 function renderVariantSettings() {
   const variant = editingVariant();
   if (!variant) return '';
@@ -1725,68 +1698,11 @@ function renderVariantSettings() {
     </div>`;
 }
 
-// Réplica del teclado con el icono real de cada tecla, igual que en el editor
-// de iconos: es la representación que ya conoce el usuario.
-function renderKeyGridInner() {
-  const prof = currentProfile();
-  const variant = editingVariant();
-  const selected = selectedKeyIndex();
-  let html = '';
-
-  for (let i = 0; i < 12; i++) {
-    const screen = KEY_TO_SCREEN[i];
-    const lslot = labelSlot(i, view.layer);
-    const action = variants.effectiveKey(prof, variant, i, view.layer);
-    const label = lslot >= 0 ? variants.effectiveLabel(prof, variant, i, view.layer) : '';
-    const bmp = lslot >= 0 ? cache.get(view.editingProfile, lslot) : null;
-    const assigned = action.modifier || action.keycode;
-    // Esta tecla la ejecuta el PC, no el teclado: sin Orvy abierta no hace nada.
-    const necesitaApp = keyNeedsApp(action);
-    // Marca las teclas que la variación redefine respecto al perfil base.
-    const changed = variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
-                             || variants.override(variant, 'labels', lslot));
-
-    html += `
-      <button class="okey ${selected === i ? 'selected' : ''} ${bmp ? 'has-icon' : ''} ${screen ? '' : 'roleless'} ${changed ? 'is-override' : ''}"
-              data-act="pick-key" data-key="${i}">
-        <span class="okey-num">T${i + 1}${screen ? `<em>P${screen}</em>` : ''}${changed ? '<i class="okey-dot" title="Cambiado en esta variación"></i>' : ''}</span>
-        <span class="okey-screen">
-          ${screen
-            ? (bmp ? `<canvas class="okey-canvas" data-bmp="${cache.cacheKey(view.editingProfile, lslot)}"></canvas>`
-                   : `<span class="okey-text">${escape(label || '—')}</span>`)
-            : `<span class="okey-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`}
-        </span>
-        <span class="okey-action ${assigned ? 'assigned' : ''}">${escape(describeKey(action))}${
-          necesitaApp
-            ? `<i class="okey-pc" title="La ejecuta el PC: sin Orvy abierta esta tecla no hace nada">${icon('plug', 11)}</i>`
-            : ''}</span>
-      </button>`;
-  }
-  return html;
-}
-
-function paintKeyGrid() {
-  const grid = document.getElementById('profile-key-grid');
-  if (grid) cache.paintThumbs(grid);
-
-  const status = document.getElementById('profile-grid-status');
-  if (status) {
-    status.textContent = cache.isLoading()
-      ? 'Leyendo iconos del teclado…'
-      : `Capa ${view.layer === 'super' ? 'SUPER' : 'NORMAL'} · las teclas ${KEY_MENU} y ${KEY_SUPER} `
-        + `no tienen pantalla: la ${KEY_SUPER} es el modificador SUPER y la ${KEY_MENU} abre el menú `
-        + 'al mantenerla.';
-  }
-}
-
+// Lo llaman los módulos del editor cuando cambia lo que hay en una tecla. La
+// réplica del Inicio se repinta sola con la caché; lo que hay que avisarle es
+// qué pieza está elegida y en qué capa (ver openPanel).
 function renderKeyGrid() {
-  // En el panel la "rejilla" es la réplica del Inicio, que se repinta sola con
-  // la caché; lo que hay que avisar es qué pieza está elegida.
-  if (inPanel()) { onPanelRender?.(); return; }
-  const grid = document.getElementById('profile-key-grid');
-  if (!grid) return;
-  grid.innerHTML = renderKeyGridInner();
-  paintKeyGrid();
+  if (inPanel()) onPanelRender?.();
 }
 
 // Un giro de complemento (brillo, color…) o de una pareja multimedia con
@@ -1808,152 +1724,6 @@ function isUnifiedTurnAction(action) {
   return action.type === ROTARY_TYPES.CONSUMER && Boolean(consumerPairFor(action.keycode));
 }
 
-function renderRotaryGroups() {
-  const prof = currentProfile();
-  const variant = editingVariant();
-  const selected = selectedRotarySlot();
-
-  const renderPart = (part, action, changed) => `
-    <button class="rotary-part ${selected === part.slot ? 'selected' : ''} ${action.type ? 'assigned' : ''} ${changed ? 'is-override' : ''}"
-            data-act="pick-rotary" data-slot="${part.slot}">
-      <span class="rp-dir">${part.short}</span>
-      <span class="rp-body">
-        <em>${part.label}</em>
-        <strong>${escape(describeRotaryFull(action))}${
-          rotaryNeedsApp(action)
-            ? `<i class="okey-pc" title="La ejecuta el PC: sin Orvy abierta esto no hace nada">${icon('plug', 11)}</i>`
-            : ''}</strong>
-      </span>
-    </button>`;
-
-  return ROTARY_GROUPS.map((group) => {
-    const [cwPart, ccwPart, clickPart] = group.parts;
-    const cwAction = variants.effectiveRotary(prof, variant, cwPart.slot, view.layer);
-    const ccwAction = variants.effectiveRotary(prof, variant, ccwPart.slot, view.layer);
-    const merged = isUnifiedTurnAction(cwAction) && isUnifiedTurnAction(ccwAction);
-
-    const cwChanged = variant && variants.override(variant, 'rotary', rotarySlot(cwPart.slot, view.layer));
-    const ccwChanged = variant && variants.override(variant, 'rotary', rotarySlot(ccwPart.slot, view.layer));
-    const clickAction = variants.effectiveRotary(prof, variant, clickPart.slot, view.layer);
-    const clickChanged = variant && variants.override(variant, 'rotary', rotarySlot(clickPart.slot, view.layer));
-
-    const turnRows = merged
-      ? renderPart({ slot: cwPart.slot, label: 'Giro', short: '⟳' }, cwAction, cwChanged)
-      : renderPart(cwPart, cwAction, cwChanged) + renderPart(ccwPart, ccwAction, ccwChanged);
-
-    return `
-    <div class="rotary-group">
-      <span class="rotary-group-name">${icon(group.icon, 14)} ${group.name}</span>
-      ${turnRows}
-      ${renderPart(clickPart, clickAction, clickChanged)}
-    </div>`;
-  }).join('');
-}
-
-function renderWheelCard() {
-  const s = currentScroll();
-  const layerName = view.layer === 'super' ? 'SUPER' : 'normal';
-  const prof = currentProfile();
-  const variant = editingVariant();
-  const cw  = variants.effectiveRotary(prof, variant, ROTARY_SLOTS.WHEEL_CW,  view.layer);
-  const ccw = variants.effectiveRotary(prof, variant, ROTARY_SLOTS.WHEEL_CCW, view.layer);
-
-  return `
-    <div class="glass-panel oled-card">
-      <div class="card-header">
-        ${icon('wheel', 20)}<h2>Rueda de scroll</h2>
-        <span class="pill">Capa ${layerName}</span>
-      </div>
-
-      ${editingVariant() ? `
-        <p class="setting-desc override-note">
-          La sensibilidad de la rueda es siempre la del <strong>perfil base</strong>:
-          las variaciones cambian atajos y etiquetas, no la calibración.
-        </p>` : ''}
-
-      <!-- El slider ocupa el ancho completo de la tarjeta, fuera de la rejilla de
-           dos columnas: son 234 pasos y cuanto más largo es el recorrido, más
-           fino se puede afinar el punto exacto. -->
-      <div class="wheel-tune-head">
-        <div class="wheel-readout">
-          <span id="scroll-value">${s.detentsPerRev}</span>
-          <small>clics por vuelta completa</small>
-        </div>
-
-        <input type="range" id="scroll-slider" class="premium-slider wheel-slider" data-act="scroll-slider"
-               min="3" max="120" step="1" value="${s.detentsPerRev}">
-
-        <div class="slider-row">
-          <span>Más lento · 3</span>
-          <span>120 · Más rápido</span>
-        </div>
-      </div>
-
-      <div class="wheel-tune">
-        <div class="wheel-tune-main">
-          <div class="preset-row">
-            ${SCROLL_PRESETS.map((p) => `
-              <button class="preset-btn ${s.detentsPerRev === p.value ? 'on' : ''}" data-act="scroll-preset" data-value="${p.value}">
-                <strong>${p.name}</strong>
-                <span>${p.value} clics</span>
-                <em>${p.desc}</em>
-              </button>`).join('')}
-          </div>
-
-          <ul class="info-list" id="scroll-derived"></ul>
-
-          <div class="row-inline mt-4">
-            <button class="secondary-btn ${s.invert ? 'is-on' : ''}" data-act="scroll-invert">
-              ${icon('reset', 16)} ${s.invert ? 'Dirección invertida' : 'Invertir dirección'}
-            </button>
-          </div>
-        </div>
-
-        <div class="wheel-tune-side">
-          <div class="hires-state ${state.scroll.hires ? 'ok' : 'off'}">
-            <span class="hires-dot"></span>
-            <strong>${state.scroll.hires ? 'Alta resolución activa' : 'Alta resolución no negociada'}</strong>
-          </div>
-          <div class="hires-state ${state.scroll.hiresPan ? 'ok' : 'off'}">
-            <span class="hires-dot"></span>
-            <strong>${state.scroll.hiresPan
-              ? 'Paneo horizontal en alta resolución'
-              : 'Paneo horizontal sin negociar'}</strong>
-          </div>
-
-          <div class="field">
-            <span class="field-label">Acción del giro</span>
-            <button class="rotary-part ${selectedRotarySlot() === ROTARY_SLOTS.WHEEL_CW ? 'selected' : ''}"
-                    data-act="pick-rotary" data-slot="${ROTARY_SLOTS.WHEEL_CW}">
-              <span class="rp-dir">↓</span>
-              <span class="rp-body"><em>Hacia abajo</em><strong>${escape(describeRotaryFull(cw))}${
-                rotaryNeedsApp(cw)
-                  ? `<i class="okey-pc" title="La ejecuta el PC: sin Orvy abierta esto no hace nada">${icon('plug', 11)}</i>`
-                  : ''}</strong></span>
-            </button>
-            <button class="rotary-part ${selectedRotarySlot() === ROTARY_SLOTS.WHEEL_CCW ? 'selected' : ''}"
-                    data-act="pick-rotary" data-slot="${ROTARY_SLOTS.WHEEL_CCW}">
-              <span class="rp-dir">↑</span>
-              <span class="rp-body"><em>Hacia arriba</em><strong>${escape(describeRotaryFull(ccw))}${
-                rotaryNeedsApp(ccw)
-                  ? `<i class="okey-pc" title="La ejecuta el PC: sin Orvy abierta esto no hace nada">${icon('plug', 11)}</i>`
-                  : ''}</strong></span>
-            </button>
-          </div>
-
-          <p class="setting-desc">
-            La sensibilidad pertenece a <strong>${escape(currentProfile().name)}</strong> en la capa
-            ${layerName}: cada perfil —y cada capa— puede tener la suya. El dibujo de la rueda en
-            pantalla (forma del marcador, sentido, desfase) se calibra en <strong>Ajustes</strong>.
-            ${state.scroll.hires
-              ? 'Con el multiplicador negociado el desplazamiento viaja en unidades de 1/120 de clic.'
-              : 'Hasta que Windows pida el multiplicador, las aplicaciones antiguas saltarán de tres en tres líneas.'}
-          </p>
-        </div>
-      </div>
-    </div>`;
-}
-
 function updateDerived(detents) {
   const el = document.getElementById('scroll-derived');
   if (!el) return;
@@ -1966,19 +1736,6 @@ function updateDerived(detents) {
 }
 
 // Lista de teclas HID reutilizada por los dos editores.
-
-function renderInspector() {
-  if (!view.selected) {
-    return `<div class="editor-inspector glass-panel empty-panel">
-      ${icon('key', 36)}
-      <h3>Elige una tecla o un mando</h3>
-      <p>Selecciona cualquier tecla para cambiar su icono, su etiqueta y su atajo, o un giro
-         de los encoders y la rueda para reasignarlo.</p>
-    </div>`;
-  }
-
-  return view.selected.kind === 'rotary' ? renderRotaryInspector() : renderKeyInspector();
-}
 
 // `bare` lo pide el panel del Inicio: solo el editor, sin la caja ni la
 // cabecera, que allí pone él con su "‹ Atrás".
@@ -2012,7 +1769,7 @@ function renderRotaryInspector({ bare = false } = {}) {
 
   // Sin asignar todavía, ya con un complemento, con desplazamiento/zoom o con
   // una pareja multimedia (Volumen, Brillo, Zoom), el giro se edita como
-  // control único (ver renderRotaryGroups); solo Atajo de teclado y las
+  // control único (ver gestureRows); solo Atajo de teclado y las
   // acciones multimedia sueltas, que necesitan tecla distinta por sentido,
   // siguen enseñando "Giro horario"/"antihorario".
   const subLabel = !isClick && isUnifiedTurnAction(action) ? 'Giro' : found?.part.label;
@@ -2145,92 +1902,6 @@ function renderRotaryInspector({ bare = false } = {}) {
         <span class="field-label">Resultado</span>
         <code>${escape(describeRotaryFull(action))}</code>
       </div>
-    </div>`;
-}
-
-function renderKeyInspector() {
-  const i = selectedKeyIndex();
-  const prof = currentProfile();
-  const variant = editingVariant();
-  const lslot = labelSlot(i, view.layer);
-  const action = currentAction();
-  const hasIcon = lslot >= 0 && Boolean(cache.get(view.editingProfile, lslot));
-  const baseAction = prof.keys[keymapSlot(i, view.layer)] || { modifier: 0, keycode: 0 };
-  const changed = Boolean(variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
-                                   || variants.override(variant, 'labels', lslot)));
-  const tab = view.tab;
-
-  return `
-    <div class="editor-inspector glass-panel">
-      <div class="inspector-head">
-        <h3>Tecla ${i + 1}</h3>
-        <div class="row-inline" style="gap:6px">
-          <button class="tool-btn small" data-act="copy-key" title="Copiar icono, etiqueta y acción de esta tecla">
-            ${icon('copy', 15)}
-          </button>
-          <button class="tool-btn small" data-act="paste-key" title="${keyClipboard ? 'Pegar en esta tecla' : 'Copia una tecla primero'}"
-                  ${keyClipboard ? '' : 'disabled'}>
-            ${icon('paste', 15)}
-          </button>
-          <button class="tool-btn small" data-act="clear-action" title="Quita el atajo o la macro y deja la pantalla de la tecla en negro">
-            ${icon('trash', 15)}
-          </button>
-          <span class="pill">${view.layer === 'super' ? 'Capa SUPER' : 'Capa normal'}</span>
-        </div>
-      </div>
-
-      ${variant ? `
-        <div class="override-note ${changed ? 'is-override' : ''}">
-          <span>${changed
-            ? `Cambiada en <strong>${escape(variant.name)}</strong> · el perfil base hace
-               <code>${escape(describeAction(baseAction.modifier, baseAction.keycode))}</code>`
-            : `Editando <strong>${escape(variant.name)}</strong>: lo que cambies aquí solo
-               valdrá con esa app`}</span>
-          ${changed ? `<button class="secondary-btn" data-act="clear-override">
-                         ${icon('reset', 14)} Volver al valor base
-                       </button>` : ''}
-        </div>` : ''}
-
-      ${lslot >= 0 ? `
-        <div class="field">
-          <span class="field-label">Pantalla OLED</span>
-          <div class="inspector-screen">
-            <span class="okey-screen">
-              ${hasIcon ? `<canvas class="okey-canvas" data-bmp="${cache.cacheKey(view.editingProfile, lslot)}"></canvas>`
-                        : `<span class="okey-text">${escape(prof.labels[lslot] || '—')}</span>`}
-            </span>
-            <button class="secondary-btn" data-act="edit-icon" data-key="${i}">
-              ${icon('pencil', 16)} ${hasIcon ? 'Editar icono' : 'Dibujar icono'}
-            </button>
-          </div>
-        </div>` : `
-        <p class="setting-desc">
-          Esta tecla no tiene pantalla: la ${KEY_SUPER} es el modificador SUPER y la ${KEY_MENU}
-          abre el menú del teclado al mantenerla, así que el firmware no ejecuta su atajo.
-        </p>`}
-
-      <div class="inspector-tabs">
-        ${[
-          { id: 'shortcut', label: 'Atajo',      cap: null },
-          { id: 'sequence', label: 'Secuencia',  cap: null },
-          { id: 'text',     label: 'Texto',      cap: 'text' },
-          { id: 'record',   label: 'Grabar',     cap: 'recorder' },
-          { id: 'app',      label: 'App',        cap: 'openApp' },
-          { id: 'media',    label: 'Multimedia', cap: null },
-        ].map(({ id, label, cap }) => {
-          // Una pestaña que aquí no puede funcionar se deja a la vista pero apagada:
-          // esconderla dejaría al usuario preguntándose dónde está la opción que sí
-          // tenía en el PC, y "abrir una app" no es algo que un navegador vaya a poder
-          // hacer nunca.
-          const apagada = cap && !platform.can(cap);
-          return `<button class="inspector-tab ${tab === id ? 'active' : ''} ${apagada ? 'unsupported' : ''}"
-                          ${apagada ? 'disabled title="Necesita Orvy de escritorio"' : ''}
-                          data-act="set-tab" data-tab="${id}">${label}</button>`;
-        }).join('')}
-        ${hasPages() ? `<button class="inspector-tab ${tab === 'pages' ? 'active' : ''}" data-act="set-tab" data-tab="pages">Páginas</button>` : ''}
-      </div>
-
-      ${keyTabBody(tab, action)}
     </div>`;
 }
 

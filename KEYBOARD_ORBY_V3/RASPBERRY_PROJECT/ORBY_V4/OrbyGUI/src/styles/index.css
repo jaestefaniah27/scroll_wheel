@@ -1044,6 +1044,185 @@ button { font-family: inherit; }
   color: var(--text-main);
 }
 
+/* Selector de variación del panel: solo sale si la página tiene alguna. */
+.zp-variant { flex: 1 1 100%; height: 32px; padding-top: 0; padding-bottom: 0; font-size: 12.5px; }
+
+/* ================= PERFILES ================= */
+/* Ajustes de macOS: la lista de perfiles a la izquierda y la ficha del elegido
+   a la derecha, en grupos. Las teclas no se editan aquí sino en el Inicio. */
+.view:has(.pm) { overflow: hidden; }
+#profiles-body:has(.pm) { height: 100%; }
+.pm {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 24px;
+  height: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.pm-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-light);
+  overflow: hidden;
+}
+/* Opaco: es un contenedor con scroll (ver la regla de `.view`). */
+.pm-list-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; background: var(--bg-panel-solid); }
+.pm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s var(--ease-out);
+}
+.pm-row:hover { background: var(--hover); }
+.pm-row.on { background: var(--sidebar-sel); }
+.pm-row-icon, .pm-hero-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--accent, #8e8e93);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);
+}
+.pm-row-icon { width: 30px; height: 30px; border-radius: 8px; }
+.pm-row-icon.is-oled { width: 40px; height: 24px; border-radius: 5px; background: #000; }
+.pm-row-icon.is-oled canvas { width: 36px; height: 20px; display: block; }
+.pm-row-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pm-row-name { font-size: 13.5px; font-weight: 600; }
+.pm-row-sub { font-size: 11.5px; color: var(--text-muted); }
+.pm-row-sub:empty { display: none; }
+
+.pm-list-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--separator);
+}
+.pm-foot-btn {
+  display: flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 10px;
+  border: none; border-radius: 8px;
+  background: var(--fill-soft);
+  color: var(--text-main);
+  font-size: 12.5px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s var(--ease-out), transform 0.3s var(--spring);
+}
+.pm-foot-btn .icn { color: var(--primary); }
+.pm-foot-btn:hover { background: var(--fill); }
+.pm-foot-btn:active { transform: scale(0.96); }
+.pm-foot-btn:disabled { opacity: 0.45; cursor: default; transform: none; }
+.pm-foot-btn.on { background: rgba(var(--primary-rgb), 0.16); color: var(--primary); }
+.pm-count { margin-left: auto; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.pm-detail { min-height: 0; overflow-y: auto; padding: 0 6px 32px 2px; background: var(--bg-dark); }
+.pm-detail .kp-list { background: var(--bg-panel-solid); border: 1px solid var(--border-light); }
+.pm-detail .kp-section:first-child { margin-top: 0; }
+
+/* Cabecera de la ficha: el icono en grande y el nombre, que se edita ahí mismo. */
+.pm-hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-light);
+}
+.pm-hero-icon { width: 72px; height: 72px; border-radius: 18px; }
+.pm-hero-icon .icn { width: 30px; height: 30px; }
+.pm-hero-icon.is-oled {
+  width: 144px; height: 80px; border-radius: 12px; background: #010203;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 0 18px rgba(79, 227, 255, 0.08);
+}
+.pm-hero-icon.is-oled canvas {
+  width: 144px; height: 80px; image-rendering: pixelated;
+  filter: drop-shadow(0 0 1px rgba(79, 227, 255, 0.9)) drop-shadow(0 0 6px rgba(79, 227, 255, 0.35));
+}
+.pm-hero-text { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+/* El nombre parece texto hasta que se pasa por encima: entonces se ve que se edita. */
+.pm-name {
+  width: 100%;
+  margin-left: -8px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-main);
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  transition: background 0.2s var(--ease-out);
+}
+.pm-name:hover, .pm-name:focus { background: var(--fill-soft); outline: none; }
+.pm-hero-sub { font-size: 12px; color: var(--text-muted); }
+
+.nav-row:disabled { opacity: 0.45; cursor: default; }
+.nav-row:disabled:hover { background: transparent; }
+.nav-row.is-danger .nav-row-title { color: var(--danger); }
+.pm-danger { margin-top: 24px; }
+
+/* Páginas: una fila por página, con la actual marcada y su botón de quitar. */
+.nav-row.pm-page { padding: 0; cursor: default; }
+.nav-row.pm-page:hover { background: transparent; }
+.pm-page-pick {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+}
+.pm-page-pick:hover:not(:disabled) { background: var(--hover); }
+.pm-page-pick:disabled { cursor: default; }
+.pm-page-num {
+  width: 24px; height: 24px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border-radius: 7px;
+  background: var(--fill);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.pm-page.on .pm-page-num { background: var(--primary); color: var(--on-primary); }
+.pm-check { margin-left: auto; color: var(--primary); }
+.pm-page-del {
+  width: 26px; height: 26px; margin-right: 14px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border: none; border-radius: 50%;
+  background: rgba(var(--danger-rgb), 0.14);
+  color: var(--danger);
+  cursor: pointer;
+}
+.pm-page-del:disabled { opacity: 0.4; cursor: default; }
+.nav-row.pm-add .nav-row-title { color: var(--primary); }
+.pm-add-icon {
+  width: 24px; height: 24px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border-radius: 7px;
+  background: rgba(var(--primary-rgb), 0.14);
+  color: var(--primary);
+}
+.pm-detail .variant-card { margin-top: 12px; }
+.pm-detail .library-panel { margin-bottom: 0; }
+
 @media (prefers-reduced-motion: reduce) {
   .orby-rig { transition: transform 0.2s linear; }
   .zp-page.enter-fwd, .zp-page.enter-back { animation: alertFade 0.15s linear; }

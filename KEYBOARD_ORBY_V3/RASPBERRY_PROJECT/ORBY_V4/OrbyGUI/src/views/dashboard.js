@@ -199,6 +199,13 @@ function openZoom(zone, target) {
   if (opening) panel.querySelector('.zp-scroll')?.focus({ preventScroll: true });
 }
 
+// Entrada desde la vista de perfiles ("Configurar teclas, rueda y mandos"):
+// se llega al Inicio con la zona ya ampliada.
+export function openTarget({ zoom: zone = 'keys' } = {}) {
+  render();
+  openZoom(zone, zone === 'keys' ? { key: 0 } : { rotary: ROTARY_SLOTS.WHEEL_CW });
+}
+
 export function closeZoom() {
   if (!zoom) return;
   zoom = null;
