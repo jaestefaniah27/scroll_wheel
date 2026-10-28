@@ -41,6 +41,12 @@ export const view = {
   // pinta mientras está abierto, y `zone` la parte del teclado ('keys' | 'wheel').
   panel: null,
   zone: null,
+  // Pantalla del panel de teclas: null es la de la tecla (qué hace, cómo se
+  // ve) y si no, el tipo de acción en el que se ha entrado. `navDir` dice hacia
+  // dónde animar el siguiente pintado ('fwd' entrando, 'back' saliendo), y se
+  // gasta en ese pintado: los repintados por un clic dentro no se animan.
+  panelNav: null,
+  navDir: null,
 };
 
 // El editor se pinta en el panel del Inicio cuando está abierto y no se está

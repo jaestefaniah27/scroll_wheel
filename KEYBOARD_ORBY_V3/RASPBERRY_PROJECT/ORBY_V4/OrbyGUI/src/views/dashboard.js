@@ -268,7 +268,8 @@ function onKey(e) {
 
   if (e.key === 'Escape') {
     e.preventDefault();
-    closeZoom();
+    // Dentro de un tipo de acción, Esc vuelve a la tecla; desde la tecla, al Inicio.
+    if (!profiles.panelBack()) closeZoom();
     return;
   }
 

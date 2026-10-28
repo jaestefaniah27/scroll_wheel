@@ -793,6 +793,7 @@ button { font-family: inherit; }
   border-top: 1px solid var(--separator);
   outline: none;
 }
+.zp-scroll:focus-visible { box-shadow: none; }
 
 /* El inspector y las tarjetas del editor, sin su caja: aquí la caja es el panel. */
 .zoom-panel .editor-inspector {
@@ -815,8 +816,145 @@ button { font-family: inherit; }
 .zoom-panel .preset-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .zp-rotary { margin-bottom: 18px; }
 
+/* ---- Panel de teclas ----
+   Dos niveles, como Ajustes de iOS: la tecla y, al entrar en un tipo de
+   acción, su editor. El nivel nuevo entra empujado desde el lado del que se
+   viene; los repintados dentro de un mismo nivel no se animan. */
+.zp-page.enter-fwd  { animation: zpPush 0.42s var(--ease-out); }
+.zp-page.enter-back { animation: zpPop 0.42s var(--ease-out); }
+@keyframes zpPush { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+@keyframes zpPop  { from { opacity: 0; transform: translateX(-36px); } to { opacity: 1; transform: none; } }
+
+/* La tecla en grande: su pantalla a escala 2 y lo que hace ahora. */
+.kp-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.kp-screen {
+  flex-shrink: 0;
+  width: 144px;
+  height: 80px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #010203;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 0 18px rgba(79, 227, 255, 0.08);
+}
+.kp-screen canvas {
+  width: 144px;
+  height: 80px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 1px rgba(79, 227, 255, 0.9)) drop-shadow(0 0 6px rgba(79, 227, 255, 0.35));
+}
+.kp-screen-text {
+  max-width: 90%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  color: #d6f6ff;
+  text-shadow: 0 0 4px rgba(79, 227, 255, 0.8);
+  white-space: nowrap;
+}
+.kp-screen.is-role {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.45);
+  background: linear-gradient(150deg, #2a2e33, #15181b);
+}
+.kp-hero-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kp-hero-text h3 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.kp-now { font-size: 13.5px; color: var(--text-main); overflow-wrap: anywhere; }
+.kp-now.is-empty { color: var(--text-faint); }
+.kp-badge {
+  display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
+  margin-top: 2px; padding: 3px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 500;
+  color: var(--warning); background: rgba(var(--warning-rgb), 0.12);
+}
+
+/* Copiar, pegar y borrar: icono encima del texto, como la fila de acciones
+   de la hoja de compartir. */
+.kp-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.kp-tool {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 10px 6px 8px;
+  border: none; border-radius: 12px;
+  background: var(--fill-soft);
+  color: var(--primary);
+  font-size: 11.5px; font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s var(--ease-out), transform 0.3s var(--spring);
+}
+.kp-tool span { color: var(--text-main); }
+.kp-tool:hover { background: var(--fill); }
+.kp-tool:active { transform: scale(0.95); }
+.kp-tool:disabled { opacity: 0.4; cursor: default; transform: none; }
+.kp-tool.danger { color: var(--danger); }
+
+.kp-section {
+  margin: 20px 4px 8px;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.kp-note { font-size: 13px; line-height: 1.5; color: var(--text-muted); margin-top: 14px; }
+
+/* Tipos de acción en baldosas, las del Centro de control: la del tipo que
+   tiene la tecla se enciende y dice qué hace. */
+.kp-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.kp-kind {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 10px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 9px 12px;
+  border: none; border-radius: 14px;
+  background: var(--fill-soft);
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s var(--ease-out), box-shadow 0.25s var(--ease-out), transform 0.3s var(--spring);
+}
+.kp-kind:hover { background: var(--fill); }
+.kp-kind:active { transform: scale(0.97); }
+.kp-kind:disabled { opacity: 0.4; cursor: default; transform: none; }
+.kp-kind.on {
+  background: rgba(var(--primary-rgb), 0.12);
+  box-shadow: inset 0 0 0 1.5px rgba(var(--primary-rgb), 0.7);
+}
+.kp-kind .nav-icon { grid-row: 1 / span 2; }
+.kp-kind-label { font-size: 13px; font-weight: 600; line-height: 1.25; }
+.kp-kind-value {
+  grid-column: 2;
+  max-width: 100%;
+  font-size: 12px; color: var(--primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Lista agrupada de iOS: filas en una caja redondeada. */
+.kp-list { border-radius: 14px; background: var(--fill-soft); overflow: hidden; }
+.kp-list .nav-row:hover { background: var(--hover); }
+
+/* Volver: "‹ Tecla N" en el color de acento, arriba a la izquierda. */
+.kp-back {
+  display: inline-flex; align-items: center; gap: 2px;
+  margin: -4px 0 10px -6px;
+  padding: 4px 8px 4px 2px;
+  border: none; border-radius: 8px;
+  background: transparent;
+  color: var(--primary);
+  font-size: 13.5px; font-weight: 500;
+  cursor: pointer;
+}
+.kp-back:hover { background: var(--hover); }
+.kp-kind-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.kp-kind-head h3 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+
 @media (prefers-reduced-motion: reduce) {
   .orby-rig { transition: transform 0.2s linear; }
+  .zp-page.enter-fwd, .zp-page.enter-back { animation: alertFade 0.15s linear; }
   .zoom-panel, .dash.editing .zoom-panel { transform: none; transition: opacity 0.15s linear, visibility 0s; }
 }
 

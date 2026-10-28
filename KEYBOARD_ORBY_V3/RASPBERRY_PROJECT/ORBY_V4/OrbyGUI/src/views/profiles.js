@@ -150,6 +150,9 @@ function wire(host) {
 
 function selectTarget({ key = null, rotary = null }) {
   view.capturing = false;
+  // Otra pieza, otra acción: se vuelve a su pantalla principal.
+  view.panelNav = null;
+  view.navDir = null;
   if (key !== null) {
     view.selected = { kind: 'key', index: key };
     view.tab = tabForAction(currentAction());
@@ -207,6 +210,148 @@ export function panelSelection() {
   return view.selected;
 }
 
+// Esc dentro de un tipo de acción vuelve a la tecla, como el gesto de atrás
+// de iOS; solo en la pantalla de la tecla cierra el zoom. Devuelve si lo ha
+// gastado aquí.
+export function panelBack() {
+  if (!inPanel() || !view.panelNav) return false;
+  navBack();
+  return true;
+}
+
+function navBack() {
+  view.panelNav = null;
+  view.navDir = 'back';
+  view.capturing = false;
+  render();
+}
+
+// Los tipos de acción de una tecla, en el orden en que se ofrecen. Cada uno
+// abre la pestaña del inspector del mismo nombre (`tab`), que es quien sabe
+// crear la macro que haga falta al entrar (ver setTab). `cap` es la función de
+// la plataforma que necesita: sin ella el tipo se ve, apagado, para que no
+// parezca que ha desaparecido.
+const KEY_KINDS = [
+  { id: 'shortcut', label: 'Atajo de teclado', icon: 'keyboard', tint: 'blue' },
+  { id: 'media',    label: 'Multimedia y PC',  icon: 'music',    tint: 'pink' },
+  { id: 'app',      label: 'Abrir app',        icon: 'app',      tint: 'green',  cap: 'openApp' },
+  { id: 'text',     label: 'Escribir texto',   icon: 'text',     tint: 'orange', cap: 'text' },
+  { id: 'sequence', label: 'Secuencia',        icon: 'steps',    tint: 'indigo' },
+  { id: 'record',   label: 'Grabar',           icon: 'record',   tint: 'red',    cap: 'recorder' },
+  { id: 'pages',    label: 'Ir a página',      icon: 'pages',    tint: 'cyan',   pages: true },
+];
+
+function kindOf(action) {
+  return action.modifier || action.keycode ? tabForAction(action) : null;
+}
+
+// Panel de una tecla. Dos niveles, como Ajustes de iOS: la tecla (cómo se ve
+// en grande, qué hace y los tipos de acción) y, al entrar en un tipo, su
+// editor con "‹ Tecla N" para volver.
+function renderKeyPanel() {
+  const i = selectedKeyIndex();
+  if (i === null) return '';
+  return view.panelNav ? renderKeyKind(i, view.panelNav) : renderKeyRoot(i);
+}
+
+function keyScreen(i, lslot, cls) {
+  const prof = currentProfile();
+  if (lslot < 0) return `<span class="${cls} is-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`;
+  const hasIcon = Boolean(cache.get(view.editingProfile, lslot));
+  return `<span class="${cls}">${hasIcon
+    ? `<canvas data-bmp="${cache.cacheKey(view.editingProfile, lslot)}"></canvas>`
+    : `<span class="kp-screen-text">${escape(prof.labels[lslot] || '')}</span>`}</span>`;
+}
+
+function renderKeyRoot(i) {
+  const prof = currentProfile();
+  const variant = editingVariant();
+  const lslot = labelSlot(i, view.layer);
+  const action = currentAction();
+  const kind = kindOf(action);
+  const hasIcon = lslot >= 0 && Boolean(cache.get(view.editingProfile, lslot));
+  const baseAction = prof.keys[keymapSlot(i, view.layer)] || { modifier: 0, keycode: 0 };
+  const changed = Boolean(variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
+                                   || variants.override(variant, 'labels', lslot)));
+  const now = kind ? describeKey(action) : 'Sin asignar';
+
+  return `
+    <div class="kp-hero">
+      ${keyScreen(i, lslot, 'kp-screen')}
+      <div class="kp-hero-text">
+        <h3>Tecla ${i + 1}</h3>
+        ${lslot < 0 ? '' : `<span class="kp-now ${kind ? '' : 'is-empty'}">${escape(now)}</span>`}
+        ${keyNeedsApp(action) ? `<span class="kp-badge">${icon('plug', 12)} La ejecuta el PC con Orvy abierta</span>` : ''}
+      </div>
+    </div>
+
+    ${lslot < 0 ? '' : `<div class="kp-tools">
+      <button class="kp-tool" data-act="copy-key">${icon('copy', 17)}<span>Copiar</span></button>
+      <button class="kp-tool" data-act="paste-key" ${keyClipboard ? '' : 'disabled'}
+              title="${keyClipboard ? 'Pegar en esta tecla' : 'Copia una tecla primero'}">${icon('paste', 17)}<span>Pegar</span></button>
+      <button class="kp-tool danger" data-act="clear-action"
+              title="Quita la acción y deja la pantalla de la tecla en negro">${icon('trash', 17)}<span>Borrar</span></button>
+    </div>`}
+
+    ${variant ? `
+      <div class="override-note ${changed ? 'is-override' : ''}">
+        <span>${changed
+          ? `Cambiada en <strong>${escape(variant.name)}</strong> · el perfil base hace
+             <code>${escape(describeAction(baseAction.modifier, baseAction.keycode))}</code>`
+          : `Editando <strong>${escape(variant.name)}</strong>: lo que cambies aquí solo
+             valdrá con esa app`}</span>
+        ${changed ? `<button class="secondary-btn" data-act="clear-override">
+                       ${icon('reset', 14)} Volver al valor base
+                     </button>` : ''}
+      </div>` : ''}
+
+    ${lslot < 0 ? `
+      <p class="kp-note">
+        Esta tecla no tiene pantalla ni acción propia:
+        ${i + 1 === KEY_SUPER
+          ? 'mantenida, cambia el resto del teclado a la capa SUPER.'
+          : 'una pulsación corta pasa de página y mantenida abre el menú del teclado.'}
+      </p>` : `
+      <h4 class="kp-section">Qué hace</h4>
+      <div class="kp-kinds">
+        ${KEY_KINDS.filter((k) => !k.pages || hasPages()).map((k) => {
+          const off = k.cap && !platform.can(k.cap);
+          const on = kind === k.id;
+          return `
+          <button class="kp-kind ${on ? 'on' : ''}" data-act="kp-open" data-kind="${k.id}" data-tint="${k.tint}"
+                  ${off ? 'disabled title="Necesita Orvy de escritorio"' : ''}>
+            <span class="nav-icon">${icon(k.icon, 15)}</span>
+            <span class="kp-kind-label">${k.label}</span>
+            ${on ? `<span class="kp-kind-value">${escape(now)}</span>` : ''}
+          </button>`;
+        }).join('')}
+      </div>
+
+      <h4 class="kp-section">Cómo se ve</h4>
+      <div class="kp-list">
+        <button class="nav-row" data-act="edit-icon" data-key="${i}" data-tint="violet">
+          <span class="nav-icon">${icon('oled', 15)}</span>
+          <span class="nav-row-text">
+            <span class="nav-row-title">${hasIcon ? 'Editar el icono' : 'Dibujar un icono'}</span>
+            <span class="nav-row-sub">Lo que enseña la pantalla de la tecla, píxel a píxel</span>
+          </span>
+          <span class="nav-row-chev">${icon('chevron', 14)}</span>
+        </button>
+      </div>`}`;
+}
+
+function renderKeyKind(i, kindId) {
+  const k = KEY_KINDS.find((x) => x.id === kindId) || KEY_KINDS[0];
+  const action = currentAction();
+  return `
+    <button class="kp-back" data-act="kp-back">${icon('back', 15)}<span>Tecla ${i + 1}</span></button>
+    <div class="kp-kind-head" data-tint="${k.tint}">
+      <span class="nav-icon">${icon(k.icon, 15)}</span>
+      <h3>${k.label}</h3>
+    </div>
+    <div class="kp-kind-body">${keyTabBody(k.id, action)}</div>`;
+}
+
 // --- Interacción -----------------------------------------------------------
 
 function onClick(e) {
@@ -248,6 +393,19 @@ function onClick(e) {
     createPage();
   } else if (act === 'page-del') {
     deletePage(Number(el.dataset.page));
+  } else if (act === 'kp-open') {
+    // Entrar en Secuencia, Texto, App o Grabar crea y asigna su macro al vuelo
+    // (setTab): sin teclado no se puede, y es mejor decirlo antes de cambiar
+    // de pantalla que dejar un editor que no guarda nada. Mirar lo que ya hay
+    // asignado sí se puede siempre.
+    const kind = el.dataset.kind;
+    if (['sequence', 'text', 'app', 'record'].includes(kind)
+        && kind !== kindOf(currentAction()) && !requireDevice()) return;
+    view.panelNav = kind;
+    view.navDir = 'fwd';
+    setTab(kind);
+  } else if (act === 'kp-back') {
+    navBack();
   } else if (act === 'pick-key') {
     view.selected = { kind: 'key', index: Number(el.dataset.key) };
     view.capturing = false;
@@ -1102,7 +1260,7 @@ function renderPanel() {
   const host = view.panel;
   // Con la misma pieza se conserva el scroll (cada clic en un control repinta
   // el panel entero); con otra, se empieza arriba, que es donde está su nombre.
-  const target = JSON.stringify([view.zone, view.selected]);
+  const target = JSON.stringify([view.zone, view.selected, view.panelNav]);
   const scrollTop = host.dataset.target === target ? host.querySelector('.zp-scroll')?.scrollTop : 0;
   host.dataset.target = target;
 
@@ -1141,10 +1299,14 @@ function renderPanel() {
         </div>` : ''}
     </div>
     <div class="zp-scroll">
-      ${piece?.group ? `<div class="zp-rotary">${renderRotaryGroups([piece.group])}</div>` : ''}
-      ${piece?.id === 'wheel' ? renderWheelCard() : ''}
-      ${renderInspector()}
+      <div class="zp-page ${view.navDir ? `enter-${view.navDir}` : ''}">
+        ${view.zone === 'keys' ? renderKeyPanel() : `
+          ${piece?.group ? `<div class="zp-rotary">${renderRotaryGroups([piece.group])}</div>` : ''}
+          ${piece?.id === 'wheel' ? renderWheelCard() : ''}
+          ${renderInspector()}`}
+      </div>
     </div>`;
+  view.navDir = null;
 
   cache.paintThumbs(host);
   if (piece?.id === 'wheel') updateDerived(currentScroll().detentsPerRev);
@@ -1849,13 +2011,6 @@ function renderKeyInspector() {
   const variant = editingVariant();
   const lslot = labelSlot(i, view.layer);
   const action = currentAction();
-  // Los cuatro modos que se apropian del campo del modificador: mientras uno
-  // esté puesto, ni los modificadores ni la tecla pintan nada.
-  const isConsumer = action.modifier === CONSUMER_MODIFIER;
-  const isMacro     = action.modifier === MACRO_MODIFIER;
-  const isSpecial  = isConsumer || isMacro || action.modifier === GOTO_PAGE_MODIFIER
-                                            || action.modifier === PAGE_STATE_MODIFIER;
-  const keyOptions = keycodeOptions(isSpecial ? 0 : action.keycode);
   const hasIcon = lslot >= 0 && Boolean(cache.get(view.editingProfile, lslot));
   const baseAction = prof.keys[keymapSlot(i, view.layer)] || { modifier: 0, keycode: 0 };
   const changed = Boolean(variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
@@ -1932,6 +2087,22 @@ function renderKeyInspector() {
         ${hasPages() ? `<button class="inspector-tab ${tab === 'pages' ? 'active' : ''}" data-act="set-tab" data-tab="pages">Páginas</button>` : ''}
       </div>
 
+      ${keyTabBody(tab, action)}
+    </div>`;
+}
+
+// Lo que se edita de cada tipo de acción de una tecla. Lo usan el inspector de
+// la vista de Perfiles (debajo de sus pestañas) y el panel del Inicio (en la
+// pantalla a la que se entra desde cada tipo).
+function keyTabBody(tab, action) {
+  // Los cuatro modos que se apropian del campo del modificador: mientras uno
+  // esté puesto, ni los modificadores ni la tecla pintan nada.
+  const isConsumer = action.modifier === CONSUMER_MODIFIER;
+  const isMacro    = action.modifier === MACRO_MODIFIER;
+  const isSpecial  = isConsumer || isMacro || action.modifier === GOTO_PAGE_MODIFIER
+                                           || action.modifier === PAGE_STATE_MODIFIER;
+  const keyOptions = tab === 'shortcut' ? keycodeOptions(isSpecial ? 0 : action.keycode) : '';
+  return `
       ${tab === 'shortcut' ? `
         <div class="field">
           <span class="field-label">Modificadores</span>
@@ -1987,8 +2158,7 @@ function renderKeyInspector() {
         </div>
         ${renderPluginKeyActions(isMacro ? action.keycode : null)}` : ''}
 
-      ${tab === 'pages' ? renderPageActions(action) : ''}
-    </div>`;
+      ${tab === 'pages' ? renderPageActions(action) : ''}`;
 }
 
 // Un bloque por complemento instalado dentro de la pestaña Multimedia, con sus
