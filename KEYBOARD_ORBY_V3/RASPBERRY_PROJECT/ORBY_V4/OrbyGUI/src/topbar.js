@@ -55,8 +55,17 @@ function fit() {
   if (host.scrollWidth > host.clientWidth + 1) host.classList.add('compact');
 }
 
+// Pulsar la pestaña del perfil que ya está puesto pasa a su página siguiente,
+// y de la última vuelve a la primera: es lo mismo que hace la pulsación corta
+// del botón de menú en el teclado, y es un blanco mucho más fácil que un punto
+// de 6 px.
 function activateProfile(idx) {
-  if (idx === state.activeProfileIdx || !requireDevice()) return;
+  if (idx === state.activeProfileIdx) {
+    const count = pageCountOf(state.profiles[idx]);
+    if (hasPages() && count > 1) choosePage((state.pageIdx + 1) % count);
+    return;
+  }
+  if (!requireDevice()) return;
   device.setProfile(idx)
     .then(() => {
       state.activeProfileIdx = idx;
@@ -119,7 +128,7 @@ export function render() {
     const on = i === state.activeProfileIdx;
     return `
       <button class="strip-tab ${on ? 'on' : ''}" role="tab" aria-selected="${on}" data-profile="${i}"
-              title="${on ? `${escape(p.name)} · perfil activo` : `Cambiar el teclado a ${escape(p.name)}`}">
+              title="${on ? `${escape(p.name)} · perfil activo${pageCountOf(p) > 1 && hasPages() ? ' (pulsa para pasar de página)' : ''}` : `Cambiar el teclado a ${escape(p.name)}`}">
         ${tabIcon(i)}
         <span class="strip-name">${escape(p.name)}</span>
         ${on ? pageDots(p) : ''}

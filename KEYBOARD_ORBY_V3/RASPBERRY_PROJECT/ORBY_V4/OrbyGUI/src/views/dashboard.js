@@ -135,6 +135,21 @@ export function init() {
   document.getElementById('zoom-panel').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="panel-done"]')) closeZoom();
   });
+  // Con una zona ampliada, pulsar fuera del aparato (el fondo del escenario)
+  // vuelve al Inicio: es tocar fuera de una hoja de iOS. La carcasa cuenta como
+  // aparato, para que un clic que se queda corto al apuntar a una tecla no
+  // deshaga el zoom. Se mira .orby-rig y no solo la réplica porque el clic en
+  // "Configurar teclas" sube hasta aquí ya con el zoom puesto; ampliado, esa
+  // fila no recibe clics (pointer-events: none) y su hueco cuenta como fondo.
+  //
+  // Con composedPath() y no con closest(): el panel se repinta entero al
+  // pulsar cualquiera de sus botones, y para cuando el clic sube hasta aquí el
+  // botón ya no está en el documento y closest() no encuentra nada.
+  document.getElementById('view-dashboard').addEventListener('click', (e) => {
+    if (!zoom) return;
+    const inside = e.composedPath().some((el) => el.id === 'zoom-panel' || el.classList?.contains('orby-rig'));
+    if (!inside) closeZoom();
+  });
   window.addEventListener('keydown', onKey);
   window.addEventListener('resize', () => { if (zoom) frameZone(); });
 
