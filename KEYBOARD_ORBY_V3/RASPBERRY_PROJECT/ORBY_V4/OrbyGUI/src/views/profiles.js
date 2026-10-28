@@ -33,7 +33,7 @@ import * as compat from '../compat.js';
 import { LIBRARY, installProfile } from '../profile-library.js';
 import { addRulesFor } from './auto.js';
 
-import { ROTARY_GROUPS, ROTARY_TYPE_OPTIONS, SCROLL_PRESETS } from './profiles/constants.js';
+import { ROTARY_GROUPS, WHEEL_GROUP, ROTARY_TYPE_OPTIONS, SCROLL_PRESETS } from './profiles/constants.js';
 import { view, setRenderers, currentPageIdx, editingVariant, selectedKeyIndex, selectedRotarySlot,
          rotaryPart, currentProfile, isActiveView, inPanel, currentAction, currentRotary, currentScroll,
          currentMacroId, pluginValuePick } from './profiles/view-state.js';
@@ -406,6 +406,15 @@ function onClick(e) {
     setTab(kind);
   } else if (act === 'kp-back') {
     navBack();
+  } else if (act === 'zp-piece') {
+    selectTarget({ rotary: Number(el.dataset.slot) });
+    render();
+  } else if (act === 'rp-open') {
+    view.selected = { kind: 'rotary', slot: Number(el.dataset.slot) };
+    view.capturing = false;
+    view.panelNav = 'gesture';
+    view.navDir = 'fwd';
+    render();
   } else if (act === 'pick-key') {
     view.selected = { kind: 'key', index: Number(el.dataset.key) };
     view.capturing = false;
@@ -1242,9 +1251,9 @@ export function render() {
 // Piezas de la zona de la rueda, en el orden en que están en el aparato. Cada
 // una se abre por su giro horario, que es lo primero que se quiere cambiar.
 const WHEEL_PIECES = [
-  { id: 'enc1',  label: 'Mando izq.', slot: ROTARY_SLOTS.ENC1_CW,  group: ROTARY_GROUPS[0] },
-  { id: 'wheel', label: 'Rueda',      slot: ROTARY_SLOTS.WHEEL_CW, group: null },
-  { id: 'enc2',  label: 'Mando der.', slot: ROTARY_SLOTS.ENC2_CW,  group: ROTARY_GROUPS[1] },
+  { id: 'enc1',  label: 'Mando izq.', name: 'Mando izquierdo', slot: ROTARY_SLOTS.ENC1_CW,  group: ROTARY_GROUPS[0] },
+  { id: 'wheel', label: 'Rueda',      name: 'Rueda',           slot: ROTARY_SLOTS.WHEEL_CW, group: WHEEL_GROUP },
+  { id: 'enc2',  label: 'Mando der.', name: 'Mando derecho',   slot: ROTARY_SLOTS.ENC2_CW,  group: ROTARY_GROUPS[1] },
 ];
 
 function pieceOf(slot) {
@@ -1294,25 +1303,150 @@ function renderPanel() {
       ${view.zone === 'wheel' ? `
         <div class="layer-toggle zp-pieces">
           ${WHEEL_PIECES.map((p) => `
-            <button class="toggle-btn ${piece?.id === p.id ? 'active' : ''}" data-act="pick-rotary"
+            <button class="toggle-btn ${piece?.id === p.id ? 'active' : ''}" data-act="zp-piece"
                     data-slot="${p.slot}">${p.label}</button>`).join('')}
         </div>` : ''}
     </div>
     <div class="zp-scroll">
       <div class="zp-page ${view.navDir ? `enter-${view.navDir}` : ''}">
-        ${view.zone === 'keys' ? renderKeyPanel() : `
-          ${piece?.group ? `<div class="zp-rotary">${renderRotaryGroups([piece.group])}</div>` : ''}
-          ${piece?.id === 'wheel' ? renderWheelCard() : ''}
-          ${renderInspector()}`}
+        ${view.zone === 'keys' ? renderKeyPanel() : renderPiecePanel(piece)}
       </div>
     </div>`;
   view.navDir = null;
 
   cache.paintThumbs(host);
-  if (piece?.id === 'wheel') updateDerived(currentScroll().detentsPerRev);
+  if (piece?.id === 'wheel' && !view.panelNav) updateDerived(currentScroll().detentsPerRev);
   const scroller = host.querySelector('.zp-scroll');
   if (scroller && scrollTop) scroller.scrollTop = scrollTop;
   onPanelRender?.();
+}
+
+// Panel de una pieza de la zona de la rueda, con los mismos dos niveles que el
+// de las teclas: la pieza (sus gestos y, la rueda, su sensibilidad) y, al
+// entrar en un gesto, el editor de su acción.
+function renderPiecePanel(piece) {
+  if (!piece) return '';
+  if (view.panelNav === 'gesture') {
+    const found = rotaryPart(selectedRotarySlot());
+    const action = currentRotary();
+    const isClick = Boolean(found?.part.discrete);
+    const name = !isClick && isUnifiedTurnAction(action) ? 'Girar' : gestureName(found?.part, piece);
+    return `
+      <button class="kp-back" data-act="kp-back">${icon('back', 15)}<span>${piece.name}</span></button>
+      <div class="kp-kind-head" data-tint="${isClick ? 'orange' : 'blue'}">
+        <span class="nav-icon">${icon(isClick ? 'record' : 'reset', 15)}</span>
+        <h3>${escape(name)}</h3>
+      </div>
+      ${renderRotaryInspector({ bare: true })}`;
+  }
+
+  return `
+    <div class="kp-hero">
+      <span class="rp-dial ${piece.id === 'wheel' ? 'is-wheel' : ''}"><i></i></span>
+      <div class="kp-hero-text">
+        <h3>${piece.name}</h3>
+        <span class="kp-now">${piece.id === 'wheel'
+          ? `${currentScroll().detentsPerRev} clics por vuelta${currentScroll().invert ? ' · invertida' : ''}`
+          : 'Gira y se pulsa'}</span>
+      </div>
+    </div>
+
+    <h4 class="kp-section">Gestos</h4>
+    <div class="kp-list">${gestureRows(piece)}</div>
+
+    ${piece.id === 'wheel' ? renderWheelTune() : `
+      <p class="kp-note">Dentro del menú del teclado los mandos siguen sirviendo para navegar,
+        hagan lo que hagan aquí.</p>`}`;
+}
+
+// Nombre de cada gesto tal como se hace con la mano.
+function gestureName(part, piece) {
+  if (!part) return '';
+  if (part.discrete) return 'Pulsar';
+  const cw = part.slot === piece.group.parts[0].slot;
+  if (piece.id === 'wheel') return cw ? 'Girar hacia abajo' : 'Girar hacia arriba';
+  return cw ? 'Girar a la derecha' : 'Girar a la izquierda';
+}
+
+// Una fila por gesto. Un giro que se edita como uno solo (desplazar, zoom,
+// pareja multimedia, complemento: ver isUnifiedTurnAction) sale como una sola
+// fila "Girar"; si no, una por sentido, igual que en renderRotaryGroups.
+function gestureRows(piece) {
+  const prof = currentProfile();
+  const variant = editingVariant();
+  const [cwPart, ccwPart, clickPart] = piece.group.parts;
+  const of = (slot) => variants.effectiveRotary(prof, variant, slot, view.layer);
+  const changedOf = (slot) => variant && variants.override(variant, 'rotary', rotarySlot(slot, view.layer));
+  const cw = of(cwPart.slot);
+  const ccw = of(ccwPart.slot);
+  const merged = isUnifiedTurnAction(cw) && isUnifiedTurnAction(ccw);
+
+  const row = (slot, title, ic, tint, action) => `
+    <button class="nav-row ${changedOf(slot) ? 'is-override' : ''}" data-act="rp-open" data-slot="${slot}" data-tint="${tint}">
+      <span class="nav-icon">${icon(ic, 15)}</span>
+      <span class="nav-row-text">
+        <span class="nav-row-title">${title}</span>
+        <span class="nav-row-sub ${action.type ? 'is-set' : ''}">${escape(describeRotaryFull(action))}${
+          rotaryNeedsApp(action) ? ' · la ejecuta el PC' : ''}</span>
+      </span>
+      <span class="nav-row-chev">${icon('chevron', 14)}</span>
+    </button>`;
+
+  return (merged
+    ? row(cwPart.slot, 'Girar', 'reset', 'blue', cw)
+    : row(cwPart.slot, gestureName(cwPart, piece), 'reset', 'blue', cw)
+      + row(ccwPart.slot, gestureName(ccwPart, piece), 'reset', 'indigo', ccw))
+    + (clickPart ? row(clickPart.slot, 'Pulsar', 'record', 'orange', of(clickPart.slot)) : '');
+}
+
+// Sensibilidad de la rueda, con los mismos controles (y los mismos id, que
+// leen onInput y updateDerived) que la tarjeta de la vista de Perfiles.
+function renderWheelTune() {
+  const s = currentScroll();
+  return `
+    <h4 class="kp-section">Sensibilidad</h4>
+    ${editingVariant() ? `
+      <p class="setting-desc override-note">
+        La sensibilidad es siempre la del <strong>perfil base</strong>: las variaciones
+        cambian atajos y etiquetas, no la calibración.
+      </p>` : ''}
+    <div class="wt-card">
+      <div class="wheel-readout">
+        <span id="scroll-value">${s.detentsPerRev}</span>
+        <small>clics por vuelta completa</small>
+      </div>
+      <input type="range" id="scroll-slider" class="premium-slider wheel-slider" data-act="scroll-slider"
+             min="3" max="120" step="1" value="${s.detentsPerRev}">
+      <div class="slider-row"><span>Más lento</span><span>Más rápido</span></div>
+      <div class="wt-presets">
+        ${SCROLL_PRESETS.map((p) => `
+          <button class="preset-btn ${s.detentsPerRev === p.value ? 'on' : ''}" data-act="scroll-preset" data-value="${p.value}">
+            <strong>${p.name}</strong>
+            <span>${p.value} clics</span>
+          </button>`).join('')}
+      </div>
+    </div>
+
+    <div class="kp-list wt-list">
+      <div class="nav-row is-static" data-tint="gray">
+        <span class="nav-icon">${icon('reset', 15)}</span>
+        <span class="nav-row-text">
+          <span class="nav-row-title">Invertir dirección</span>
+          <span class="nav-row-sub">Para que la rueda baje al girarla hacia el otro lado</span>
+        </span>
+        <button class="switch ${s.invert ? 'on' : ''}" data-act="scroll-invert" title="Invertir dirección">
+          <span class="switch-knob"></span>
+        </button>
+      </div>
+    </div>
+
+    <ul class="info-list wt-derived" id="scroll-derived"></ul>
+    <p class="kp-note">
+      ${state.scroll.hires
+        ? 'Windows ha pedido la alta resolución: el desplazamiento vertical va en fracciones de clic.'
+        : 'Windows todavía no ha pedido la alta resolución: las aplicaciones antiguas saltarán de tres en tres líneas.'}
+      Cada perfil, y cada capa, guarda su propia sensibilidad.
+    </p>`;
 }
 
 function renderTabsInner() {
@@ -1668,7 +1802,7 @@ function isUnifiedTurnAction(action) {
   return action.type === ROTARY_TYPES.CONSUMER && Boolean(consumerPairFor(action.keycode));
 }
 
-function renderRotaryGroups(groups = ROTARY_GROUPS) {
+function renderRotaryGroups() {
   const prof = currentProfile();
   const variant = editingVariant();
   const selected = selectedRotarySlot();
@@ -1686,7 +1820,7 @@ function renderRotaryGroups(groups = ROTARY_GROUPS) {
       </span>
     </button>`;
 
-  return groups.map((group) => {
+  return ROTARY_GROUPS.map((group) => {
     const [cwPart, ccwPart, clickPart] = group.parts;
     const cwAction = variants.effectiveRotary(prof, variant, cwPart.slot, view.layer);
     const ccwAction = variants.effectiveRotary(prof, variant, ccwPart.slot, view.layer);
@@ -1840,7 +1974,9 @@ function renderInspector() {
   return view.selected.kind === 'rotary' ? renderRotaryInspector() : renderKeyInspector();
 }
 
-function renderRotaryInspector() {
+// `bare` lo pide el panel del Inicio: solo el editor, sin la caja ni la
+// cabecera, que allí pone él con su "‹ Atrás".
+function renderRotaryInspector({ bare = false } = {}) {
   const base = selectedRotarySlot();
   const found = rotaryPart(base);
   const action = currentRotary();
@@ -1876,12 +2012,13 @@ function renderRotaryInspector() {
   const subLabel = !isClick && isUnifiedTurnAction(action) ? 'Giro' : found?.part.label;
 
   return `
-    <div class="editor-inspector glass-panel">
+    <div class="${bare ? 'rp-body-bare' : 'editor-inspector glass-panel'}">
+      ${bare ? '' : `
       <div class="inspector-head">
         <h3>${escape(found?.group.name || 'Mando')}</h3>
         <span class="pill">${view.layer === 'super' ? 'Capa SUPER' : 'Capa normal'}</span>
       </div>
-      <p class="setting-desc inspector-sub">${escape(subLabel || '')}</p>
+      <p class="setting-desc inspector-sub">${escape(subLabel || '')}</p>`}
 
       ${variant ? `
         <div class="override-note ${changed ? 'is-override' : ''}">
