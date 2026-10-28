@@ -188,6 +188,11 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
   No hay barra lateral: el Inicio es la réplica del teclado y lo demás cuelga de los
   botones de la derecha de la barra (perfiles, ajustes; consola y cambio automático,
   desde Ajustes → Herramientas). La flecha de volver sigue `PARENT` en `main.js`.
+- Configurar es ampliar: `views/dashboard.js` acerca la réplica a una zona (teclas o
+  rueda y mandos) y abre a su derecha el panel `#zoom-panel`. Ese panel lo pinta
+  **el mismo editor de `views/profiles.js`** en modo panel (`openPanel`, `inPanel()`
+  en `profiles/view-state.js`): mismos `data-act`, misma selección. Si la vista de
+  Perfiles está abierta encima, se pinta ella y no el panel.
 - `styles/index.css` — aspecto de app de Apple con la identidad de la landing: negro y el cian de los OLED como
   acento (`--on-primary` es el texto encima del acento). Colores, radios y curvas
   salen de los tokens de `:root` (colores de sistema de Apple, `--fill*` para

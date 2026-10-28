@@ -36,7 +36,19 @@ export const view = {
   busy: false,      // hay un alta/baja de perfil en marcha
   libraryOpen: false, // panel de la biblioteca de perfiles desplegado
   libraryMsg: null,   // progreso de la instalación en curso
+  // Panel lateral del Inicio: el mismo inspector, pintado al lado de la réplica
+  // ampliada en vez de en la vista de Perfiles. `panel` es el elemento donde se
+  // pinta mientras está abierto, y `zone` la parte del teclado ('keys' | 'wheel').
+  panel: null,
+  zone: null,
 };
+
+// El editor se pinta en el panel del Inicio cuando está abierto y no se está
+// mirando la vista de Perfiles: las dos comparten selección, y la vista manda
+// si se abre encima (botón de perfiles de la barra) para no dejarla en blanco.
+export function inPanel() {
+  return Boolean(view.panel) && !document.getElementById('view-profiles')?.classList.contains('active');
+}
 
 // Página del perfil que se está editando en esta vista.
 export function currentPageIdx() {
@@ -76,7 +88,7 @@ export function currentProfile() {
 }
 
 export function isActiveView() {
-  return document.getElementById('view-profiles')?.classList.contains('active');
+  return Boolean(view.panel) || document.getElementById('view-profiles')?.classList.contains('active');
 }
 
 // Lo que hace la tecla o el mando con lo que hay seleccionado: el perfil base,

@@ -5,6 +5,13 @@
 // rueda. Pulsar una pieza de la réplica hace lo mismo que el botón de su zona,
 // ya con esa pieza elegida.
 //
+// Configurar es ampliar: la réplica se acerca a la zona, que se queda a la
+// izquierda, y por la derecha entra el panel con el editor (profiles.js, en
+// modo panel). Es el encuadre por zonas de la versión móvil de orvy.es: allí
+// la cámara persigue su objetivo con un suavizado exponencial, y aquí lo hace
+// una transición CSS con una curva de la misma forma. Tocar una pieza de la
+// otra zona cambia de encuadre, igual que en la web.
+//
 // La réplica se coloca con las medidas del Orby montado, en milímetros y con el
 // origen en el centro de la carcasa (x a la derecha, z hacia el usuario). Están
 // tomadas de una foto cenital del teclado real, no del modelo de la web: allí
@@ -24,8 +31,8 @@ import * as wheelDial from '../wheel-dial.js';
 import * as cache from '../oled-cache.js';
 import * as oledMirror from '../oled-mirror.js';
 import { icon } from '../icons.js';
-import { goTo } from '../nav.js';
 import { ROTARY_SLOTS } from '../hid-keys.js';
+import * as profiles from './profiles.js';
 
 let wheelDecay = null;
 
@@ -43,6 +50,19 @@ const ZONES = [
   { id: 'keys',  x: -59.8, label: 'Configurar teclas',  icon: 'keyboard' },
   { id: 'wheel', x: WHEEL_POS.x, label: 'Rueda y mandos', icon: 'wheel' },
 ];
+
+// Lo que encuadra cada zona al ampliarla, en mm. Entra todo el alto de la
+// carcasa y su borde del lado de la zona: sin borde a la vista la ampliación
+// se lee como una foto recortada y no como el aparato visto de cerca.
+const FRAMES = {
+  keys:  { x0: -108, x1: -14, z0: -64, z1: 64 },
+  wheel: { x0: -14,  x1: 108, z0: -64, z1: 64 },
+};
+// Hueco entre la réplica ampliada y el panel, y margen con los bordes.
+const ZOOM_GAP = 32;
+
+// Zona ampliada ahora mismo, o null en reposo.
+let zoom = null;
 
 // Ritmo de fábrica de cada grupo de animación, en % del muelle de Apple. Es
 // ANIM_BASE_PCT de main.cpp: solo se usa sin espejo, porque con él el teclado
@@ -112,6 +132,11 @@ export function init() {
   cache.onChange(render);
 
   container.addEventListener('click', onClick);
+  document.getElementById('zoom-panel').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="panel-done"]')) closeZoom();
+  });
+  window.addEventListener('keydown', onKey);
+  window.addEventListener('resize', () => { if (zoom) frameZone(); });
 
   render();
 }
@@ -121,16 +146,126 @@ export function init() {
 function onClick(e) {
   const zone = e.target.closest('[data-zone]');
   if (zone) {
-    goTo('view-profiles', zone.dataset.zone === 'keys' ? { key: 0 } : { rotary: ROTARY_SLOTS.WHEEL_CW });
+    openZoom(zone.dataset.zone, zone.dataset.zone === 'keys' ? { key: 0 } : { rotary: ROTARY_SLOTS.WHEEL_CW });
     return;
   }
   const key = e.target.closest('[data-key]');
   if (key) {
-    goTo('view-profiles', { key: Number(key.dataset.key) });
+    openZoom('keys', { key: Number(key.dataset.key) });
     return;
   }
   const rotary = e.target.closest('[data-rotary]');
-  if (rotary) goTo('view-profiles', { rotary: Number(rotary.dataset.rotary) });
+  if (rotary) openZoom('wheel', { rotary: Number(rotary.dataset.rotary) });
+}
+
+function openZoom(zone, target) {
+  const dash = document.querySelector('#view-dashboard .dash');
+  const panel = document.getElementById('zoom-panel');
+
+  if (zoom === zone) {
+    profiles.selectInPanel(target);
+    return;
+  }
+  const opening = !zoom;
+  zoom = zone;
+
+  // Arriba del todo antes de medir: con la vista desplazada, el encuadre
+  // saldría corrido lo mismo que el scroll.
+  document.getElementById('view-dashboard').scrollTop = 0;
+  dash.classList.add('editing');
+  dash.dataset.zoom = zone;
+  panel.setAttribute('aria-hidden', 'false');
+  profiles.openPanel(panel, zone, target, { onRender: paintSelection });
+  frameZone();
+  if (opening) panel.querySelector('.zp-scroll')?.focus({ preventScroll: true });
+}
+
+export function closeZoom() {
+  if (!zoom) return;
+  zoom = null;
+  const dash = document.querySelector('#view-dashboard .dash');
+  dash.classList.remove('editing');
+  delete dash.dataset.zoom;
+  document.getElementById('zoom-panel').setAttribute('aria-hidden', 'true');
+  document.querySelector('#view-dashboard .orby-rig').style.transform = '';
+  profiles.closePanel();
+  paintSelection();
+}
+
+export function isZoomed() {
+  return Boolean(zoom);
+}
+
+// Lleva la zona al hueco que deja el panel: escala para que quepa entera y
+// traslada su centro al centro del hueco. Se mide con las cajas de maquetación
+// (offset*), que no cambian con el transform: así se puede volver a encuadrar
+// a mitad de animación (otra zona, ventana redimensionada) sin medir lo ya
+// movido.
+function frameZone() {
+  const dash = document.querySelector('#view-dashboard .dash');
+  const rig = dash.querySelector('.orby-rig');
+  const board = rig.querySelector('.orby-board');
+  const panel = document.getElementById('zoom-panel');
+  const f = FRAMES[zoom];
+
+  const u = board.offsetWidth / CASE_W;               // px por mm sin ampliar
+  const zoneW = (f.x1 - f.x0) * u;
+  const zoneH = (f.z1 - f.z0) * u;
+  const zoneCx = ((f.x0 + f.x1) / 2 + CASE_W / 2) * u;  // en px desde la esquina de la réplica
+  const zoneCy = ((f.z0 + f.z1) / 2 + CASE_D / 2) * u;
+
+  const areaW = dash.clientWidth - panel.offsetWidth - ZOOM_GAP * 2;
+  const areaH = dash.clientHeight - ZOOM_GAP * 2;
+  const scale = Math.min(areaW / zoneW, areaH / zoneH, 3);
+  const areaCx = ZOOM_GAP + areaW / 2;
+  const areaCy = ZOOM_GAP + areaH / 2;
+
+  // El origen del transform es la esquina de .orby-rig, que es la de la réplica.
+  const tx = areaCx - rig.offsetLeft - zoneCx * scale;
+  const ty = areaCy - rig.offsetTop - zoneCy * scale;
+  rig.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${scale.toFixed(4)})`;
+}
+
+// El anillo de la pieza que se está editando, en la réplica.
+function paintSelection() {
+  const board = document.querySelector('#view-dashboard .orby-board');
+  if (!board) return;
+  board.querySelectorAll('.is-editing').forEach((el) => el.classList.remove('is-editing'));
+  if (!zoom) return;
+  const sel = profiles.panelSelection();
+  if (!sel) return;
+  if (sel.kind === 'key') {
+    document.getElementById(`hw-key-${sel.index + 1}`)?.classList.add('is-editing');
+  } else {
+    const id = sel.slot <= ROTARY_SLOTS.ENC1_CLICK ? 'hw-enc-1'
+      : sel.slot <= ROTARY_SLOTS.ENC2_CLICK ? 'hw-enc-2' : 'hw-scroll';
+    document.getElementById(id)?.classList.add('is-editing');
+  }
+}
+
+// Esc cierra y las flechas mueven la tecla elegida por la rejilla de 3 x 4,
+// como en un teclado de verdad. Nada de esto mientras se escribe en un campo:
+// ahí las flechas y el Esc son del campo. Capturar un atajo se queda el
+// teclado antes (profiles.js escucha en captura y corta la propagación).
+function onKey(e) {
+  if (!zoom || !document.getElementById('view-dashboard').classList.contains('active')) return;
+  if (e.target.closest?.('input, select, textarea, [contenteditable="true"]')) return;
+
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeZoom();
+    return;
+  }
+
+  const sel = profiles.panelSelection();
+  if (zoom !== 'keys' || sel?.kind !== 'key') return;
+  const moves = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  const m = moves[e.key];
+  if (!m) return;
+  e.preventDefault();
+  const col = Math.min(2, Math.max(0, (sel.index % 3) + m[0]));
+  const row = Math.min(3, Math.max(0, Math.floor(sel.index / 3) + m[1]));
+  profiles.selectInPanel({ key: row * 3 + col });
 }
 
 function paintMarker(deg) {
@@ -239,4 +374,15 @@ function renderBoardFallback(prof, layer) {
 export function render() {
   const prof = profile();
   renderBoardFallback(prof, state.superActive ? 'super' : 'normal');
+}
+
+// Al volver al Inicio con una zona ampliada (de Ajustes, del editor de
+// iconos…) el panel puede haberse quedado atrás: la vista de Perfiles comparte
+// su selección y es ella quien se pinta mientras está abierta. No va en
+// render(), que corre con cada icono que llega: repintar el panel ahí le
+// quitaría el foco a lo que se esté escribiendo.
+export function shown() {
+  if (!zoom) return;
+  profiles.render();
+  frameZone();
 }

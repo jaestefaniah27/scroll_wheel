@@ -5,7 +5,7 @@ import { state, subscribe, notify, syncFromDevice, applyDeviceContext } from './
 import * as cache from './oled-cache.js';
 import { hydrateIcons } from './icons.js';
 import { toast, confirmar } from './ui.js';
-import { setNavigator } from './nav.js';
+import { setNavigator, setBack } from './nav.js';
 import * as wheelDial from './wheel-dial.js';
 import * as variants from './variants.js';
 import * as mirror from './mirror.js';
@@ -176,11 +176,10 @@ function renderThemeButton() {
   btn.title = claro ? 'Pasar a modo oscuro' : 'Pasar a modo claro';
 }
 
-// De dónde cuelga cada vista: es a donde lleva la flecha de volver. El editor
-// de iconos solo se abre desde una tecla, y la consola y el cambio automático
-// desde Ajustes, así que vuelven allí y no al Inicio.
+// De dónde cuelga cada vista: es a donde lleva la flecha de volver. La consola
+// y el cambio automático se abren desde Ajustes, así que vuelven allí y no al
+// Inicio. El editor de iconos, a quien lo abriera (ver parentOf).
 const PARENT = {
-  'view-oled': 'view-profiles',
   'view-auto': 'view-settings',
   'view-console': 'view-settings',
 };
@@ -196,14 +195,23 @@ const VIEW_TITLES = {
   'view-console': 'Consola serie',
 };
 
+// El editor de iconos se abre desde el panel del Inicio o desde Perfiles, así
+// que su "padre" es el que lo abrió, no uno fijo.
+let oledFrom = 'view-profiles';
+
+function parentOf(view) {
+  return view === 'view-oled' ? oledFrom : PARENT[view] || 'view-dashboard';
+}
+
 function goBack() {
-  switchView(PARENT[activeView] || 'view-dashboard');
+  switchView(parentOf(activeView));
 }
 
 // `params` permite abrir una vista apuntando a algo concreto: es lo que usan la
 // réplica del Inicio (la tecla o el mando pulsado) y el botón "Editar icono"
 // del editor de perfiles para caer en la pieza correcta.
 function switchView(target, params) {
+  if (target === 'view-oled' && activeView !== 'view-oled') oledFrom = activeView;
   activeView = target;
   const home = target === 'view-dashboard';
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === target));
@@ -218,12 +226,13 @@ function switchView(target, params) {
   title.classList.toggle('hidden', home);
   const back = document.getElementById('btn-back');
   back.classList.toggle('hidden', home);
-  back.lastElementChild.textContent = VIEW_TITLES[PARENT[target] || 'view-dashboard'];
+  back.lastElementChild.textContent = VIEW_TITLES[parentOf(target)];
   document.getElementById('btn-settings').classList.toggle('on', target === 'view-settings');
   document.getElementById('btn-profiles').classList.toggle('on', target === 'view-profiles');
 
   if (params && VIEWS[target]?.openTarget) VIEWS[target].openTarget(params);
   else VIEWS[target]?.render?.();
+  VIEWS[target]?.shown?.();
 }
 
 async function saveToFlash() {
@@ -510,6 +519,7 @@ function arrancarApp() {
   device.init();
   wireDevice();
   setNavigator(switchView);
+  setBack(goBack);
 
   // La calibración del dibujo de la rueda se lee del disco, así que llega
   // después del primer pintado: hay que rehacer los marcadores al tenerla.

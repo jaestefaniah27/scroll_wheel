@@ -17,7 +17,7 @@ import { state, markDirty, subscribe, KEY_TO_SCREEN, hasPages, pageCountOf,
 import { icon } from '../icons.js';
 import * as lib from '../icon-library.js';
 import { toast, requireDevice, confirmar } from '../ui.js';
-import { goTo } from '../nav.js';
+import { goBack } from '../nav.js';
 import * as fb from '../oled-fb.js';
 import * as cache from '../oled-cache.js';
 
@@ -146,11 +146,11 @@ export function openTarget({ profile, key, layer, kind } = {}) {
   loadPreviews();
 }
 
-// Vuelve al editor de perfiles, que es de donde siempre se viene. La tecla
+// Vuelve a donde se vino: el panel del Inicio o la vista de Perfiles. La tecla
 // sigue seleccionada allí, así que se cae justo en el mismo inspector.
 function backToProfiles() {
   cancelLayer(false);
-  goTo('view-profiles');
+  goBack();
 }
 
 // Salir sin guardar: lo dibujado se descarta y la tecla se queda con el icono

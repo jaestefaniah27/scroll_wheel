@@ -35,7 +35,7 @@ import { addRulesFor } from './auto.js';
 
 import { ROTARY_GROUPS, ROTARY_TYPE_OPTIONS, SCROLL_PRESETS } from './profiles/constants.js';
 import { view, setRenderers, currentPageIdx, editingVariant, selectedKeyIndex, selectedRotarySlot,
-         rotaryPart, currentProfile, isActiveView, currentAction, currentRotary, currentScroll,
+         rotaryPart, currentProfile, isActiveView, inPanel, currentAction, currentRotary, currentScroll,
          currentMacroId, pluginValuePick } from './profiles/view-state.js';
 import { loadPCMacros, savePCMacros, macroById, ensureMacro, nextMacroId, POWER_MODE_LABELS,
          isAppMacro, isTextMacro, isPowerMacro, isPluginMacro, pluginMacroOf, describeRotaryFull,
@@ -66,19 +66,8 @@ export function init() {
   // view-state.js), y init() ya dispara cosas que pueden querer hacerlo.
   setRenderers({ render, renderKeyGrid });
 
-  const body = document.getElementById('profiles-body');
-  body.addEventListener('click', onClick);
-  body.addEventListener('change', onChange);
-  body.addEventListener('input', onInput);
+  wire(document.getElementById('profiles-body'));
   window.addEventListener('keydown', onCapture, true);
-
-  // Enter en el campo de aplicaciones añade, para poder encadenar varias.
-  body.addEventListener('keydown', (e) => {
-    if (e.target.id === 'variant-new-match' && e.key === 'Enter') {
-      e.preventDefault();
-      addMatchFromField();
-    }
-  });
 
   // Las miniaturas llegan por el puerto serie con retraso: cuando la caché se
   // completa hay que repintar la rejilla, no la vista entera. El icono del
@@ -127,6 +116,12 @@ export function init() {
   let lastActive = -1;
   let lastPage = -1;
   subscribe(() => {
+    // El panel del Inicio edita siempre el perfil que tiene puesto el teclado,
+    // que es el que enseña la réplica de al lado: si cambia, lo sigue.
+    if (view.panel && view.editingProfile !== state.activeProfileIdx) {
+      view.editingProfile = state.activeProfileIdx;
+      view.variantId = null;
+    }
     // La página entra en la cuenta porque el teclado la cambia por su cuenta y
     // aquí se está editando justamente esa: la rejilla tiene que seguirla.
     if (state.profiles.length === lastCount && state.activeProfileIdx === lastActive
@@ -138,11 +133,22 @@ export function init() {
   });
 }
 
-// Entrada desde el Inicio: la tecla o el mando que se ha pulsado en la réplica,
-// del perfil que tiene puesto el teclado (que es el que se está mirando allí).
-export function openTarget({ key = null, rotary = null } = {}) {
-  view.editingProfile = state.activeProfileIdx;
-  view.variantId = null;
+// Los mismos manejadores para la vista y para el panel del Inicio: los dos
+// pintan los mismos controles con los mismos data-act.
+function wire(host) {
+  host.addEventListener('click', onClick);
+  host.addEventListener('change', onChange);
+  host.addEventListener('input', onInput);
+  // Enter en el campo de aplicaciones añade, para poder encadenar varias.
+  host.addEventListener('keydown', (e) => {
+    if (e.target.id === 'variant-new-match' && e.key === 'Enter') {
+      e.preventDefault();
+      addMatchFromField();
+    }
+  });
+}
+
+function selectTarget({ key = null, rotary = null }) {
   view.capturing = false;
   if (key !== null) {
     view.selected = { kind: 'key', index: key };
@@ -150,9 +156,55 @@ export function openTarget({ key = null, rotary = null } = {}) {
   } else if (rotary !== null) {
     view.selected = { kind: 'rotary', slot: rotary };
   }
+}
+
+// Entrada desde el Inicio: la tecla o el mando que se ha pulsado en la réplica,
+// del perfil que tiene puesto el teclado (que es el que se está mirando allí).
+export function openTarget(target = {}) {
+  view.editingProfile = state.activeProfileIdx;
+  view.variantId = null;
+  selectTarget(target);
   render();
   // render() conserva el scroll que hubiera; aquí lo que se quiere es ver la pieza.
   document.querySelector('#profiles-body .selected')?.scrollIntoView({ block: 'center' });
+}
+
+// ---- Panel lateral del Inicio ----------------------------------------------
+// El Inicio amplía una zona de la réplica y pide aquí el inspector de lo que se
+// elija en ella. Se edita siempre el perfil activo y su página: es lo que
+// enseñan las pantallas de la réplica de al lado.
+const wired = new WeakSet();
+let onPanelRender = null;
+
+export function openPanel(host, zone, target = {}, { onRender = null } = {}) {
+  if (!wired.has(host)) { wire(host); wired.add(host); }
+  if (view.panel !== host || view.zone !== zone) host.innerHTML = '';
+  view.panel = host;
+  view.zone = zone;
+  onPanelRender = onRender;
+  view.editingProfile = state.activeProfileIdx;
+  view.variantId = null;
+  selectTarget(target);
+  render();
+}
+
+export function selectInPanel(target) {
+  if (!view.panel) return;
+  selectTarget(target);
+  render();
+}
+
+export function closePanel() {
+  // Sin repintar: el panel se va, y una captura a medias se deja sin más.
+  cancelPositionPoll();
+  view.capturing = false;
+  view.panel = null;
+  view.zone = null;
+  onPanelRender = null;
+}
+
+export function panelSelection() {
+  return view.selected;
 }
 
 // --- Interacción -----------------------------------------------------------
@@ -186,7 +238,9 @@ function onClick(e) {
     clearOverrideOfSelection();
   } else if (act === 'layer') {
     view.layer = el.dataset.layer;
-    view.selected = null;
+    // En el panel la pieza es la que se ha tocado en la réplica: cambiar de
+    // capa es mirar la misma tecla en la otra, no volver a elegir.
+    if (!view.panel) view.selected = null;
     render();
   } else if (act === 'page') {
     choosePage(Number(el.dataset.page));
@@ -928,6 +982,11 @@ async function applyScroll(patch) {
 // --- Render ----------------------------------------------------------------
 
 export function render() {
+  if (inPanel()) {
+    if (view.capturing !== 'position') cancelPositionPoll();
+    renderPanel();
+    return;
+  }
   const body = document.getElementById('profiles-body');
   if (!body) return;
 
@@ -1020,6 +1079,78 @@ export function render() {
     const el = body.querySelector('.editor-inspector');
     if (el) el.scrollTop = scrollInspector;
   }
+}
+
+// Piezas de la zona de la rueda, en el orden en que están en el aparato. Cada
+// una se abre por su giro horario, que es lo primero que se quiere cambiar.
+const WHEEL_PIECES = [
+  { id: 'enc1',  label: 'Mando izq.', slot: ROTARY_SLOTS.ENC1_CW,  group: ROTARY_GROUPS[0] },
+  { id: 'wheel', label: 'Rueda',      slot: ROTARY_SLOTS.WHEEL_CW, group: null },
+  { id: 'enc2',  label: 'Mando der.', slot: ROTARY_SLOTS.ENC2_CW,  group: ROTARY_GROUPS[1] },
+];
+
+function pieceOf(slot) {
+  if (slot <= ROTARY_SLOTS.ENC1_CLICK) return WHEEL_PIECES[0];
+  if (slot <= ROTARY_SLOTS.ENC2_CLICK) return WHEEL_PIECES[2];
+  return WHEEL_PIECES[1];
+}
+
+// El panel del Inicio: cabecera con "Listo", la capa, y debajo el inspector de
+// siempre. En la zona de la rueda va además el selector de pieza y, de la pieza
+// elegida, sus giros y su pulsación (o la sensibilidad, si es la rueda).
+function renderPanel() {
+  const host = view.panel;
+  // Con la misma pieza se conserva el scroll (cada clic en un control repinta
+  // el panel entero); con otra, se empieza arriba, que es donde está su nombre.
+  const target = JSON.stringify([view.zone, view.selected]);
+  const scrollTop = host.dataset.target === target ? host.querySelector('.zp-scroll')?.scrollTop : 0;
+  host.dataset.target = target;
+
+  if (!state.profiles.length) {
+    host.innerHTML = `
+      <header class="zp-head"><div class="zp-titles"><h2>Sin perfiles</h2></div>
+        <button class="zp-done" data-act="panel-done">Listo</button></header>
+      <div class="zp-scroll"><p class="setting-desc">Conecta el Orvy una vez y quedará una copia en el PC.</p></div>`;
+    return;
+  }
+  if (view.editingProfile >= state.profiles.length) view.editingProfile = 0;
+
+  const prof = currentProfile();
+  const count = pageCountOf(prof);
+  const where = hasPages() && count > 1 ? `${prof.name} · página ${currentPageIdx() + 1} de ${count}` : prof.name;
+  const piece = view.zone === 'wheel' && view.selected?.kind === 'rotary' ? pieceOf(view.selected.slot) : null;
+
+  host.innerHTML = `
+    <header class="zp-head">
+      <div class="zp-titles">
+        <h2>${view.zone === 'keys' ? 'Teclas' : 'Rueda y mandos'}</h2>
+        <span>${escape(where)}</span>
+      </div>
+      <button class="zp-done" data-act="panel-done">Listo</button>
+    </header>
+    <div class="zp-bar">
+      <div class="layer-toggle">
+        <button class="toggle-btn ${view.layer === 'normal' ? 'active' : ''}" data-act="layer" data-layer="normal">NORMAL</button>
+        <button class="toggle-btn ${view.layer === 'super' ? 'active' : ''}" data-act="layer" data-layer="super">SUPER</button>
+      </div>
+      ${view.zone === 'wheel' ? `
+        <div class="layer-toggle zp-pieces">
+          ${WHEEL_PIECES.map((p) => `
+            <button class="toggle-btn ${piece?.id === p.id ? 'active' : ''}" data-act="pick-rotary"
+                    data-slot="${p.slot}">${p.label}</button>`).join('')}
+        </div>` : ''}
+    </div>
+    <div class="zp-scroll">
+      ${piece?.group ? `<div class="zp-rotary">${renderRotaryGroups([piece.group])}</div>` : ''}
+      ${piece?.id === 'wheel' ? renderWheelCard() : ''}
+      ${renderInspector()}
+    </div>`;
+
+  cache.paintThumbs(host);
+  if (piece?.id === 'wheel') updateDerived(currentScroll().detentsPerRev);
+  const scroller = host.querySelector('.zp-scroll');
+  if (scroller && scrollTop) scroller.scrollTop = scrollTop;
+  onPanelRender?.();
 }
 
 function renderTabsInner() {
@@ -1347,6 +1478,9 @@ function paintKeyGrid() {
 }
 
 function renderKeyGrid() {
+  // En el panel la "rejilla" es la réplica del Inicio, que se repinta sola con
+  // la caché; lo que hay que avisar es qué pieza está elegida.
+  if (inPanel()) { onPanelRender?.(); return; }
   const grid = document.getElementById('profile-key-grid');
   if (!grid) return;
   grid.innerHTML = renderKeyGridInner();
@@ -1372,7 +1506,7 @@ function isUnifiedTurnAction(action) {
   return action.type === ROTARY_TYPES.CONSUMER && Boolean(consumerPairFor(action.keycode));
 }
 
-function renderRotaryGroups() {
+function renderRotaryGroups(groups = ROTARY_GROUPS) {
   const prof = currentProfile();
   const variant = editingVariant();
   const selected = selectedRotarySlot();
@@ -1390,7 +1524,7 @@ function renderRotaryGroups() {
       </span>
     </button>`;
 
-  return ROTARY_GROUPS.map((group) => {
+  return groups.map((group) => {
     const [cwPart, ccwPart, clickPart] = group.parts;
     const cwAction = variants.effectiveRotary(prof, variant, cwPart.slot, view.layer);
     const ccwAction = variants.effectiveRotary(prof, variant, ccwPart.slot, view.layer);

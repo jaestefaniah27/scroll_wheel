@@ -13,3 +13,15 @@ export function setNavigator(fn) {
 export function goTo(target, params) {
   navigator?.(target, params);
 }
+
+// Volver a la vista de la que se vino. El editor de iconos se abre desde el
+// panel del Inicio o desde la vista de Perfiles, y tiene que volver a la misma.
+let back = null;
+
+export function setBack(fn) {
+  back = fn;
+}
+
+export function goBack() {
+  back?.();
+}
