@@ -293,8 +293,9 @@ export function endPreview() {
   if (!previewing) return;
   previewing = false;
   if (live) {
+    const wasSuper = fbCtx?.super;
     fbCtx = null;
-    start(A.KIND.MENU_CLOSE, PREVIEW_RATE, liveDest);
+    start(wasSuper ? A.KIND.MENU_CLOSE : A.KIND.CROSSFADE, PREVIEW_RATE, liveDest);
     return;
   }
   // Sin espejo, la vuelta la hace el siguiente fallback() de la capa normal;

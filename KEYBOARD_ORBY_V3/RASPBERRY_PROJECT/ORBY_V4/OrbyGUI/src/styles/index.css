@@ -417,6 +417,9 @@ button { font-family: inherit; }
    icono (el nombre sigue en el globo). Lo decide topbar.js midiendo. */
 .profile-strip.compact .strip-tab:not(.on) { padding: 0 5px; }
 .profile-strip.compact .strip-tab:not(.on) .strip-name { display: none; }
+/* Y si ni así caben (WebGUI muy estrecha), la tira se desplaza en vez de cortar. */
+.profile-strip.compact { overflow-x: auto; scrollbar-width: none; }
+.profile-strip.compact::-webkit-scrollbar { display: none; }
 
 /* Baldosa con el icono decorativo del perfil, en su color. */
 .strip-icon {
@@ -627,7 +630,7 @@ button { font-family: inherit; }
   width: min(100%, 960px);
   /* Que quepa de alto: barra, márgenes y la fila de botones fuera. */
   max-width: calc((100vh - var(--toolbar-height) - 150px) * 210 / 125);
-  min-width: 520px;
+  min-width: min(520px, 100%);
 }
 
 .rig-actions {
@@ -708,6 +711,19 @@ button { font-family: inherit; }
     inset 0 0 0 1px rgba(255,255,255,0.5),
     0 calc(0.3 * var(--u)) 0 rgba(150,160,170,0.75),
     0 0 0 calc(0.6 * var(--u)) rgba(79, 227, 255, 0.6);
+}
+/* Tecla que redefine la variación que se edita: un punto naranja en la esquina,
+   el color de las variaciones en Perfiles. */
+.hw-key.is-override::after {
+  content: '';
+  position: absolute;
+  top: calc(-1.2 * var(--u));
+  right: calc(-1.2 * var(--u));
+  width: calc(3.4 * var(--u));
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--warning);
+  box-shadow: 0 0 0 calc(0.5 * var(--u)) #f2f1ec, 0 0 calc(2 * var(--u)) rgba(var(--warning-rgb), 0.7);
 }
 .rig-layer {
   position: absolute;
@@ -1222,8 +1238,38 @@ button { font-family: inherit; }
 }
 .pm-detail .library-panel { margin-bottom: 0; }
 
+/* ---- Ventana estrecha ----
+   La app de escritorio no baja de 1024 px, pero la WebGUI sí. Por debajo de
+   900 px no cabe el panel al lado de la réplica: sube desde abajo como una hoja
+   de iOS, y el zoom encuadra la zona en el hueco de arriba (frameZone). */
+@media (max-width: 900px) {
+  .zoom-panel {
+    top: auto;
+    left: 0;
+    width: auto;
+    height: 52%;
+    border-radius: 22px 22px 0 0;
+    transform: translateY(60px);
+    transform-origin: center bottom;
+  }
+  .dash.editing .rig-layer { left: 50%; }
+  .topbar { gap: 8px; padding-left: 10px; }
+  .status-badge .status-text { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+  .rig-btn { padding: 0 12px 0 10px; font-size: 12px; }
+}
+
+/* Perfiles: la lista encima de la ficha, con su propio scroll corto. */
+@media (max-width: 760px) {
+  .pm { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 14px; }
+  .pm-list-scroll { max-height: 190px; }
+  .pm-hero { flex-wrap: wrap; }
+  .pm-hero-icon.is-oled { width: 108px; height: 60px; }
+  .pm-hero-icon.is-oled canvas { width: 108px; height: 60px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .orby-rig { transition: transform 0.2s linear; }
+  .rig-layer, .dash.layer-super .rig-layer { transform: none; }
   .zp-page.enter-fwd, .zp-page.enter-back { animation: alertFade 0.15s linear; }
   .zoom-panel, .dash.editing .zoom-panel { transform: none; transition: opacity 0.15s linear, visibility 0s; }
 }

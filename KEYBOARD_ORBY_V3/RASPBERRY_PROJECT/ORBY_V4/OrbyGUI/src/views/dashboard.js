@@ -25,7 +25,7 @@
 // sabe que hay en ellas.
 
 import * as device from '../device.js';
-import { state, notify, profile, KEY_TO_SCREEN, KEY_SUPER,
+import { state, notify, profile, KEY_TO_SCREEN, KEY_SUPER, keymapSlot, labelSlot,
          pageCountOf } from '../store.js';
 import * as wheelDial from '../wheel-dial.js';
 import * as cache from '../oled-cache.js';
@@ -34,6 +34,7 @@ import { icon } from '../icons.js';
 import { ROTARY_SLOTS } from '../hid-keys.js';
 import * as profiles from './profiles.js';
 import { keyScreen } from '../key-screen.js';
+import * as variants from '../variants.js';
 
 let wheelDecay = null;
 
@@ -116,7 +117,7 @@ export function init() {
     </div>
     </div>
     <!-- Fuera de .orby-rig: ampliada lleva transform, y dentro escalaría con ella. -->
-    <div class="rig-layer">${icon('keyboard', 13)} Editando la capa SUPER</div>`;
+    <div class="rig-layer">${icon('keyboard', 13)} <span id="rig-layer-text">Editando la capa SUPER</span></div>`;
 
   container.innerHTML = html;
 
@@ -250,8 +251,11 @@ function frameZone() {
   const zoneCx = ((f.x0 + f.x1) / 2 + CASE_W / 2) * u;  // en px desde la esquina de la réplica
   const zoneCy = ((f.z0 + f.z1) / 2 + CASE_D / 2) * u;
 
-  const areaW = dash.clientWidth - panel.offsetWidth - ZOOM_GAP * 2;
-  const areaH = dash.clientHeight - ZOOM_GAP * 2;
+  // Con la ventana estrecha el panel sube desde abajo (ver el CSS): entonces el
+  // hueco de la réplica es lo que queda encima, no a su izquierda.
+  const sheet = panel.offsetWidth >= dash.clientWidth - 1;
+  const areaW = dash.clientWidth - (sheet ? 0 : panel.offsetWidth) - ZOOM_GAP * 2;
+  const areaH = dash.clientHeight - (sheet ? panel.offsetHeight : 0) - ZOOM_GAP * 2;
   const scale = Math.min(areaW / zoneW, areaH / zoneH, 3);
   const areaCx = ZOOM_GAP + areaW / 2;
   const areaCy = ZOOM_GAP + areaH / 2;
@@ -374,13 +378,19 @@ function pulse(id) {
 // Lo que la app sabe de cada pantalla sin preguntarle al teclado: lo mismo
 // que dibujaría él (key-screen.js), con el icono subido, el del catálogo o la
 // etiqueta en su fuente.
-function fallbackScreens(prof, layer) {
+// Con `variant`, lo que harían las teclas con esa variación puesta: la
+// acción y la etiqueta que redefine encima del perfil base.
+function fallbackScreens(prof, layer, variant = null) {
   const screens = new Array(10).fill(null);
   const page = Math.min(state.pageIdx, (prof ? pageCountOf(prof) : 1) - 1);
   for (let ki = 0; ki < 12; ki++) {
     const screen = KEY_TO_SCREEN[ki];
     if (!screen) continue;
-    screens[screen - 1] = keyScreen(prof, state.activeProfileIdx, ki, layer, page);
+    const over = variant ? {
+      action: variants.effectiveKey(prof, variant, ki, layer),
+      label: variants.effectiveLabel(prof, variant, ki, layer),
+    } : {};
+    screens[screen - 1] = keyScreen(prof, state.activeProfileIdx, ki, layer, page, over);
   }
   return screens;
 }
@@ -388,16 +398,16 @@ function fallbackScreens(prof, layer) {
 // `preview` es la capa SUPER mientras se edita en el panel: se pinta con lo
 // que sabe la app aunque el teclado esté mandando sus pantallas, porque las
 // suyas son las de la capa normal (ver preview() en oled-mirror.js).
-function renderBoardFallback(prof, layer, preview = false) {
+function renderBoardFallback(prof, layer, preview = false, variant = null) {
   const live = oledMirror.isLive() && !preview;
   if (live) return;
-  const screens = fallbackScreens(prof, layer);
+  const screens = fallbackScreens(prof, layer, variant);
   const count = prof ? pageCountOf(prof) : 1;
   oledMirror[preview ? 'preview' : 'fallback']({
     profile: state.activeProfileIdx,
     page: Math.min(state.pageIdx, count - 1),
     pages: count,
-    super: preview || state.superActive,
+    super: layer === 'super',
   }, screens, animRates());
 }
 
@@ -412,11 +422,30 @@ export function render() {
   // Editando la capa SUPER, las pantallas la enseñan hasta que se acaba de
   // editar (vuelta a NORMAL o fuera del zoom): si no, lo que se ve a la
   // izquierda no es lo que se está tocando a la derecha.
+  // Lo mismo con una variación: el teclado tiene puesto el perfil base (salvo
+  // que esa app esté delante), y lo que se edita es lo que ella cambia.
   const editingSuper = Boolean(zoom) && profiles.panelLayer() === 'super';
-  document.querySelector('#view-dashboard .dash')?.classList.toggle('layer-super', editingSuper);
+  const variant = zoom ? profiles.panelVariant() : null;
+  const preview = editingSuper || Boolean(variant);
+  const dash = document.querySelector('#view-dashboard .dash');
+  dash?.classList.toggle('layer-super', preview);
+  const banner = document.getElementById('rig-layer-text');
+  if (banner && preview) {
+    banner.textContent = variant
+      ? `Editando la variación ${variant.name}${editingSuper ? ' · capa SUPER' : ''}`
+      : 'Editando la capa SUPER';
+  }
   document.getElementById(`hw-key-${KEY_SUPER}`)?.classList.toggle('held', editingSuper);
-  if (!editingSuper && oledMirror.isPreviewing()) oledMirror.endPreview();
-  renderBoardFallback(prof, editingSuper || state.superActive ? 'super' : 'normal', editingSuper);
+  // Las teclas que la variación redefine llevan su marca, como en la lista de
+  // Perfiles: una variación suele tocar dos o tres, y hay que saber cuáles.
+  const layer = editingSuper ? 'super' : 'normal';
+  for (let ki = 0; ki < 12; ki++) {
+    const changed = Boolean(variant && (variants.override(variant, 'keys', keymapSlot(ki, layer))
+      || (labelSlot(ki, layer) >= 0 && variants.override(variant, 'labels', labelSlot(ki, layer)))));
+    document.getElementById(`hw-key-${ki + 1}`)?.classList.toggle('is-override', changed);
+  }
+  if (!preview && oledMirror.isPreviewing()) oledMirror.endPreview();
+  renderBoardFallback(prof, editingSuper || state.superActive ? 'super' : 'normal', preview, variant);
 }
 
 // Al volver al Inicio con una zona ampliada (de Ajustes, del editor de

@@ -253,6 +253,11 @@ export function panelLayer() {
   return view.layer;
 }
 
+// La variación que se edita en el panel, o null con el perfil base.
+export function panelVariant() {
+  return view.panel ? editingVariant() : null;
+}
+
 // Esc dentro de un tipo de acción vuelve a la tecla, como el gesto de atrás
 // de iOS; solo en la pantalla de la tecla cierra el zoom. Devuelve si lo ha
 // gastado aquí.
