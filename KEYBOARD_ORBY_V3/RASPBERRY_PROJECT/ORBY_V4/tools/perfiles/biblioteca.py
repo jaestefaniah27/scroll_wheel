@@ -147,14 +147,16 @@ Perfil('VSCode', 'Visual Studio Code', 'Programación', procesos=['code.exe'],
        descripcion='Edición, paneles y depuración.') \
 .pagina('Edición', [
     ('PALETTE', 'Ctrl+Shift+P'), ('GOFILE', 'Ctrl+P'), ('FINDALL', 'Ctrl+Shift+F'),
-    ('MULTSEL', 'Ctrl+D'),   ('LINEUP', 'Alt+Up'),   ('DUPLINE', 'Shift+Alt+Down'),
+    # La 6 es la de los comentarios: comentar en la capa normal y descomentar en
+    # SUPER, en la misma tecla, junto a subir y bajar línea.
+    ('MULTSEL', 'Ctrl+D'),   ('LINEUP', 'Alt+Up'),   ('COMMENT', 'Seq:Ctrl+K,Ctrl+C'),
     UNDO,                    ('LINEDN', 'Alt+Down'), REDO_Y,
     ('SAVE', 'Ctrl+S'),
 ], super_=[
     ('FORMAT', 'Shift+Alt+F'), ('RENAME', 'F2'),     ('REPLACE', 'Ctrl+H'),
-    ('GODEF', 'F12'),        ('REFS', 'Shift+F12'),  ('NAVBACK', 'Alt+Left'),
+    ('GODEF', 'F12'),        ('REFS', 'Shift+F12'),  ('UNCOMM', 'Seq:Ctrl+K,Ctrl+U'),
     ('DELLINE', 'Ctrl+Shift+K'), ('QFIX', 'Ctrl+Punto'), ('SYMBOL', 'Ctrl+Shift+O'),
-    ('COMMENT', 'Seq:Ctrl+K,Ctrl+C'),
+    ('DUPLINE', 'Shift+Alt+Down'),
 ], der=TABS_CODE, rueda_super=('ScrollH', 'ScrollH')) \
 .pagina('Paneles', [
     ('EXPLR', 'Ctrl+Shift+E'), ('GIT', 'Ctrl+Shift+G'), ('EXTENS', 'Ctrl+Shift+X'),

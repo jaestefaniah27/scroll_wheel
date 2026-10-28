@@ -880,6 +880,14 @@ def _(c):
     c.poly((1, 2), (23, 2), (23, 16), (11, 16), (5, 21), (6, 16), (1, 16))
     c.fill(5, 6, 19, 8, v=0); c.fill(5, 10, 14, 12, v=0)
 
+# Lo contrario de Comentar: el mismo bocadillo con la insignia de quitar, como
+# Borrar línea. Van en la misma tecla, Comentar en la capa normal y esta en SUPER.
+@icon('uncomment')
+def _(c):
+    c.poly((1, 2), (23, 2), (23, 16), (11, 16), (5, 21), (6, 16), (1, 16))
+    c.fill(5, 6, 19, 8, v=0); c.fill(5, 10, 14, 12, v=0)
+    badge(c, 18, 15, 'x', r=4.5)
+
 @icon('del_line')
 def _(c):
     c.fill(1, 3, 23, 5); c.fill(1, 17, 23, 19)

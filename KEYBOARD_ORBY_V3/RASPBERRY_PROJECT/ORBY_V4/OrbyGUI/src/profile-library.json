@@ -1986,7 +1986,7 @@
       "FINDALL",
       "MULTSEL",
       "LINEUP",
-      "DUPLINE",
+      "COMMENT",
       "UNDO",
       "LINEDN",
       "REDO",
@@ -1996,11 +1996,11 @@
       "REPLACE",
       "GODEF",
       "REFS",
-      "NAVBACK",
+      "UNCOMM",
       "DELLINE",
       "QFIX",
       "SYMBOL",
-      "COMMENT"
+      "DUPLINE"
      ],
      "keys": [
       {
@@ -2024,8 +2024,16 @@
        "keycode": 82
       },
       {
-       "modifier": 6,
-       "keycode": 81
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 1,
+         "keycode": 6
+        }
+       ]
       },
       {
        "modifier": 1,
@@ -2072,8 +2080,16 @@
        "keycode": 69
       },
       {
-       "modifier": 4,
-       "keycode": 80
+       "sequence": [
+        {
+         "modifier": 1,
+         "keycode": 14
+        },
+        {
+         "modifier": 1,
+         "keycode": 24
+        }
+       ]
       },
       {
        "modifier": 3,
@@ -2092,16 +2108,8 @@
        "keycode": 0
       },
       {
-       "sequence": [
-        {
-         "modifier": 1,
-         "keycode": 14
-        },
-        {
-         "modifier": 1,
-         "keycode": 6
-        }
-       ]
+       "modifier": 6,
+       "keycode": 81
       },
       {
        "modifier": 0,

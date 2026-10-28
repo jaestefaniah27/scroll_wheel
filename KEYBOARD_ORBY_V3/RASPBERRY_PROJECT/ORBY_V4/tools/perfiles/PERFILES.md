@@ -180,11 +180,11 @@ Se activa solo con: `code.exe`
 | 3 | Buscar todo | `Ctrl+Shift+F` | Reemplazar | `Ctrl+H` |
 | 4 | Multicursor | `Ctrl+D` | Definición | `F12` |
 | 5 | Subir línea | `Alt+Up` | Referencias | `Shift+F12` |
-| 6 | Duplicar línea | `Shift+Alt+Down` | Atrás | `Alt+Left` |
+| 6 | Comentar | `Seq:Ctrl+K,Ctrl+C` | Descomentar | `Seq:Ctrl+K,Ctrl+U` |
 | 7 | Deshacer | `Ctrl+Z` | Borrar línea | `Ctrl+Shift+K` |
 | 8 | Bajar línea | `Alt+Down` | Arreglo rápido | `Ctrl+Punto` |
 | 9 | Rehacer | `Ctrl+Y` | Ir a símbolo | `Ctrl+Shift+O` |
-| 11 | Guardar | `Ctrl+S` | Comentar | `Seq:Ctrl+K,Ctrl+C` |
+| 11 | Guardar | `Ctrl+S` | Duplicar línea | `Shift+Alt+Down` |
 
 Mando derecho: Ctrl+PageDown / Ctrl+PageUp, clic: —. Rueda: desplazar. Con SUPER, mando derecho: Ctrl+PageDown / Ctrl+PageUp.
 

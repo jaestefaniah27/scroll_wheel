@@ -113,6 +113,7 @@ ENTRIES = {
     'QFIX': ('bulb', 'Arreglo rápido'),
     'SYMBOL': ('braces', 'Ir a símbolo'),
     'COMMENT': ('comment', 'Comentar'),
+    'UNCOMM': ('uncomment', 'Descomentar'),
     'EXPLR': ('files', 'Explorador'),
     'GIT': ('git', 'Git'),
     'EXTENS': ('extensions', 'Extensiones'),
