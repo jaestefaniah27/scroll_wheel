@@ -113,7 +113,9 @@ export function init() {
         ${icon(z.icon, 15)}<span>${z.label}</span>
       </button>`).join('')}
     </div>
-    </div>`;
+    </div>
+    <!-- Fuera de .orby-rig: ampliada lleva transform, y dentro escalaría con ella. -->
+    <div class="rig-layer">${icon('keyboard', 13)} Editando la capa SUPER</div>`;
 
   container.innerHTML = html;
 
@@ -190,7 +192,9 @@ function openZoom(zone, target) {
   dash.classList.add('editing');
   dash.dataset.zoom = zone;
   panel.setAttribute('aria-hidden', 'false');
-  profiles.openPanel(panel, zone, target, { onRender: paintSelection });
+  // Cada repintado del panel puede haber cambiado la capa (NORMAL/SUPER) o lo
+  // que hay en una tecla: la réplica se pone al día con él.
+  profiles.openPanel(panel, zone, target, { onRender: () => { paintSelection(); render(); } });
   frameZone();
   if (opening) panel.querySelector('.zp-scroll')?.focus({ preventScroll: true });
 }
@@ -205,6 +209,7 @@ export function closeZoom() {
   document.querySelector('#view-dashboard .orby-rig').style.transform = '';
   profiles.closePanel();
   paintSelection();
+  render();
 }
 
 export function isZoomed() {
@@ -363,8 +368,11 @@ function fallbackScreens(prof, layer) {
   return screens;
 }
 
-function renderBoardFallback(prof, layer) {
-  const live = oledMirror.isLive();
+// `preview` es la capa SUPER mientras se edita en el panel: se pinta con lo
+// que sabe la app aunque el teclado esté mandando sus pantallas, porque las
+// suyas son las de la capa normal (ver preview() en oled-mirror.js).
+function renderBoardFallback(prof, layer, preview = false) {
+  const live = oledMirror.isLive() && !preview;
   const screens = live ? null : fallbackScreens(prof, layer);
 
   for (let ki = 0; ki < 12; ki++) {
@@ -377,19 +385,30 @@ function renderBoardFallback(prof, layer) {
 
   if (live) return;
   const count = prof ? pageCountOf(prof) : 1;
-  const rates = {};
-  for (const [k, base] of Object.entries(ANIM_BASE)) rates[k] = (base * (state.animSpeed[k] ?? 100)) / 10000;
-  oledMirror.fallback({
+  oledMirror[preview ? 'preview' : 'fallback']({
     profile: state.activeProfileIdx,
     page: Math.min(state.pageIdx, count - 1),
     pages: count,
-    super: state.superActive,
-  }, screens, rates);
+    super: preview || state.superActive,
+  }, screens, animRates());
+}
+
+function animRates() {
+  const rates = {};
+  for (const [k, base] of Object.entries(ANIM_BASE)) rates[k] = (base * (state.animSpeed[k] ?? 100)) / 10000;
+  return rates;
 }
 
 export function render() {
   const prof = profile();
-  renderBoardFallback(prof, state.superActive ? 'super' : 'normal');
+  // Editando la capa SUPER, las pantallas la enseñan hasta que se acaba de
+  // editar (vuelta a NORMAL o fuera del zoom): si no, lo que se ve a la
+  // izquierda no es lo que se está tocando a la derecha.
+  const editingSuper = Boolean(zoom) && profiles.panelLayer() === 'super';
+  document.querySelector('#view-dashboard .dash')?.classList.toggle('layer-super', editingSuper);
+  document.getElementById(`hw-key-${KEY_SUPER}`)?.classList.toggle('held', editingSuper);
+  if (!editingSuper && oledMirror.isPreviewing()) oledMirror.endPreview(animRates());
+  renderBoardFallback(prof, editingSuper || state.superActive ? 'super' : 'normal', editingSuper);
 }
 
 // Al volver al Inicio con una zona ampliada (de Ajustes, del editor de

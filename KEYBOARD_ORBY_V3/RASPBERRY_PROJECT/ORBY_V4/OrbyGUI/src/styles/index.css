@@ -581,6 +581,8 @@ button { font-family: inherit; }
 #view-dashboard { background: var(--stage-glow), var(--stage-bg); }
 
 .dash {
+  /* Ancho del panel de configuración: lo leen el panel y el cartel de capa. */
+  --zp-w: clamp(360px, 34vw, 460px);
   position: relative;
   min-height: 100%;
   display: flex;
@@ -698,6 +700,37 @@ button { font-family: inherit; }
 .dash.editing[data-zoom="keys"] :is(.hw-wheel, .hw-encoder):hover,
 .dash.editing[data-zoom="wheel"] .hw-key:hover { opacity: 0.7; }
 
+/* Editando la capa SUPER: la tecla SUPER se queda hundida y un cartel lo dice,
+   porque las pantallas enseñan esa capa y no lo que tiene puesto el teclado. */
+.hw-key.held .hw-cap {
+  transform: translateY(calc(1.1 * var(--u)));
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.5),
+    0 calc(0.3 * var(--u)) 0 rgba(150,160,170,0.75),
+    0 0 0 calc(0.6 * var(--u)) rgba(79, 227, 255, 0.6);
+}
+.rig-layer {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  translate: -50% 0;
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 14px 6px 11px;
+  border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  color: var(--on-primary);
+  background: var(--primary);
+  box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.96);
+  transition: opacity 0.25s var(--ease-out), transform 0.4s var(--spring);
+  z-index: 2;
+}
+/* Centrado en el hueco de la réplica, no en la ventana: el panel tapa la derecha. */
+.dash.editing .rig-layer { left: calc((100% - var(--zp-w, 0px)) / 2); }
+.dash.layer-super .rig-layer { opacity: 1; transform: none; }
+
 /* La pieza que se está editando: anillo cian, como la selección en la web. */
 .hw-key.is-editing .hw-cap {
   box-shadow:
@@ -717,7 +750,6 @@ button { font-family: inherit; }
 /* El panel: una hoja que llega de la derecha un instante después de que la
    réplica empiece a moverse, para que se lea como consecuencia del zoom. */
 .zoom-panel {
-  --zp-w: clamp(360px, 34vw, 460px);
   position: absolute;
   top: 0;
   right: 0;

@@ -36,6 +36,11 @@ let animating = false;
 let inversions = 0;
 let displaysOn = true;
 let live = false;           // el teclado está mandando sus pantallas
+// Vista previa de la app (la capa SUPER mientras se edita, ver preview()):
+// manda sobre el espejo hasta que se acaba. Lo que siga llegando del teclado
+// se guarda en liveDest para volver a ello.
+let previewing = false;
+const liveDest = blank();
 let raf = 0;
 let last = 0;
 
@@ -82,7 +87,8 @@ function paint(i) {
   const src = shown[i];
   // El negativo de la tecla sujeta va por hardware en el SSD1306: invierte el
   // panel entero, encima de lo que esté dibujando la animación.
-  const inv = displaysOn && ((inversions >> i) & 1) === 1;
+  const on = displaysOn || previewing;
+  const inv = on && !previewing && ((inversions >> i) & 1) === 1;
   const edge = (v, s) => Math.round(v * s);
   for (let y = 0; y < A.H; y++) {
     const row = (y >> 3) * A.W, bit = 1 << (y & 7);
@@ -92,7 +98,7 @@ function paint(i) {
     // cristal, y así el brillo de los encendidos no tiñe el fondo.
     let x = 0;
     while (x < A.W) {
-      const lit = (k) => displaysOn && (((src[row + k] & bit) !== 0) !== inv);
+      const lit = (k) => on && (((src[row + k] & bit) !== 0) !== inv);
       if (!lit(x)) { x++; continue; }
       let x1 = x + 1;
       while (x1 < A.W && lit(x1)) x1++;
@@ -143,7 +149,7 @@ function tick(now) {
 
   let muelles = false;
   for (let i = 0; i < A.N; i++) {
-    if (A.pressStep(press[i], (inversions >> i) & 1 ? 1 : 0, dt)) muelles = true;
+    if (A.pressStep(press[i], !previewing && (inversions >> i) & 1 ? 1 : 0, dt)) muelles = true;
   }
 
   const t = animating ? (now - t0) / 1000 : 0;
@@ -194,6 +200,8 @@ function onTelemetry(line) {
   if (line.startsWith('EV:SCR:GO:')) {
     const [k, r] = line.slice(10).split(':').map(Number);
     setLive(true);
+    for (let i = 0; i < A.N; i++) liveDest[i].set(incoming[i]);
+    if (previewing) return;
     start(Number.isFinite(k) ? k : A.KIND.CROSSFADE, (r || 1000) / 1000, incoming);
     return;
   }
@@ -242,7 +250,7 @@ function classify(a, b) {
 // `ctx` es {profile, page, pages, super}; `screens` diez framebuffers (o null
 // para negro). `rates` el ritmo por grupo que tenga puesto el teclado.
 export function fallback(ctx, screens, rates = {}) {
-  if (live) return;
+  if (live && !previewing) return;
   const dest = blank();
   screens.forEach((s, i) => { if (s) dest[i].set(s); });
   const k = classify(fbCtx, ctx);
@@ -253,6 +261,33 @@ export function fallback(ctx, screens, rates = {}) {
     [A.KIND.MENU_OPEN]: 'menu', [A.KIND.MENU_CLOSE]: 'menu' }[k] || 'fade';
   start(k, rates[group] || 1, dest);
 }
+
+// Enseñar en las pantallas algo que el teclado no tiene puesto: la capa SUPER
+// mientras se edita en el panel del Inicio. Sin esto, editar SUPER era hacerlo
+// a ciegas: con espejo, la réplica enseña lo del teclado, que es la capa
+// normal mientras nadie mantenga SUPER. Entra con la misma transición que el
+// teclado al pulsar SUPER y se pinta con fallback(), que es lo que la app sabe
+// dibujar; endPreview() vuelve a lo que esté mandando el teclado.
+export function preview(ctx, screens, rates = {}) {
+  if (!previewing) {
+    previewing = true;
+    fbCtx = live ? { ...ctx, super: false } : fbCtx;
+    for (let i = 0; i < A.N; i++) paint(i);
+  }
+  fallback(ctx, screens, rates);
+}
+
+export function endPreview(rates = {}) {
+  if (!previewing) return;
+  previewing = false;
+  if (live) {
+    fbCtx = null;
+    start(A.KIND.MENU_CLOSE, rates.menu || 1, liveDest);
+  }
+  // Sin espejo, el siguiente fallback() de la capa normal hace la vuelta.
+}
+
+export const isPreviewing = () => previewing;
 
 // Para la pulsación sin espejo: el dashboard sabe qué tecla se pulsa por KEY_EV.
 export function setPressed(screenIdx, down) {
@@ -270,6 +305,7 @@ export function init() {
   });
   device.on('disconnected', () => {
     setLive(false);
+    previewing = false;
     fbCtx = null;
     inversions = 0;
     displaysOn = true;

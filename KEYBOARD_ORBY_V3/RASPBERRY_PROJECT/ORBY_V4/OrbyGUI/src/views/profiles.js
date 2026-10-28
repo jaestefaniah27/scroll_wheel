@@ -201,6 +201,8 @@ export function closePanel() {
   // Sin repintar: el panel se va, y una captura a medias se deja sin más.
   cancelPositionPoll();
   view.capturing = false;
+  // Se vuelve a abrir en la capa normal, que es la que enseña el teclado.
+  view.layer = 'normal';
   view.panel = null;
   view.zone = null;
   onPanelRender = null;
@@ -208,6 +210,10 @@ export function closePanel() {
 
 export function panelSelection() {
   return view.selected;
+}
+
+export function panelLayer() {
+  return view.layer;
 }
 
 // Esc dentro de un tipo de acción vuelve a la tecla, como el gesto de atrás
