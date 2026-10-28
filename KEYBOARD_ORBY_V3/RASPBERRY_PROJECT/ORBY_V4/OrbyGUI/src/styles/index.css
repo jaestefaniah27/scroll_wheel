@@ -842,15 +842,6 @@ button { font-family: inherit; }
 }
 .zp-scroll:focus-visible { box-shadow: none; }
 
-/* El inspector y las tarjetas del editor, sin su caja: aquí la caja es el panel. */
-.zoom-panel .editor-inspector {
-  height: auto;
-  overflow: visible;
-  padding: 0;
-  background: none;
-  border: none;
-  box-shadow: none;
-}
 .zoom-panel .oled-card {
   padding: 16px;
   margin-bottom: 18px;
@@ -859,9 +850,6 @@ button { font-family: inherit; }
   box-shadow: none;
   border-radius: var(--radius-md);
 }
-.zoom-panel .wheel-tune { grid-template-columns: minmax(0, 1fr); }
-.zoom-panel .preset-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.zp-rotary { margin-bottom: 18px; }
 
 /* ---- Panel de teclas ----
    Dos niveles, como Ajustes de iOS: la tecla y, al entrar en un tipo de
@@ -1398,7 +1386,6 @@ button { font-family: inherit; }
 }
 
 .value.is-on { color: var(--success); }
-.value.highlight { color: var(--primary); font-weight: 600; }
 
 /* ================= AJUSTES ================= */
 /* Una columna centrada de grupos, como el panel derecho de Ajustes del
@@ -1491,9 +1478,6 @@ button { font-family: inherit; }
    la etiqueta acababa pareciendo un título. */
 .switch-label { font-size: 13px; line-height: 1.45; flex: 1; min-width: 0; }
 
-/* Sliders */
-.slider-container { display: flex; align-items: center; gap: 16px; }
-.slider-val { font-family: var(--font-mono); font-size: 14px; font-weight: 600; width: 40px; text-align: right; }
 /* Deslizador de iOS: pista fina y gris, y el tramo recorrido del color de
    acento. Ese tramo lo pinta `--fill-pct`, que pone src/ui.js en cada input
    de rango; sin él la pista se queda gris entera, que también es correcto. */
@@ -1519,9 +1503,8 @@ button { font-family: inherit; }
   font-size: 11px; color: var(--text-muted);
 }
 
-/* Segmented Control */
 /* Control segmentado de iOS. Todos los de la app (este, NORMAL/SUPER, las
-   páginas, las pestañas del inspector) comparten el mismo aspecto: pista
+   piezas de la rueda en el panel) comparten el mismo aspecto: pista
    gris translúcida y el segmento elegido como una pastilla más clara con
    sombra, no relleno de color. */
 .timeout-selector {
@@ -1534,8 +1517,7 @@ button { font-family: inherit; }
   cursor: pointer; transition: background 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
 }
 .timeout-selector .opt-btn.active,
-.toggle-btn.active,
-.inspector-tab.active {
+.toggle-btn.active {
   background: var(--segment-on); color: var(--segment-on-text); font-weight: 600;
   box-shadow: 0 3px 8px rgba(0,0,0,0.12), 0 3px 1px rgba(0,0,0,0.04), inset 0 0.5px 0 rgba(255,255,255,0.12);
 }
@@ -1565,8 +1547,7 @@ button { font-family: inherit; }
 }
 .secondary-btn:hover { background: var(--fill-strong); }
 .secondary-btn:active, .primary-btn:active, .tool-btn:active, .chip:active,
-.type-chip:active, .mod-chip:active, .consumer-chip:active, .preset-btn:active,
-.btn-activate:active, .save-flash-btn:active, .update-badge.ready:active {
+.type-chip:active, .mod-chip:active, .consumer-chip:active, .preset-btn:active, .save-flash-btn:active, .update-badge.ready:active {
   transform: scale(0.96);
   transition-duration: 0.08s;
 }
@@ -1607,8 +1588,6 @@ button { font-family: inherit; }
 }
 #btn-clear-console:hover { color: var(--danger); }
 
-/* ================= PROFILES VIEW ================= */
-.profiles-toolbar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
 /* Segmentado: el aspecto del segmento elegido está con `.timeout-selector`. */
 .layer-toggle {
   display: flex; align-items: center; background: var(--fill);
@@ -1620,34 +1599,6 @@ button { font-family: inherit; }
   padding: 5px 16px; border-radius: 7px; font-size: 12.5px; font-weight: 500;
   cursor: pointer; transition: background 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
 }
-
-.profiles-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 24px;
-}
-.profile-card { padding: 24px; position: relative; overflow: hidden; }
-.profile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-.profile-title { display: flex; align-items: center; gap: 12px; }
-.profile-title i { font-size: 28px; color: var(--text-main); }
-.profile-title h2 { font-size: 20px; font-weight: 700; margin: 0; }
-.btn-activate {
-  background: rgba(var(--primary-rgb), 0.16); border: none;
-  color: var(--primary); padding: 6px 16px; border-radius: 999px;
-  font-size: 12px; font-weight: 600; cursor: pointer;
-  transition: background 0.2s, color 0.2s, transform 0.35s var(--spring);
-}
-.btn-activate:hover { background: var(--primary); color: var(--on-primary); }
-.profile-card.is-active { border-color: var(--primary); }
-.profile-card.is-active .btn-activate { background: var(--primary); color: var(--on-primary); cursor: default; }
-
-.macro-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-}
-.macro-item {
-  background: var(--fill-soft); border: 1px solid transparent;
-  border-radius: 6px; padding: 8px; display: flex; flex-direction: column; align-items: center;
-}
-.macro-item .key-num { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
-.macro-item .label { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text-main); }
 
 /* ================= ICONOS SVG EN LÍNEA ================= */
 .icn { display: block; flex-shrink: 0; }
@@ -1715,65 +1666,7 @@ button { font-family: inherit; }
 .empty-panel p { font-size: 13px; max-width: 320px; line-height: 1.5; }
 .empty-panel .icn { color: var(--primary); opacity: 0.7; }
 
-/* ================= EDITOR DE PERFILES ================= */
-/* Barra superior: pestañas de perfil a la izquierda y su gestión (crear,
-   duplicar, eliminar) a la derecha, con el contador de huecos del firmware. */
-.profile-bar {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
-}
-.profile-bar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.profile-bar-actions .secondary-btn { padding: 8px 12px; }
-.profile-bar-actions .secondary-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.profile-count {
-  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
-  padding-left: 6px; border-left: 1px solid var(--border-light);
-}
-
-.profile-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
-.profile-tab {
-  display: flex; align-items: center; gap: 10px; padding: 9px 16px;
-  background: var(--bg-panel-solid); border: 1px solid var(--border-light);
-  border-radius: 12px; color: var(--text-muted);
-  cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
-  transition: background 0.2s var(--ease-out), color 0.2s, box-shadow 0.25s var(--ease-out), transform 0.35s var(--spring);
-}
-.profile-tab:hover { background: var(--bg-elevated); color: var(--text-main); }
-.profile-tab:active { transform: scale(0.97); }
-.profile-tab.active { background: var(--bg-elevated); border-color: var(--primary); color: var(--text-main); box-shadow: var(--shadow-glow); }
-.profile-tab .tab-icon { color: var(--accent); display: flex; }
-/* Icono real del perfil (72x40) en vez del decorativo: mismo alto que el SVG
-   que sustituye (18px), ancho proporcional, sin difuminar al escalar. */
-.tab-icon-canvas { height: 18px; width: auto; image-rendering: pixelated; display: block; }
-.tab-live { font-size: 9px; letter-spacing: 0.5px; color: var(--success); background: rgba(var(--success-rgb), 0.12); padding: 2px 6px; border-radius: 8px; }
-
-/* Variaciones: el mismo perfil con un par de atajos distintos para una app.
-   La barra vive justo bajo las pestañas de perfil porque es una capa más de lo
-   mismo, no otra sección. */
-.variant-bar {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  margin: -6px 0 20px; padding: 10px 14px;
-  background: var(--fill-soft); border: 1px solid transparent;
-  border-radius: var(--radius-md);
-}
-.variant-bar-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px;
-  color: var(--text-muted);
-}
-.variant-bar-label .icn { color: var(--primary); }
-.variant-bar .chip { display: flex; align-items: center; gap: 6px; }
-.variant-bar .chip.ghost { border-style: dashed; }
-.variant-bar .chip.is-live { border-color: rgba(var(--success-rgb), 0.5); }
-.variant-bar .chip.is-live::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--success); box-shadow: 0 0 8px var(--success);
-}
-.chip-count {
-  font-style: normal; font-size: 10px; font-family: var(--font-mono);
-  padding: 1px 5px; border-radius: 8px; background: var(--fill);
-}
-
+/* ================= EDITOR (panel del Inicio y Perfiles) ================= */
 .variant-card { border-color: rgba(var(--primary-rgb), 0.35); }
 .variant-card .row-inline > .field { flex: 1; min-width: 180px; margin-bottom: 12px; }
 
@@ -1815,112 +1708,7 @@ button { font-family: inherit; }
 }
 .plugin-value-pick .field { margin-bottom: 10px; }
 
-/* Huecos que la variación cambia respecto al perfil base. */
-.okey.is-override, .rotary-part.is-override { border-color: rgba(var(--warning-rgb), 0.55); }
-.okey-dot {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--warning);
-  display: inline-block; margin-left: 2px;
-}
-
-/* El panel de configuración de tecla (derecha) y la rejilla de teclas
-   (izquierda) escrollean cada uno por su cuenta: la vista pasa a ser una
-   columna flex de altura fija y ambos paneles se reparten esa altura con su
-   propio overflow, en vez de compartir el scroll único de `.view`. */
-.view:has(.editor-layout) { display: flex; flex-direction: column; overflow: hidden; }
-/* `#profiles-body` es un div sin estilo entre `.view` y `.editor-layout`
-   (lo rellena profiles.js con innerHTML). Sin hacerlo también columna flex con
-   `flex:1; min-height:0`, el `flex:1` de `.editor-layout` no tiene contra qué
-   resolverse -su padre no es flex- y vuelve a crecer al contenido. */
-#profiles-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-#profiles-body > .profile-bar, #profiles-body > .variant-bar { flex-shrink: 0; }
-/* `align-items: stretch` (el valor por defecto, así que basta con no pisarlo
-   con `start`) es lo que le da a cada columna un alto definido igual al de
-   la fila: sin eso el `height: 100%` de abajo no tiene contra qué resolverse
-   (cae a `auto`), cada panel crece a su contenido y `overflow:hidden` de
-   `.view` lo recorta en vez de dejarlo escrollar. */
-/* `grid-template-rows` explícito es necesario: sin él la fila (auto) crece
-   al contenido natural de sus hijos -altura 100%, que en esta fase de
-   cálculo cuenta como "auto"-, así que la rejilla entera se hace tan alta
-   como el panel más largo, `.view` la recorta con overflow:hidden y no
-   queda scroll en ningún sitio. */
-.editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 520px; grid-template-rows: minmax(0, 1fr); gap: 24px; flex: 1; min-height: 0; overflow: hidden; }
-/* El hijo real de la grid a la izquierda es `.editor-main` (variantes +
-   `.editor-board` + tarjeta de Encoders), no `.editor-board` suelto: el
-   scroll y el alto van aquí, si no solo se estira un bloque de dentro y el
-   resto de `.editor-main` se sale sin contenedor que lo recorte ni lo deje
-   escrollar. */
-.editor-main, .editor-inspector { height: 100%; overflow-y: auto; }
-/* `.editor-inspector` es a la vez `.glass-panel`, así que ya scrolleaba sobre
-   una capa opaca y por eso iba suave. `.editor-main` no es un panel, es un
-   contenedor pelado con los paneles dentro: sin fondo propio su capa de
-   contenido no era opaca y scrolleaba a tirones. */
-.editor-main {
-  display: flex; flex-direction: column; gap: 20px; min-width: 0; min-height: 0;
-  background: var(--bg-dark);
-}
-.editor-board { padding: 24px; }
-.editor-board-head { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-.editor-board-head .head-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.editor-board-head .head-row:first-child { justify-content: space-between; }
-.editor-board-head .layer-toggle { margin-right: auto; }
-
-/* Vista previa de la pantalla dentro del inspector, junto al botón que salta al
-   editor de iconos con esta misma tecla ya seleccionada. */
-.inspector-screen { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.inspector-screen .okey-screen { flex-shrink: 0; }
-.inspector-sub { margin-top: -12px; margin-bottom: 18px; }
 .card-header .pill { margin-left: auto; }
-
-.editor-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-.editor-key {
-  display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
-  padding: 12px; min-height: 84px; text-align: left; font-family: inherit;
-  background: var(--fill-soft); border: 1px solid transparent;
-  border-radius: 12px; cursor: pointer;
-  transition: background 0.2s var(--ease-out), border-color 0.2s, box-shadow 0.2s, transform 0.35s var(--spring);
-}
-.editor-key:active, .okey:active, .rotary-part:active { transform: scale(0.97); }
-.editor-key:hover { background: var(--fill); border-color: transparent; }
-.editor-key.selected { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.12); box-shadow: var(--shadow-glow); }
-.editor-key.no-screen { opacity: 0.6; }
-.editor-key .ek-num { font-size: 10px; color: var(--text-muted); }
-.editor-key .ek-label { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--text-main); }
-.editor-key .ek-action { font-size: 11px; color: var(--text-muted); line-height: 1.3; }
-.editor-key.assigned .ek-action { color: var(--secondary); }
-
-/* Mandos giratorios: encoders y rueda de scroll */
-.rotary-section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--border-light); }
-.rotary-title {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
-  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
-  color: var(--text-muted);
-}
-.rotary-title .icn { color: var(--primary); }
-
-.rotary-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-.rotary-group { display: flex; flex-direction: column; gap: 6px; }
-.rotary-group-name {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 600; color: var(--text-main); margin-bottom: 2px;
-}
-.rotary-group-name .icn { color: var(--text-muted); }
-
-.rotary-part {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; text-align: left;
-  background: var(--fill-soft); border: 1px solid transparent;
-  border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; transition: all 0.15s;
-}
-.rotary-part:hover { background: var(--fill); border-color: transparent; }
-.rotary-part.selected { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.12); box-shadow: var(--shadow-glow); }
-.rp-dir {
-  width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--hover); color: var(--text-muted); font-size: 13px;
-}
-.rotary-part.assigned .rp-dir { background: rgba(var(--primary-rgb), 0.2); color: var(--primary); }
-.rp-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.rp-body em { font-style: normal; font-size: 10px; color: var(--text-muted); }
-.rp-body strong { font-size: 12px; font-weight: 600; color: var(--text-main); overflow-wrap: anywhere; }
 
 .type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .type-chip {
@@ -1931,26 +1719,6 @@ button { font-family: inherit; }
 .type-chip:hover { color: var(--text-main); background: var(--fill); }
 .type-chip.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .type-chip.small { padding: 5px 8px; font-size: 10px; }
-
-.editor-inspector { padding: 24px; }
-.inspector-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.inspector-head h3 { font-size: 18px; }
-
-/* Pestañas del inspector de tecla: Atajo / Secuencia / Texto / Grabar / App /
-   Multimedia / Páginas. Son suficientes para no caber en una línea con el
-   inspector estrecho, así que saltan de fila en vez de quedar ilegibles. */
-.inspector-tabs {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
-  gap: 2px; margin-bottom: 18px; padding: 2px;
-  background: var(--fill); border: none;
-  border-radius: 9px;
-}
-.inspector-tab {
-  padding: 6px 6px; font-size: 12px; font-weight: 500; font-family: inherit;
-  background: transparent; border: none; border-radius: 7px;
-  color: var(--text-main); cursor: pointer;
-  transition: background 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
-}
 
 /* Pasos de una macro (secuencia ejecutada en el PC). */
 .seq-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -2007,20 +1775,9 @@ button { font-family: inherit; }
 }
 
 /* ================= RUEDA DE SCROLL (dentro de Perfiles) ================= */
-/* La calibración es un ajuste de cada perfil y de cada capa, así que vive en la
-   misma tarjeta que el resto de la configuración en vez de en una vista aparte. */
-.wheel-tune { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; align-items: start; }
-.wheel-tune-side { display: flex; flex-direction: column; }
 
-/* Banda del slider: va por encima de las dos columnas para aprovechar todo el
-   ancho de la tarjeta. .premium-slider se apoya en flex-grow, que aquí no se
-   aplica porque el contenedor no es flex: sin un width explícito el navegador
-   deja el <input type=range> en su ancho por defecto (~130px). */
-.wheel-tune-head { margin-bottom: 24px; }
 .wheel-slider { display: block; width: 100%; height: 10px; border-radius: 5px; }
 .wheel-slider::-webkit-slider-thumb { width: 26px; height: 26px; }
-/* El recorrido es largo: un poco de aire arriba y abajo evita clics fallidos. */
-.wheel-tune-head .slider-row { margin-top: 8px; }
 
 .wheel-readout { text-align: center; margin: 8px 0 20px; }
 /* Cifra grande al estilo de los widgets de iOS: SF Rounded donde exista, y
@@ -2033,21 +1790,12 @@ button { font-family: inherit; }
 }
 .wheel-readout small { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
 
-.preset-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 20px 0; }
-/* Al subir el slider a su propia banda, los presets abren la columna: sin el
-   margen de arriba no se suma al que ya deja la banda. */
-.wheel-tune-main > .preset-row:first-child { margin-top: 0; }
 .preset-btn { display: flex; flex-direction: column; gap: 3px; padding: 12px; text-align: left; }
 .preset-btn strong { font-size: 13px; color: var(--text-main); }
 .preset-btn span { font-family: var(--font-mono); font-size: 11px; color: var(--primary); }
 .preset-btn em { font-size: 11px; font-style: normal; color: var(--text-muted); }
 .preset-btn.on { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.12); }
 .preset-btn.on strong, .preset-btn.on em { color: var(--text-main); }
-
-.hires-state { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 14px; font-size: 12px; }
-.hires-state.ok  { background: rgba(var(--success-rgb), 0.1); border: 1px solid rgba(var(--success-rgb), 0.3); color: var(--success); }
-.hires-state.off { background: rgba(var(--warning-rgb), 0.1); border: 1px solid rgba(var(--warning-rgb), 0.3); color: var(--warning); }
-.hires-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
 
 .wheel-dial { display: flex; justify-content: center; margin: 8px 0 6px; }
 /* La misma rueda que el dashboard, en pequeño (la apariencia comparte reglas
@@ -2117,47 +1865,6 @@ button { font-family: inherit; }
 .oled-card.is-placing { border-color: rgba(var(--warning-rgb), 0.45); box-shadow: 0 0 18px rgba(var(--warning-rgb), 0.12); }
 .oled-hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 10px; }
 .divider { height: 1px; background: var(--border-light); margin: 16px 0; }
-
-/* Réplica del teclado como selector de destino */
-.target-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-.okey-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.okey {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 6px 4px; font-family: inherit; cursor: pointer;
-  background: var(--fill-soft); border: 1px solid transparent;
-  border-radius: 12px;
-  transition: background 0.2s var(--ease-out), border-color 0.2s, box-shadow 0.2s, transform 0.35s var(--spring);
-}
-.okey:hover { background: var(--fill); border-color: transparent; }
-.okey.selected { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.14); box-shadow: var(--shadow-glow); }
-.okey.no-screen { opacity: 0.4; cursor: default; justify-content: center; min-height: 84px; }
-.okey.no-screen:hover { background: var(--fill-soft); border-color: transparent; }
-.okey-num { display: flex; gap: 5px; font-size: 9px; color: var(--text-muted); }
-.okey-num em { font-style: normal; color: var(--primary); }
-.okey-role { font-size: 9px; letter-spacing: 1px; font-weight: 600; color: var(--text-muted); }
-/* content-box a propósito: el canvas mide 72x40 exactos y con el border-box
-   global el borde dejaba 70x38 de hueco, así que overflow recortaba un píxel
-   por lado —se notaba sobre todo arriba, donde suelen empezar los iconos. */
-.okey-screen {
-  box-sizing: content-box;
-  width: 72px; height: 40px; flex-shrink: 0; overflow: hidden;
-  display: flex; align-items: center; justify-content: center;
-  background: #05050a; border: 1px solid #2a2a36; border-radius: 2px;
-}
-.okey.has-icon .okey-screen { border-color: rgba(var(--primary-rgb), 0.5); }
-.okey-canvas { image-rendering: pixelated; display: block; }
-.okey-text { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: #e9e2ff; }
-.okey-action { font-size: 9px; line-height: 1.25; text-align: center; color: var(--text-muted); min-height: 22px; }
-.okey-action.assigned { color: var(--secondary); }
-/* Las teclas 10 y 12 no tienen pantalla, pero en el editor de perfiles siguen
-   siendo seleccionables: solo se atenúan. */
-.okey.roleless { opacity: 0.72; }
-.okey.roleless .okey-screen { background: rgba(0,0,0,0.35); border-style: dashed; }
-.grid-status { margin-top: 10px; font-size: 11px; text-align: center; color: var(--text-muted); line-height: 1.5; }
-
-/* En el editor de perfiles la rejilla comparte panel con el resto de ajustes:
-   se limita el ancho para que no se estire hasta deformar la réplica. */
-.editor-board .okey-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 520px; }
 
 /* Panel de colocación de la capa flotante */
 .field-label b { color: var(--primary); font-weight: 700; font-family: var(--font-mono); }
@@ -2383,21 +2090,9 @@ textarea.text-input { resize: vertical; font-family: inherit; line-height: 1.4; 
 
 /* ================= RESPONSIVE ================= */
 @media (max-width: 1180px) {
-  .editor-layout, .oled-grid, .auto-grid, .wheel-tune { grid-template-columns: minmax(0, 1fr); }
-
-  /* En pantalla estrecha los dos paneles se apilan: vuelve a haber un único
-     scroll de página, como en el resto de vistas. */
-  .view:has(.editor-layout) { display: block; overflow-y: auto; }
-  #profiles-body { display: block; flex: initial; overflow: visible; }
-  .editor-layout { flex: initial; overflow: visible; }
-  .editor-main, .editor-inspector { height: auto; overflow: visible; }
+  .oled-grid, .auto-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* --- Páginas de perfil --- */
-.page-toggle { margin-left: 4px; }
-.page-toggle .toggle-btn { min-width: 30px; padding: 6px 9px; font-variant-numeric: tabular-nums; }
-.page-toggle .page-add, .page-toggle .page-del { font-weight: 700; opacity: 0.7; }
-.page-toggle .page-add:hover, .page-toggle .page-del:hover { opacity: 1; }
 .consumer-chip.full { width: 100%; margin-top: 6px; text-align: center; }
 
 /* ================= MODO SOLO LECTURA =================
@@ -2464,19 +2159,9 @@ body.read-only #timeout-selector {
 .gate-note { font-size: 12px; color: var(--text-faint); line-height: 1.5; }
 .gate-note strong { color: var(--text-muted); }
 
-/* Marca de "esto lo ejecuta el PC" en la rejilla de teclas. Va pegada al texto de
-   la acción y no en una esquina: lo que califica es la acción, no la tecla. */
-.okey-pc {
-  display: inline-flex;
-  vertical-align: -1px;
-  margin-left: 0.25rem;
-  opacity: 0.65;
-}
-
 /* Pestaña o botón que en esta plataforma no puede funcionar. Se ve, pero no se
    pulsa: el usuario tiene que poder averiguar que la opción existe y por qué no
    está disponible aquí. */
-.inspector-tab.unsupported,
 .secondary-btn.unsupported {
   opacity: 0.4;
   cursor: not-allowed;
@@ -2536,60 +2221,13 @@ body.read-only #timeout-selector {
    Lo de arriba de esta sección viene de la versión anterior y va por tokens;
    esto lo ajusta al lenguaje nuevo sin tocar el marcado que pintan los JS. */
 
-/* Pestañas de perfil: control segmentado de iOS en una cápsula, con el icono
-   OLED de cada perfil brillando como en la réplica. */
-.profile-bar { align-items: center; margin-bottom: 16px; }
-.profile-tabs {
-  gap: 2px; padding: 3px;
-  border-radius: 12px;
-  background: var(--fill-soft);
-  border: 1px solid var(--border-light);
-}
-.profile-tab {
-  padding: 7px 14px; gap: 8px;
-  background: transparent; border: none; border-radius: 9px;
-  font-weight: 600;
-}
-.profile-tab:hover { background: var(--hover); }
-.profile-tab.active {
-  background: var(--segment-on); color: var(--segment-on-text);
-  box-shadow: 0 3px 8px rgba(0,0,0,0.16), 0 1px 1px rgba(0,0,0,0.06), inset 0 0.5px 0 rgba(255,255,255,0.12);
-}
-.tab-icon-canvas { filter: drop-shadow(0 0 2px rgba(79, 227, 255, 0.7)); border-radius: 2px; }
-.tab-live {
-  font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em;
-  color: var(--on-primary); background: var(--primary);
-}
-
-/* Acciones del perfil: botones de barra de herramientas, sin relleno hasta
-   que el ratón pasa por encima. */
-.profile-bar-actions { gap: 2px; }
-.profile-bar-actions .secondary-btn {
-  background: transparent; padding: 7px 10px; font-size: 12.5px; color: var(--text-muted);
-}
-.profile-bar-actions .secondary-btn:hover:not(:disabled) { background: var(--fill-soft); color: var(--text-main); }
-.profile-bar-actions .secondary-btn.danger { color: var(--danger); }
-.profile-bar-actions .secondary-btn.active { background: var(--sidebar-sel); color: var(--primary); }
-.profile-count { border-left-color: var(--separator); margin-left: 6px; }
-
-.variant-bar { background: transparent; border: 1px solid var(--border-light); padding: 8px 12px; }
-
-/* Las miniaturas de pantalla: negro de panel y el mismo brillo que la réplica. */
-.okey-screen, .oled-preview-box #oled-preview {
+/* La miniatura del editor de iconos: negro de panel y el mismo brillo que la réplica. */
+.oled-preview-box #oled-preview {
   background: #010203; border-color: #000;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
 }
-.okey-canvas { filter: drop-shadow(0 0 1px rgba(79, 227, 255, 0.85)) drop-shadow(0 0 3px rgba(79, 227, 255, 0.35)); }
-.okey-text { color: #d6f6ff; text-shadow: 0 0 4px rgba(79, 227, 255, 0.6); }
-.okey.has-icon .okey-screen { border-color: #000; }
-.okey { border-radius: 14px; }
-.okey.selected { background: rgba(var(--primary-rgb), 0.1); }
-.okey-num em { color: var(--primary); }
 
-/* Tarjetas de edición: los paneles de iOS, con el título más sobrio. */
-.editor-board, .editor-inspector { border-radius: var(--radius-lg); }
-.inspector-head h3 { font-size: 17px; font-weight: 700; }
-.rotary-title, .field-label { letter-spacing: 0.05em; }
+.field-label { letter-spacing: 0.05em; }
 
 /* El lienzo del editor de iconos, sobre negro de panel. */
 .oled-canvas-wrap { background: #020304; }

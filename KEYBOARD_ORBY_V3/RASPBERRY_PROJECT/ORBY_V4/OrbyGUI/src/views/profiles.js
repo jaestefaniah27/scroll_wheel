@@ -1486,7 +1486,7 @@ function renderPiecePanel(piece) {
         <span class="nav-icon">${icon(isClick ? 'record' : 'reset', 15)}</span>
         <h3>${escape(name)}</h3>
       </div>
-      ${renderRotaryInspector({ bare: true })}`;
+      ${renderRotaryInspector()}`;
   }
 
   return `
@@ -1786,9 +1786,9 @@ function updateDerived(detents) {
 
 // Lista de teclas HID reutilizada por los dos editores.
 
-// `bare` lo pide el panel del Inicio: solo el editor, sin la caja ni la
+// El editor de la acción de un gesto, para el panel del Inicio: sin caja ni
 // cabecera, que allí pone él con su "‹ Atrás".
-function renderRotaryInspector({ bare = false } = {}) {
+function renderRotaryInspector() {
   const base = selectedRotarySlot();
   const found = rotaryPart(base);
   const action = currentRotary();
@@ -1816,21 +1816,9 @@ function renderRotaryInspector({ bare = false } = {}) {
   const changed = Boolean(variant && variants.override(variant, 'rotary', rotarySlot(base, view.layer)));
   const baseAction = currentProfile().rotary?.[rotarySlot(base, view.layer)] || { type: 0, modifier: 0, keycode: 0 };
 
-  // Sin asignar todavía, ya con un complemento, con desplazamiento/zoom o con
-  // una pareja multimedia (Volumen, Brillo, Zoom), el giro se edita como
-  // control único (ver gestureRows); solo Atajo de teclado y las
-  // acciones multimedia sueltas, que necesitan tecla distinta por sentido,
-  // siguen enseñando "Giro horario"/"antihorario".
-  const subLabel = !isClick && isUnifiedTurnAction(action) ? 'Giro' : found?.part.label;
 
   return `
-    <div class="${bare ? 'rp-body-bare' : 'editor-inspector glass-panel'}">
-      ${bare ? '' : `
-      <div class="inspector-head">
-        <h3>${escape(found?.group.name || 'Mando')}</h3>
-        <span class="pill">${view.layer === 'super' ? 'Capa SUPER' : 'Capa normal'}</span>
-      </div>
-      <p class="setting-desc inspector-sub">${escape(subLabel || '')}</p>`}
+    <div class="rp-body-bare">
 
       ${variant ? `
         <div class="override-note ${changed ? 'is-override' : ''}">
