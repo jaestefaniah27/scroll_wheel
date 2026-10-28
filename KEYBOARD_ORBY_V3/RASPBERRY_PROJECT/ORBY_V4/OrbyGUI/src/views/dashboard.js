@@ -153,6 +153,14 @@ export function init() {
     if (!inside) closeZoom();
   });
   window.addEventListener('keydown', onKey);
+  // Ampliada, la vista no se desplaza: el encuadre se calcula con ella en su
+  // sitio. overflow: hidden no basta, porque el navegador la sigue moviendo
+  // para enseñar lo que recibe el foco o un clic (un botón del panel, una
+  // tecla medio tapada), y todo quedaba corrido a un lado.
+  const dashView = document.getElementById('view-dashboard');
+  dashView.addEventListener('scroll', () => {
+    if (zoom && (dashView.scrollLeft || dashView.scrollTop)) dashView.scrollTo(0, 0);
+  });
   window.addEventListener('resize', () => { if (zoom) frameZone(); });
 
   render();

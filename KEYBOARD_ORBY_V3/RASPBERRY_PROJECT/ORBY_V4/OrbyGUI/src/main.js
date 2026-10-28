@@ -93,9 +93,14 @@ function initChrome() {
   // derecha de la barra, y de Ajustes lo que se usa poco (cambio automático,
   // consola): las filas con data-goto.
   document.getElementById('btn-back').addEventListener('click', goBack);
-  document.getElementById('btn-settings').addEventListener('click', () => switchView('view-settings'));
-  document.getElementById('btn-profiles').addEventListener('click',
-    () => switchView('view-profiles', { profile: state.activeProfileIdx }));
+  // Pulsar otra vez el botón de la vista abierta vuelve al Inicio: es un
+  // conmutador, como los de una barra de herramientas de macOS.
+  document.getElementById('btn-settings').addEventListener('click',
+    () => switchView(activeView === 'view-settings' ? 'view-dashboard' : 'view-settings'));
+  document.getElementById('btn-profiles').addEventListener('click', () => {
+    if (activeView === 'view-profiles') switchView('view-dashboard');
+    else switchView('view-profiles', { profile: state.activeProfileIdx });
+  });
   document.querySelectorAll('[data-goto]').forEach((row) => {
     row.addEventListener('click', () => switchView(row.dataset.goto));
   });

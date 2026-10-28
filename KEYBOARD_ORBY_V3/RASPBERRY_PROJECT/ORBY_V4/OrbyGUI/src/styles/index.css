@@ -803,6 +803,21 @@ button { font-family: inherit; }
   transition: background 0.2s var(--ease-out), transform 0.3s var(--spring);
 }
 .zp-done:hover { background: rgba(var(--primary-rgb), 0.24); }
+.zp-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+/* "Páginas": lleva a gestionarlas en la ficha del perfil. */
+.zp-pages {
+  display: flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 12px 0 10px;
+  border: none; border-radius: 999px;
+  background: var(--fill-soft);
+  color: var(--text-main);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s var(--ease-out), transform 0.3s var(--spring);
+}
+.zp-pages .icn { color: var(--primary); }
+.zp-pages:hover { background: var(--fill); }
+.zp-pages:active { transform: scale(0.95); }
 .zp-done:active { transform: scale(0.95); }
 
 .zp-bar {
@@ -1221,6 +1236,12 @@ button { font-family: inherit; }
   color: var(--primary);
 }
 .pm-detail .variant-card { margin-top: 12px; }
+/* Al llegar desde el botón "Páginas" del panel: un destello de acento. */
+.pm-flash { animation: pmFlash 1.6s var(--ease-out); }
+@keyframes pmFlash {
+  0%, 30% { box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.8), 0 0 24px rgba(var(--primary-rgb), 0.3); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0); }
+}
 .pm-detail .library-panel { margin-bottom: 0; }
 
 @media (prefers-reduced-motion: reduce) {

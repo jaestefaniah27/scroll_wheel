@@ -67,6 +67,18 @@ export function init() {
   setRenderers({ render, renderKeyGrid });
 
   wire(document.getElementById('profiles-body'));
+
+  // Pulsar fuera de la lista y de la ficha (el fondo de la vista o el hueco
+  // bajo la ficha) vuelve al Inicio, como tocar fuera de una hoja. Se mira el
+  // primer elemento de la ruta y no closest(): la vista se repinta con muchos
+  // clics y el elemento pulsado puede no estar ya en el documento.
+  document.getElementById('view-profiles').addEventListener('click', (e) => {
+    const hit = e.composedPath()[0];
+    if (hit?.id === 'view-profiles' || hit?.id === 'profiles-body'
+        || hit?.classList?.contains('pm') || hit?.classList?.contains('pm-detail')) {
+      goTo('view-dashboard');
+    }
+  });
   window.addEventListener('keydown', onCapture, true);
 
   // Las miniaturas llegan por el puerto serie con retraso. En el panel las
@@ -161,11 +173,21 @@ function selectTarget({ key = null, rotary = null }) {
 
 // Entrada desde el botón de perfiles de la barra: se abre por el perfil que
 // tiene puesto el teclado.
-export function openTarget({ profile = state.activeProfileIdx } = {}) {
+export function openTarget({ profile = state.activeProfileIdx, section = null } = {}) {
   view.editingProfile = profile;
   view.variantId = null;
   view.libraryOpen = false;
   render();
+  // `section` es a dónde llevar la vista: el botón "Páginas" del panel cae
+  // en esa parte de la ficha, y se resalta un instante para que se vea dónde.
+  const target = section === 'pages' && document.getElementById('pm-pages');
+  if (target) {
+    target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const list = document.getElementById('pm-pages-list');
+    list?.classList.remove('pm-flash');
+    void list?.offsetWidth;
+    list?.classList.add('pm-flash');
+  }
 }
 
 // "Configurar teclas, rueda y mandos": se editan en el Inicio, sobre la
@@ -388,6 +410,10 @@ function onClick(e) {
     // Pulsar la que ya está abierta la cierra, como una fila desplegable.
     view.variantId = el.dataset.id && el.dataset.id !== view.variantId ? el.dataset.id : null;
     render();
+  } else if (act === 'go-pages') {
+    // Desde el panel del Inicio: las páginas se gestionan en la ficha del
+    // perfil, y hasta ahora había que saber que estaban allí.
+    goTo('view-profiles', { profile: state.activeProfileIdx, section: 'pages' });
   } else if (act === 'pm-edit-keys') {
     editKeysOf(view.editingProfile);
   } else if (act === 'new-variant') {
@@ -1291,8 +1317,8 @@ function renderProfileDetail() {
     </div>
 
     ${hasPages() ? `
-      <h4 class="kp-section">Páginas</h4>
-      <div class="kp-list">
+      <h4 class="kp-section" id="pm-pages">Páginas</h4>
+      <div class="kp-list" id="pm-pages-list">
         ${Array.from({ length: count }, (_, n) => `
           <div class="nav-row pm-page ${n === cur ? 'on' : ''}">
             <button class="pm-page-pick" data-act="page" data-page="${n}" ${live ? '' : 'disabled'}>
@@ -1303,11 +1329,13 @@ function renderProfileDetail() {
             ${count > 1 ? `<button class="pm-page-del" data-act="page-del" data-page="${n}" title="Eliminar la página ${n + 1}"
                                     ${live ? '' : 'disabled'}>${icon('minus', 14)}</button>` : ''}
           </div>`).join('')}
-        ${count < maxPages() ? `
-          <button class="nav-row pm-add" data-act="page-add" ${live ? '' : 'disabled'}>
-            <span class="pm-add-icon">${icon('plus', 14)}</span>
+        <button class="nav-row pm-add" data-act="page-add" ${live && count < maxPages() ? '' : 'disabled'}>
+          <span class="pm-add-icon">${icon('plus', 14)}</span>
+          <span class="nav-row-text">
             <span class="nav-row-title">Añadir página</span>
-          </button>` : ''}
+            ${count >= maxPages() ? `<span class="nav-row-sub">Ya tiene el máximo de ${maxPages()} páginas</span>` : ''}
+          </span>
+        </button>
       </div>
       <p class="kp-note">${live
         ? 'Cada página tiene sus teclas, mandos, rueda e iconos. En el teclado se pasa de una a otra con una pulsación corta del botón de menú.'
@@ -1387,7 +1415,13 @@ function renderPanel() {
         <h2>${view.zone === 'keys' ? 'Teclas' : 'Rueda y mandos'}</h2>
         <span>${escape(where)}</span>
       </div>
-      <button class="zp-done" data-act="panel-done">Listo</button>
+      <div class="zp-head-actions">
+        ${hasPages() ? `
+          <button class="zp-pages" data-act="go-pages" title="Añadir, quitar o cambiar de página">
+            ${icon('pages', 14)}<span>Páginas</span>
+          </button>` : ''}
+        <button class="zp-done" data-act="panel-done">Listo</button>
+      </div>
     </header>
     <div class="zp-bar">
       <div class="layer-toggle">
