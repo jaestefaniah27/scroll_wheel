@@ -1,5 +1,13 @@
 # TODO — Rediseño "Apple-like" de OrbyGUI
 
+> **Estado (rama `claude/windows-app-ux-improvement-*`):** superado en parte por
+> el rediseño del Inicio. Ya no hay barra lateral (una barra superior con los
+> perfiles), las teclas y mandos se editan sobre la réplica ampliada con un
+> panel en dos niveles, y Perfiles es una vista de gestión. Ver la sección
+> *2. Las vistas* del [README](../README.md) y `CLAUDE.md`. Lo de abajo que
+> habla de la barra lateral o de `profiles.js` como editor ya no aplica; las
+> restricciones siguen valiendo.
+
 Objetivo: aplicar la filosofía de diseño del plugin `frontend-design` (claridad,
 jerarquía tipográfica fuerte, espaciado generoso, microinteracciones sutiles) a
 toda la app. Sin framework, sin TypeScript — se queda en CSS + JS vanilla como

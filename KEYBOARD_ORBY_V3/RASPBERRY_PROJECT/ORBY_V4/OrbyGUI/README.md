@@ -47,8 +47,8 @@ para dos cosas:
 - **Abrir la app sin el Orby enchufado** y ver perfiles, páginas, atajos e
   iconos. En **modo lectura**: sin el teclado delante no se deja cambiar nada,
   porque entonces habría dos versiones distintas de la misma configuración y al
-  reconectar alguien tendría que perder sus cambios. Se avisa con un cartel fijo
-  abajo a la izquierda, y cualquier intento de edición lo corta
+  reconectar alguien tendría que perder sus cambios. Lo dice la cápsula de
+  estado de la barra superior, y cualquier intento de edición lo corta
   `requireDevice()` (`src/ui.js`) antes de tocar el modelo.
 
 - **No descargarlo todo en cada conexión.** El teclado resume su configuración
@@ -76,50 +76,82 @@ deja los huecos en blanco un segundo.
 
 ## 2. Las vistas
 
-### Dashboard
-Réplica del hardware con la misma disposición que el teclado: las doce teclas a
-la izquierda y, a su derecha, los mandos — los dos encoders arriba y la rueda
-magnética, un disco grande, debajo. Las teclas se iluminan al pulsarlas, los
-encoders parpadean y el disco de la rueda gira los mismos grados que la rueda
-real. El panel de estado indica el perfil activo, si SUPER está pulsada, la
-sensibilidad que se está aplicando y si Windows ha activado el **scroll de alta
-resolución**.
+No hay barra lateral. Arriba, una sola barra:
 
-### Perfiles y macros
-El editor de verdad, y el único sitio donde se configura un perfil entero:
-teclas, mandos giratorios y rueda de scroll. Ya no hay datos duplicados en la
-app: todo se lee del firmware.
+- **A la izquierda**, si el teclado está conectado (el globo da la versión de
+  firmware y si las pantallas del Inicio van en directo). Sin teclado dice
+  *solo lectura*. Mientras hay algo pendiente de escribir en la Flash sale
+  *Guardando…*; pulsarlo lo escribe ya.
+- **En el centro**, en el Inicio, los perfiles como pestañas con su icono. La
+  del activo enseña sus páginas en puntos: se pulsa un punto para ir a esa
+  página, o la propia pestaña para pasar a la siguiente. Pulsar otra pestaña
+  cambia el perfil del teclado. Fuera del Inicio, el título de la vista y una
+  flecha para volver.
+- **A la derecha**, modo claro/oscuro, **Perfiles** y **Ajustes**. Volver a
+  pulsar el de la vista abierta devuelve al Inicio.
 
-1. Elige el perfil arriba (el marcado *EN USO* es el activo en el teclado).
-2. Cambia entre capa **NORMAL** y **SUPER** (la capa SUPER se activa con la tecla 12).
-   El interruptor afecta a **todo**: teclas, mandos y rueda.
-3. Pulsa cualquier tecla de la réplica para abrir el inspector. Cada tecla
-   muestra su **icono real** —el mismo que está en la pantalla OLED— o su
-   etiqueta de texto, más el atajo que ejecuta.
-4. En el inspector puedes:
-   - Ver la pantalla tal cual y saltar al editor con **Editar icono**, que abre
-     el editor de iconos con ese perfil, esa tecla y esa capa ya seleccionados.
-   - Editar la **etiqueta OLED** (máx. 7 caracteres), que es lo que se muestra
-     cuando la tecla no tiene icono.
-   - Marcar **modificadores** (Ctrl, Shift, Alt, Win…).
-   - Elegir la **tecla** de la lista.
-   - O pulsar **Capturar atajo** y teclear la combinación directamente en el PC.
-   - O asignar una **acción multimedia** (play/pausa, siguiente, calculadora…).
+### Inicio
+La réplica del teclado, viva: las diez pantallas son las del teclado (con un
+firmware 4.12 o posterior, exactamente lo que enseña; sin él, lo que la app
+sabe que hay, dibujado con la misma fuente e iconos). Las teclas se hunden al
+pulsarlas y el disco de la rueda gira los mismos grados que la de verdad.
+
+**Configurar es ampliar.** Debajo de la réplica hay dos botones, alineados con
+su zona: *Configurar teclas* y *Rueda y mandos*. Pulsarlos, o pulsar cualquier
+pieza de la réplica, acerca la vista a esa zona y abre a la derecha el panel de
+configuración. Pulsar fuera del aparato, *Listo* o Esc lo deshacen. Las flechas
+mueven la tecla elegida por la rejilla.
+
+En el panel, arriba: el perfil y la página, **Páginas** (lleva a gestionarlas),
+la capa **NORMAL / SUPER** y, si la página tiene variaciones, cuál se edita.
+Elegir SUPER o una variación pone la réplica en vista previa de lo que se
+edita, con un cartel que lo dice: el teclado tiene puesta otra cosa.
+
+- **Una tecla**: su pantalla en grande y lo que hace; copiar, pegar y borrar;
+  los tipos de acción en baldosas (atajo, multimedia y PC, abrir app, escribir
+  texto, secuencia, grabar, ir a página), y *Editar el icono*. Al entrar en un
+  tipo, su editor, con *‹ Tecla N* para volver.
+  - Ver la pantalla tal cual y saltar al editor de iconos con esa tecla ya
+    elegida.
+  - Marcar **modificadores** y elegir la **tecla**, o **Capturar atajo** y
+    teclear la combinación en el PC.
+  - O una **acción multimedia** (play/pausa, siguiente, calculadora…).
+- **Rueda y mandos**: se elige la pieza (Mando izq., Rueda, Mando der.) y
+  salen sus gestos —girar, o un sentido y otro, y pulsar— con lo que hace cada
+  uno. La rueda trae además su sensibilidad.
 
 Cada cambio viaja al teclado al instante y se ve en las pantallas OLED.
 
-**Variaciones por aplicación.** Bajo las pestañas hay una barra *Según la app*.
-Sirve para lo que no merece un perfil entero: si en tu editor «seleccionar todo»
-es **Ctrl+E** en vez de Ctrl+A, no dupliques el perfil — crea una **variación**.
+### Perfiles
+La gestión de perfiles, como Ajustes de macOS: la lista a la izquierda y la
+ficha del elegido a la derecha. Pulsar fuera de los dos cuadros vuelve al Inicio.
 
-1. Pulsa **Nueva variación**: se crea ya apuntando a la aplicación que tengas
-   delante.
+- **Nombre** (hasta 7 letras), que se edita en la cabecera, y **Usar en el
+  teclado** si no es el activo.
+- **Configurar teclas, rueda y mandos**: lo pone en el teclado si hace falta y
+  abre el Inicio con el zoom.
+- **Icono del perfil**, el que enseña el menú de perfiles del teclado.
+- **Duplicar** (con sus iconos) y **Eliminar** (siempre tiene que quedar uno).
+- **Páginas**: la actual marcada, quitar con (−) y *Añadir página*. Se cambian
+  sobre el perfil que tiene puesto el teclado.
+- **Según la app**: las variaciones de la página (ver abajo).
+- **Nuevo** y **Biblioteca** abajo de la lista, con el contador de huecos
+  (`4 / 16`). El teclado admite hasta **16 perfiles**; al borrar, los
+  siguientes se desplazan y el menú físico del teclado se ajusta solo.
+
+**Variaciones por aplicación.** Sirven para lo que no merece un perfil entero:
+si en tu editor «seleccionar todo» es **Ctrl+E** en vez de Ctrl+A, no dupliques
+el perfil — crea una **variación**.
+
+1. En la ficha del perfil, **Nueva variación**: se crea ya apuntando a la
+   aplicación que tengas delante.
 2. Añade **todas las aplicaciones** que quieras que la disparen — el mismo
    retoque suele valer para varias. Escríbelas y pulsa *Añadir* (o Enter), usa
    *La app de delante*, y quítalas con la ✕ de cada etiqueta. Basta con que
    encaje una.
-3. Cambia solo las teclas o mandos que difieran. Salen marcados en ámbar, y el
-   inspector te recuerda qué hace el perfil base, con **Volver al valor base**.
+3. En el Inicio, elígela arriba del panel y cambia solo las teclas o mandos que
+   difieran. En la réplica salen con un punto naranja, y el panel te recuerda
+   qué hace el perfil base, con **Volver al valor base**.
 4. Al ponerte delante de cualquiera de esas apps, el teclado aplica los cambios
    encima del perfil; al salir, vuelve solo.
 
@@ -129,15 +161,9 @@ atajos de teclas, acciones de los mandos y etiquetas OLED (no la calibración de
 la rueda ni los iconos).
 
 > Es un ajuste del PC: se escribe en la RAM del teclado al vuelo y **nunca** en
-> Flash. Al pulsar *Guardar en Flash* la app quita la variación, guarda el perfil
+> Flash. Antes de guardar en la Flash la app quita la variación, guarda el perfil
 > base y la vuelve a poner, para que no se cuele en el perfil guardado. Necesita
 > el detector de aplicaciones activado (interruptor de *Cambio automático*).
-
-**Crear, duplicar y eliminar perfiles.** A la derecha de las pestañas hay tres
-botones y un contador de huecos (`4 / 16`). *Nuevo* añade un perfil vacío,
-*Duplicar* copia el actual **con sus iconos**, y *Eliminar* lo borra (siempre
-tiene que quedar uno). El teclado admite hasta **16 perfiles**; al borrar, los
-siguientes se desplazan y el menú físico del teclado se ajusta solo.
 
 > En el menú del teclado (mantener los dos encoders, o la tecla 10) los perfiles
 > se recorren con el encoder izquierdo, uno por pantalla, y las teclas 1-5 son
@@ -151,9 +177,8 @@ siguientes se desplazan y el menú físico del teclado se ajusta solo.
 > leerlos directamente de la Flash mapeada. Si lo que necesitas son retoques por
 > aplicación, casi siempre salen más a cuenta las **variaciones**.
 
-**Mandos giratorios.** Debajo de las teclas hay un bloque con los dos encoders y
-la rueda de scroll, en el mismo orden que en el teclado. Cada uno tiene sus
-huecos configurables:
+**Mandos giratorios.** En la zona *Rueda y mandos* del Inicio, en el mismo orden
+que en el teclado. Cada uno tiene sus huecos configurables:
 
 | Mando | Huecos |
 |---|---|
@@ -180,7 +205,7 @@ volumen) es cosa del giro: cada muesca mueve un paso y el signo lo pone el hueco
 sentidos. Si el mando está montado del revés, *Invertir giro* le da la vuelta al
 par entero. En la pulsación del encoder solo salen las órdenes sueltas
 (encender, apagar…), que es lo único que tiene sentido sin giro; para una tecla
-están en su pestaña *Multimedia*.
+están en su tipo *Multimedia y PC*.
 
 > Solo **Desplazar vertical** aprovecha la alta resolución de la rueda
 > magnética. El resto de acciones son discretas y trabajan por clics completos.
@@ -194,17 +219,16 @@ tecla 12. Al crear o duplicar un perfil los dos empiezan iguales, así que si no
 tocas nada el comportamiento es el de siempre; en cuanto cambias uno, ese
 encoder hace dos cosas distintas dentro del mismo perfil.
 
-**Rueda de scroll.** Abajo del todo está la calibración de la rueda magnética,
-que también pertenece al perfil **y a la capa**: cuántos clics equivale una
-vuelta completa (preajustes Preciso 12, Suave 30, Estándar 60, Rápido 120), la
-inversión de dirección, las cifras derivadas y un dial con el giro en vivo para
-comprobarlo sin salir de la app. Un mismo perfil puede desplazar fino en normal
+**Rueda de scroll.** En el panel de la rueda está su sensibilidad, que también
+pertenece al perfil **y a la capa**: cuántos clics equivale una vuelta completa
+(preajustes Preciso 12, Suave 30, Estándar 60, Rápido 120), la inversión de
+dirección y las cifras derivadas. Un mismo perfil puede desplazar fino en normal
 y a saltos largos con SUPER.
 
 **Marcador en pantalla.** El dial sigue el **ángulo absoluto** del sensor, así
 que se queda donde esté la rueda de verdad en lugar de volver al cero al
 soltarla. Como el imán y el marcador de la tapa se montan en cualquier ángulo,
-la tarjeta trae su calibración:
+en **Ajustes → Calibración de la rueda** está su calibración:
 
 - **Círculo o raya** para el marcador.
 - **Invertir giro**, si el dibujo gira al revés que la rueda.
@@ -287,7 +311,7 @@ direcciona su memoria.
 > Pantallas 1–9 → teclas 1–9. Pantalla 10 → tecla 11.
 
 ### Cambio automático
-El teclado cambia de perfil solo según la aplicación que tengas delante. Cada
+Se abre desde **Ajustes → Herramientas**. El teclado cambia de perfil solo según la aplicación que tengas delante. Cada
 aplicación es una **tarjeta**: programa y perfil, nada más.
 
 1. Activa el interruptor de arriba a la derecha.
@@ -307,7 +331,7 @@ detecta ninguna de las apps añadidas; también puede dejarse en «no cambiar».
 
 > **Dos cosas distintas.** Aquí eliges *qué perfil* se activa con cada app. Si lo
 > que quieres es que un perfil concreto tenga un par de teclas diferentes en una
-> app, eso son las **variaciones** de *Perfiles y macros*: guardan solo las
+> app, eso son las **variaciones** de *Perfiles*: guardan solo las
 > diferencias y evitan duplicar el perfil. El mismo detector alimenta las dos.
 
 Detalles de implementación:
@@ -329,7 +353,7 @@ la configuración y restauración de valores de fábrica.
 PC lo ponen los complementos. Un complemento es un programa que traduce «esta
 tecla» a «esto de fuera»: una lámpara de la red, un servicio con API, lo que sea
 que el ordenador pueda alcanzar. Sus acciones aparecen luego en la pestaña
-*Multimedia* de una tecla y como un tipo más en un mando.
+*Multimedia y PC* de una tecla y como un tipo más en un mando.
 
 La instalación por defecto **no trae ninguno**. Se instalan desde esta tarjeta
 (desde un `.zip` o, si lo estás desarrollando, desde su carpeta) y viven en
@@ -359,7 +383,7 @@ vuelta al teclado, creando los perfiles que hagan falta.
 > a cualquier cosa.
 
 ### Consola serie
-Terminal bidireccional con filtro, pausa e historial (flecha arriba). Búfer
+Se abre desde **Ajustes → Herramientas**. Terminal bidireccional con filtro, pausa e historial (flecha arriba). Búfer
 circular de 500 líneas: la versión anterior reconstruía el DOM en cada línea y
 acababa congelándose con la telemetría de la rueda.
 
@@ -446,8 +470,8 @@ consumo), 2=atajo de teclado, 3=desplazar vertical, 4=desplazar horizontal,
 ## 5. Problemas frecuentes
 
 **El scroll sigue saltando de tres en tres líneas.**
-Mira el indicador de alta resolución en la tarjeta *Rueda de scroll*, dentro de
-*Perfiles y macros*. Si está en «No negociada», desconecta y reconecta el
+Mira la nota de alta resolución bajo la sensibilidad, en Inicio → *Rueda y
+mandos* → *Rueda*. Si dice que Windows todavía no la ha pedido, desconecta y reconecta el
 teclado. Si sigue igual, comprueba que el firmware flasheado es el 3.0 (`ACK`
 debe responder `FW=3.0`). Algunas
 aplicaciones Win32 antiguas ignoran el desplazamiento fraccionario y seguirán
