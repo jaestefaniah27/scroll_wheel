@@ -407,7 +407,7 @@ export function render() {
   const editingSuper = Boolean(zoom) && profiles.panelLayer() === 'super';
   document.querySelector('#view-dashboard .dash')?.classList.toggle('layer-super', editingSuper);
   document.getElementById(`hw-key-${KEY_SUPER}`)?.classList.toggle('held', editingSuper);
-  if (!editingSuper && oledMirror.isPreviewing()) oledMirror.endPreview(animRates());
+  if (!editingSuper && oledMirror.isPreviewing()) oledMirror.endPreview();
   renderBoardFallback(prof, editingSuper || state.superActive ? 'super' : 'normal', editingSuper);
 }
 

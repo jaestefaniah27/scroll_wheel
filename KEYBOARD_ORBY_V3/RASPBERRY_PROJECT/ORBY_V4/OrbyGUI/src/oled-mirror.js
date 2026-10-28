@@ -41,6 +41,9 @@ let live = false;           // el teclado está mandando sus pantallas
 // se guarda en liveDest para volver a ello.
 let previewing = false;
 const liveDest = blank();
+// La vuelta de la vista previa sin espejo está pendiente: el siguiente
+// fallback() la hace al ritmo rápido y no al del teclado.
+let fbPending = false;
 let raf = 0;
 let last = 0;
 
@@ -259,7 +262,9 @@ export function fallback(ctx, screens, rates = {}) {
   if (!changed) return;
   const group = { [A.KIND.PROFILE]: 'profile', [A.KIND.PAGE_NEXT]: 'carousel', [A.KIND.PAGE_PREV]: 'carousel',
     [A.KIND.MENU_OPEN]: 'menu', [A.KIND.MENU_CLOSE]: 'menu' }[k] || 'fade';
-  start(k, rates[group] || 1, dest);
+  const rate = fbPending && k === A.KIND.MENU_CLOSE ? PREVIEW_RATE : rates[group] || 1;
+  fbPending = false;
+  start(k, rate, dest);
 }
 
 // Enseñar en las pantallas algo que el teclado no tiene puesto: la capa SUPER
@@ -268,7 +273,14 @@ export function fallback(ctx, screens, rates = {}) {
 // normal mientras nadie mantenga SUPER. Entra con la misma transición que el
 // teclado al pulsar SUPER y se pinta con fallback(), que es lo que la app sabe
 // dibujar; endPreview() vuelve a lo que esté mandando el teclado.
+// Ritmo fijo para entrar y salir de la vista previa: 0,15 s. No sigue a la
+// velocidad de animaciones del teclado (Ajustes), que está pensada para usarlo:
+// aquí la transición solo dice "esto es otra capa" mientras se edita, y con un
+// ritmo lento cada cambio NORMAL/SUPER se hacía esperar.
+const PREVIEW_RATE = A.duration(A.KIND.MENU_OPEN, 1) / 0.15;
+
 export function preview(ctx, screens, rates = {}) {
+  rates = { ...rates, menu: PREVIEW_RATE };
   if (!previewing) {
     previewing = true;
     fbCtx = live ? { ...ctx, super: false } : fbCtx;
@@ -277,14 +289,17 @@ export function preview(ctx, screens, rates = {}) {
   fallback(ctx, screens, rates);
 }
 
-export function endPreview(rates = {}) {
+export function endPreview() {
   if (!previewing) return;
   previewing = false;
   if (live) {
     fbCtx = null;
-    start(A.KIND.MENU_CLOSE, rates.menu || 1, liveDest);
+    start(A.KIND.MENU_CLOSE, PREVIEW_RATE, liveDest);
+    return;
   }
-  // Sin espejo, el siguiente fallback() de la capa normal hace la vuelta.
+  // Sin espejo, la vuelta la hace el siguiente fallback() de la capa normal;
+  // se le avisa para que salga al mismo ritmo que la entrada.
+  fbPending = true;
 }
 
 export const isPreviewing = () => previewing;
