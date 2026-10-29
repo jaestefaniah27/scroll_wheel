@@ -23,6 +23,7 @@ commit, más este documento.
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
 |---|---|---|
+| **4.14** | Caben **255 secuencias** en el teclado en vez de 64 (`MAXMACROS=255`). La app no libera el id de una macro que ya no usa ninguna tecla, así que con el uso los ids pasaban de 63, y una secuencia rehecha a partir de ahí se quedaba tachada sin la app aunque solo llevara teclas, clics y esperas. Las secuencias se mudan en la Flash a 896-1024 KB; las de la 4.13 se traen solas al arrancar | Orvy 1.1.3 o posterior para que la app lo ofrezca como actualización; cualquiera para usarlo (la app lee el tope del handshake) |
 | **4.13** | Sin cambios de protocolo. Con SUPER sujeta, la pulsación corta de la tecla de menú **retrocede** de página (sin SUPER sigue avanzando) y la larga abre el **menú principal** (ajustes) en vez del de perfiles. Mientras se mantiene el menú para cambiar de perfil, el espejo sigue mandando las pantallas: la app ya ve abrirse y cerrarse ese menú | Orvy 1.1.2 o posterior para que la app lo ofrezca como actualización; cualquiera para usarlo |
 | **4.12** | `MIRROR:1`/`MIRROR:0` y bandera `MIRROR=1`: con el espejo encendido el teclado manda, en cada transición de las pantallas, el destino de las diez (`EV:SCR:<n>:<720 hex>`) y el tipo y ritmo de la animación (`EV:SCR:GO:<tipo>:<ritmo x1000>`), además del negativo de las teclas sujetas (`EV:INV:<máscara>`) y el reposo (`EV:DISP:<0/1>`). La app los anima con una copia en JS de `oled_anim.h` y el Inicio enseña las pantallas exactamente como las del teclado | Orvy 1.1.0 o posterior para verlo; con una app anterior no cambia nada (no pide el espejo) |
 | **4.11** | Sin cambios de protocolo. El menú de perfiles que se abre manteniendo la tecla de menú ya no lleva la pantalla de Volver: soltar la tecla ya cancela. Desde el menú principal (Perfiles) sigue llevándola | Orvy 1.0.11 o posterior para que la app lo ofrezca como actualización; cualquiera para usarlo |
@@ -52,7 +53,7 @@ Dos cosas distintas, y conviene no confundirlas:
 
 - **La versión** (`FW=4.2`) dice qué firmware es. Sirve para el veredicto que se
   le enseña al usuario y para las funciones que no llevan bandera propia.
-- **Las banderas del handshake** (`MACROS=1`, `HASH=1`, `MAXMACROS=64`,
+- **Las banderas del handshake** (`MACROS=1`, `HASH=1`, `MAXMACROS=255`,
   `MAXPAGES=…`) dicen qué trae *este* aparato. Cuando existe la bandera, manda
   ella: sobrevive a un firmware recompilado con otras opciones.
 
