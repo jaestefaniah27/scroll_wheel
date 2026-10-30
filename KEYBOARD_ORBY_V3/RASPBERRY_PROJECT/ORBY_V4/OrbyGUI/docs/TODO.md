@@ -18,9 +18,8 @@ probado en simulación (`tools/test/test_anim.cpp`) y compilando en Linux. Falta
 * [ ] Ver en `npm run tauri:dev` que el Inicio repite la animación con el espejo
   (`EV:SCR:GO:9:<ritmo>:<origen>`) y que sale de la misma pantalla que en el teclado.
 * [x] Pasar `tools/test/run.ps1` en Windows: en verde (2026-10-30), y los 62 tests de Node con Node 22.
-* [x] Publicada como `fw-v4.18` (2026-10-30, con los mandos al revés por defecto) en vez de `fw-v4.17`; (prerelease) desde el servidor, como
-  dice el `CLAUDE.md` de la raíz. La app 1.1.3, que hace falta para verla en el Inicio,
-  ya está publicada (2026-10-30).
+* [x] Publicada (prerelease) como `fw-v4.18` en vez de `fw-v4.17`, junto con los mandos
+  al revés por defecto, y con Orvy 1.1.4, que es la que la instala (2026-10-30).
 
 * [ ] Añadir biblioteca de perfiles para que los usuarios no tengan que crear los suyos desde cero. Los usuarios pueden aportar al pool de perfiles en el apartado perfiles de la comunidad. Los usuarios tienen que aportar Nombre del perfil y descripción. EN la biblioteca de perfiles sale el número total de atajos, el número de páginas, etc.
 * [ ] He pensado en monetizar perfiles o paquetes de perfiles: el software básico es gratis pero hay que pagar una baja cantidad de € para obtener acceso a un paquete de perfiles para unos cuantos programas como Altium, excel, word, etc, o pagar cada uno por separado. Estudiar viavilidad de esto.
