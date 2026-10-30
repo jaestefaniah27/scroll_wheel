@@ -22,3 +22,7 @@ OrbyGUI/release/
 OrbyGUI/win-unpacked/
 **/OrbyGUI/release/
 **/OrbyGUI/win-unpacked/
+
+# Vite deja este fichero temporal junto a vite.config.js al arrancar (y a veces no
+# lo borra si se corta el proceso).
+*.timestamp-*.mjs

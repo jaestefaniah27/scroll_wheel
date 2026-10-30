@@ -716,7 +716,7 @@ button { font-family: inherit; }
    el color de las variaciones en Perfiles. */
 .hw-key.is-override::after {
   content: '';
-  position: absolute;
+  position: absolute; z-index: 2;
   top: calc(-1.2 * var(--u));
   right: calc(-1.2 * var(--u));
   width: calc(3.4 * var(--u));
@@ -1313,18 +1313,23 @@ button { font-family: inherit; }
 
 .hw-key, .hw-encoder, .hw-wheel {
   position: absolute; left: calc(var(--x) * 1%); top: calc(var(--y) * 1%);
-  translate: -50% -50%;
 }
+.hw-encoder, .hw-wheel { translate: -50% -50%; }
 
 /* Teclas: hueco en la carcasa, y encima la tecla vista a través de la cap
-   transparente (el degradado blanco es el reflejo del plástico). */
-.hw-key { width: calc(20 * var(--u)); aspect-ratio: 1; }
+   transparente (el degradado blanco es el reflejo del plástico).
+   Se centran con márgenes y no con `translate` a propósito: `translate` haría
+   de cada tecla una capa de pintado aparte, y al reordenarlas (drag-sort.js)
+   la tapa que se desliza a la celda de al lado quedaba debajo del hueco de
+   esa tecla. Sin capa propia, todos los huecos (z-index 0) quedan por debajo
+   de todas las tapas (z-index 1). */
+.hw-key { width: calc(20 * var(--u)); aspect-ratio: 1; margin: calc(-10 * var(--u)) 0 0 calc(-10 * var(--u)); }
 .hw-key::before {
-  content: ''; position: absolute; inset: calc(-0.8 * var(--u)); border-radius: calc(4 * var(--u));
+  content: ''; z-index: 0; position: absolute; inset: calc(-0.8 * var(--u)); border-radius: calc(4 * var(--u));
   background: #2a2c30; box-shadow: inset 0 calc(0.8 * var(--u)) calc(1.5 * var(--u)) rgba(0,0,0,0.6);
 }
 .hw-cap {
-  position: absolute; inset: 0; border-radius: calc(3.4 * var(--u));
+  position: absolute; inset: 0; z-index: 1; border-radius: calc(3.4 * var(--u));
   display: grid; place-items: center;
   background:
     linear-gradient(150deg, rgba(255,255,255,0.5), rgba(255,255,255,0.08) 38%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.2)),
@@ -1874,11 +1879,9 @@ body.is-sort-dragging, body.is-sort-dragging * { cursor: grabbing !important; us
 /* Mover teclas en la réplica ampliada. Mantener pulsada la levanta un poco
    (se nota que va a pasar algo); arrastrando, las demás tiemblan como las
    apps del iPhone. El temblor va en `rotate`, aparte de `transform`, que es
-   el que usa el arrastre para apartarlas. Cada .hw-key es su propio contexto
-   de apilado (lleva `translate`), así que es ella la que tiene que subir para
-   que la tapa arrastrada pase por encima de las vecinas. */
-.hw-cap.is-pressing { transform: scale(1.08); transition: transform 0.38s var(--ease-out); }
-.hw-key:has(> .hw-cap:is(.is-dragging, .is-dropping, .is-pressing)) { z-index: 20; }
+   el que usa el arrastre para apartarlas. La tapa que se arrastra va por
+   encima de todo; las que se apartan, encima de los huecos (ver .hw-key). */
+.hw-cap.is-pressing { z-index: 20; transform: scale(1.08); transition: transform 0.38s var(--ease-out); }
 .hw-key .hw-cap.is-dragging {
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,0.5),
@@ -1887,7 +1890,9 @@ body.is-sort-dragging, body.is-sort-dragging * { cursor: grabbing !important; us
 }
 .orby-board.is-sorting .hw-cap.is-shifting { animation: cap-jiggle 0.3s ease-in-out infinite alternate; }
 .orby-board.is-sorting .hw-key:nth-child(odd) .hw-cap.is-shifting { animation-delay: -0.15s; animation-direction: alternate-reverse; }
-.orby-board.is-sorting .hw-key.no-screen { opacity: 0.45; }
+/* En la tapa y no en la tecla: una opacidad en la tecla volvería a darle
+   capa propia, y las tapas que pasan junto a MENÚ y SUPER se meterían debajo. */
+.orby-board.is-sorting .hw-key.no-screen .hw-cap { opacity: 0.45; }
 @keyframes cap-jiggle { from { rotate: -1.6deg; } to { rotate: 1.6deg; } }
 @media (prefers-reduced-motion: reduce) {
   .orby-board.is-sorting .hw-cap.is-shifting { animation: none; }

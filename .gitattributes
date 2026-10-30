@@ -1,0 +1,16 @@
+# Saltos de línea: en el repositorio, siempre LF; en la copia de trabajo, lo que
+# quiera cada sistema. Sin esto, en Windows cualquier herramienta que reescriba un
+# fichero con CRLF (la CLI de Tauri con Cargo.toml, npm, el editor) lo dejaba como
+# modificado sin cambiar nada de verdad, y eso bloqueaba el `git pull`.
+* text=auto
+
+# Binarios: que git no intente convertir nada en ellos.
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.dll binary
+*.uf2 binary
+*.3mf binary
+*.step binary
+*.zip binary
