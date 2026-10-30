@@ -11,8 +11,9 @@ usuario `ubuntu`).
 - Las releases de app (`v*`) y de firmware (`fw-v*`) viven en **jaestefaniah27/scroll_wheel**, no en Orvy.
 - Clon para publicar: `~/orvy-release/scroll_wheel` en ese servidor. Su `git push` va por SSH con la clave de la
   cuenta (`~/.ssh/github_poker`): sirve para las etiquetas.
-- Crear la release y subir el `.uf2` va por la API de GitHub y necesita un token con permiso de escritura en
-  scroll_wheel, en `~/.config/github/token` del mismo servidor (fuera del repo, `chmod 600`).
+- Crear la release y subir el `.uf2` va por la API de GitHub con el token que **ya está** en el servidor:
+  `/etc/orvy/github-release.token` (de root, 600; `ubuntu` lo lee con `sudo`). No lo pidas ni lo imprimas: el
+  script lo lee solo. Buscarlo solo en `~` no lo encuentra.
 - Pasos: (1) compilar el `.uf2` en la sesión y subirlo, con su `.sha256` y `notas.md`, a una rama temporal
   `release-assets/<etiqueta>` de scroll_wheel (las ramas sí se pueden subir desde la sesión); (2) en el servidor,
   traerla a `~/orvy-release/<etiqueta>/`, etiquetar y `git push` la etiqueta desde el clon; (3)
