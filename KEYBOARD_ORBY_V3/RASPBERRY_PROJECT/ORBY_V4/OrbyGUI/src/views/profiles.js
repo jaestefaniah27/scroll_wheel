@@ -41,7 +41,8 @@ import { loadPCMacros, savePCMacros, macroById, ensureMacro, nextMacroId, POWER_
          isAppMacro, isTextMacro, isPowerMacro, isPluginMacro, pluginMacroOf, describeRotaryFull,
          isRecordOrResetMacro, describeKey, keyNeedsApp, rotaryNeedsApp } from './profiles/macros-store.js';
 import { applyKeymap, blankKeyScreen, keyClipboard, copyKey, pasteKey,
-         applyRotary } from './profiles/keys.js';
+         applyRotary, MOVABLE_KEYS, reorderKeys } from './profiles/keys.js';
+import { armDrag, startSortDrag } from './profiles/drag-sort.js';
 import { recordMacro, detachResetKey, onRecorderState, setRecordMode, setRecordSpeed,
          clearRecording, toggleRecording, renderRecordTab,
          startRecordingKey } from './profiles/recorder.js';
@@ -49,7 +50,7 @@ import { seqAddAction, currentAppStep, setAppKind, currentTextStep, setPowerActi
          giroInvertido, consumerGiroInvertido, invertirGiroPar, setRotaryPluginAction, setRotaryConsumerPair,
          pickAppTarget, pickAppFocus,
          renderAppTab, renderTextTab, pickOpenTarget, setSeqOpenKind, pickSeqOpenFocus,
-         seqRemoveAction, seqMoveAction, seqActionAt, seqKeyBuilder, startPositionCapture,
+         seqRemoveAction, seqMoveStep, seqSetDelayAfter, setSeqInsertAt, seqActionAt, seqKeyBuilder, startPositionCapture,
          stopPositionCapture, applyRotaryMacro, cancelPositionPoll,
          openPluginValuePick, setPluginValuePickValue, cancelPluginValuePick,
          confirmPluginValuePick } from './profiles/macro-tabs.js';
@@ -70,6 +71,7 @@ export function init() {
   body.addEventListener('click', onClick);
   body.addEventListener('change', onChange);
   body.addEventListener('input', onInput);
+  body.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('keydown', onCapture, true);
 
   // Enter en el campo de aplicaciones añade, para poder encadenar varias.
@@ -291,10 +293,8 @@ function onClick(e) {
     seqKeyBuilder.keycode = 0;
   } else if (act === 'seq-del') {
     seqRemoveAction(Number(el.dataset.index));
-  } else if (act === 'seq-move-up') {
-    seqMoveAction(Number(el.dataset.index), -1);
-  } else if (act === 'seq-move-down') {
-    seqMoveAction(Number(el.dataset.index), 1);
+  } else if (act === 'seq-insert-at') {
+    setSeqInsertAt(el.dataset.at === 'end' ? null : Number(el.dataset.at));
   } else if (act === 'seq-record') {
     view.capturing = view.capturing === 'sequence' ? false : 'sequence';
     render();
@@ -347,6 +347,50 @@ function onClick(e) {
   }
 }
 
+// Arrastres: el asa de un paso de la secuencia, y mantener pulsada una tecla
+// de la réplica para cambiarla de sitio. Los dos los mueve drag-sort.js; aquí
+// solo se decide qué se arrastra y qué pasa al soltar.
+const KEY_HOLD_MS = 380;
+
+function onPointerDown(e) {
+  const handle = e.target.closest('[data-drag="seq-step"]');
+  if (handle) {
+    // Sin esto el navegador empieza a seleccionar texto de las filas.
+    e.preventDefault();
+    const list = handle.closest('.seq-list');
+    armDrag(e, {
+      start: (ev) => {
+        const items = [...list.querySelectorAll(':scope > .seq-item')];
+        startSortDrag({
+          items, fromIndex: Number(handle.dataset.step), event: ev, layout: 'list', container: list,
+          onDrop: (from, to) => seqMoveStep(from, to),
+        });
+      },
+    });
+    return;
+  }
+
+  const key = e.target.closest('#profile-key-grid .okey[data-key]');
+  if (!key) return;
+  const pos = MOVABLE_KEYS.indexOf(Number(key.dataset.key));
+  if (pos < 0 || !state.connected) return;
+  const grid = key.parentElement;
+  armDrag(e, {
+    holdMs: KEY_HOLD_MS,
+    threshold: 8,
+    pressEl: key,
+    start: (ev) => {
+      const items = MOVABLE_KEYS.map((k) => grid.querySelector(`.okey[data-key="${k}"]`));
+      if (items.some((it) => !it)) return;
+      startSortDrag({
+        items, fromIndex: pos, event: ev, layout: 'grid', container: grid,
+        onDrop: (from, to) => { reorderKeys(from, to); },
+        onEnd: () => { if (pendingGridRender) renderKeyGrid(); },
+      });
+    },
+  });
+}
+
 function onChange(e) {
   const act = e.target.dataset.act;
   if (act === 'pick-keycode') {
@@ -379,9 +423,10 @@ function onChange(e) {
       savePCMacros(currentMacroId());
       render();
     }
-  } else if (act === 'seq-delay-ms') {
-    const step = seqActionAt(Number(e.target.dataset.index));
-    if (step) { step.ms = Math.max(0, Number(e.target.value) || 0); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-wait') {
+    const ms = Math.max(0, Math.round(Number(e.target.value)) || 0);
+    e.target.value = ms;
+    seqSetDelayAfter(Number(e.target.dataset.index), ms);
   } else if (act === 'seq-gap-ms') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) {
@@ -1329,9 +1374,14 @@ function paintKeyGrid() {
   }
 }
 
+// Repintar a media tecla arrastrada la dejaría caer (los iconos siguen
+// llegando del teclado al conectar): se aplaza hasta soltarla.
+let pendingGridRender = false;
 function renderKeyGrid() {
   const grid = document.getElementById('profile-key-grid');
   if (!grid) return;
+  if (grid.classList.contains('is-sorting')) { pendingGridRender = true; return; }
+  pendingGridRender = false;
   grid.innerHTML = renderKeyGridInner();
   paintKeyGrid();
 }
