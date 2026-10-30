@@ -14,6 +14,19 @@ import { OLED_FRAME_BYTES, ROTARY_TWIN } from './constants.js';
 import { view, currentProfile, selectedKeyIndex, selectedRotarySlot, editingVariant,
          currentAction, rerender, rerenderKeyGrid } from './view-state.js';
 import { macroById, nextMacroId, ensureMacro, savePCMacros } from './macros-store.js';
+import * as undo from './undo.js';
+
+// Lo que hay ahora en un hueco, tal como lo quiere undo.record: la diferencia
+// de la variación si se edita una, o el valor del perfil.
+function beforeOf(prof, variant, kind, slot) {
+  if (variant) return variants.override(variant, kind, slot);
+  return prof[kind][slot];
+}
+
+function iconBefore(profileIdx, prof, lslot) {
+  const own = Boolean(prof.oledMask & (1 << lslot));
+  return { own, bytes: own ? cache.get(profileIdx, lslot) : null };
+}
 
 // Escribe la etiqueta de un hueco, respetando variación (igual que applyKeymap):
 // se usa tanto al escribir en el campo de texto como al pegar una tecla copiada.
@@ -25,6 +38,7 @@ export async function writeLabel(slot, text) {
   const prof = currentProfile();
   if (!prof) return;
   const variant = editingVariant();
+  undo.record('labels', slot, beforeOf(prof, variant, 'labels', slot), { after: text });
 
   if (variant) {
     variants.setOverride(variant.id, 'labels', slot, text);
@@ -55,6 +69,7 @@ export async function applyKeymap(modifier, keycode) {
 
   const slot = keymapSlot(index, view.layer);
   const variant = editingVariant();
+  undo.record('keys', slot, beforeOf(prof, variant, 'keys', slot), { after: { modifier, keycode } });
 
   // Editando una variación no se toca el perfil ni la Flash: se guarda la
   // diferencia en el PC, y solo se escribe en el teclado si esa variación es la
@@ -108,6 +123,7 @@ export async function blankKeyScreen() {
   // de la tecla que había antes.
   await writeLabel(lslot, '');
 
+  undo.record('icon', lslot, iconBefore(view.editingProfile, prof, lslot));
   try {
     const blank = new Uint8Array(OLED_FRAME_BYTES);
     await device.uploadOled(view.editingProfile, lslot, blank);
@@ -177,6 +193,7 @@ export async function pasteKey() {
 
   await writeLabel(lslot, keyClipboard.label || '');
 
+  undo.record('icon', lslot, iconBefore(view.editingProfile, prof, lslot));
   try {
     if (keyClipboard.icon) {
       await device.uploadOled(view.editingProfile, lslot, keyClipboard.icon);
@@ -253,6 +270,17 @@ export async function reorderKeys(from, to) {
   order.splice(from, 1);
   order.splice(to, 0, from);
 
+  // Soltar la tecla es un gesto: todo lo que se corre se deshace de una vez.
+  undo.beginGesture();
+  order.forEach((orig, pos) => {
+    if (orig === pos) return;
+    const k = MOVABLE_KEYS[pos];
+    const lslot = labelSlot(k, layer);
+    undo.record('keys', keymapSlot(k, layer), prof.keys[keymapSlot(k, layer)], { label: 'mover teclas' });
+    undo.record('labels', lslot, prof.labels[lslot] || '');
+    undo.record('icon', lslot, iconBefore(profileIdx, prof, lslot));
+  });
+
   const changed = [];
   order.forEach((orig, pos) => {
     if (orig === pos) return;
@@ -304,6 +332,7 @@ async function writeRotarySlots(writes) {
   const prof = currentProfile();
   if (!prof) return;
   const variant = editingVariant();
+  for (const [s, a] of writes) undo.record('rotary', s, beforeOf(prof, variant, 'rotary', s), { after: a });
 
   // Editando una variación se guardan diferencias en el PC; el teclado solo se
   // toca si esa variación es la que está puesta ahora mismo.

@@ -834,6 +834,11 @@ button { font-family: inherit; }
 .zp-pages .icn { color: var(--primary); }
 .zp-pages:hover { background: var(--fill); }
 .zp-pages:active { transform: scale(0.95); }
+/* Deshacer: solo el icono, que el título dice qué se deshace. */
+.zp-undo { width: 30px; padding: 0; justify-content: center; }
+.zp-undo:disabled { opacity: 0.35; cursor: default; }
+.zp-undo:disabled:hover { background: var(--fill-soft); }
+.zp-undo:disabled .icn { color: var(--text-muted); }
 .zp-done:active { transform: scale(0.95); }
 
 .zp-bar {

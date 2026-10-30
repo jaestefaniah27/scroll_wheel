@@ -43,6 +43,7 @@ import { loadPCMacros, savePCMacros, macroById, ensureMacro, nextMacroId, POWER_
 import { applyKeymap, blankKeyScreen, keyClipboard, copyKey, pasteKey,
          applyRotary } from './profiles/keys.js';
 import { armDrag, startSortDrag } from './profiles/drag-sort.js';
+import * as undo from './profiles/undo.js';
 import { recordMacro, detachResetKey, onRecorderState, setRecordMode, setRecordSpeed,
          clearRecording, toggleRecording, renderRecordTab,
          startRecordingKey } from './profiles/recorder.js';
@@ -82,6 +83,20 @@ export function init() {
     }
   });
   window.addEventListener('keydown', onCapture, true);
+
+  // Ctrl+Z deshace, como en cualquier editor. Dentro de un campo de texto no:
+  // ahí es el deshacer del propio campo. Capturando un atajo tampoco: Ctrl+Z
+  // es justo lo que se quiere asignar.
+  window.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
+    if (!isActiveView() || view.capturing) return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+    e.preventDefault();
+    undo.undo();
+  });
+  // El botón se pone al día solo, sin repintar el panel: un repintado a media
+  // escritura de una etiqueta le quitaría el foco al campo.
+  undo.onChange(paintUndoButtons);
 
   // Las miniaturas llegan por el puerto serie con retraso. En el panel las
   // repinta la réplica; en la vista de perfiles basta con pintar los <canvas>
@@ -304,6 +319,22 @@ function renderKeyPanel() {
   return view.panelNav ? renderKeyKind(i, view.panelNav) : renderKeyRoot(i);
 }
 
+// Estado del botón de deshacer: apagado sin nada que deshacer, y con el nombre
+// de lo que se va a deshacer en el título (el botón es solo un icono).
+function undoAttrs() {
+  return undo.canUndo()
+    ? `title="Deshacer: ${escape(undo.lastLabel())} (Ctrl+Z)"`
+    : 'disabled title="Nada que deshacer"';
+}
+
+function paintUndoButtons() {
+  const can = undo.canUndo();
+  document.querySelectorAll('[data-act="undo"]').forEach((b) => {
+    b.disabled = !can;
+    b.title = can ? `Deshacer: ${undo.lastLabel()} (Ctrl+Z)` : 'Nada que deshacer';
+  });
+}
+
 // La pantalla de la tecla tal como la dibuja el teclado (key-screen.js): el
 // icono subido, el del catálogo con su nombre o la etiqueta en su fuente. El
 // <canvas> se pinta después de insertar el HTML (paintKeyScreens).
@@ -435,6 +466,8 @@ function onClick(e) {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const act = el.dataset.act;
+  if (act === 'undo') { undo.undo(); return; }
+  undo.beginGesture();
 
   if (act === 'pick-profile') {
     view.editingProfile = Number(el.dataset.idx);
@@ -681,6 +714,7 @@ function onPointerDown(e) {
 
 function onChange(e) {
   const act = e.target.dataset.act;
+  undo.beginGesture();
   if (act === 'panel-variant') {
     view.variantId = e.target.value || null;
     view.panelNav = null;
@@ -785,6 +819,7 @@ function saveMacroNow(id) {
 let labelDebounce = null;
 function onInput(e) {
   const act = e.target.dataset.act;
+  undo.beginGesture();
 
   if (act === 'seq-text') {
     const step = seqActionAt(Number(e.target.dataset.index));
@@ -1472,6 +1507,7 @@ function renderPanel() {
         <span>${escape(where)}</span>
       </div>
       <div class="zp-head-actions">
+        <button class="zp-pages zp-undo" data-act="undo" ${undoAttrs()}>${icon('undo', 15)}</button>
         ${hasPages() ? `
           <button class="zp-pages" data-act="go-pages" title="Añadir, quitar o cambiar de página">
             ${icon('pages', 14)}<span>Páginas</span>
