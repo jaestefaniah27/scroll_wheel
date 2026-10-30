@@ -77,7 +77,19 @@ export const ROTARY_TYPES = {
   SCROLL_V: 3,
   SCROLL_H: 4,
   ZOOM: 5,
+  // Firmware 4.15 (bandera MENUKEY del handshake): navegación con los mandos,
+  // para poder dejar libre la tecla de menú.
+  PAGE: 6,  // giro: horario pasa de página, antihorario vuelve
+  MENU: 7,  // clic: abre un menú del teclado; keycode = cuál (ROTARY_MENUS)
 };
+
+// Los menús que puede abrir un clic con ROTARY_TYPES.MENU (enum RotaryMenu del
+// firmware).
+export const ROTARY_MENUS = [
+  { value: 0, label: 'Selector de perfiles' },
+  { value: 1, label: 'Gestor de páginas' },
+  { value: 2, label: 'Menú principal' },
+];
 
 // Huecos de acciones giratorias dentro de cada perfil (enum RotarySlot).
 export const ROTARY_SLOTS = {
@@ -94,12 +106,24 @@ export function isScrollType(type) {
       || type === ROTARY_TYPES.ZOOM;
 }
 
+// Las que llevan el sentido en el propio giro: una sola acción vale para los
+// dos huecos del mando (el firmware lee la del horario). Son los
+// desplazamientos y el cambio de página.
+export function isTwoWayType(type) {
+  return isScrollType(type) || type === ROTARY_TYPES.PAGE;
+}
+
 export function describeRotary(action) {
   if (!action) return 'Sin asignar';
   switch (action.type) {
     case ROTARY_TYPES.SCROLL_V: return 'Desplazar vertical';
     case ROTARY_TYPES.SCROLL_H: return 'Desplazar horizontal';
     case ROTARY_TYPES.ZOOM:     return 'Zoom (Ctrl + rueda)';
+    case ROTARY_TYPES.PAGE:     return 'Cambiar de página';
+    case ROTARY_TYPES.MENU: {
+      const m = ROTARY_MENUS.find((x) => x.value === action.keycode);
+      return `Abrir ${(m ? m.label : 'menú').toLowerCase()}`;
+    }
     case ROTARY_TYPES.CONSUMER: {
       const c = CONSUMER_ACTIONS.find((a) => a.index === action.keycode);
       return c ? c.label : `Multimedia ${action.keycode}`;

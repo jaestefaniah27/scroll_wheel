@@ -6,7 +6,7 @@
 
 import * as device from '../../device.js';
 import { state, markDirty, keymapSlot, labelSlot, rotarySlot, KEY_TO_SCREEN, syncFromDevice } from '../../store.js';
-import { MACRO_MODIFIER, isScrollType } from '../../hid-keys.js';
+import { MACRO_MODIFIER, isTwoWayType } from '../../hid-keys.js';
 import { toast, requireDevice } from '../../ui.js';
 import * as cache from '../../oled-cache.js';
 import * as variants from '../../variants.js';
@@ -348,7 +348,7 @@ export async function applyRotary(action) {
   // acción del sentido contrario. Espejamos el par para que la interfaz no
   // enseñe una configuración que no se va a aplicar.
   const twinBase = ROTARY_TWIN[base];
-  const mirror = twinBase !== undefined && isScrollType(action.type);
+  const mirror = twinBase !== undefined && isTwoWayType(action.type);
   const writes = [[slot, action]];
   if (mirror) writes.push([rotarySlot(twinBase, view.layer), { ...action }]);
 

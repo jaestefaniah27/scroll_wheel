@@ -15,12 +15,12 @@
 
 import * as device from '../device.js';
 import { state, notify, markDirty, subscribe, syncFromDevice, profileMeta, labelSlot, keymapSlot,
-         rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU,
+         rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU, keyRole,
          hasPages, maxPages, pageCountOf, selectPage, addPage, removePage } from '../store.js';
 import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, CONSUMER_TURN_OPTIONS, consumerPairFor,
          GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER,
          MACRO_MODIFIER, KEY_GROUPS, describeAction, eventToAction,
-         ROTARY_TYPES, ROTARY_SLOTS, isScrollType, describeRotary } from '../hid-keys.js';
+         ROTARY_TYPES, ROTARY_SLOTS, ROTARY_MENUS, isScrollType, isTwoWayType, describeRotary } from '../hid-keys.js';
 import { icon } from '../icons.js';
 import { toast, requireDevice, confirmar } from '../ui.js';
 import { goTo } from '../nav.js';
@@ -308,7 +308,10 @@ function renderKeyPanel() {
 // icono subido, el del catálogo con su nombre o la etiqueta en su fuente. El
 // <canvas> se pinta después de insertar el HTML (paintKeyScreens).
 function keyScreen(i, lslot, cls) {
-  if (lslot < 0) return `<span class="${cls} is-role">${i + 1 === KEY_SUPER ? 'SUPER' : 'MENÚ'}</span>`;
+  if (lslot < 0) {
+    const role = keyRole(i);
+    return `<span class="${cls} is-role">${role === 'super' ? 'SUPER' : role === 'menu' ? 'MENÚ' : 'SIN PANTALLA'}</span>`;
+  }
   return `<span class="${cls}"><canvas data-key-screen="${i}"></canvas></span>`;
 }
 
@@ -336,18 +339,23 @@ function renderKeyRoot(i) {
   const changed = Boolean(variant && (variants.override(variant, 'keys', keymapSlot(i, view.layer))
                                    || variants.override(variant, 'labels', lslot)));
   const now = kind ? describeKey(action) : 'Sin asignar';
+  // Papel fijo (SUPER, o la de menú mientras no se libere): no hay nada que
+  // asignar. Sin pantalla a secas (la 10 liberada, en este prototipo) sí hay
+  // acción, solo falta lo de cómo se ve.
+  const role = keyRole(i);
+  const canFreeMenu = role === 'menu' && compat.supports(state.deviceInfo, 'menuKey');
 
   return `
     <div class="kp-hero">
       ${keyScreen(i, lslot, 'kp-screen')}
       <div class="kp-hero-text">
         <h3>Tecla ${i + 1}</h3>
-        ${lslot < 0 ? '' : `<span class="kp-now ${kind ? '' : 'is-empty'}">${escape(now)}</span>`}
+        ${role ? '' : `<span class="kp-now ${kind ? '' : 'is-empty'}">${escape(now)}</span>`}
         ${keyNeedsApp(action) ? `<span class="kp-badge">${icon('plug', 12)} La ejecuta el PC con Orvy abierta</span>` : ''}
       </div>
     </div>
 
-    ${lslot < 0 ? '' : `<div class="kp-tools">
+    ${role ? '' : `<div class="kp-tools">
       <button class="kp-tool" data-act="copy-key">${icon('copy', 17)}<span>Copiar</span></button>
       <button class="kp-tool" data-act="paste-key" ${keyClipboard ? '' : 'disabled'}
               title="${keyClipboard ? 'Pegar en esta tecla' : 'Copia una tecla primero'}">${icon('paste', 17)}<span>Pegar</span></button>
@@ -367,12 +375,14 @@ function renderKeyRoot(i) {
                      </button>` : ''}
       </div>` : ''}
 
-    ${lslot < 0 ? `
+    ${role ? `
       <p class="kp-note">
         Esta tecla no tiene pantalla ni acción propia:
-        ${i + 1 === KEY_SUPER
+        ${role === 'super'
           ? 'mantenida, cambia el resto del teclado a la capa SUPER.'
           : 'una pulsación corta pasa de página y mantenida abre el menú del teclado.'}
+        ${canFreeMenu ? `Si llevas las páginas y el menú con un mando, puedes dejarla
+          libre en <strong>Ajustes → Tecla 10</strong> y darle la acción que quieras.` : ''}
       </p>` : `
       <h4 class="kp-section">Qué hace</h4>
       <div class="kp-kinds">
@@ -389,6 +399,11 @@ function renderKeyRoot(i) {
         }).join('')}
       </div>
 
+      ${lslot < 0 ? `
+      <p class="kp-note">
+        Esta tecla no tiene pantalla en este prototipo: hace lo que le pongas, pero no
+        hay icono que dibujar.
+      </p>` : `
       <h4 class="kp-section">Cómo se ve</h4>
       <div class="kp-list">
         <button class="nav-row" data-act="edit-icon" data-key="${i}" data-tint="violet">
@@ -399,7 +414,7 @@ function renderKeyRoot(i) {
           </span>
           <span class="nav-row-chev">${icon('chevron', 14)}</span>
         </button>
-      </div>`}`;
+      </div>`}`}`;
 }
 
 function renderKeyKind(i, kindId) {
@@ -492,6 +507,8 @@ function onClick(e) {
     pasteKey();
   } else if (act === 'rotary-type') {
     applyRotary({ type: Number(el.dataset.type), modifier: 0, keycode: 0 });
+  } else if (act === 'rotary-menu') {
+    applyRotary({ type: ROTARY_TYPES.MENU, modifier: 0, keycode: Number(el.dataset.menu) });
   } else if (act === 'rotary-consumer') {
     applyRotary({ type: ROTARY_TYPES.CONSUMER, modifier: 0, keycode: Number(el.dataset.index) });
   } else if (act === 'rotary-consumer-pair') {
@@ -1793,7 +1810,7 @@ function isPluginTurnAction(action) {
 
 function isUnifiedTurnAction(action) {
   if (!action?.type) return true;
-  if (isScrollType(action.type)) return true;
+  if (isTwoWayType(action.type)) return true;
   if (isPluginTurnAction(action)) return true;
   return action.type === ROTARY_TYPES.CONSUMER && Boolean(consumerPairFor(action.keycode));
 }
@@ -1835,7 +1852,8 @@ function renderRotaryInspector() {
   const puedeInvertir = puedeInvertirPlugin || Boolean(consumerPair);
   const invertido = puedeInvertirPlugin ? giroInvertido(base, pluginStep)
     : consumerPair ? consumerGiroInvertido(base, action) : false;
-  const types = ROTARY_TYPE_OPTIONS.filter((t) => !(isClick && t.turnOnly));
+  const types = ROTARY_TYPE_OPTIONS.filter((t) => !(isClick && t.turnOnly) && !(!isClick && t.clickOnly)
+    && (!t.feature || compat.supports(state.deviceInfo, t.feature)));
 
   const variant = editingVariant();
   const changed = Boolean(variant && variants.override(variant, 'rotary', rotarySlot(base, view.layer)));
@@ -1951,6 +1969,27 @@ function renderRotaryInspector() {
         <button class="primary-btn full ${view.capturing ? 'is-capturing' : ''}" data-act="capture">
           ${icon('key', 16)} ${view.capturing ? 'Pulsa el atajo… (Esc cancela)' : 'Capturar atajo del teclado'}
         </button>` : ''}
+
+      ${action.type === ROTARY_TYPES.PAGE ? `
+        <p class="setting-desc">
+          Una página por muesca: en sentido horario, la siguiente; al revés, la anterior.
+          Da la vuelta al llegar al final. Con un perfil de una sola página no hace nada.
+        </p>` : ''}
+
+      ${action.type === ROTARY_TYPES.MENU ? `
+        <div class="field">
+          <span class="field-label">Qué menú</span>
+          <div class="consumer-grid">
+            ${ROTARY_MENUS.map((m) => `
+              <button class="consumer-chip ${action.keycode === m.value ? 'on' : ''}"
+                      data-act="rotary-menu" data-menu="${m.value}">${m.label}</button>`).join('')}
+          </div>
+          <p class="setting-desc">
+            Dentro del menú, cualquiera de los dos mandos mueve la selección al girar y la
+            confirma al pulsar; las teclas eligen directamente. Volver deja el teclado como
+            estaba.
+          </p>
+        </div>` : ''}
 
       ${isScrollType(action.type) ? `
         <p class="setting-desc">

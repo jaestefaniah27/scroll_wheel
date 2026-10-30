@@ -114,6 +114,13 @@ export function send(command) {
 
 export const setProfile   = (idx) => request(`SET_PROFILE:${idx}`, { match: (l) => l.startsWith('PROFILE:OK:') });
 export const setTimeout_   = (v)  => request(`SET_TIMEOUT:${v}`,    { match: (l) => l.startsWith('TIMEOUT:OK:') });
+// Tecla 10: 0 = la de menú (corta pasa de página, larga abre perfiles), 1 = una
+// tecla normal. Firmware 4.15 (bandera MENUKEY); como el reposo, va a la Flash
+// con el guardado de siempre.
+export const setMenuKey   = (v)  => request(`SET_MENUKEY:${v}`,    {
+  match: (l) => l.startsWith('MENUKEY:OK:'),
+  fail: (l) => l.startsWith('ERR:MENUKEY'),
+});
 
 // Velocidad de las animaciones de las pantallas. `group` es el orden del
 // firmware (OledAnim::Group): 0 menú, 1 carrusel de páginas, 2 submenú,
@@ -273,6 +280,7 @@ export function getState() {
         return true;
       }
       if (line.startsWith('STATE:TIMEOUT:'))    { state.timeout   = parseInt(line.slice(14), 10); return true; }
+      if (line.startsWith('STATE:MENUKEY:'))    { state.menuKeyMode = parseInt(line.slice(14), 10); return true; }
       if (line.startsWith('STATE:ANIMSPEED:')) {
         const [menu, carousel, submenu, profile, fade] = line.slice(16).split(':').map(Number);
         state.animSpeed = { menu, carousel, submenu, profile, fade };

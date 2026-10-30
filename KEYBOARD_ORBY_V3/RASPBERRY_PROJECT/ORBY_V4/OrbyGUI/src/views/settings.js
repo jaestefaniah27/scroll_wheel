@@ -2,7 +2,8 @@
 
 import * as device from '../device.js';
 import * as updater from '../updater.js';
-import { state, markDirty, syncFromDevice } from '../store.js';
+import { state, markDirty, notify, syncFromDevice, pageCountOf, withPinnedPage } from '../store.js';
+import { ROTARY_TYPES, ROTARY_SLOTS } from '../hid-keys.js';
 import { toast, requireDevice, confirmar } from '../ui.js';
 import { runExport, runImport } from '../backup.js';
 import * as cache from '../oled-cache.js';
@@ -84,6 +85,7 @@ export function init() {
   });
 
   initAnimSpeed();
+  initMenuKey();
   if (hayAutostart) initAutostart();
   if (hayPlugins) initPlugins();
 
@@ -596,6 +598,153 @@ function renderAnimSpeed() {
   }).join('');
 }
 
+// ================= Tecla 10 =================
+// Con la tecla de menú libre, las páginas y el selector de perfiles se llevan
+// con un mando (ROTARY_TYPES.PAGE y MENU, firmware 4.15). El menú principal no
+// se pierde nunca: los dos mandos pulsados 2 s lo abren en cualquier caso.
+
+// Los tres huecos de cada mando en la capa normal (enum RotarySlot).
+const ENCODER_SLOTS = {
+  1: { cw: ROTARY_SLOTS.ENC1_CW, ccw: ROTARY_SLOTS.ENC1_CCW, click: ROTARY_SLOTS.ENC1_CLICK },
+  2: { cw: ROTARY_SLOTS.ENC2_CW, ccw: ROTARY_SLOTS.ENC2_CCW, click: ROTARY_SLOTS.ENC2_CLICK },
+};
+
+// Qué mando lleva ya páginas y menú en todas las páginas de todos los
+// perfiles, o null. Es lo que hace falta para soltar la tecla sin perder nada.
+function navEncoder() {
+  for (const enc of [1, 2]) {
+    const { cw, click } = ENCODER_SLOTS[enc];
+    const everywhere = state.profiles.length > 0 && state.profiles.every((prof) =>
+      (prof.pages || []).slice(0, pageCountOf(prof)).every((pg) =>
+        pg.rotary?.[cw]?.type === ROTARY_TYPES.PAGE && pg.rotary?.[click]?.type === ROTARY_TYPES.MENU));
+    if (everywhere) return enc;
+  }
+  return null;
+}
+
+function renderMenuKey() {
+  const card = document.getElementById('settings-menukey');
+  if (!card) return;
+  if (!compat.supports(state.deviceInfo, 'menuKey')) {
+    card.classList.add('hidden');
+    return;
+  }
+  card.classList.remove('hidden');
+  document.querySelectorAll('#menukey-selector .opt-btn').forEach((b) => {
+    b.classList.toggle('active', Number(b.dataset.val) === state.menuKeyMode);
+  });
+  const enc = navEncoder();
+  document.querySelectorAll('#menukey-encoder .opt-btn').forEach((b) => {
+    b.classList.toggle('active', Number(b.dataset.enc) === enc);
+  });
+  const desc = document.getElementById('menukey-desc');
+  if (!desc) return;
+  if (state.menuKeyMode !== 1) {
+    desc.textContent = 'Es la tecla de menú: una pulsación corta pasa de página y mantenida '
+      + 'abre el selector de perfiles. Como tecla normal hace lo que le asignes en cada página.';
+  } else if (enc) {
+    desc.textContent = `Es una tecla normal. Las páginas y el selector de perfiles van en el mando `
+      + `${enc === 1 ? 'izquierdo' : 'derecho'}; el menú principal, con los dos mandos pulsados 2 s.`;
+  } else {
+    desc.textContent = 'Es una tecla normal. Ojo: no todos los perfiles tienen un mando para '
+      + 'cambiar de página y abrir el selector de perfiles. El menú principal sigue a mano con '
+      + 'los dos mandos pulsados 2 s.';
+  }
+}
+
+function initMenuKey() {
+  document.querySelectorAll('#menukey-selector .opt-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const val = Number(btn.dataset.val);
+      if (val === state.menuKeyMode || !requireDevice()) return;
+      if (val === 1 && !navEncoder()) {
+        const ok = await confirmar({
+          titulo: 'Dejar libre la tecla 10',
+          mensaje: 'Sin ella, cambiar de página y abrir el selector de perfiles solo se puede '
+            + 'desde un mando que tenga «Cambiar de página» y «Abrir menú». Puedes ponerlo '
+            + 'en todos los perfiles con los botones de abajo. El menú principal se abre '
+            + 'siempre con los dos mandos pulsados 2 s.',
+          aceptar: 'Dejarla libre',
+        });
+        if (!ok) return;
+      }
+      try {
+        await device.setMenuKey(val);
+        state.menuKeyMode = val;
+        markDirty();
+        render();
+        dashboard.render();
+      } catch {
+        toast('El teclado no confirmó el cambio de la tecla 10', 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('#menukey-encoder .opt-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!requireDevice()) return;
+      const enc = Number(btn.dataset.enc);
+      const ok = await confirmar({
+        titulo: `Páginas y menú en el mando ${enc === 1 ? 'izquierdo' : 'derecho'}`,
+        mensaje: `Cambia el giro y el clic de ese mando en la capa normal de todas las páginas `
+          + `de los ${state.profiles.length} perfiles. Lo que tuvieran asignado se pierde.`,
+        aceptar: 'Cambiar',
+      });
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await applyEncoderNav(enc);
+        markDirty();
+        toast('Mando configurado en todos los perfiles');
+      } catch (err) {
+        toast(`No se pudo terminar: ${err?.message || 'el teclado no respondió'}`, 'error');
+        try { await syncFromDevice(); } catch { /* sin teclado no hay de dónde releer */ }
+      } finally {
+        btn.disabled = false;
+        render();
+        dashboard.render();
+      }
+    });
+  });
+}
+
+// Escribe páginas y menú en un mando, en todas las páginas de todos los
+// perfiles. El firmware solo deja escribir las páginas de un perfil que esté
+// puesto (ver ensureEditTarget en store.js), así que se va activando cada uno
+// y al final se vuelve al que estaba.
+async function applyEncoderNav(enc) {
+  const { cw, ccw, click } = ENCODER_SLOTS[enc];
+  const page = { type: ROTARY_TYPES.PAGE, modifier: 0, keycode: 0 };
+  const menu = { type: ROTARY_TYPES.MENU, modifier: 0, keycode: 0 };
+  const writes = [[cw, page], [ccw, page], [click, menu]];
+  const original = state.activeProfileIdx;
+  try {
+    for (let p = 0; p < state.profiles.length; p++) {
+      const prof = state.profiles[p];
+      if (state.activeProfileIdx !== p) {
+        await device.setProfile(p);
+        state.activeProfileIdx = p;
+        state.pageIdx = 0;
+      }
+      for (let pg = 0; pg < pageCountOf(prof); pg++) {
+        await withPinnedPage(p, pg, async () => {
+          for (const [slot, a] of writes) {
+            await device.setRotary(p, slot, a.type, a.modifier, a.keycode);
+            if (prof.pages[pg]) prof.pages[pg].rotary[slot] = { ...a };
+          }
+        });
+      }
+    }
+  } finally {
+    if (state.activeProfileIdx !== original) {
+      await device.setProfile(original);
+      state.activeProfileIdx = original;
+      state.pageIdx = 0;
+    }
+    notify();
+  }
+}
+
 // ================= Calibración de la rueda =================
 // Cómo se dibuja la rueda magnética en pantalla: no toca el teclado, solo hace
 // que el dibujo (forma del marcador, sentido, desfase) coincida con el
@@ -729,6 +878,7 @@ export function render() {
   });
 
   renderAnimSpeed();
+  renderMenuKey();
 
   const list = document.getElementById('device-info-list');
   if (!list) return;

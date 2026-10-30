@@ -25,7 +25,7 @@
 // sabe que hay en ellas.
 
 import * as device from '../device.js';
-import { state, notify, profile, KEY_TO_SCREEN, KEY_SUPER, keymapSlot, labelSlot,
+import { state, notify, profile, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU, keyRole, keymapSlot, labelSlot,
          pageCountOf } from '../store.js';
 import * as wheelDial from '../wheel-dial.js';
 import * as cache from '../oled-cache.js';
@@ -469,6 +469,10 @@ export function render() {
       : 'Editando la capa SUPER';
   }
   document.getElementById(`hw-key-${KEY_SUPER}`)?.classList.toggle('held', editingSuper);
+  // La 10 solo dice MENÚ mientras lo sea: liberada es una tecla más, aunque
+  // en este prototipo siga sin pantalla.
+  const menuRole = document.querySelector(`#hw-key-${KEY_MENU} .hw-key-role`);
+  if (menuRole) menuRole.textContent = keyRole(KEY_MENU - 1) === 'menu' ? 'MENÚ' : '';
   // Las teclas que la variación redefine llevan su marca, como en la lista de
   // Perfiles: una variación suele tocar dos o tres, y hay que saber cuáles.
   const layer = editingSuper ? 'super' : 'normal';

@@ -21,6 +21,9 @@ export const state = {
   deviceMode: 'NORMAL',
   superActive: false,
   timeout: 5,
+  // Tecla 10: 0 = la de menú, 1 = una tecla normal (firmware 4.15). Con uno
+  // anterior no llega y se queda en 0, que es lo único que sabía hacer.
+  menuKeyMode: 0,
   // Velocidad de las animaciones de las pantallas, por grupo, tal cual la dice
   // el teclado (ver OledAnim::Group en el firmware). Desde la 4.10 es % sobre
   // el ritmo de fábrica de cada grupo (100 = de fábrica); la 4.8/4.9 contaba
@@ -109,6 +112,12 @@ export function profile(idx = state.activeProfileIdx) {
 
 // El firmware indexa 12 teclas y 10 pantallas. Las teclas 10 (menú) y 12
 // (SUPER) no tienen pantalla asociada, y la tecla 11 usa la pantalla 10.
+//
+// Es cosa de este prototipo: la versión siguiente lleva pantalla también en
+// la 10 y la 12, y entonces este mapa sale del handshake (OLEDS=12) en vez de
+// estar escrito aquí. Por eso «no tiene pantalla» y «es una tecla de sistema»
+// van por separado (ver keyRole): la 10 puede quedar libre, sin pantalla hoy,
+// y la SUPER seguirá siendo la SUPER aunque tenga pantalla.
 export const KEY_TO_SCREEN = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 0];
 
 // Las dos teclas de sistema, numeradas como las ve el usuario (1 a 12). Tienen
@@ -116,6 +125,14 @@ export const KEY_TO_SCREEN = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 10, 0];
 // base 0. Antes estaban al revés: SUPER en la 10 y el menú en la 12.
 export const KEY_SUPER = 12;
 export const KEY_MENU  = 10;
+
+// Si una tecla tiene un papel fijo en el firmware, y cuál: 'super', 'menu' o
+// null. La de menú lo pierde cuando se deja libre (state.menuKeyMode = 1).
+export function keyRole(keyIndex) {
+  if (keyIndex + 1 === KEY_SUPER) return 'super';
+  if (keyIndex + 1 === KEY_MENU && state.menuKeyMode !== 1) return 'menu';
+  return null;
+}
 
 export function labelForKey(prof, keyIndex, layer) {
   const screen = KEY_TO_SCREEN[keyIndex];
@@ -211,6 +228,7 @@ export async function syncFromDevice({ expected = null, iconOf = null, onProgres
       if (Number.isInteger(s.profileCount)) count = s.profileCount;
       if (Number.isInteger(s.maxProfiles))  state.maxProfiles = s.maxProfiles;
       if (Number.isInteger(s.timeout))      state.timeout = s.timeout;
+      state.menuKeyMode = s.menuKeyMode === 1 ? 1 : 0;
       if (s.animSpeed) state.animSpeed = s.animSpeed;
       if (typeof s.superActive === 'boolean') state.superActive = s.superActive;
       if (s.mode)   state.deviceMode = s.mode;

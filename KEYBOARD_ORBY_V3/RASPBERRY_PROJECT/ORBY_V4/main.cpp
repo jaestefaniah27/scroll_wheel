@@ -74,6 +74,19 @@ enum RotaryType : uint8_t {
     ROT_SCROLL_V,   // rueda vertical (bidireccional por sí misma)
     ROT_SCROLL_H,   // paneo horizontal AC Pan
     ROT_ZOOM,       // Ctrl + rueda vertical
+    // Navegación (4.15): para poder dejar libre la tecla de menú. ROT_PAGE es
+    // bidireccional como los desplazamientos (una acción cubre los dos
+    // sentidos: horario avanza de página, antihorario retrocede). ROT_MENU es
+    // discreta, para el clic: keycode = qué menú abre (ROT_MENU_*).
+    ROT_PAGE,
+    ROT_MENU,
+};
+#define ROT_TYPE_LAST ROT_MENU
+
+enum RotaryMenu : uint8_t {
+    ROT_MENU_PROFILES = 0,  // selector de perfiles
+    ROT_MENU_PAGES    = 1,  // gestor de páginas
+    ROT_MENU_MAIN     = 2,  // menú principal (ajustes)
 };
 
 struct RotaryAction {
@@ -380,6 +393,21 @@ volatile uint8_t active_profile_idx = 0;   // 0=OFIM, 1=PHTS, 2=ALTM, 3=PREM
 volatile uint8_t active_page = 0;          // Página en uso del perfil activo
 volatile uint8_t reposo_timeout_min = 5;    // 5 minutos por defecto (0=OFF)
 
+// Qué hace la tecla 10. MENUKEY_MENU es lo de siempre (corta = página, larga =
+// perfiles). MENUKEY_NORMAL la deja como una tecla más, con su acción de la
+// página: entonces las páginas y el menú se llevan desde un encoder (ROT_PAGE,
+// ROT_MENU). Es global y no del perfil a propósito: si fuera del perfil, uno
+// sin encoder de menú dejaría al usuario sin forma de salir de él. Y aun así
+// el menú principal sigue a mano siempre: los dos encoders pulsados 2 s.
+//
+// Se guarda en el byte de relleno de Settings, que las versiones anteriores
+// graban a cero: un teclado que se actualiza conserva su tecla de menú.
+#define MENUKEY_MENU   0
+#define MENUKEY_NORMAL 1
+volatile uint8_t menu_key_mode = MENUKEY_MENU;
+
+static inline bool menu_key_is_menu() { return menu_key_mode == MENUKEY_MENU; }
+
 // Velocidad de las animaciones estilo Apple (oled_anim.h). Cada grupo tiene un
 // ritmo base, en % del muelle "de fábrica" de SpringBoard (ver
 // OledAnim::set_rate), y el usuario elige un % sobre esa base: 100 es lo que
@@ -641,7 +669,10 @@ struct Settings {
     uint8_t  reposo_timeout_min;
     uint8_t  profile_count;
     uint8_t  active_page;
-    uint8_t  padding[3];
+    // Era relleno hasta la 4.14, siempre a cero: por eso no hace falta magic
+    // nuevo. Cero es MENUKEY_MENU, lo que hacía la tecla hasta entonces.
+    uint8_t  menu_key_mode;
+    uint8_t  padding[2];
     uint8_t  anim_speed[OledAnim::G_COUNT];  // % por grupo, ver OledAnim::Group
     uint8_t  padding2[3];
     uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
@@ -1017,6 +1048,7 @@ void load_defaults() {
     active_profile_idx = 0;
     active_page = 0;
     reposo_timeout_min = 5;
+    menu_key_mode = MENUKEY_MENU;
     set_default_anim_speed();
 }
 
@@ -1057,6 +1089,7 @@ void save_settings() {
     s->reposo_timeout_min     = reposo_timeout_min;
     s->profile_count          = profile_count;
     s->active_page            = active_page;
+    s->menu_key_mode          = menu_key_mode;
     // memcpy no admite un origen volatile: se copia campo a campo.
     for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) s->anim_speed[g] = anim_speed_pct[g];
     memcpy(s->custom_oled_mask, custom_oled_mask, sizeof(custom_oled_mask));
@@ -1156,6 +1189,7 @@ void load_settings() {
         reposo_timeout_min     = s->reposo_timeout_min;
         profile_count          = s->profile_count;
         active_page            = s->active_page;
+        menu_key_mode          = (s->menu_key_mode == MENUKEY_NORMAL) ? MENUKEY_NORMAL : MENUKEY_MENU;
         for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) anim_speed_pct[g] = s->anim_speed[g];
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
@@ -1515,6 +1549,11 @@ static bool page_remove(uint8_t profile, uint8_t pg) {
 // el menú principal sí lo lleva, porque es la única forma de volver a él.
 volatile bool perf_menu_back = true;
 
+// Abierto desde un encoder (ROT_MENU) sí lleva BACK —no hay tecla que soltar
+// para cancelar—, pero BACK vuelve al uso normal y no al menú principal: quien
+// lo abre así no venía de él.
+volatile bool perf_menu_back_to_normal = false;
+
 static inline uint8_t perf_menu_count() {
     return (uint8_t)(profile_count + (perf_menu_back ? 1 : 0));
 }
@@ -1535,6 +1574,7 @@ static void perf_menu_follow() {
 // perfiles, empezar siempre en el primero obligaba a recorrer la lista entera.
 static void perf_menu_open(bool con_volver = true) {
     perf_menu_back = con_volver;
+    perf_menu_back_to_normal = false;
     selected_menu_idx = (active_profile_idx < profile_count) ? active_profile_idx : 0;
     perf_menu_first = 0;
     perf_menu_follow();
@@ -1880,8 +1920,38 @@ static void emit_scroll(uint8_t type, int32_t detents) {
     WheelOut::add_wheel(detents * (g_hires_multiplier ? HID_HIRES_MULTIPLIER : 1));
 }
 
+// Clic de un encoder con ROT_MENU. Solo desde el uso normal: dentro de un
+// menú el clic ya confirma (menu_click).
+static void open_menu_from_rotary(uint8_t which) {
+    if (current_mode != MODE_NORMAL) return;
+    if (which == ROT_MENU_PAGES) {
+        current_mode = MODE_MENU_PAGES;
+    } else if (which == ROT_MENU_MAIN) {
+        current_mode = MODE_MENU_MAIN;
+        selected_menu_idx = 0;
+    } else {
+        current_mode = MODE_MENU_PERF;
+        perf_menu_open(true);
+        perf_menu_back_to_normal = true;
+    }
+    system_refresh_req = true;
+    cdc_printf("MODE:MENU\n");
+}
+
+// ROT_PAGE: una página por muesca, en el sentido del giro. Con tope, para que
+// un giro brusco no dé vueltas enteras a las páginas.
+static void page_steps(int32_t steps) {
+    int32_t n = (steps > 0) ? steps : -steps;
+    if (n > MAX_PAGES) n = MAX_PAGES;
+    for (int32_t i = 0; i < n; i++) {
+        if (steps > 0) next_page();
+        else prev_page();
+    }
+}
+
 // Una sola repetición de una acción discreta (tecla o multimedia).
 static void emit_discrete(const RotaryAction& a) {
+    if (a.type == ROT_MENU) { open_menu_from_rotary(a.keycode); return; }
     if (a.type == ROT_CONSUMER) {
         HidOut::consumer_tap(get_consumer_key_from_index(a.keycode));
     } else if (a.type == ROT_KEY) {
@@ -1902,10 +1972,13 @@ void apply_rotary(const RotaryAction& cw, const RotaryAction& ccw, int32_t steps
         emit_scroll(cw.type, steps);
         return;
     }
+    // Como los desplazamientos, la acción del sentido horario manda en los dos.
+    if (cw.type == ROT_PAGE) { page_steps(steps); return; }
 
     const RotaryAction& a = (steps > 0) ? cw : ccw;
     if (a.type == ROT_NONE) return;
     if (rotary_is_scroll(a.type)) { emit_scroll(a.type, steps); return; }
+    if (a.type == ROT_PAGE) { page_steps(steps); return; }
 
     int32_t n = (steps > 0) ? steps : -steps;
     if (n > 16) n = 16; // salvaguarda ante un giro brusco
@@ -2649,11 +2722,13 @@ void process_command(const char* cmd) {
         // otro ordenador sepa qué hace cada tecla de macro.
         // MIRROR=1: sabe mandar a la app lo que enseñan las pantallas
         // (MIRROR:1, EV:SCR) para que el dashboard las anime igual.
+        // MENUKEY=1: la tecla de menú se puede dejar libre (SET_MENUKEY) y los
+        // mandos saben cambiar de página y abrir menús (ROT_PAGE, ROT_MENU).
         // ANIMSPEED=2: entiende SET_ANIMSPEED/GET_ANIMSPEED (velocidad por
         // grupo de las animaciones de las pantallas), en % sobre la base de
         // fábrica de cada grupo. Con =1 (4.8/4.9) el % era sobre el muelle de
         // Apple, y la app tiene que traducir.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MODE=%s\n",
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2692,6 +2767,7 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:PROFILE:%d\n", (int)active_profile_idx);
         cdc_printf("STATE:PROFILES:%d:%d\n", (int)profile_count, MAX_PROFILES);
         cdc_printf("STATE:TIMEOUT:%d\n", (int)reposo_timeout_min);
+        cdc_printf("STATE:MENUKEY:%d\n", (int)menu_key_mode);
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
         cdc_printf("STATE:MENUGLITCH:%lu\n", (unsigned long)menu_tap_glitches);
@@ -2716,6 +2792,24 @@ void process_command(const char* cmd) {
             cdc_printf("PROFILE:OK:%d\n", (int)active_profile_idx);
         } else {
             cdc_printf("ERR:PROFILE_RANGE\n");
+        }
+        return;
+    }
+
+    // SET_MENUKEY:<0|1> — 0 la tecla 10 es la de menú (lo de siempre), 1 es una
+    // tecla normal con su acción de la página. Como SET_TIMEOUT, queda en RAM
+    // hasta SAVE_STATE. Ver menu_key_mode.
+    if (strncmp(cmd, "SET_MENUKEY:", 12) == 0) {
+        int val = atoi(cmd + 12);
+        if (val == MENUKEY_MENU || val == MENUKEY_NORMAL) {
+            // Si al cambiar quedara un flanco viejo de la tecla, el bucle lo ve
+            // como una suelta y HidOut::key_up no hace nada con una tecla que
+            // no tenía nada pulsado: no hace falta limpiarlo.
+            menu_key_mode = (uint8_t)val;
+            push_system_refresh();
+            cdc_printf("MENUKEY:OK:%d\n", (int)menu_key_mode);
+        } else {
+            cdc_printf("ERR:MENUKEY_VALUE\n");
         }
         return;
     }
@@ -2961,7 +3055,7 @@ void process_command(const char* cmd) {
         p = next_field(p, &mod);
         p = next_field(p, &key);
         if (!p || idx < 0 || idx >= (int)profile_count || slot < 0 || slot >= ROT_SLOT_COUNT ||
-            type < 0 || type > ROT_ZOOM || mod < 0 || mod > 255 || key < 0 || key > 255) {
+            type < 0 || type > ROT_TYPE_LAST || mod < 0 || mod > 255 || key < 0 || key > 255) {
             cdc_printf("ERR:BAD_ARGS\n");
             return;
         }
@@ -3303,6 +3397,110 @@ extern "C" void tud_resume_cb(void) {
     // a contar en cuanto se suelte y se pulse otra vez.
 }
 
+// Pulsar un encoder dentro de un menú: confirma la opción elegida. Antes
+// solo lo hacía el izquierdo; desde la 4.15 vale cualquiera de los dos,
+// porque el menú puede abrirse desde el derecho (ROT_MENU) y obligar a
+// cambiar de mano para confirmar no tenía sentido.
+static void menu_click() {
+    if (current_mode == MODE_MENU_MAIN) {
+        // Confirmar opción
+        if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
+        else if (selected_menu_idx == 1) current_mode = MODE_MENU_REPO;
+        else if (selected_menu_idx == 2) current_mode = MODE_MENU_SCROLL;
+        else if (selected_menu_idx == 3) current_mode = MODE_MENU_RESET;
+        else if (selected_menu_idx == 4) current_mode = MODE_MENU_INFO;
+        else if (selected_menu_idx == 5) {
+            current_mode = MODE_NORMAL;
+            char tel2[24];
+            int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
+            tud_cdc_n_write(0, tel2, len2);
+            tud_cdc_n_write_flush(0);
+        }
+        selected_menu_idx = 0;
+        if (current_mode == MODE_MENU_PERF) perf_menu_open();
+        else if (current_mode == MODE_MENU_RESET) reset_menu_open();
+        push_system_refresh();
+    } else if (current_mode == MODE_MENU_PERF) {
+        if (selected_menu_idx < profile_count) {
+            active_profile_idx = selected_menu_idx;
+            active_page = 0;
+            // Guardado inmediato: es un cambio discreto (no como el
+            // encoder de la rueda), así que no hay riesgo de desgastar
+            // la Flash a base de escrituras seguidas.
+            save_settings();
+            current_mode = MODE_NORMAL;
+            cdc_printf("MODE:NORMAL\n");
+        } else if (perf_menu_back_to_normal) {
+            current_mode = MODE_NORMAL;
+            cdc_printf("MODE:NORMAL\n");
+        } else {
+            current_mode = MODE_MENU_MAIN;
+        }
+        selected_menu_idx = 0;
+        push_system_refresh();
+    } else if (current_mode == MODE_MENU_REPO) {
+        if (selected_menu_idx >= 0 && selected_menu_idx <= 3) {
+            const uint8_t repo_vals[4] = {1, 5, 10, 0};
+            reposo_timeout_min = repo_vals[selected_menu_idx];
+            save_settings();
+        }
+        current_mode = MODE_MENU_MAIN;
+        selected_menu_idx = 1;
+        push_system_refresh();
+    } else if (current_mode == MODE_MENU_SCROLL) {
+        // Idx 0/1 alternan el estado y se quedan en el submenú
+        // (para poder tantear varias veces); idx 2 es BACK.
+        if (selected_menu_idx == 0) {
+            cur_page().scroll_invert[0] = !cur_page().scroll_invert[0];
+            save_settings();
+        } else if (selected_menu_idx == 1) {
+            cur_page().scroll_invert[1] = !cur_page().scroll_invert[1];
+            save_settings();
+        } else {
+            current_mode = MODE_MENU_MAIN;
+            selected_menu_idx = 2;
+        }
+        push_system_refresh();
+    } else if (current_mode == MODE_MENU_RESET) {
+        if (selected_menu_idx == 0) {
+            // Confirmado: borra perfiles, macros e iconos y
+            // vuelve a fábrica. No hay marcha atrás.
+            load_defaults();
+            save_settings();
+            current_mode = MODE_NORMAL;
+            char tel2[24];
+            int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
+            tud_cdc_n_write(0, tel2, len2);
+            tud_cdc_n_write_flush(0);
+        } else {
+            current_mode = MODE_MENU_MAIN;
+            selected_menu_idx = 3;
+        }
+        push_system_refresh();
+    } else if (current_mode == MODE_MENU_INFO) {
+        current_mode = MODE_MENU_MAIN;
+        selected_menu_idx = 4;
+        push_system_refresh();
+    }
+}
+
+// Girar un encoder dentro de un menú: mueve la selección. Mismo motivo que
+// menu_click para que valgan los dos.
+static void menu_turn(int delta) {
+    if (current_mode != MODE_MENU_MAIN && current_mode != MODE_MENU_PERF
+        && current_mode != MODE_MENU_REPO && current_mode != MODE_MENU_SCROLL
+        && current_mode != MODE_MENU_RESET) return;
+    int opts = (current_mode == MODE_MENU_PERF)  ? perf_menu_count()
+             : (current_mode == MODE_MENU_MAIN)  ? 6
+             : (current_mode == MODE_MENU_SCROLL) ? 3
+             : (current_mode == MODE_MENU_RESET)  ? 2 : 5;
+    int next = ((int)selected_menu_idx + delta) % opts;
+    if (next < 0) next += opts;
+    selected_menu_idx = (uint8_t)next;
+    if (current_mode == MODE_MENU_PERF) perf_menu_follow();
+    push_system_refresh();
+}
+
 // ==========================================
 // CORE 0: ENCODERS, TECLAS Y USB CDC / HID
 // ==========================================
@@ -3484,19 +3682,8 @@ int main() {
                 const Page& p = cur_page();
                 apply_rotary(p.rotary[rot_slot(ROT_ENC1_CW,  super_active)],
                              p.rotary[rot_slot(ROT_ENC1_CCW, super_active)], delta_izq);
-            } else if (current_mode == MODE_MENU_MAIN || current_mode == MODE_MENU_PERF
-                       || current_mode == MODE_MENU_REPO || current_mode == MODE_MENU_SCROLL
-                       || current_mode == MODE_MENU_RESET) {
-                // Desplazamiento de menú
-                int opts = (current_mode == MODE_MENU_PERF)  ? perf_menu_count()
-                         : (current_mode == MODE_MENU_MAIN)  ? 6
-                         : (current_mode == MODE_MENU_SCROLL) ? 3
-                         : (current_mode == MODE_MENU_RESET)  ? 2 : 5;
-                int next = ((int)selected_menu_idx + delta_izq) % opts;
-                if (next < 0) next += opts;
-                selected_menu_idx = (uint8_t)next;
-                if (current_mode == MODE_MENU_PERF) perf_menu_follow();
-                push_system_refresh();
+            } else {
+                menu_turn(delta_izq);
             }
         }
 
@@ -3516,6 +3703,8 @@ int main() {
                 const Page& p = cur_page();
                 apply_rotary(p.rotary[rot_slot(ROT_ENC2_CW,  super_active)],
                              p.rotary[rot_slot(ROT_ENC2_CCW, super_active)], delta_der);
+            } else {
+                menu_turn(delta_der);
             }
         }
 
@@ -3537,85 +3726,8 @@ int main() {
                 if (stable_enc1_sw_state) {
                     if (current_mode == MODE_NORMAL) {
                         emit_discrete(cur_page().rotary[rot_slot(ROT_ENC1_CLICK, super_active)]);
-                    } else if (current_mode == MODE_MENU_MAIN) {
-                        // Confirmar opción
-                        if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
-                        else if (selected_menu_idx == 1) current_mode = MODE_MENU_REPO;
-                        else if (selected_menu_idx == 2) current_mode = MODE_MENU_SCROLL;
-                        else if (selected_menu_idx == 3) current_mode = MODE_MENU_RESET;
-                        else if (selected_menu_idx == 4) current_mode = MODE_MENU_INFO;
-                        else if (selected_menu_idx == 5) {
-                            current_mode = MODE_NORMAL;
-                            char tel2[24];
-                            int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
-                            tud_cdc_n_write(0, tel2, len2);
-                            tud_cdc_n_write_flush(0);
-                        }
-                        selected_menu_idx = 0;
-                        if (current_mode == MODE_MENU_PERF) perf_menu_open();
-                        else if (current_mode == MODE_MENU_RESET) reset_menu_open();
-                        push_system_refresh();
-                    } else if (current_mode == MODE_MENU_PERF) {
-                    if (selected_menu_idx < profile_count) {
-                        active_profile_idx = selected_menu_idx;
-                        active_page = 0;
-                        // Guardado inmediato: es un cambio discreto (no como el
-                        // encoder de la rueda), así que no hay riesgo de desgastar
-                        // la Flash a base de escrituras seguidas.
-                        save_settings();
-                        current_mode = MODE_NORMAL;
-                        char tel2[24];
-                        int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
-                        tud_cdc_n_write(0, tel2, len2);
-                        tud_cdc_n_write_flush(0);
-                        } else {
-                            current_mode = MODE_MENU_MAIN;
-                        }
-                        selected_menu_idx = 0;
-                        push_system_refresh();
-                    } else if (current_mode == MODE_MENU_REPO) {
-                        if (selected_menu_idx >= 0 && selected_menu_idx <= 3) {
-                            const uint8_t repo_vals[4] = {1, 5, 10, 0};
-                            reposo_timeout_min = repo_vals[selected_menu_idx];
-                            save_settings();
-                        }
-                        current_mode = MODE_MENU_MAIN;
-                        selected_menu_idx = 1;
-                        push_system_refresh();
-                    } else if (current_mode == MODE_MENU_SCROLL) {
-                        // Idx 0/1 alternan el estado y se quedan en el submenú
-                        // (para poder tantear varias veces); idx 2 es BACK.
-                        if (selected_menu_idx == 0) {
-                            cur_page().scroll_invert[0] = !cur_page().scroll_invert[0];
-                            save_settings();
-                        } else if (selected_menu_idx == 1) {
-                            cur_page().scroll_invert[1] = !cur_page().scroll_invert[1];
-                            save_settings();
-                        } else {
-                            current_mode = MODE_MENU_MAIN;
-                            selected_menu_idx = 2;
-                        }
-                        push_system_refresh();
-                    } else if (current_mode == MODE_MENU_RESET) {
-                        if (selected_menu_idx == 0) {
-                            // Confirmado: borra perfiles, macros e iconos y
-                            // vuelve a fábrica. No hay marcha atrás.
-                            load_defaults();
-                            save_settings();
-                            current_mode = MODE_NORMAL;
-                            char tel2[24];
-                            int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
-                            tud_cdc_n_write(0, tel2, len2);
-                            tud_cdc_n_write_flush(0);
-                        } else {
-                            current_mode = MODE_MENU_MAIN;
-                            selected_menu_idx = 3;
-                        }
-                        push_system_refresh();
-                    } else if (current_mode == MODE_MENU_INFO) {
-                        current_mode = MODE_MENU_MAIN;
-                        selected_menu_idx = 4;
-                        push_system_refresh();
+                    } else {
+                        menu_click();
                     }
                 }
             }
@@ -3637,8 +3749,12 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                if (stable_enc2_sw_state && current_mode == MODE_NORMAL) {
-                    emit_discrete(cur_page().rotary[rot_slot(ROT_ENC2_CLICK, super_active)]);
+                if (stable_enc2_sw_state) {
+                    if (current_mode == MODE_NORMAL) {
+                        emit_discrete(cur_page().rotary[rot_slot(ROT_ENC2_CLICK, super_active)]);
+                    } else {
+                        menu_click();
+                    }
                 }
             }
         } else {
@@ -3652,7 +3768,13 @@ int main() {
                 hold_start_time = now;
             } else if (now - hold_start_time >= 2000) {
                 activity_detected = true;
-                if (current_mode == MODE_NORMAL) {
+                // Abre el menú principal desde cualquier sitio que no sea él
+                // mismo, no solo desde el uso normal: con un encoder que abre
+                // el selector de perfiles (ROT_MENU), el primer toque del gesto
+                // ya ha abierto ese menú, y antes este gesto lo cerraba en vez de
+                // llevar a los ajustes. Es la vía de escape que queda siempre,
+                // también con la tecla de menú libre (menu_key_mode).
+                if (current_mode != MODE_MENU_MAIN) {
                     current_mode = MODE_MENU_MAIN;
                     selected_menu_idx = 0;
                     push_system_refresh();
@@ -3754,7 +3876,9 @@ int main() {
         // retrocede de página y la larga abre el menú principal (ajustes). Se
         // mira SUPER en el momento en que se decide, no al empezar: da igual
         // en qué orden se pongan los dedos mientras estén las dos a la vez.
-        bool menu_key_pressed = key_stable[KEY_IDX_MENU];
+        // Con la tecla libre (MENUKEY_NORMAL) nada de esto: es una tecla más y
+        // la lleva el bucle de las teclas, de abajo.
+        bool menu_key_pressed = menu_key_is_menu() && key_stable[KEY_IDX_MENU];
         static uint32_t menu_hold_start = 0;
         static bool     menu_long_fired = false;
         if (menu_key_pressed && current_mode == MODE_NORMAL) {
@@ -3888,7 +4012,8 @@ int main() {
             if (i == KEY_IDX_SUPER) continue;
 
             // La tecla de menú, en modo normal, solo responde al hold largo
-            if (i == KEY_IDX_MENU && current_mode == MODE_NORMAL) continue;
+            // (salvo que esté libre: entonces es una tecla como las demás).
+            if (i == KEY_IDX_MENU && current_mode == MODE_NORMAL && menu_key_is_menu()) continue;
 
             bool is_pressed = key_stable[i];
             if (is_pressed != last_key_state[i]) {
@@ -3989,6 +4114,9 @@ int main() {
                                 int len = snprintf(tel, sizeof(tel), "MODE:NORMAL\n");
                                 tud_cdc_n_write(0, tel, len);
                                 tud_cdc_n_write_flush(0);
+                            } else if (perf_menu_back_to_normal) {
+                                current_mode = MODE_NORMAL;
+                                cdc_printf("MODE:NORMAL\n");
                             } else {
                                 current_mode = MODE_MENU_MAIN;
                             }
