@@ -3,6 +3,18 @@
 Diseña la animación de las diez pantallas, reprodúcela, y cuando esté a tu
 gusto expórtala. **No hace falta compilar el firmware para probarla.**
 
+## La intro de hoy no sale de aquí
+
+Desde el firmware 4.22 la intro es la marca de Orvy: el dial gira, se encienden las
+diez pantallas y queda el logotipo. Es un dibujo concreto, no algo que se pueda pedir
+con los parámetros de este editor, así que la genera `intro_dial.py` a partir de la
+geometría de `OrbyGUI/assets/brand/`, en el mismo formato:
+
+    python tools/anim/intro_dial.py            # escribe include/orby_intro_data.h
+    python tools/anim/intro_dial.py --preview  # y un PNG por fotograma en _preview/
+
+El editor sigue sirviendo para probar otras ideas; exportar desde él sustituye la intro.
+
 ## Cómo se usa
 
 1. Doble clic en `index.html`. No necesita servidor, ni npm, ni internet.
