@@ -408,6 +408,28 @@ volatile uint8_t menu_key_mode = MENUKEY_MENU;
 
 static inline bool menu_key_is_menu() { return menu_key_mode == MENUKEY_MENU; }
 
+// Sentido de los mandos (4.16). Un bit por mando: 0 encoder izquierdo, 1
+// derecho, 2 rueda. Con el bit puesto, el giro llega al revés a todo lo demás
+// (acciones, menús, páginas); la telemetría por CDC sigue siendo la del giro
+// real, porque es lo que dibuja la app. Es global y no del perfil: cómo está
+// montado o cómo le gusta girar a cada uno no cambia con la aplicación.
+//
+// Se guarda en el byte de relleno de Settings (que antes grababan a cero), así
+// que los teclados que se actualizan arrancan con el sentido de siempre.
+#define ROTINV_ENC1  0x01
+#define ROTINV_ENC2  0x02
+#define ROTINV_WHEEL 0x04
+#define ROTINV_ALL   0x07
+volatile uint8_t rot_invert_mask = 0;
+
+// Mando que hace de menú: 0 ninguno, 1 izquierdo, 2 derecho. Es el hueco de la
+// tecla 10 hecho mando. Girarlo cambia de página; mantenerlo pulsado abre el
+// selector de perfiles (con SUPER, el gestor de páginas), se gira sin soltarlo
+// hasta el elemento que se quiere y al soltarlo se elige. Lo que cada perfil
+// tenga asignado a ese mando se ignora: es global por la misma razón que
+// menu_key_mode, para no dejar a nadie sin forma de llegar a los menús.
+volatile uint8_t menu_encoder = 0;
+
 // Velocidad de las animaciones estilo Apple (oled_anim.h). Cada grupo tiene un
 // ritmo base, en % del muelle "de fábrica" de SpringBoard (ver
 // OledAnim::set_rate), y el usuario elige un % sobre esa base: 100 es lo que
@@ -672,7 +694,10 @@ struct Settings {
     // Era relleno hasta la 4.14, siempre a cero: por eso no hace falta magic
     // nuevo. Cero es MENUKEY_MENU, lo que hacía la tecla hasta entonces.
     uint8_t  menu_key_mode;
-    uint8_t  padding[2];
+    // Relleno hasta la 4.15, siempre a cero: cero es «sin invertir» y «sin
+    // mando de menú», lo que hacía el teclado hasta entonces.
+    uint8_t  rot_invert_mask;
+    uint8_t  menu_encoder;
     uint8_t  anim_speed[OledAnim::G_COUNT];  // % por grupo, ver OledAnim::Group
     uint8_t  padding2[3];
     uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
@@ -1049,6 +1074,8 @@ void load_defaults() {
     active_page = 0;
     reposo_timeout_min = 5;
     menu_key_mode = MENUKEY_MENU;
+    rot_invert_mask = 0;
+    menu_encoder = 0;
     set_default_anim_speed();
 }
 
@@ -1090,6 +1117,8 @@ void save_settings() {
     s->profile_count          = profile_count;
     s->active_page            = active_page;
     s->menu_key_mode          = menu_key_mode;
+    s->rot_invert_mask        = rot_invert_mask;
+    s->menu_encoder           = menu_encoder;
     // memcpy no admite un origen volatile: se copia campo a campo.
     for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) s->anim_speed[g] = anim_speed_pct[g];
     memcpy(s->custom_oled_mask, custom_oled_mask, sizeof(custom_oled_mask));
@@ -1190,6 +1219,8 @@ void load_settings() {
         profile_count          = s->profile_count;
         active_page            = s->active_page;
         menu_key_mode          = (s->menu_key_mode == MENUKEY_NORMAL) ? MENUKEY_NORMAL : MENUKEY_MENU;
+        rot_invert_mask        = s->rot_invert_mask & ROTINV_ALL;
+        menu_encoder           = (s->menu_encoder <= 2) ? s->menu_encoder : 0;
         for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) anim_speed_pct[g] = s->anim_speed[g];
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
@@ -1920,20 +1951,48 @@ static void emit_scroll(uint8_t type, int32_t detents) {
     WheelOut::add_wheel(detents * (g_hires_multiplier ? HID_HIRES_MULTIPLIER : 1));
 }
 
+// El menú está abierto desde un mando (no desde la tecla de menú ni con los dos
+// mandos pulsados). Mientras lo esté, las teclas siguen haciendo lo que dice su
+// página en vez de ser atajos de selección: el mando ya navega, y quien lo ha
+// abierto no tiene por qué soltar una tecla que quería usar. Lo apaga el bucle
+// principal en cuanto se vuelve al uso normal.
+volatile bool menu_from_rotary = false;
+
+// El cursor se ha movido desde que se abrió el menú. Al soltar un mando que
+// mantenía el menú principal, si no se ha movido se deja abierto (como hacía el
+// gesto de los dos mandos) y si sí, se entra en lo que se eligió.
+volatile bool menu_cursor_moved = false;
+
+// Estado del gesto de mantener de cada mando (ver «MANDOS COMO MENÚ»).
+struct EncHold {
+    bool     armed;   // pulsado desde el uso normal y todavía sin decidir
+    bool     open;    // ya abrió el menú: soltar elige
+    uint8_t  which;   // qué menú (ROT_MENU_*)
+    uint32_t t0;
+};
+static EncHold enc_hold[2];
+
 // Clic de un encoder con ROT_MENU. Solo desde el uso normal: dentro de un
 // menú el clic ya confirma (menu_click).
-static void open_menu_from_rotary(uint8_t which) {
+//
+// `mantenido` es el gesto de mantener el mando: el selector no lleva BACK (soltar
+// sin girar ya es no cambiar nada) y el cursor arranca donde estás. Sin él, el
+// toque corto lo deja abierto hasta confirmar con otro clic.
+static void open_menu_from_rotary(uint8_t which, bool mantenido = false) {
     if (current_mode != MODE_NORMAL) return;
     if (which == ROT_MENU_PAGES) {
         current_mode = MODE_MENU_PAGES;
+        selected_menu_idx = active_page;
     } else if (which == ROT_MENU_MAIN) {
         current_mode = MODE_MENU_MAIN;
         selected_menu_idx = 0;
     } else {
         current_mode = MODE_MENU_PERF;
-        perf_menu_open(true);
-        perf_menu_back_to_normal = true;
+        perf_menu_open(!mantenido);
+        perf_menu_back_to_normal = !mantenido;
     }
+    menu_from_rotary = true;
+    menu_cursor_moved = false;
     system_refresh_req = true;
     cdc_printf("MODE:MENU\n");
 }
@@ -2233,14 +2292,15 @@ static void render_screen(uint8_t screen_num, uint8_t* out) {
     }
 
     case MODE_MENU_PAGES: {
-        // Gestor de páginas: una pantalla por página con su número. La página
-        // en la que estás va marcada: se ve de un golpe cuál es sin leer.
+        // Gestor de páginas: una pantalla por página con su número. Va marcado
+        // el cursor, que al abrirlo está en la página en la que estás: se ve de
+        // un golpe cuál es sin leer, y un mando lo mueve antes de elegir.
         uint8_t count = profiles[active_profile_idx].page_count;
         if (screen_num <= count) {
             char txt[4];
             snprintf(txt, sizeof(txt), "%u", (unsigned)screen_num);
             screen_text(fb, txt);
-            elegida = (idx == (int)active_page);
+            elegida = (idx == (int)selected_menu_idx);
         } else if (screen_num == 10) {
             screen_system(fb, SYS_BACK);
         }
@@ -2724,11 +2784,14 @@ void process_command(const char* cmd) {
         // (MIRROR:1, EV:SCR) para que el dashboard las anime igual.
         // MENUKEY=1: la tecla de menú se puede dejar libre (SET_MENUKEY) y los
         // mandos saben cambiar de página y abrir menús (ROT_PAGE, ROT_MENU).
+        // ROTINV=1: SET_ROTINV invierte el sentido de cada mando y de la rueda.
+        // MENUENC=1: SET_MENUENC deja un mando como menú (girar cambia de
+        // página, mantenerlo abre el selector de perfiles y se elige al soltar).
         // ANIMSPEED=2: entiende SET_ANIMSPEED/GET_ANIMSPEED (velocidad por
         // grupo de las animaciones de las pantallas), en % sobre la base de
         // fábrica de cada grupo. Con =1 (4.8/4.9) el % era sobre el muelle de
         // Apple, y la app tiene que traducir.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:MODE=%s\n",
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -2768,6 +2831,8 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:PROFILES:%d:%d\n", (int)profile_count, MAX_PROFILES);
         cdc_printf("STATE:TIMEOUT:%d\n", (int)reposo_timeout_min);
         cdc_printf("STATE:MENUKEY:%d\n", (int)menu_key_mode);
+        cdc_printf("STATE:ROTINV:%d\n", (int)rot_invert_mask);
+        cdc_printf("STATE:MENUENC:%d\n", (int)menu_encoder);
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
         cdc_printf("STATE:MENUGLITCH:%lu\n", (unsigned long)menu_tap_glitches);
@@ -2810,6 +2875,36 @@ void process_command(const char* cmd) {
             cdc_printf("MENUKEY:OK:%d\n", (int)menu_key_mode);
         } else {
             cdc_printf("ERR:MENUKEY_VALUE\n");
+        }
+        return;
+    }
+
+    // SET_ROTINV:<0..7> — máscara de mandos con el sentido invertido: 1 encoder
+    // izquierdo, 2 derecho, 4 rueda. Como SET_MENUKEY, queda en RAM hasta
+    // SAVE_STATE. Ver rot_invert_mask.
+    if (strncmp(cmd, "SET_ROTINV:", 11) == 0) {
+        int val = atoi(cmd + 11);
+        if (val >= 0 && val <= ROTINV_ALL) {
+            rot_invert_mask = (uint8_t)val;
+            cdc_printf("ROTINV:OK:%d\n", (int)rot_invert_mask);
+        } else {
+            cdc_printf("ERR:ROTINV_VALUE\n");
+        }
+        return;
+    }
+
+    // SET_MENUENC:<0|1|2> — qué mando hace de menú (0 ninguno). Ver menu_encoder.
+    if (strncmp(cmd, "SET_MENUENC:", 12) == 0) {
+        int val = atoi(cmd + 12);
+        if (val >= 0 && val <= 2) {
+            menu_encoder = (uint8_t)val;
+            // Un gesto a medias con el reparto anterior no debe acabar de abrir
+            // algo con el nuevo.
+            enc_hold[0].armed = enc_hold[0].open = false;
+            enc_hold[1].armed = enc_hold[1].open = false;
+            cdc_printf("MENUENC:OK:%d\n", (int)menu_encoder);
+        } else {
+            cdc_printf("ERR:MENUENC_VALUE\n");
         }
         return;
     }
@@ -3477,6 +3572,16 @@ static void menu_click() {
             selected_menu_idx = 3;
         }
         push_system_refresh();
+    } else if (current_mode == MODE_MENU_PAGES) {
+        // El cursor de este gestor solo lo mueve un mando; con las teclas se
+        // salta directo a cada número y no pasa por aquí.
+        if (selected_menu_idx < profiles[active_profile_idx].page_count) {
+            set_active_page(selected_menu_idx);
+        }
+        current_mode = MODE_NORMAL;
+        selected_menu_idx = 0;
+        cdc_printf("MODE:NORMAL\n");
+        push_system_refresh();
     } else if (current_mode == MODE_MENU_INFO) {
         current_mode = MODE_MENU_MAIN;
         selected_menu_idx = 4;
@@ -3489,16 +3594,109 @@ static void menu_click() {
 static void menu_turn(int delta) {
     if (current_mode != MODE_MENU_MAIN && current_mode != MODE_MENU_PERF
         && current_mode != MODE_MENU_REPO && current_mode != MODE_MENU_SCROLL
-        && current_mode != MODE_MENU_RESET) return;
+        && current_mode != MODE_MENU_RESET && current_mode != MODE_MENU_PAGES) return;
     int opts = (current_mode == MODE_MENU_PERF)  ? perf_menu_count()
              : (current_mode == MODE_MENU_MAIN)  ? 6
              : (current_mode == MODE_MENU_SCROLL) ? 3
-             : (current_mode == MODE_MENU_RESET)  ? 2 : 5;
+             : (current_mode == MODE_MENU_RESET)  ? 2
+             : (current_mode == MODE_MENU_PAGES)  ? profiles[active_profile_idx].page_count : 5;
+    if (opts < 1) opts = 1;
     int next = ((int)selected_menu_idx + delta) % opts;
     if (next < 0) next += opts;
     selected_menu_idx = (uint8_t)next;
+    menu_cursor_moved = true;
     if (current_mode == MODE_MENU_PERF) perf_menu_follow();
     push_system_refresh();
+}
+
+// ==========================================
+// MANDOS COMO MENÚ: MANTENER, GIRAR, SOLTAR
+// ==========================================
+// Pulsar un mando con una acción «Abrir menú» (o el mando de menú, ver
+// menu_encoder) no hace nada al instante: si se suelta antes de ROT_HOLD_MS es
+// un toque corto y el menú se queda abierto hasta confirmar con otro clic (lo de
+// la 4.15); si se mantiene, se abre y se gira SIN soltar hasta el elemento que se
+// quiere, y al soltar se elige. Es el mismo gesto que mantener la tecla de menú
+// y tocar un perfil, con el cursor del mando en lugar de la tecla.
+#define ROT_HOLD_MS 250
+
+// Qué menú abre el clic de este mando ahora mismo, o -1 si no abre ninguno.
+static int8_t enc_menu_for(uint8_t enc) {
+    if (menu_encoder == enc) return super_active ? ROT_MENU_PAGES : ROT_MENU_PROFILES;
+    const RotaryAction& a = cur_page().rotary[rot_slot(enc == 1 ? ROT_ENC1_CLICK : ROT_ENC2_CLICK,
+                                                       super_active)];
+    return (a.type == ROT_MENU) ? (int8_t)a.keycode : (int8_t)-1;
+}
+
+static void menu_close_to_normal() {
+    current_mode = MODE_NORMAL;
+    selected_menu_idx = 0;
+    cdc_printf("MODE:NORMAL\n");
+    push_system_refresh();
+}
+
+// Al soltar un mando que mantenía un menú abierto.
+static void menu_commit_release() {
+    if (current_mode == MODE_MENU_PERF) {
+        // Soltar sin haber movido el cursor deja todo como estaba, sin tocar la
+        // Flash ni volver a la página 0.
+        if (selected_menu_idx == active_profile_idx) menu_close_to_normal();
+        else menu_click();
+    } else if (current_mode == MODE_MENU_PAGES) {
+        if (selected_menu_idx == active_page) menu_close_to_normal();
+        else menu_click();
+    } else if (current_mode == MODE_MENU_MAIN) {
+        // Sin mover el cursor se queda en el menú principal, como al abrirlo con
+        // los dos mandos; moviéndolo, entra en la opción elegida.
+        if (menu_cursor_moved) menu_click();
+    }
+}
+
+static void enc_press(uint8_t enc, uint32_t now) {
+    EncHold& h = enc_hold[enc - 1];
+    if (current_mode == MODE_NORMAL) {
+        const int8_t which = enc_menu_for(enc);
+        if (which >= 0) {
+            h.armed = true;
+            h.open  = false;
+            h.which = (uint8_t)which;
+            h.t0    = now;
+        } else {
+            emit_discrete(cur_page().rotary[rot_slot(enc == 1 ? ROT_ENC1_CLICK : ROT_ENC2_CLICK,
+                                                     super_active)]);
+        }
+    } else if (!enc_hold[2 - enc].open) {
+        // Con el otro mando manteniendo el menú, este clic no confirma nada:
+        // es el segundo dedo del gesto de los dos mandos, que lleva a ajustes.
+        menu_click();
+    }
+}
+
+static void enc_release(uint8_t enc) {
+    EncHold& h = enc_hold[enc - 1];
+    const bool was_armed = h.armed, was_open = h.open;
+    h.armed = h.open = false;
+    if (!was_armed) return;
+    if (was_open) {
+        if (current_mode != MODE_NORMAL) menu_commit_release();
+    } else if (current_mode == MODE_NORMAL) {
+        open_menu_from_rotary(h.which, false);   // toque corto: queda abierto
+    }
+}
+
+// Una vez por vuelta: abre el menú cuando el mando lleva el tiempo pulsado.
+// Devuelve true si ha hecho algo (cuenta como actividad).
+static bool enc_hold_tick(uint8_t enc, uint32_t now) {
+    EncHold& h = enc_hold[enc - 1];
+    if (!h.armed || h.open) return false;
+    if (current_mode != MODE_NORMAL) { h.armed = false; return false; }
+    if ((uint32_t)(now - h.t0) < ROT_HOLD_MS) return false;
+    // SUPER se mira ahora, no al pulsar: da igual en qué orden se pongan los dedos.
+    const int8_t which = enc_menu_for(enc);
+    h.which = (uint8_t)(which >= 0 ? which : h.which);
+    h.open = true;
+    open_menu_from_rotary(h.which, true);
+    return true;
 }
 
 // ==========================================
@@ -3653,6 +3851,14 @@ int main() {
         uint32_t now = to_ms_since_boot(get_absolute_time());
         bool activity_detected = false;
 
+        // Volver al uso normal, por el camino que sea, cierra el «menú de un
+        // mando»: el siguiente que se abra decide de nuevo cómo se abrió.
+        if (current_mode == MODE_NORMAL) menu_from_rotary = false;
+
+        // Los mandos que mantienen un menú lo abren al cumplirse el tiempo.
+        if (enc_hold_tick(1, now)) activity_detected = true;
+        if (enc_hold_tick(2, now)) activity_detected = true;
+
         // Las teclas tachadas dependen de si la app está delante, y eso cambia
         // sin que nadie mande nada: al cerrarla se cae el DTR, y si se cuelga
         // caduca su aviso. Sin este repaso las pantallas se quedarían mintiendo
@@ -3667,42 +3873,53 @@ int main() {
         }
 
         // --- ENCODER IZQUIERDO (VOLUMEN) ---
-        int delta_izq = rueda_izq.get_delta();
-        if (delta_izq != 0) {
+        const int delta_izq_real = rueda_izq.get_delta();
+        if (delta_izq_real != 0) {
             activity_detected = true;
-            
+            // La telemetría lleva el giro real; lo que hace el teclado, el ajustado.
+            const int delta_izq = (rot_invert_mask & ROTINV_ENC1) ? -delta_izq_real : delta_izq_real;
+
             if (current_mode == MODE_NORMAL) {
                 // Telemetría serie
                 char tel[32];
-                int len = snprintf(tel, sizeof(tel), "ENC:1:%d\n", delta_izq);
+                int len = snprintf(tel, sizeof(tel), "ENC:1:%d\n", delta_izq_real);
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                // Acción configurada en el perfil activo y la capa en curso
-                const Page& p = cur_page();
-                apply_rotary(p.rotary[rot_slot(ROT_ENC1_CW,  super_active)],
-                             p.rotary[rot_slot(ROT_ENC1_CCW, super_active)], delta_izq);
+                if (menu_encoder == 1) {
+                    page_steps(delta_izq);
+                } else {
+                    // Acción configurada en el perfil activo y la capa en curso
+                    const Page& p = cur_page();
+                    apply_rotary(p.rotary[rot_slot(ROT_ENC1_CW,  super_active)],
+                                 p.rotary[rot_slot(ROT_ENC1_CCW, super_active)], delta_izq);
+                }
             } else {
                 menu_turn(delta_izq);
             }
         }
 
         // --- ENCODER DERECHO (BRILLO) ---
-        int delta_der = rueda_der.get_delta();
-        if (delta_der != 0) {
+        const int delta_der_real = rueda_der.get_delta();
+        if (delta_der_real != 0) {
             activity_detected = true;
+            const int delta_der = (rot_invert_mask & ROTINV_ENC2) ? -delta_der_real : delta_der_real;
 
             if (current_mode == MODE_NORMAL) {
                 // Telemetría serie
                 char tel[32];
-                int len = snprintf(tel, sizeof(tel), "ENC:2:%d\n", delta_der);
+                int len = snprintf(tel, sizeof(tel), "ENC:2:%d\n", delta_der_real);
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                // Acción configurada en el perfil activo y la capa en curso
-                const Page& p = cur_page();
-                apply_rotary(p.rotary[rot_slot(ROT_ENC2_CW,  super_active)],
-                             p.rotary[rot_slot(ROT_ENC2_CCW, super_active)], delta_der);
+                if (menu_encoder == 2) {
+                    page_steps(delta_der);
+                } else {
+                    // Acción configurada en el perfil activo y la capa en curso
+                    const Page& p = cur_page();
+                    apply_rotary(p.rotary[rot_slot(ROT_ENC2_CW,  super_active)],
+                                 p.rotary[rot_slot(ROT_ENC2_CCW, super_active)], delta_der);
+                }
             } else {
                 menu_turn(delta_der);
             }
@@ -3723,13 +3940,8 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                if (stable_enc1_sw_state) {
-                    if (current_mode == MODE_NORMAL) {
-                        emit_discrete(cur_page().rotary[rot_slot(ROT_ENC1_CLICK, super_active)]);
-                    } else {
-                        menu_click();
-                    }
-                }
+                if (stable_enc1_sw_state) enc_press(1, now);
+                else                      enc_release(1);
             }
         } else {
             enc1_sw_debounce_cnt = 0;
@@ -3749,13 +3961,8 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                if (stable_enc2_sw_state) {
-                    if (current_mode == MODE_NORMAL) {
-                        emit_discrete(cur_page().rotary[rot_slot(ROT_ENC2_CLICK, super_active)]);
-                    } else {
-                        menu_click();
-                    }
-                }
+                if (stable_enc2_sw_state) enc_press(2, now);
+                else                      enc_release(2);
             }
         } else {
             enc2_sw_debounce_cnt = 0;
@@ -3777,6 +3984,9 @@ int main() {
                 if (current_mode != MODE_MENU_MAIN) {
                     current_mode = MODE_MENU_MAIN;
                     selected_menu_idx = 0;
+                    // Este menú no es de un mando: ahí las teclas son atajos.
+                    menu_from_rotary = false;
+                    menu_cursor_moved = false;
                     push_system_refresh();
                     
                     // Notificar por CDC
@@ -3794,12 +4004,25 @@ int main() {
                     tud_cdc_n_write_flush(0);
                 }
                 hold_start_time = 0;
-                // Esperar liberación completa de botones para evitar dobles clics
+                // Los mandos ya no abren ni eligen nada con este gesto.
+                enc_hold[0].armed = enc_hold[0].open = false;
+                enc_hold[1].armed = enc_hold[1].open = false;
+                // Esperar liberación completa de botones para evitar dobles clics.
+                // Mientras tanto se puede girar para elegir una opción del menú
+                // principal y, al soltar, entrar en ella (como en los demás
+                // menús que se mantienen); sin girar se queda abierto.
+                menu_cursor_moved = false;
                 while (!gpio_get(Pins::ENC1_SW) || !gpio_get(Pins::ENC2_SW)) {
                     tud_task();
                     watchdog_update(); // el usuario puede tenerlo apretado un buen rato
+                    mirror_pump(0);
+                    const int d1 = rueda_izq.get_delta();
+                    const int d2 = rueda_der.get_delta();
+                    if (d1 != 0) menu_turn((rot_invert_mask & ROTINV_ENC1) ? -d1 : d1);
+                    if (d2 != 0) menu_turn((rot_invert_mask & ROTINV_ENC2) ? -d2 : d2);
                     sleep_ms(10);
                 }
+                if (menu_cursor_moved && current_mode == MODE_MENU_MAIN) menu_click();
             }
         } else {
             hold_start_time = 0;
@@ -3811,7 +4034,7 @@ int main() {
             activity_detected = true;
 
             if (current_mode == MODE_NORMAL) {
-                wheel_accumulate(wheel_delta);
+                wheel_accumulate((rot_invert_mask & ROTINV_WHEEL) ? -wheel_delta : wheel_delta);
             }
             // Telemetría agregada: la rueda emite a 250 Hz y volcar una línea
             // por bloque saturaba el CDC e introducía jitter en el scroll.
@@ -4007,20 +4230,25 @@ int main() {
             tud_cdc_n_write_flush(0);
         }
 
+        // Con el menú abierto desde un mando las teclas siguen siendo teclas:
+        // hacen lo que dice la página, y la selección la lleva el mando.
+        const bool keys_live = current_mode == MODE_NORMAL
+                            || (menu_from_rotary && current_mode != MODE_NORMAL);
+
         for (int i = 0; i < 12; i++) {
             // La tecla SUPER se maneja por separado, arriba
             if (i == KEY_IDX_SUPER) continue;
 
             // La tecla de menú, en modo normal, solo responde al hold largo
             // (salvo que esté libre: entonces es una tecla como las demás).
-            if (i == KEY_IDX_MENU && current_mode == MODE_NORMAL && menu_key_is_menu()) continue;
+            if (i == KEY_IDX_MENU && keys_live && menu_key_is_menu()) continue;
 
             bool is_pressed = key_stable[i];
             if (is_pressed != last_key_state[i]) {
                 last_key_state[i] = is_pressed;
                 activity_detected = true;
 
-                if (current_mode == MODE_NORMAL) {
+                if (keys_live) {
                     // El realce de la pantalla ya no se toca aquí: se recalcula
                     // entero más abajo, una vez por vuelta (ver "REALCE DE LAS
                     // TECLAS PULSADAS").
@@ -4047,8 +4275,9 @@ int main() {
                             // lo ve el usuario en la app y en las pantallas.
                             if (key >= 1 && key <= MAX_PAGES) set_active_page((uint8_t)(key - 1));
                         } else if (mod == KEYACT_PAGE_STATE) {
-                            // Abre el gestor de páginas
+                            // Abre el gestor de páginas, con el cursor en la actual
                             current_mode = MODE_MENU_PAGES;
+                            selected_menu_idx = active_page;
                             push_system_refresh();
                         } else if (mod == KEYACT_MACRO) {
                             // La secuencia la ejecuta el PC, no el teclado.

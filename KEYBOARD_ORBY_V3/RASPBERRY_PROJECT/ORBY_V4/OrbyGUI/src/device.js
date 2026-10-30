@@ -122,6 +122,19 @@ export const setMenuKey   = (v)  => request(`SET_MENUKEY:${v}`,    {
   fail: (l) => l.startsWith('ERR:MENUKEY'),
 });
 
+// Sentido de los mandos: máscara de 1 izquierdo, 2 derecho y 4 rueda con el giro
+// al revés. Firmware 4.16 (bandera ROTINV); va a la Flash con el guardado de siempre.
+export const setRotInvert = (mask) => request(`SET_ROTINV:${mask}`, {
+  match: (l) => l.startsWith('ROTINV:OK:'),
+  fail: (l) => l.startsWith('ERR:ROTINV'),
+});
+// Mando que hace de menú: 0 ninguno, 1 izquierdo, 2 derecho. Firmware 4.16
+// (bandera MENUENC).
+export const setMenuEncoder = (enc) => request(`SET_MENUENC:${enc}`, {
+  match: (l) => l.startsWith('MENUENC:OK:'),
+  fail: (l) => l.startsWith('ERR:MENUENC'),
+});
+
 // Velocidad de las animaciones de las pantallas. `group` es el orden del
 // firmware (OledAnim::Group): 0 menú, 1 carrusel de páginas, 2 submenú,
 // 3 cambio de perfil, 4 fundido. `pct` tal cual lo entiende el teclado: desde
@@ -281,6 +294,8 @@ export function getState() {
       }
       if (line.startsWith('STATE:TIMEOUT:'))    { state.timeout   = parseInt(line.slice(14), 10); return true; }
       if (line.startsWith('STATE:MENUKEY:'))    { state.menuKeyMode = parseInt(line.slice(14), 10); return true; }
+      if (line.startsWith('STATE:ROTINV:'))     { state.rotInvert   = parseInt(line.slice(13), 10); return true; }
+      if (line.startsWith('STATE:MENUENC:'))    { state.menuEncoder = parseInt(line.slice(14), 10); return true; }
       if (line.startsWith('STATE:ANIMSPEED:')) {
         const [menu, carousel, submenu, profile, fade] = line.slice(16).split(':').map(Number);
         state.animSpeed = { menu, carousel, submenu, profile, fade };

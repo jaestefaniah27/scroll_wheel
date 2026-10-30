@@ -24,6 +24,11 @@ export const state = {
   // Tecla 10: 0 = la de menú, 1 = una tecla normal (firmware 4.15). Con uno
   // anterior no llega y se queda en 0, que es lo único que sabía hacer.
   menuKeyMode: 0,
+  // Mando de menú (0 ninguno, 1 izquierdo, 2 derecho) y sentido invertido de
+  // cada mando (máscara: 1 izquierdo, 2 derecho, 4 rueda). Firmware 4.16; con
+  // uno anterior no llegan y se quedan en 0, que es como funcionaba.
+  menuEncoder: 0,
+  rotInvert: 0,
   // Velocidad de las animaciones de las pantallas, por grupo, tal cual la dice
   // el teclado (ver OledAnim::Group en el firmware). Desde la 4.10 es % sobre
   // el ritmo de fábrica de cada grupo (100 = de fábrica); la 4.8/4.9 contaba
@@ -134,6 +139,14 @@ export function keyRole(keyIndex) {
   return null;
 }
 
+// Si el hueco de mando (el base, sin capa) pertenece al mando que hace de menú.
+// Ese mando no se configura: su giro, su pulsación y sus dos capas las lleva el
+// firmware, igual que la tecla de menú.
+export function isMenuEncoderSlot(baseSlot) {
+  if (!state.menuEncoder) return false;
+  return state.menuEncoder === 1 ? baseSlot <= 2 : baseSlot >= 3 && baseSlot <= 5;
+}
+
 export function labelForKey(prof, keyIndex, layer) {
   const screen = KEY_TO_SCREEN[keyIndex];
   if (!screen || !prof) return null;
@@ -229,6 +242,8 @@ export async function syncFromDevice({ expected = null, iconOf = null, onProgres
       if (Number.isInteger(s.maxProfiles))  state.maxProfiles = s.maxProfiles;
       if (Number.isInteger(s.timeout))      state.timeout = s.timeout;
       state.menuKeyMode = s.menuKeyMode === 1 ? 1 : 0;
+      state.menuEncoder = [1, 2].includes(s.menuEncoder) ? s.menuEncoder : 0;
+      state.rotInvert   = Number.isInteger(s.rotInvert) ? s.rotInvert & 7 : 0;
       if (s.animSpeed) state.animSpeed = s.animSpeed;
       if (typeof s.superActive === 'boolean') state.superActive = s.superActive;
       if (s.mode)   state.deviceMode = s.mode;

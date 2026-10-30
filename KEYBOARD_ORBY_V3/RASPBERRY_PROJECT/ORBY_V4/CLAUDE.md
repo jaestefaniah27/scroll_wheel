@@ -26,6 +26,15 @@ cmake -B build -G Ninja && cmake --build build    # solo compilar
 ```
 Salida: `build/ORBY_V4.uf2`.
 
+**Compilar en Linux (sesión de Claude en la nube, servidor).** Allí no hay toolchain
+ARM ni Pico SDK —ni en el contenedor ni en el servidor Oracle, que solo tiene `cmake`
+y `ninja`—, y **sí se puede compilar**: `tools/compilar-linux.sh` instala
+`gcc-arm-none-eabi` por `apt`, clona `pico-sdk` 2.2.0 con sus submódulos en `/tmp/pico`,
+configura con `PICO_SDK_PATH` y deja `/tmp/pico/build/ORBY_V4.uf2` (unos 2 minutos, hace
+falta red para apt, GitHub y la descarga de picotool que hace el SDK). Compilar es
+obligatorio antes de dar por buena cualquier edición de `main.cpp`: sin ello solo se ha
+leído. Esta vía no usa `flash.ps1`; para flashear, el `.uf2` se baja a un PC.
+
 **No hace falta pulsar BOOTSEL.** `flash.ps1` busca el puerto CDC del teclado por
 VID (`VID_CAFE`, cualquier PID) y le manda el comando `BOOTSEL`, igual que hace
 OrbyGUI. Cae al método manual si el teclado lleva un firmware anterior al 4.2, si

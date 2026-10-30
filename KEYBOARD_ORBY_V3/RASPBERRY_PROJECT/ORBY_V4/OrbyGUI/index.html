@@ -266,6 +266,23 @@
               </div>
             </div>
 
+            <!-- Sentido de cada mando y de la rueda (firmware 4.16). Ver renderRotInvert
+                 en settings.js. -->
+            <div class="settings-card glass-panel hidden" id="settings-rotinv" data-tint="blue">
+              <div class="card-header">
+                <span data-icon="reset" data-icon-size="16"></span>
+                <h2>Sentido de mandos y rueda</h2>
+              </div>
+              <div class="setting-body">
+                <div class="timeout-selector" id="rotinv-selector">
+                  <button class="opt-btn" data-bit="1">Mando izquierdo</button>
+                  <button class="opt-btn" data-bit="2">Mando derecho</button>
+                  <button class="opt-btn" data-bit="4">Rueda</button>
+                </div>
+                <p class="setting-desc" id="rotinv-desc"></p>
+              </div>
+            </div>
+
             <!-- Tecla 10: la de menú, o una tecla normal llevando páginas y menú
                  con un mando (firmware 4.15). Ver renderMenuKey en settings.js. -->
             <div class="settings-card glass-panel hidden" id="settings-menukey" data-tint="orange">
@@ -279,16 +296,13 @@
                   <button class="opt-btn" data-val="1">Tecla normal</button>
                 </div>
                 <p class="setting-desc" id="menukey-desc"></p>
-                <span class="field-label mt-4">Páginas y menú en un mando, en todos los perfiles</span>
+                <span class="field-label mt-4">Mando de menú</span>
                 <div class="timeout-selector" id="menukey-encoder">
+                  <button class="opt-btn" data-enc="0" hidden>Ninguno</button>
                   <button class="opt-btn" data-enc="1">Mando izquierdo</button>
                   <button class="opt-btn" data-enc="2">Mando derecho</button>
                 </div>
-                <p class="setting-desc">
-                  Girarlo cambia de página y pulsarlo abre el selector de perfiles, en la capa
-                  normal de todas las páginas. Se puede cambiar después perfil a perfil, en
-                  Rueda y mandos.
-                </p>
+                <p class="setting-desc" id="menukey-enc-desc"></p>
               </div>
             </div>
 

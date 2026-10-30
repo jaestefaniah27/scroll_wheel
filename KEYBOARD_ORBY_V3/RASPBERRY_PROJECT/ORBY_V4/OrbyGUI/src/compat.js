@@ -24,7 +24,7 @@ export const FW_MIN = '2.0';
 
 // La que trae este repositorio (include/orby_version.h). Con una anterior la
 // app funciona recortada; con una posterior, la app es la vieja.
-export const FW_RECOMMENDED = '4.15';
+export const FW_RECOMMENDED = '4.16';
 
 // Qué versión hace falta para cada función, y qué bandera del handshake la
 // confirma cuando el firmware la anuncia.
@@ -43,6 +43,8 @@ export const FEATURES = {
   animSpeed:  { since: '4.8', label: 'ajustar la velocidad de las animaciones de las pantallas', flag: 'animspeed' },
   mirror:     { since: '4.12', label: 'ver en el dashboard las animaciones de las pantallas', flag: 'mirror' },
   menuKey:    { since: '4.15', label: 'cambiar de página y abrir menús con los mandos, y dejar libre la tecla de menú', flag: 'menukey' },
+  rotInvert:  { since: '4.16', label: 'invertir el sentido de cada mando y de la rueda', flag: 'rotinv' },
+  menuEncoder: { since: '4.16', label: 'un mando de menú: mantenerlo, girar y soltar para elegir perfil', flag: 'menuenc' },
 };
 
 // Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y

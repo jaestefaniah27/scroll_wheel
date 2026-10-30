@@ -86,6 +86,7 @@ export function init() {
 
   initAnimSpeed();
   initMenuKey();
+  initRotInvert();
   if (hayAutostart) initAutostart();
   if (hayPlugins) initPlugins();
 
@@ -622,6 +623,48 @@ function navEncoder() {
   return null;
 }
 
+// El mando de menú actual: el que dice el firmware (4.16, global) o, en uno
+// anterior, el que tenga páginas y menú en todos los perfiles.
+function currentMenuEncoder() {
+  return compat.supports(state.deviceInfo, 'menuEncoder') ? (state.menuEncoder || null) : navEncoder();
+}
+
+function renderRotInvert() {
+  const card = document.getElementById('settings-rotinv');
+  if (!card) return;
+  if (!compat.supports(state.deviceInfo, 'rotInvert')) {
+    card.classList.add('hidden');
+    return;
+  }
+  card.classList.remove('hidden');
+  document.querySelectorAll('#rotinv-selector .opt-btn').forEach((b) => {
+    b.classList.toggle('active', (state.rotInvert & Number(b.dataset.bit)) !== 0);
+  });
+  const desc = document.getElementById('rotinv-desc');
+  if (desc) {
+    desc.textContent = 'Marca lo que quieras que gire al revés de como viene de fábrica. Vale para '
+      + 'todos los perfiles y para los menús del teclado, y es independiente de la inversión de la '
+      + 'rueda de cada perfil.';
+  }
+}
+
+function initRotInvert() {
+  document.querySelectorAll('#rotinv-selector .opt-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!requireDevice()) return;
+      const mask = state.rotInvert ^ Number(btn.dataset.bit);
+      try {
+        await device.setRotInvert(mask);
+        state.rotInvert = mask;
+        markDirty();
+        render();
+      } catch {
+        toast('El teclado no confirmó el cambio de sentido', 'error');
+      }
+    });
+  });
+}
+
 function renderMenuKey() {
   const card = document.getElementById('settings-menukey');
   if (!card) return;
@@ -633,10 +676,24 @@ function renderMenuKey() {
   document.querySelectorAll('#menukey-selector .opt-btn').forEach((b) => {
     b.classList.toggle('active', Number(b.dataset.val) === state.menuKeyMode);
   });
-  const enc = navEncoder();
+  const enc = currentMenuEncoder();
+  const global = compat.supports(state.deviceInfo, 'menuEncoder');
   document.querySelectorAll('#menukey-encoder .opt-btn').forEach((b) => {
-    b.classList.toggle('active', Number(b.dataset.enc) === enc);
+    // «Ninguno» solo existe con el ajuste global: antes el mando se montaba
+    // reescribiendo los perfiles, y deshacerlo era cosa de cada uno.
+    if (Number(b.dataset.enc) === 0) b.hidden = !global;
+    b.classList.toggle('active', Number(b.dataset.enc) === (enc || 0));
   });
+  const encDesc = document.getElementById('menukey-enc-desc');
+  if (encDesc) {
+    encDesc.textContent = global
+      ? 'Girarlo cambia de página. Mantenlo pulsado y gira, sin soltar, hasta el perfil que '
+        + 'quieras: al soltar, el teclado cambia a él (con SUPER, el gestor de páginas). Ese mando '
+        + 'deja de configurarse por perfil. Con el menú abierto, las teclas siguen haciendo lo '
+        + 'que tengan asignado.'
+      : 'Girarlo cambia de página y pulsarlo abre el selector de perfiles, en la capa normal de '
+        + 'todas las páginas. Se puede cambiar después perfil a perfil, en Rueda y mandos.';
+  }
   const desc = document.getElementById('menukey-desc');
   if (!desc) return;
   if (state.menuKeyMode !== 1) {
@@ -657,7 +714,7 @@ function initMenuKey() {
     btn.addEventListener('click', async () => {
       const val = Number(btn.dataset.val);
       if (val === state.menuKeyMode || !requireDevice()) return;
-      if (val === 1 && !navEncoder()) {
+      if (val === 1 && !currentMenuEncoder()) {
         const ok = await confirmar({
           titulo: 'Dejar libre la tecla 10',
           mensaje: 'Sin ella, cambiar de página y abrir el selector de perfiles solo se puede '
@@ -684,6 +741,24 @@ function initMenuKey() {
     btn.addEventListener('click', async () => {
       if (!requireDevice()) return;
       const enc = Number(btn.dataset.enc);
+
+      // Firmware 4.16: es un ajuste del teclado, no hay perfiles que reescribir
+      // ni nada que perder (lo que cada perfil tenga en ese mando queda guardado
+      // y vuelve si se quita).
+      if (compat.supports(state.deviceInfo, 'menuEncoder')) {
+        if (enc === (state.menuEncoder || 0)) return;
+        try {
+          await device.setMenuEncoder(enc);
+          state.menuEncoder = enc;
+          markDirty();
+          render();
+          dashboard.render();
+        } catch {
+          toast('El teclado no confirmó el mando de menú', 'error');
+        }
+        return;
+      }
+
       const ok = await confirmar({
         titulo: `Páginas y menú en el mando ${enc === 1 ? 'izquierdo' : 'derecho'}`,
         mensaje: `Cambia el giro y el clic de ese mando en la capa normal de todas las páginas `
@@ -879,6 +954,7 @@ export function render() {
 
   renderAnimSpeed();
   renderMenuKey();
+  renderRotInvert();
 
   const list = document.getElementById('device-info-list');
   if (!list) return;

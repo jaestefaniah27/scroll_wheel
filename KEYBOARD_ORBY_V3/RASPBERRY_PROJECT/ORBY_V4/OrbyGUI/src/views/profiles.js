@@ -15,7 +15,7 @@
 
 import * as device from '../device.js';
 import { state, notify, markDirty, subscribe, syncFromDevice, profileMeta, labelSlot, keymapSlot,
-         rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU, keyRole,
+         rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU, keyRole, isMenuEncoderSlot,
          hasPages, maxPages, pageCountOf, selectPage, addPage, removePage } from '../store.js';
 import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, CONSUMER_TURN_OPTIONS, consumerPairFor,
          GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER,
@@ -1553,6 +1553,7 @@ function renderPanel() {
 // entrar en un gesto, el editor de su acción.
 function renderPiecePanel(piece) {
   if (!piece) return '';
+  if (piece.id !== 'wheel' && isMenuEncoderSlot(piece.group.parts[0].slot)) return renderMenuEncoderPanel(piece);
   if (view.panelNav === 'gesture') {
     const found = rotaryPart(selectedRotarySlot());
     const action = currentRotary();
@@ -1584,6 +1585,48 @@ function renderPiecePanel(piece) {
     ${piece.id === 'wheel' ? renderWheelTune() : `
       <p class="kp-note">Dentro del menú del teclado los mandos siguen sirviendo para navegar,
         hagan lo que hagan aquí.</p>`}`;
+}
+
+// El mando de menú no se configura: lo lleva el firmware igual para todos los
+// perfiles (es lo que hace la tecla de menú, y por eso no se deja sin ella).
+function renderMenuEncoderPanel(piece) {
+  return `
+    <div class="kp-hero">
+      <span class="rp-dial"><i></i></span>
+      <div class="kp-hero-text">
+        <h3>${piece.name}</h3>
+        <span class="kp-now">Mando de menú</span>
+      </div>
+    </div>
+
+    <div class="kp-list">
+      <div class="nav-row" data-tint="blue">
+        <span class="nav-icon">${icon('reset', 15)}</span>
+        <span class="nav-row-text">
+          <span class="nav-row-title">Girar</span>
+          <span class="nav-row-sub is-set">Cambia de página</span>
+        </span>
+      </div>
+      <div class="nav-row" data-tint="orange">
+        <span class="nav-icon">${icon('record', 15)}</span>
+        <span class="nav-row-text">
+          <span class="nav-row-title">Mantener pulsado</span>
+          <span class="nav-row-sub is-set">Selector de perfiles</span>
+        </span>
+      </div>
+      <div class="nav-row" data-tint="indigo">
+        <span class="nav-icon">${icon('record', 15)}</span>
+        <span class="nav-row-text">
+          <span class="nav-row-title">Mantener con SUPER</span>
+          <span class="nav-row-sub is-set">Gestor de páginas</span>
+        </span>
+      </div>
+    </div>
+
+    <p class="kp-note">Se mantiene pulsado y se gira, sin soltar, hasta el elemento que se quiere;
+      al soltar se elige. Un toque corto lo deja abierto hasta confirmar con otro clic. Mientras está
+      abierto, las teclas siguen haciendo lo que les hayas asignado. Este mando no se configura por
+      perfil; para usarlo de otra forma, quítalo en Ajustes → Tecla 10.</p>`;
 }
 
 // Nombre de cada gesto tal como se hace con la mano.
@@ -2021,9 +2064,10 @@ function renderRotaryInspector() {
                       data-act="rotary-menu" data-menu="${m.value}">${m.label}</button>`).join('')}
           </div>
           <p class="setting-desc">
-            Dentro del menú, cualquiera de los dos mandos mueve la selección al girar y la
-            confirma al pulsar; las teclas eligen directamente. Volver deja el teclado como
-            estaba.
+            Mantenlo pulsado y gira sin soltar hasta lo que quieras: al soltar se elige. Un
+            toque corto deja el menú abierto, y entonces cualquiera de los dos mandos mueve la
+            selección al girar y la confirma al pulsar. Con el menú abierto, las teclas siguen
+            haciendo lo que tengan asignado.
           </p>
         </div>` : ''}
 
