@@ -8,9 +8,10 @@
 // distinguen por lo que llevan dentro.
 
 import * as device from '../../device.js';
-import { state, markDirty, notify } from '../../store.js';
+import { state, markDirty, notify, pageCountOf } from '../../store.js';
 import { MACRO_MODIFIER, ROTARY_TYPES, describeAction, describeRotary } from '../../hid-keys.js';
 import * as plugins from '../../plugins.js';
+import * as variants from '../../variants.js';
 import * as compat from '../../compat.js';
 import { encode, decode, merge, canonical, crc32 } from '../../web/macro-blob.mjs';
 
@@ -253,6 +254,135 @@ export async function syncAllMacrosToDevice() {
   const capacity = deviceMacroCapacity();
   const now = pcMacros.filter((m) => macroDeviceEligible(m) && m.id < capacity).map((m) => m.id);
   window.orby.setConfig({ macrosOnDevice: now });
+}
+
+// --- Limpieza de las macros que ya no usa ninguna tecla ----------------------
+// Cambiar una tecla de pestaña, pegarla o instalar un perfil de la biblioteca
+// estrena una macro, y la de antes se quedaba en la lista para siempre aunque
+// nada la usara. nextMacroId da el id libre más bajo, pero si nunca se libera
+// ninguno los ids solo crecen: una configuración real iba por el 160 con el
+// teclado guardando solo hasta el 63, y las secuencias nuevas, aunque fueran
+// de teclas y clics, se quedaban sin poder ir solas en el teclado. El firmware
+// 4.14 sube el tope a 255, que es lo que cabe en el keycode de una tecla; sin
+// esto, se acabaría llegando ahí también.
+//
+// Qué cuenta como usada: cualquier tecla o mando de cualquier página de
+// cualquier perfil, en las dos capas, y cualquier variación por app. Solo se
+// decide con la lista de perfiles entera (state.profilesComplete): con un
+// perfil sin leer, sus macros parecerían huérfanas.
+//
+// Límite conocido: las macros de OTRO teclado conectado a este mismo PC no las
+// usa ninguna tecla de este, y se van. Vuelven al conectar ese teclado (su
+// almacén las trae, ver syncMacroStore), pero si mientras tanto este PC ha
+// reutilizado su id, la del teclado manda. Por si acaso, lo que se quita se
+// apunta en `macrosRetiradas` de la configuración del PC, y vuelve solo si
+// alguna tecla la vuelve a pedir (rescueRetiredMacros).
+const RETIRED_KEEP = 200;
+
+async function retiredMacros() {
+  try {
+    const cfg = await window.orby.getConfig();
+    return Array.isArray(cfg?.macrosRetiradas) ? cfg.macrosRetiradas : [];
+  } catch {
+    return [];
+  }
+}
+
+function macroIdOfKey(a) {
+  return a && a.modifier === MACRO_MODIFIER ? a.keycode : null;
+}
+
+function macroIdOfRotary(a) {
+  return a && a.type === ROTARY_TYPES.KEY && a.modifier === MACRO_MODIFIER ? a.keycode : null;
+}
+
+// Los ids que usa alguna tecla, mando o variación, o null si no se puede saber.
+export function usedMacroIds() {
+  if (!state.profilesComplete || !state.profiles.length) return null;
+  const used = new Set();
+  const add = (id) => { if (Number.isInteger(id)) used.add(id); };
+
+  for (const prof of state.profiles) {
+    const pages = prof?.pages;
+    if (!Array.isArray(pages) || pages.length < pageCountOf(prof)) return null;
+    for (const pg of pages) {
+      if (!Array.isArray(pg?.keys) || !Array.isArray(pg?.rotary)) return null;
+      pg.keys.forEach((a) => add(macroIdOfKey(a)));
+      pg.rotary.forEach((a) => add(macroIdOfRotary(a)));
+    }
+  }
+  for (const v of variants.variants) {
+    Object.values(v.keys || {}).forEach((a) => add(macroIdOfKey(a)));
+    Object.values(v.rotary || {}).forEach((a) => add(macroIdOfRotary(a)));
+  }
+  // La tecla de borrado de una grabación apunta a la suya por `target`: si la
+  // de borrado se usa, la grabación también, aunque su tecla esté en otra capa.
+  for (const m of pcMacros) {
+    if (used.has(m.id) && m.kind === 'recording-reset' && Number.isInteger(m.target)) used.add(m.target);
+  }
+  return used;
+}
+
+// Quita de la lista las macros que no usa nada y vacía su copia en el teclado
+// si la tenía. Devuelve cuántas se han quitado. Se llama al conectar, con los
+// perfiles ya leídos y el almacén del teclado ya juntado: es el único momento
+// en que la lista de perfiles es seguro la de verdad y nadie está a medio
+// crear una macro que todavía no tiene tecla.
+export async function pruneUnusedMacros() {
+  if (!await variants.loaded()) return 0;
+  await rescueRetiredMacros();
+  const used = usedMacroIds();
+  if (!used) return 0;
+  await loadPCMacros();
+  const gone = pcMacros.filter((m) => !used.has(m.id));
+  if (!gone.length) return 0;
+
+  pcMacros = pcMacros.filter((m) => used.has(m.id));
+  let retired = await retiredMacros();
+  const at = new Date().toISOString();
+  retired = [...retired, ...gone.map((m) => ({ ...m, retiradaEl: at }))].slice(-RETIRED_KEEP);
+  await window.orby.setConfig({ macros: pcMacros, macrosRetiradas: retired });
+
+  // Las que tenían copia en el teclado: ningún id libre puede quedarse con
+  // pasos viejos dentro, o la macro que lo reutilice sonaría a la de antes
+  // hasta que se subiera la suya.
+  const known = await uploadedIds();
+  for (const m of gone) {
+    if (!known || known.includes(m.id)) await syncMacroToDevice(m.id);
+  }
+  scheduleStoreUpload();
+  notify();
+  return gone.length;
+}
+
+// Devuelve a la lista las macros retiradas que alguna tecla vuelve a usar y que
+// no tienen ya otra con su id. Pasa al restaurar una copia de seguridad
+// anterior a la limpieza (las copias guardan las teclas, no las macros): sin
+// esto, sus teclas apuntarían a una macro que ya no está.
+export async function rescueRetiredMacros() {
+  const used = usedMacroIds();
+  if (!used) return 0;
+  await loadPCMacros();
+  const have = new Set(pcMacros.map((m) => m.id));
+  let retired = await retiredMacros();
+  const back = [];
+  for (const id of used) {
+    if (have.has(id)) continue;
+    // La más reciente con ese id: un id se puede haber retirado más de una vez.
+    const idx = retired.map((m) => m.id).lastIndexOf(id);
+    if (idx < 0) continue;
+    const { retiradaEl, ...m } = retired[idx];
+    back.push(m);
+    retired = retired.filter((r) => r.id !== id);
+  }
+  if (!back.length) return 0;
+
+  pcMacros = [...pcMacros, ...back].sort((a, b) => a.id - b.id);
+  await window.orby.setConfig({ macros: pcMacros, macrosRetiradas: retired });
+  for (const m of back) await syncMacroToDevice(m.id);
+  scheduleStoreUpload();
+  notify();
+  return back.length;
 }
 
 // Los ids que este PC ha subido al teclado, o null si nunca se ha apuntado.

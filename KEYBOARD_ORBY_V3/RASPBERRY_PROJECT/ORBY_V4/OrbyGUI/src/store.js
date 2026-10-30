@@ -29,6 +29,7 @@ export const state = {
   animSpeed: { menu: 100, carousel: 100, submenu: 100, profile: 100, fade: 100 },
   scroll: { detentsPerRev: 60, invert: false, hires: false }, // lo que aplica ahora mismo
   profiles: [],       // rellenado desde el firmware
+  profilesComplete: false, // `profiles` es la lista entera del teclado (ver syncFromDevice)
   dirty: false,       // hay cambios sin escribir en Flash
   syncing: false,
   // Páginas del perfil activo. Un firmware anterior al 4.0 no las manda y todo
@@ -239,6 +240,10 @@ export async function syncFromDevice({ expected = null, iconOf = null, onProgres
     }
     state.pageCount = pageCountOf(profiles[state.activeProfileIdx]);
     state.dirty = false;
+    // Sin GET_STATE el número de perfiles es una suposición: la lista puede
+    // quedarse corta, y quien decida algo mirando TODOS los perfiles (la
+    // limpieza de macros sin usar) no se puede fiar de ella.
+    state.profilesComplete = Number.isInteger(s?.profileCount);
   } finally {
     state.syncing = false;
     notify();

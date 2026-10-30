@@ -7,6 +7,7 @@
 import * as device from './device.js';
 import { state, markDirty, syncFromDevice, pageCountOf, withPinnedPage } from './store.js';
 import { writeAllPages } from './profile-library.js';
+import { rescueRetiredMacros } from './views/profiles/macros-store.js';
 import { toast, confirmar } from './ui.js';
 import * as cache from './oled-cache.js';
 
@@ -217,6 +218,9 @@ export async function importAll(data, onProgress = () => {}) {
   cache.invalidate();
   markDirty();
   await syncFromDevice();
+  // La copia trae las teclas pero no las macros: si alguna apunta a una que la
+  // limpieza retiró después de hacer la copia, se recupera.
+  await rescueRetiredMacros().catch(() => {});
 }
 
 // --- Acciones enganchadas a los botones ------------------------------------

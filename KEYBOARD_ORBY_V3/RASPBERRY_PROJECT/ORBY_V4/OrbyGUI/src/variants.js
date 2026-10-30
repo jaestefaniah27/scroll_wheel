@@ -84,13 +84,26 @@ function normalize(v) {
   return v;
 }
 
+// Si las variaciones del disco ya están en `variants`. Sin leerlas, la lista
+// vacía no quiere decir "no hay ninguna": la limpieza de macros sin usar daría
+// por huérfanas las que solo usa una variación.
+let cargadas = null;
+export function loaded() {
+  return cargadas ?? Promise.resolve(false);
+}
+
 export async function init() {
-  try {
-    const cfg = await window.orby.getConfig();
-    variants.push(...(cfg.profileVariants || []).map(normalize));
-  } catch {
-    // Sin configuración local: se empieza sin variaciones.
-  }
+  cargadas = (async () => {
+    try {
+      const cfg = await window.orby.getConfig();
+      variants.push(...(cfg.profileVariants || []).map(normalize));
+      return true;
+    } catch {
+      // Sin configuración local: se empieza sin variaciones.
+      return false;
+    }
+  })();
+  await cargadas;
 
   // Al desconectar, el teclado pierde la RAM: lo aplicado deja de estarlo.
   device.on('disconnected', () => {

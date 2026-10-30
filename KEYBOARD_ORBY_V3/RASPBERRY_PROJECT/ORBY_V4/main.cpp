@@ -674,10 +674,10 @@ static_assert(OLED_PAGE_STRIDE % FLASH_PAGE_SIZE == 0,
 // yendo por CDC: una secuencia que la use se queda en el camino viejo (ver
 // trigger_macro: sin copia jugable en el teclado, avisa por CDC como antes).
 //
-// Eran 64 hasta la 4.13, y se quedaban cortas: la app nunca libera el id de una
-// macro que ya no usa ninguna tecla (cambiar de pestaña, pegar una tecla o
-// instalar un perfil de la biblioteca estrenan uno), así que con el uso los ids
-// pasan de 63. Una secuencia rehecha a partir de ahí estrenaba un id que el
+// Eran 64 hasta la 4.13, y se quedaban cortas: hasta Orvy 1.1.3 la app no
+// liberaba el id de una macro que ya no usa ninguna tecla (cambiar de pestaña,
+// pegar una tecla o instalar un perfil de la biblioteca estrenan uno), así que
+// con el uso los ids pasaban de 63. Una secuencia rehecha a partir de ahí estrenaba un id que el
 // teclado no podía guardar, y aunque solo llevara teclas y clics se quedaba
 // tachada sin la app (una configuración real ya iba por el id 160). La app lee
 // este número del handshake (MAXMACROS), así que subirlo basta para que vuelvan
