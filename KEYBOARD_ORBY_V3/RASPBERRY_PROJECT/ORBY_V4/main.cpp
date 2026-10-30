@@ -1863,6 +1863,10 @@ static void macro_player_tick(uint32_t now) {
             break;
 
         case MSTEP_KEY:
+            // Como en MSTEP_TEXT: tap() mete en una cola de 32 y tira lo que no
+            // cabe, así que varias teclas seguidas (o una tecla justo después de
+            // un texto) perdían pulsaciones. Se espera a que la cola esté libre.
+            if (!HidOut::idle()) break;
             HidOut::tap((uint8_t)s.a, (uint8_t)s.b);
             macro_repeat_or_advance(now, s);
             break;
@@ -1925,21 +1929,21 @@ static void macro_player_tick(uint32_t now) {
 // en el teclado.
 static inline bool host_app_alive();
 
-// Una secuencia que solo escribe texto. Con la app delante la escribe ella, que es
-// bastante más rápido (pega de golpe por el portapapeles en vez de pulsar tecla a
-// tecla) y no depende de la distribución del teclado del PC; sin ella la teclea el
-// propio teclado. El resto de secuencias van siempre por el teclado.
-static bool macro_is_text_only(uint8_t id) {
+// Una secuencia con algún paso de texto. Con la app delante la ejecuta ella entera,
+// y el texto lo pega de golpe por el portapapeles en vez de pulsar tecla a tecla:
+// bastante más rápido y sin depender de la distribución del teclado del PC. Sin
+// ella la ejecuta el propio teclado. Se manda la secuencia entera y no solo el
+// texto porque el PC no puede ejecutar un trozo de lo que el teclado ya tiene.
+static bool macro_has_text(uint8_t id) {
     const FlashMacro& m = macros[id];
-    if (m.step_count == 0) return false;
     for (uint8_t i = 0; i < m.step_count; i++)
-        if (m.steps[i].type != MSTEP_TEXT) return false;
-    return true;
+        if (m.steps[i].type == MSTEP_TEXT) return true;
+    return false;
 }
 
 static void trigger_macro(uint8_t id) {
     const bool device_has_it = (id < MACRO_MAX_COUNT && macros[id].step_count > 0)
-                            && !(macro_is_text_only(id) && host_app_alive());
+                            && !(macro_has_text(id) && host_app_alive());
 
     if (device_has_it) {
         // Si ya hay una en marcha se ignora el reintento en vez de encolarla o
