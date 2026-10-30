@@ -10,21 +10,81 @@
 // qué se pierde con la que tenga el teclado delante. La regla al añadir una
 // función al firmware es tocar tres cosas en el mismo commit:
 //   1. include/orby_version.h  — subir la versión
-//   2. este fichero            — la entrada en FEATURES y FW_RECOMMENDED
+//   2. compat.json             — la entrada del firmware nuevo (y `rev` + 1);
+//                                en FEATURES (aquí) solo si trae una función
 //   3. docs/COMPATIBILIDAD.md  — la tabla que lee una persona
+// test/compat-tabla.test.mjs falla si falta la entrada del paso 2.
 //
 // Ojo con la diferencia entre versión y bandera del handshake: la versión dice
 // qué firmware es, las banderas (MACROS=1, HASH=1, MAXMACROS=64) dicen qué
 // trae *este* aparato. Cuando el handshake lo anuncia, se prefiere la bandera:
 // sobrevive a un firmware a medio camino o recompilado con opciones distintas.
 
-// La versión más antigua con la que la app hace algo útil. Por debajo no hay
-// GET_STATE ni GET_PROFILE: no se puede ni leer la configuración.
-export const FW_MIN = '2.0';
 
-// La que trae este repositorio (include/orby_version.h). Con una anterior la
-// app funciona recortada; con una posterior, la app es la vieja.
-export const FW_RECOMMENDED = '4.18';
+import { compareFw, masReciente, fwRecomendado as topeDe, appNecesaria, validar } from './compat-tabla.mjs';
+import base from './compat.json';
+
+export { compareFw };
+
+// La tabla de qué firmware ofrece cada versión de la app. Va en compat.json, y
+// ese mismo fichero se baja de GitHub al arrancar: así sacar un firmware que la
+// app ya sabe manejar no obliga a sacar una app nueva (ver docs/COMPATIBILIDAD.md).
+// Dentro de la app queda la copia con la que se compiló, por si no hay red.
+const URL_TABLA = 'https://raw.githubusercontent.com/jaestefaniah27/scroll_wheel/main/'
+  + 'KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/OrbyGUI/src/compat.json';
+const CLAVE_CACHE = 'orby.compat.tabla';
+const ESPERA_RED_MS = 5000;
+
+// Lo define vite.config.mjs desde package.json. Sin él (un harness sin vite) la
+// tabla no puede decidir nada y se queda con el mínimo.
+const VERSION_APP = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0';
+
+let tabla = base;
+let carga = null;
+
+function leerCache() {
+  try {
+    return JSON.parse(localStorage.getItem(CLAVE_CACHE));
+  } catch {
+    return null;
+  }
+}
+
+function guardarCache(t) {
+  try {
+    localStorage.setItem(CLAVE_CACHE, JSON.stringify(t));
+  } catch { /* sin almacenamiento (ventana privada) se vuelve a bajar la próxima */ }
+}
+
+// Idempotente: lo llaman main.js al arrancar y quien necesite la tabla antes
+// de decidir (la conexión, la comprobación de firmware). Nunca rechaza: sin red
+// o con una tabla rota la app sigue con la que ya tenía.
+export function tablaLista() {
+  carga ??= (async () => {
+    tabla = masReciente(base, leerCache()) ?? base;
+    try {
+      const ctl = new AbortController();
+      const corte = setTimeout(() => ctl.abort(), ESPERA_RED_MS);
+      const resp = await fetch(URL_TABLA, { cache: 'no-store', signal: ctl.signal });
+      clearTimeout(corte);
+      if (!resp.ok) throw new Error(String(resp.status));
+      const remota = validar(await resp.json());
+      if (!remota) throw new Error('tabla no válida');
+      tabla = masReciente(tabla, remota);
+      guardarCache(tabla);
+    } catch (err) {
+      console.warn('[compat] se usa la tabla que ya había:', err?.message ?? err);
+    }
+    return tabla;
+  })();
+  return carga;
+}
+
+// Hasta dónde llega esta app: con un firmware anterior funciona recortada, con
+// uno posterior la app es la vieja. Sale de la tabla, no de una constante.
+export function fwRecomendado() {
+  return topeDe(tabla, VERSION_APP);
+}
 
 // Qué versión hace falta para cada función, y qué bandera del handshake la
 // confirma cuando el firmware la anuncia.
@@ -58,19 +118,6 @@ export const FEATURES = {
 // siempre. Meterlo aquí solo serviría para avisar de que "falta" algo que no se
 // nota.
 
-// "4.10" es posterior a "4.9": comparar como número decimal (el parseFloat de
-// antes) los ponía al revés.
-export function compareFw(a, b) {
-  const partsOf = (v) => String(v ?? '').split('.').map((n) => parseInt(n, 10) || 0);
-  const x = partsOf(a);
-  const y = partsOf(b);
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    const d = (x[i] || 0) - (y[i] || 0);
-    if (d) return d < 0 ? -1 : 1;
-  }
-  return 0;
-}
-
 export function fwOf(info) {
   return info?.fw || '0.0';
 }
@@ -100,21 +147,25 @@ export function missingFeatures(info) {
 // flashear.
 export function check(info) {
   const fw = fwOf(info);
+  const recomendado = fwRecomendado();
 
-  if (compareFw(fw, FW_MIN) < 0) {
+  if (compareFw(fw, tabla.fwMin) < 0) {
     return {
       level: 'blocked', fw,
       title: `Firmware ${fw}: demasiado antiguo`,
-      detail: `Esta versión de Orvy necesita el firmware ${FW_MIN} o posterior. `
-            + `Flashea el ${FW_RECOMMENDED} para usar el editor.`,
+      detail: `Esta versión de Orvy necesita el firmware ${tabla.fwMin} o posterior. `
+            + `Flashea el ${recomendado} para usar el editor.`,
     };
   }
 
-  if (compareFw(fw, FW_RECOMMENDED) > 0) {
+  if (compareFw(fw, recomendado) > 0) {
+    const necesaria = appNecesaria(tabla, fw);
     return {
       level: 'app-vieja', fw,
       title: `Firmware ${fw}: más nuevo que esta app`,
-      detail: `Orvy conoce hasta el ${FW_RECOMMENDED}. Lo que ya funciona sigue `
+      detail: `Orvy conoce hasta el ${recomendado}`
+            + (necesaria ? ` y el ${fw} pide la ${necesaria}` : '')
+            + `. Lo que ya funciona sigue `
             + `funcionando, pero las funciones nuevas del teclado no se ven hasta `
             + `que actualices la app.`,
     };
@@ -125,7 +176,7 @@ export function check(info) {
     return {
       level: 'recortado', fw,
       title: `Firmware ${fw}: faltan funciones`,
-      detail: `Sin flashear el ${FW_RECOMMENDED} no tendrás: ${missing.join(', ')}.`,
+      detail: `Sin flashear el ${recomendado} no tendrás: ${missing.join(', ')}.`,
       missing,
     };
   }

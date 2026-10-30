@@ -14,15 +14,51 @@ novedades no se ven hasta actualizar la app.
 | Dato | Sitio |
 |---|---|
 | Versión del firmware | [`include/orby_version.h`](../include/orby_version.h) — de ahí salen el `FW=` del handshake y el `bcdDevice` del USB |
-| Hasta dónde llega la app | [`OrbyGUI/src/compat.js`](../OrbyGUI/src/compat.js) — `FW_MIN`, `FW_RECOMMENDED` y la tabla `FEATURES` |
+| Qué firmware ofrece cada app | [`OrbyGUI/src/compat.json`](../OrbyGUI/src/compat.json) — por firmware, la app mínima que lo aprovecha (`minApp`). **La app lo baja de GitHub al arrancar** |
+| Qué trajo cada firmware | [`OrbyGUI/src/compat.js`](../OrbyGUI/src/compat.js) — la tabla `FEATURES`, solo para funciones que la app tiene que saber usar |
 | Versión de la app | `OrbyGUI/package.json` |
 
-Al subir la versión del firmware hay que tocar los tres sitios en el mismo
-commit, más este documento.
+Al subir la versión del firmware hay que tocar `orby_version.h` y `compat.json`
+en el mismo commit, más este documento. `compat.js` solo si el firmware trae una
+función nueva.
+
+## Firmware y app se publican por separado
+
+La app no lleva compilado hasta qué firmware ofrece: lo lee de `compat.json`, que
+descarga de `raw.githubusercontent.com` (rama `main`) al arrancar. Si no hay red
+usa la última copia guardada o, en su defecto, la que trae compilada; entre
+varias gana la de `rev` más alto.
+
+```json
+{ "schema": 1, "rev": 7, "fwMin": "2.0",
+  "firmware": { "4.18": { "minApp": "1.1.3" }, "4.19": { "minApp": "1.1.3" } } }
+```
+
+Cada app ofrece hasta el firmware más alto cuyo `minApp` ya cumple. Dos casos:
+
+- **El firmware no cambia nada que la app use** (un arreglo, un ajuste de
+  fábrica): se pone `minApp` igual al de la anterior, se sube `rev`, se sube
+  `compat.json` a `main` y se publica el firmware. Las apps ya instaladas lo
+  ofrecen sin actualizarse.
+- **El firmware trae una función que la app tiene que saber usar**: se añade a
+  `FEATURES`, `minApp` es la versión de app que la estrena, y esa app **hay que
+  publicarla antes**. Hasta entonces las apps viejas no lo ofrecen y, si el
+  teclado ya lo lleva, avisan de que la app es vieja.
+
+`OrbyGUI/test/compat-tabla.test.mjs` hace de puerta: falla si el firmware de
+`orby_version.h` no tiene entrada en `compat.json`, o si su `minApp` es mayor que
+la versión de `package.json` (firmware que pide una app sin publicar).
+
+**Orden al publicar:** primero `compat.json` en `main`, después la release de
+firmware. Al revés, la app vería el `.uf2` y no la tabla, y no lo ofrecería.
+
+Esto solo funciona desde OrbyGUI 1.1.4: las anteriores llevan el tope
+compilado y siguen necesitando app nueva.
 
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
 |---|---|---|
+| **4.19** | **Un solo dueño del menú.** La tecla 10 o un mando: con un mando de menú (`SET_MENUENC` ≠ 0) la tecla 10 queda libre, y volver a la tecla (`SET_MENUKEY:0`) suelta el mando. Con dueño, el «Abrir menú» que un perfil tenga en cualquier otro mando se ignora; las páginas (`ROT_PAGE`) valen en cualquiera. Al cargar de la Flash se corrige lo guardado por la 4.16-4.18, que permitían ambos a la vez. Sin comando ni bandera nueva | Orvy 1.1.3 o posterior; la app oculta «Abrir menú» en los demás mandos con la próxima versión |
 | **4.18** | **Los mandos giran al revés por defecto.** El sentido de fábrica de los dos encoders pasa a ser el contrario al de antes (el que había que marcar con `SET_ROTINV`). Los bits de `ROTINV` siguen queriendo decir «al revés de lo normal», ahora sobre ese sentido nuevo: un teclado que tenía marcados los dos mandos (máscara 3) vuelve a girar como antes hasta que se desmarcan. La rueda y la telemetría `ENC:` no cambian. Sin cambios de protocolo ni bandera nueva | Orvy 1.1.4 o posterior para que la app lo ofrezca como actualización; con cualquiera que tenga `ROTINV` se usa igual |
 | **4.17** | **Animación al elegir perfil en el menú.** Al elegir un perfil en el menú físico, los iconos de las demás pantallas son succionados hacia la pantalla del perfil elegido y, cuando llegan todos, salen disparadas las imágenes del perfil nuevo, cada una hacia su pantalla. Es el tipo de transición `PICK` (9), del grupo de velocidad «perfil». Sin cambios de protocolo: con el espejo encendido (`MIRROR:1`), `EV:SCR:GO` lleva un campo más, `<origen>` (0-9, la pantalla del perfil elegido), que las apps anteriores ignoran. No hay bandera nueva | Orvy 1.1.3 o posterior para verla también en el Inicio; con una anterior el teclado la hace igual y el Inicio salta al destino sin animar |
 | **4.16** | **Sentido de mandos y rueda, y el mando de menú.** `SET_ROTINV:<0..7>` (`ROTINV=1`) invierte el giro del encoder izquierdo (1), el derecho (2) y la rueda (4) para todo lo demás —acciones, menús y páginas—, sin tocar la telemetría `ENC:`/`WHEEL:`; es independiente de la inversión de la rueda por perfil. `SET_MENUENC:<0\|1\|2>` (`MENUENC=1`) deja un mando como menú: girarlo cambia de página y mantenerlo pulsado (250 ms) abre el selector de perfiles —con SUPER, el gestor de páginas—, se gira sin soltar hasta el elemento y **al soltar se elige**; un toque corto lo deja abierto hasta confirmar con otro clic. Lo que los perfiles tengan en ese mando se ignora. El mismo gesto sirve para cualquier clic con `ROT_MENU` (gestor de páginas, menú principal) y para los dos mandos pulsados 2 s (girando antes de soltar se entra en la opción). El gestor de páginas ya tiene cursor que mueven los mandos. **Con el menú abierto desde un mando, las teclas hacen lo que dice su página** en vez de ser atajos de selección. Ambos ajustes van en `GET_STATE` (`STATE:ROTINV`, `STATE:MENUENC`) y en bytes de relleno de los ajustes: no cambia el formato de la Flash | Orvy 1.1.3 o posterior para usar lo nuevo; con una anterior funciona como la 4.15 |
@@ -75,9 +111,10 @@ preguntan por función, nunca por número de versión.
 
 ```powershell
 # 1. Subir ORBY_FW_MINOR (o MAJOR) en include/orby_version.h
-# 2. Actualizar FW_RECOMMENDED y FEATURES en OrbyGUI/src/compat.js
+# 2. Añadir la entrada a OrbyGUI/src/compat.json y subir su "rev"
+#    (y FEATURES en compat.js solo si hay una función nueva)
 # 3. Añadir la fila de la tabla de arriba
-# 4. Commit y etiqueta
+# 4. Commit, subir compat.json a main y etiquetar
 git tag -a fw-v4.3 -m "Firmware 4.3"
 git push origin main
 git push origin fw-v4.3
@@ -151,7 +188,7 @@ descargó y la instaló entera **sin tocar el botón BOOTSEL**. Es el camino
 recomendado: `flash.ps1` solo hace falta para probar una compilación local.
 
 **Ajustes → Firmware del teclado.** La app mira las releases `fw-v*` del
-repositorio, se queda con la más alta que no pase de `FW_RECOMMENDED` (nunca
+repositorio, se queda con la más alta que no pase de `fwRecomendado()` (nunca
 ofrece un firmware que ella no sabría manejar), la descarga y la instala.
 
 Por dentro, en [`OrbyGUI/electron/firmware.js`](../OrbyGUI/electron/firmware.js):

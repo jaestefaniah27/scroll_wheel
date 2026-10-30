@@ -7,7 +7,7 @@
 // La diferencia con updater.js: aquí la app decide *hasta qué versión* se puede
 // actualizar. El firmware y OrbyGUI se publican por separado, y ofrecer uno más
 // nuevo que el que la app sabe manejar dejaría el teclado hablando un idioma
-// que nadie entiende. Ese tope es FW_RECOMMENDED, y sale de compat.js.
+// que nadie entiende. Ese tope sale de la tabla de compat.js (compat.json).
 
 import * as compat from './compat.js';
 import { state } from './store.js';
@@ -57,8 +57,11 @@ export async function init() {
 export async function check() {
   if (!available()) return null;
   ultimaComprobacion = Date.now();
+  // Sin esperar a la tabla bajada, el tope sería el de la copia compilada y un
+  // firmware recién publicado no se ofrecería hasta la comprobación siguiente.
+  await compat.tablaLista();
   const st = await window.orby.firmware.check({
-    maxFw: compat.FW_RECOMMENDED,
+    maxFw: compat.fwRecomendado(),
     currentFw: state.deviceInfo?.fw ?? null,
   });
   apply(st);

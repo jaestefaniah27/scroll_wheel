@@ -125,7 +125,7 @@ class FirmwareUpdater extends EventEmitter {
   }
 
   // Qué firmware hay publicado que esta app sepa usar. `maxFw` sale de
-  // FW_RECOMMENDED en src/compat.js: publicar un firmware más nuevo que la app
+  // fwRecomendado() en src/compat.js: publicar un firmware más nuevo que la app
   // no debe ofrecerse aquí, porque la app no sabría hablar con él.
   async check({ maxFw, currentFw } = {}) {
     this._set({ status: 'checking', error: null, current: currentFw ?? this.state.current });

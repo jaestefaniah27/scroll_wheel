@@ -119,7 +119,7 @@ la cola de peticiones, y no enseña las imágenes en la consola.
 ### Versiones y compatibilidad
 La versión del firmware sale de `include/orby_version.h` y de ahí van el `FW=`
 del handshake y el `bcdDevice` del USB. Lo que la app sabe usar está en
-`OrbyGUI/src/compat.js` (`FW_MIN`, `FW_RECOMMENDED`, tabla `FEATURES`).
+`OrbyGUI/src/compat.js` (tabla `FEATURES`) y `OrbyGUI/src/compat.json` (qué firmware ofrece cada app, `minApp`; **la app lo baja de GitHub al arrancar**, así un firmware que no cambia nada que la app use no obliga a publicar app nueva; `test/compat-tabla.test.mjs` exige su entrada).
 La app degrada, no rompe. La tabla de qué trajo cada versión y cómo se publica
 una release de firmware: [docs/COMPATIBILIDAD.md](docs/COMPATIBILIDAD.md).
 
@@ -198,8 +198,8 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
 - `variants.js` — variaciones de perfil por aplicación. Viven **solo en la RAM** del
   teclado: hay que revertir a base antes de escribir a Flash (`variants.withBase`).
 - `plugins.js` — espejo en renderer de la lista de complementos.
-- `compat.js` — qué firmware sabe usar esta app (`FW_MIN`, `FW_RECOMMENDED`, `FEATURES`).
-- `firmware.js` — espejo de `src-tauri/src/firmware.rs`; pone el tope de versión desde `compat.js`.
+- `compat.js` — qué firmware sabe usar esta app (`FEATURES`; el tope sale de `compat.json`, ver `compat-tabla.mjs`).
+- `firmware.js` — espejo de `src-tauri/src/firmware.rs`; pone el tope de versión desde `compat.fwRecomendado()`.
 - `updater.js` — espejo de `src-tauri/src/updater.rs`; le cuenta al backend si hay
   cambios sin guardar, para que no reinicie la app a media escritura en Flash.
 - `topbar.js` — pestañas de perfil (con sus páginas en puntos) de la barra superior.

@@ -200,7 +200,7 @@ pub fn firmware_get(app: AppHandle) -> Value {
     app.state::<Mutex<Compartido>>().lock().unwrap().estado.clone()
 }
 
-/// Qué firmware hay publicado que esta app sepa usar. `maxFw` sale de `FW_RECOMMENDED` en
+/// Qué firmware hay publicado que esta app sepa usar. `maxFw` sale de `fwRecomendado()` en
 /// src/compat.js: publicar un firmware más nuevo que la app no debe ofrecerse aquí, porque
 /// la app no sabría hablar con él.
 #[tauri::command]

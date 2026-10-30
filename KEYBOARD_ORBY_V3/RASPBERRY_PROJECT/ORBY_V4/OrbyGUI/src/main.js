@@ -381,6 +381,7 @@ async function onDeviceConnected(info) {
   // Qué sabe hacer el teclado que hay delante. La tabla vive en compat.js
   // para que no haya un número de versión suelto por cada vista; aquí solo
   // se decide si se sigue adelante y qué se le cuenta al usuario.
+  await compat.tablaLista();
   const verdict = compat.check(info);
   if (verdict.level === 'blocked') {
     toast(`${verdict.title}. ${verdict.detail}`, 'error', 9000);
@@ -531,6 +532,7 @@ function wireDevice() {
 // evento sin más deja el arranque colgado para siempre, pantalla de carga incluida.
 function arrancarApp() {
   splash.init();
+  compat.tablaLista(); // arranca la descarga; quien la necesite la espera
   hydrateIcons();
   initChrome();
   device.init();

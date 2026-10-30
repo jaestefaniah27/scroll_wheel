@@ -22,7 +22,7 @@ pub struct Candidato {
 
 /// Devuelve las versiones ofrecibles, de la más nueva a la más vieja.
 ///
-/// `max_fw` es hasta dónde sabe hablar esta versión de la app (`FW_RECOMMENDED` en
+/// `max_fw` es hasta dónde sabe hablar esta versión de la app (`fwRecomendado()` en
 /// src/compat.js): publicar un firmware más nuevo que la app no debe ofrecerse aquí,
 /// porque la app no sabría entenderse con él.
 pub fn candidatos(releases: &Value, max_fw: Option<&str>) -> Vec<Candidato> {
