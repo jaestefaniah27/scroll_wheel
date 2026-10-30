@@ -79,7 +79,8 @@ HID, pinout, pantallas) y `src/` (descriptores USB).
   Iconos, fuente y catálogo se generan desde `tools/oled_ui/` (ver su README):
   `include/oled_ui_data.h` no se edita a mano.
 - Transiciones al estilo de la pantalla de inicio del iPhone (carrusel de páginas,
-  menús que se abren como carpetas, onda al cambiar de perfil, pulsación con muelle).
+  menús que se abren como carpetas, onda al cambiar de perfil, succión y explosión al elegir perfil en el
+  menú, pulsación con muelle).
   Los muelles y fundidos son los de SpringBoardHome de iOS 27.2, con su origen
   apuntado en `oled_anim.h`. Core 1 compara cada fotograma con lo que ya tiene el
   panel y solo manda por SPI lo que cambia.
@@ -110,7 +111,8 @@ cambia de contexto por su cuenta (menú, gestor de páginas, tecla de salto).
 
 Con `MIRROR:1` (firmware 4.12) emite además el **espejo de las pantallas**: en cada
 transición, los diez destinos (`EV:SCR:<n>:<hex>`) y el tipo y ritmo
-(`EV:SCR:GO:<tipo>:<ritmo>`), más `EV:INV` (teclas sujetas) y `EV:DISP` (reposo).
+(`EV:SCR:GO:<tipo>:<ritmo>:<origen>`; `<origen>` es la pantalla 0-9 del perfil elegido, campo de más desde
+la 4.17 que las apps anteriores ignoran), más `EV:INV` (teclas sujetas) y `EV:DISP` (reposo).
 `device.js` manda todo lo que empieza por `EV:` directo a telemetría, sin pasar por
 la cola de peticiones, y no enseña las imágenes en la consola.
 

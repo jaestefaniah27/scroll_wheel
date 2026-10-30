@@ -2357,6 +2357,7 @@ static uint8_t mirror_fb[10][OLED_FB_SIZE];
 static volatile uint32_t mirror_seq  = 0;
 static volatile uint8_t  mirror_kind = 0;
 static volatile uint16_t mirror_rate = 1000;   // velocidad del grupo, x1000
+static volatile uint8_t  mirror_origin = 4;    // pantalla de la que sale PICK
 volatile bool mirror_on = false;
 
 static void mirror_publish(OledAnim::Kind kind) {
@@ -2366,6 +2367,7 @@ static void mirror_publish(OledAnim::Kind kind) {
     memcpy(mirror_fb, oled_target, sizeof(mirror_fb));
     mirror_kind = (uint8_t)kind;
     mirror_rate = (uint16_t)lroundf(OledAnim::rate_of(kind) * 1000.0f);
+    mirror_origin = (uint8_t)OledAnim::origin();
     __dmb();
     mirror_seq = mirror_seq + 1;
 }
@@ -2378,17 +2380,25 @@ static void refresh_single_screen(HardwareOled& oleds, uint8_t screen_num) {
 
 // Lo que hace falta del estado para saber QUÉ ha cambiado entre dos refrescos,
 // y con ello qué transición toca.
-struct ScreenCtx { uint8_t mode, profile, page, pages; bool super; };
+struct ScreenCtx { uint8_t mode, profile, page, pages; bool super; uint8_t first; };
 
 static ScreenCtx screen_ctx() {
     return { (uint8_t)current_mode, active_profile_idx, active_page,
-             profiles[active_profile_idx].page_count, super_active };
+             profiles[active_profile_idx].page_count, super_active, perf_menu_first };
 }
 
-static OledAnim::Kind classify(const ScreenCtx& a, const ScreenCtx& b) {
+static OledAnim::Kind classify(const ScreenCtx& a, const ScreenCtx& b, int* origen) {
     using namespace OledAnim;
     const bool en_menu_a = a.mode != MODE_NORMAL, en_menu_b = b.mode != MODE_NORMAL;
     if (!en_menu_a && en_menu_b) return MENU_OPEN;
+    // Elegir un perfil distinto en el menú de perfiles: los iconos se aspiran
+    // hacia la pantalla de ese perfil. En el menú la pantalla del perfil p es
+    // p - perf_menu_first, así que vale igual con tecla, con mando o con «menú +
+    // perfil». Elegir el mismo perfil sigue siendo cerrar el menú.
+    if (a.mode == MODE_MENU_PERF && b.mode == MODE_NORMAL && a.profile != b.profile) {
+        const int s = (int)b.profile - (int)a.first;
+        if (s >= 0 && s < 10) { *origen = s; return PICK; }
+    }
     if (en_menu_a && !en_menu_b) return MENU_CLOSE;   // elegir perfil desde el menú también
     if (en_menu_a) {
         if (a.mode == b.mode)          return CROSSFADE;   // se ha movido el cursor
@@ -2455,7 +2465,9 @@ void core1_entry() {
 
             const ScreenCtx nuevo = screen_ctx();
             // Con las pantallas apagadas no hay nada que animar: se cambia y ya.
-            kind = displays_on ? classify(ctx, nuevo) : OledAnim::CUT;
+            int origen = 4;
+            kind = displays_on ? classify(ctx, nuevo, &origen) : OledAnim::CUT;
+            OledAnim::set_origin(origen);
             ctx = nuevo;
             memcpy(oled_from, oled_shown, sizeof(oled_from));
             for (int i = 0; i < 10; i++) render_screen((uint8_t)(i + 1), oled_target[i]);
@@ -2565,10 +2577,11 @@ static int      mirror_disp_sent = -1;
 static int32_t  mirror_inv_sent  = -1;
 
 // Manda por el CDC la última transición que ha publicado Core 1: diez líneas
-// EV:SCR:<pantalla>:<720 hex> con los destinos y una EV:SCR:GO:<tipo>:<ritmo>
-// que es la que dispara la animación en la app. También el reposo de las
-// pantallas y el negativo de las teclas pulsadas, que no pasan por Core 1
-// como transición.
+// EV:SCR:<pantalla>:<720 hex> con los destinos y una
+// EV:SCR:GO:<tipo>:<ritmo>:<origen>, que es la que dispara la animación en la
+// app (el origen solo importa a PICK; una app anterior a la 4.17 ignora el
+// campo de más). También el reposo de las pantallas y el negativo de las
+// teclas pulsadas, que no pasan por Core 1 como transición.
 static void mirror_pump(uint16_t inversions) {
     if (!mirror_on || !tud_cdc_n_connected(0)) return;
 
@@ -2588,6 +2601,7 @@ static void mirror_pump(uint16_t inversions) {
     memcpy(copia, mirror_fb, sizeof(copia));
     const uint8_t  kind = mirror_kind;
     const uint16_t rate = mirror_rate;
+    const uint8_t  origen = mirror_origin;
     __dmb();
     if (mirror_seq != s) return;   // Core 1 la ha pisado a medias: la próxima vuelta
     mirror_sent = s;
@@ -2603,7 +2617,7 @@ static void mirror_pump(uint16_t inversions) {
         line[n++] = '\n';
         cdc_write_all(line, (uint32_t)n);
     }
-    cdc_printf("EV:SCR:GO:%d:%d\n", (int)kind, (int)rate);
+    cdc_printf("EV:SCR:GO:%d:%d:%d\n", (int)kind, (int)rate, (int)origen);
 }
 
 static int hex_nibble(char c) {

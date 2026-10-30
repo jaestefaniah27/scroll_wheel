@@ -177,7 +177,8 @@ enum Kind : uint8_t {
     MENU_CLOSE,   // del menú (o de SUPER) a la pantalla normal: la carpeta se cierra
     PUSH,         // entrar en un submenú
     POP,          // volver al menú principal
-    PROFILE       // otro perfil: los iconos nuevos crecen en onda desde el centro
+    PROFILE,      // otro perfil: los iconos nuevos crecen en onda desde el centro
+    PICK          // perfil elegido en el menú: los iconos se aspiran hacia el elegido y explotan desde él
 };
 
 // Escalas de la carpeta. Al abrir, el contenido del menú nace casi de un punto
@@ -199,7 +200,30 @@ static constexpr int CAROUSEL_GAP = 70;
 static constexpr int PITCH        = W + CAROUSEL_GAP;
 static constexpr int CANVAS       = 3 * PITCH;
 
-static inline float g_settle[PROFILE + 1];
+// Paso vertical entre pantallas. En la foto cenital el paso de teclas sale igual
+// en las dos direcciones (24,4 y 24,5 mm, ver OrbyGUI/src/views/dashboard.js), así
+// que el hueco vertical se escala igual que el horizontal.
+static constexpr int ROW_PITCH = PITCH;
+
+// Elegir perfil en el menú: lo que hay en las pantallas viaja hacia la del perfil
+// elegido (el origen) y de ella salen los iconos del perfil nuevo. Como el
+// carrusel, cada pantalla es una ventana sobre un lienzo continuo, y los iconos
+// cruzan el hueco entre teclas en vez de desaparecer de una y aparecer en otra.
+// La de en medio es el origen por defecto: es la que queda más cerca de todas.
+static inline int8_t g_origin = 4;
+
+static inline void set_origin(int s) { g_origin = (s >= 0 && s < N) ? (int8_t)s : (int8_t)4; }
+static inline int origin() { return g_origin; }
+
+// El aspirado acelera hasta llegar (EASE_IN): se traga, no aterriza. Los iconos
+// llegan casi a un punto y la elegida se hincha un poco mientras traga; los
+// nuevos nacen pequeños (BURST_MIN) para que se les vea crecer al salir.
+static constexpr Fade  SUCK     = {0.0f, 0.28f, EASE_IN};
+static constexpr float SUCK_MIN = 0.15f;
+static constexpr float GULP     = 0.12f;
+static constexpr float BURST_MIN = 0.2f;
+
+static inline float g_settle[PICK + 1];
 
 static inline void init() {
     g_settle[CUT]        = 0.0f;
@@ -217,6 +241,17 @@ static inline void init() {
     g_settle[PROFILE]    = fmaxf(fade_end(OPEN_OUTER),
                                  fmaxf(settle(FOLDER, (1.0f - PROFILE_MIN) * W / 2), fade_end(OPEN_INNER))
                                  + hop_delay(9));   // la 10 es la del anillo más lejano
+    // La explosión tiene que poder llegar a la pantalla más lejana del origen,
+    // sea cual sea: se mide el viaje mayor entre cualquier pareja, no solo desde
+    // la del centro, porque el origen es el perfil que se haya elegido.
+    float viaje_max = 0.0f;
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++) {
+            const float dc = (float)(COL[i] - COL[j]), dr = (float)(ROW[i] - ROW[j]);
+            const float d = hypotf(dc * (float)PITCH, dr * (float)ROW_PITCH);
+            if (d > viaje_max) viaje_max = d;
+        }
+    g_settle[PICK]       = fade_end(SUCK) + settle(FOLDER, viaje_max);
 }
 
 // --- Velocidad configurable ---------------------------------------------------
@@ -243,7 +278,8 @@ static inline Group group_of(Kind k) {
         case PAGE_PREV:  return G_CAROUSEL;
         case PUSH:
         case POP:        return G_SUBMENU;
-        case PROFILE:    return G_PROFILE;
+        case PROFILE:
+        case PICK:       return G_PROFILE;
         default:         return G_FADE;   // CROSSFADE; CUT no anima
     }
 }
@@ -364,6 +400,19 @@ static inline void draw_carousel(uint8_t* out, int i, float shift,
     }
 }
 
+// Dibuja `src` centrado en el punto (X, Y) del lienzo, con esa escala, tal como
+// se ve desde la pantalla i. Si no toca la ventana de i ni de lejos se descarta
+// antes de recorrer píxeles: por cada pantalla pasan diez iconos y casi todos
+// están en otra.
+static inline void draw_flying(uint8_t* out, int i, const uint8_t* src,
+                               float X, float Y, float scale, bool opaque) {
+    const float dx = X - (float)(COL[i] * PITCH);
+    const float dy = Y - (float)(ROW[i] * ROW_PITCH);
+    if (fabsf(dx) >= ((float)W * scale + (float)W) * 0.5f) return;
+    if (fabsf(dy) >= ((float)H * scale + (float)H) * 0.5f) return;
+    draw_layer(out, {src, scale, dx, dy, 0, 16, opaque});
+}
+
 // Un fotograma de la pantalla i en el instante t (segundos desde el inicio).
 static inline void render(Kind k, float t, int i,
                    const uint8_t from[][FB], const uint8_t to[][FB], uint8_t* out) {
@@ -373,10 +422,11 @@ static inline void render(Kind k, float t, int i,
     const uint8_t* a = from[i];
     const uint8_t* b = to[i];
 
-    // Una pantalla que no cambia se queda quieta, salvo en el carrusel, donde
-    // por ella pasan las vecinas. Sin esto, las pantallas vacías de un submenú
-    // verían cruzar la sombra del borde sola, sin nada que la empuje.
-    if (k != PAGE_NEXT && k != PAGE_PREV && memcmp(a, b, FB) == 0) {
+    // Una pantalla que no cambia se queda quieta, salvo en el carrusel y al
+    // elegir perfil, donde por ella pasan iconos de otras. Sin esto, las
+    // pantallas vacías de un submenú verían cruzar la sombra del borde sola, sin
+    // nada que la empuje.
+    if (k != PAGE_NEXT && k != PAGE_PREV && k != PICK && memcmp(a, b, FB) == 0) {
         memcpy(out, b, FB);
         return;
     }
@@ -447,6 +497,36 @@ static inline void render(Kind k, float t, int i,
         draw_layer(out, {a, 1.0f - 0.1f * fo, 0, 0, (uint8_t)(16 - no), 16, false});
         if (tl > 0.0f)
             draw_layer(out, {b, PROFILE_MIN + (1.0f - PROFILE_MIN) * p, 0, 0, 0, ni, false});
+        return;
+    }
+    case PICK: {
+        const int s = g_origin;
+        const float Psx = (float)(COL[s] * PITCH), Psy = (float)(ROW[s] * ROW_PITCH);
+        const float ts = fade_end(SUCK);
+        if (tv < ts) {
+            // Fase 1: todo lo ajeno se aspira hacia la elegida. La elegida va
+            // la última y opaca, para que lo que llega desaparezca dentro de
+            // ella en vez de verse mezclado con su dibujo.
+            const float u = fade(SUCK, tv);
+            for (int j = 0; j < N; j++) {
+                if (j == s) continue;
+                const float Pjx = (float)(COL[j] * PITCH), Pjy = (float)(ROW[j] * ROW_PITCH);
+                const float X = Pjx + (Psx - Pjx) * u;
+                const float Y = Pjy + (Psy - Pjy) * u;
+                draw_flying(out, i, from[j], X, Y, 1.0f + (SUCK_MIN - 1.0f) * u, false);
+            }
+            draw_flying(out, i, from[s], Psx, Psy, 1.0f + GULP * u, true);
+            return;
+        }
+        // Fase 2: explota. Cada imagen del perfil nuevo sale de la elegida y
+        // viaja a su pantalla con el muelle de carpeta, creciendo mientras va.
+        const float p = spring(FOLDER, tv - ts);
+        for (int j = 0; j < N; j++) {
+            const float Pjx = (float)(COL[j] * PITCH), Pjy = (float)(ROW[j] * ROW_PITCH);
+            const float X = Psx + (Pjx - Psx) * p;
+            const float Y = Psy + (Pjy - Psy) * p;
+            draw_flying(out, i, to[j], X, Y, BURST_MIN + (1.0f - BURST_MIN) * p, false);
+        }
         return;
     }
     default:

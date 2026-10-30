@@ -449,7 +449,7 @@ async function onDeviceConnected(info) {
   // Entre medias se quitan las macros que ya no usa ninguna tecla, pero solo
   // si el almacén del teclado se ha podido juntar: sin él, alguna de las que
   // parecen sobrar podría ser justo la que el teclado iba a traer de vuelta.
-  (profiles.syncMacroStore?.() ?? Promise.resolve(0))
+  const macrosListas = (profiles.syncMacroStore?.() ?? Promise.resolve(0))
     .then(async (n) => {
       if (n) toast(`${n === 1 ? 'Recuperada 1 macro' : `Recuperadas ${n} macros`} del teclado`);
       await profiles.pruneUnusedMacros?.().catch((err) => console.warn('[macros] limpieza:', err));
@@ -463,13 +463,17 @@ async function onDeviceConnected(info) {
   // Actualizar el firmware exige copiar un .uf2 en la unidad USB que aparece al
   // reiniciar en modo carga: eso el navegador no puede hacerlo.
   if (platform.can('firmwareUpdate')) {
-    firmware.check()?.then((st) => {
+    const comprobado = firmware.check()?.then((st) => {
       if (st?.available) {
         toast(firmware.autoEnabled()
-          ? `Hay firmware nuevo para el teclado (${st.latest.version}): se instalará solo cuando dejes de usarlo un rato`
+          ? `Hay firmware nuevo para el teclado (${st.latest.version}): se instalará solo en cuanto no lo estés tocando`
           : `Hay firmware nuevo para el teclado (${st.latest.version}). Ajustes → Firmware del teclado`, 'info', 8000);
       }
     }).catch(() => {});
+
+    // Con todo sincronizado, si hay versión nueva se instala nada más conectar:
+    // reiniciar el teclado justo después de enchufarlo es lo que se espera.
+    Promise.all([macrosListas, comprobado]).then(() => firmware.alConectar()).catch(() => {});
   }
 }
 

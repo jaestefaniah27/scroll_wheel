@@ -1,6 +1,8 @@
 // Genera OrbyGUI/test/fixtures/oled-anim-golden.txt: el CRC32 de las diez
 // pantallas de cada transición en 41 instantes, a dos velocidades, para
-// unas imágenes de partida y de llegada pseudoaleatorias.
+// unas imágenes de partida y de llegada pseudoaleatorias. PICK depende además
+// del origen: el bucle general usa el de por defecto (4) y al final van las
+// líneas `pick <origen> ...` de los otros dos extremos (0 y 9).
 //
 // La app repite en el dashboard las animaciones del teclado con una copia en
 // JS de oled_anim.h (OrbyGUI/src/oled-anim.mjs). test/oled-anim.test.mjs
@@ -28,12 +30,23 @@ int main() {
     init();
     for (int i = 0; i < N; i++) for (int b = 0; b < FB; b++) { from[i][b] = rnd(); to[i][b] = rnd(); }
     const float rates[2] = {1.0f, 1.4f};
-    for (int k = 1; k <= PROFILE; k++) for (int r = 0; r < 2; r++) {
+    set_origin(4);
+    for (int k = 1; k <= PICK; k++) for (int r = 0; r < 2; r++) {
         set_rate(group_of((Kind)k), rates[r]);
         for (int ti = 0; ti <= 40; ti++) {
             uint32_t c = 0;
             for (int i = 0; i < N; i++) { render((Kind)k, ti * 0.0125f, i, from, to, out); c = crc32(c, out, FB); }
             printf("%d %d %d %08x\n", k, r, ti, (unsigned)c);
+        }
+    }
+    const int origenes[2] = {0, 9};
+    for (int o = 0; o < 2; o++) for (int r = 0; r < 2; r++) {
+        set_origin(origenes[o]);
+        set_rate(group_of(PICK), rates[r]);
+        for (int ti = 0; ti <= 40; ti++) {
+            uint32_t c = 0;
+            for (int i = 0; i < N; i++) { render(PICK, ti * 0.0125f, i, from, to, out); c = crc32(c, out, FB); }
+            printf("pick %d %d %d %08x\n", origenes[o], r, ti, (unsigned)c);
         }
     }
     Press p; uint8_t pr[FB];

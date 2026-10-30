@@ -15,7 +15,7 @@
 //   - OrbyGUI/src/compat.js           (hasta dónde llega esta app)
 
 #define ORBY_FW_MAJOR 4
-#define ORBY_FW_MINOR 16
+#define ORBY_FW_MINOR 17
 
 #define ORBY_STR_(x) #x
 #define ORBY_STR(x)  ORBY_STR_(x)

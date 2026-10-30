@@ -19,7 +19,7 @@ using namespace OledAnim;
 static int fallos = 0;
 #define CHECK(c, ...) do { if (!(c)) { fallos++; printf("FALLO: " __VA_ARGS__); printf("\n"); } } while (0)
 
-static uint8_t A[N][FB], B[N][FB], C[N][FB], M[N][FB], S[N][FB];
+static uint8_t A[N][FB], B[N][FB], C[N][FB], M[N][FB], S[N][FB], P[N][FB];
 
 // Lienzo del .pgm: pantallas a escala 3 con huecos proporcionados a los reales
 // (paso de 19 mm sobre 8,6 x 4,8 mm de área activa, comprimidos a la mitad).
@@ -86,8 +86,11 @@ int main(int argc, char** argv) {
     const char* phts[N] = {"BRSH", "ERAS", "PENC", "UNDO", "REDO", "LASS", "CROP", "MOVE", "NEWL", "DUPL"};
     const uint8_t menu[6] = {OledUiData::SYS_MENU_PROFILES, OledUiData::SYS_MENU_SLEEP, OledUiData::SYS_MENU_WHEEL, OledUiData::SYS_MENU_RESET, OledUiData::SYS_MENU_INFO, OledUiData::SYS_MENU_EXIT};
     const uint8_t repo[5] = {OledUiData::SYS_SLEEP_1, OledUiData::SYS_SLEEP_5, OledUiData::SYS_SLEEP_10, OledUiData::SYS_SLEEP_OFF, OledUiData::SYS_BACK};
+    // P: el menú de perfiles de partida, un perfil por pantalla.
+    const char* perf[N] = {"OFIM", "PHTS", "KICD", "ALTM", "VSCD", "WORD", "XLSX", "BLND", "CHRM", "DISC"};
     uint8_t Ms[N][FB];
     for (int i = 0; i < N; i++) {
+        OledUi::screen_key(P[i], "PERF", perf[i]);
         OledUi::screen_key(A[i], "OFIM", ofim[i]);
         OledUi::screen_key(B[i], "OFIM", pag2[i]);
         OledUi::screen_key(C[i], "PHTS", phts[i]);
@@ -108,6 +111,17 @@ int main(int argc, char** argv) {
     probar("pop",        POP,        S, M, dir);
     probar("profile",    PROFILE,    A, C, dir);
     probar("crossfade",  CROSSFADE,  M, Ms, dir);
+    // Elegir perfil: del menú de perfiles a la pantalla normal del elegido. El
+    // origen cambia por dónde se cuela todo, así que se prueban una esquina, el
+    // centro y la pantalla suelta de la última fila.
+    const int origenes[3] = {0, 4, 9};
+    for (int o = 0; o < 3; o++) {
+        char nombre[16];
+        snprintf(nombre, sizeof(nombre), "pick%d", origenes[o]);
+        set_origin(origenes[o]);
+        probar(nombre, PICK, P, C, dir);
+    }
+    set_origin(4);
 
     // Cuando se da por terminada, al muelle le queda menos de medio píxel: el
     // salto final a `to` no se ve. (Comparar píxeles no sirve: un desplazamiento

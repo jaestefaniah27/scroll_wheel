@@ -248,7 +248,7 @@ function initFirmwareCard() {
     const on = !auto.classList.contains('on');
     await firmware.setAutoEnabled(on);
     auto.classList.toggle('on', on);
-    toast(on ? 'El firmware se actualizará solo cuando no uses el ordenador'
+    toast(on ? 'El firmware se actualizará solo cuando no uses el teclado'
              : 'Actualización automática del firmware desactivada');
   });
 

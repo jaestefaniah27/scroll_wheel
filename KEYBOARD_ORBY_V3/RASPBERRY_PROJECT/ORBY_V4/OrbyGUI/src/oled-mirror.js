@@ -30,6 +30,7 @@ const pressed = new Uint8Array(A.FB);
 const press = Array.from({ length: A.N }, A.newPress);
 
 let kind = A.KIND.CUT;
+let origin = 4;   // pantalla de la que sale PICK; solo la manda el teclado
 let rate = 1;
 let t0 = 0;
 let animating = false;
@@ -157,7 +158,7 @@ function tick(now) {
 
   const t = animating ? (now - t0) / 1000 : 0;
   for (let i = 0; i < A.N; i++) {
-    if (animating) A.render(kind, t, i, from, target, frame, rate);
+    if (animating) A.render(kind, t, i, from, target, frame, rate, origin);
     else frame.set(target[i]);
     let f = frame;
     if (press[i].x > 0) { A.renderPress(frame, press[i], pressed); f = pressed; }
@@ -181,9 +182,10 @@ function sameFb(a, b) {
 
 // Arranca una transición hacia `dest` desde lo que haya en pantalla ahora: si
 // llega otra a medias, la nueva sale de ese fotograma, igual que en el teclado.
-function start(k, r, dest) {
+function start(k, r, dest, o = 4) {
   for (let i = 0; i < A.N; i++) { from[i].set(shown[i]); target[i].set(dest[i]); }
   kind = k;
+  origin = o;
   rate = r > 0 ? r : 1;
   t0 = performance.now();
   animating = k !== A.KIND.CUT;
@@ -201,11 +203,13 @@ function hexInto(hex, out) {
 
 function onTelemetry(line) {
   if (line.startsWith('EV:SCR:GO:')) {
-    const [k, r] = line.slice(10).split(':').map(Number);
+    // Tercer campo: origen de PICK. Un firmware anterior no lo manda: 4.
+    const [k, r, o] = line.slice(10).split(':').map(Number);
     setLive(true);
     for (let i = 0; i < A.N; i++) liveDest[i].set(incoming[i]);
     if (previewing) return;
-    start(Number.isFinite(k) ? k : A.KIND.CROSSFADE, (r || 1000) / 1000, incoming);
+    start(Number.isFinite(k) ? k : A.KIND.CROSSFADE, (r || 1000) / 1000, incoming,
+      Number.isFinite(o) ? o : 4);
     return;
   }
   if (line.startsWith('EV:SCR:')) {
@@ -264,6 +268,8 @@ export function fallback(ctx, screens, rates = {}) {
     [A.KIND.MENU_OPEN]: 'menu', [A.KIND.MENU_CLOSE]: 'menu' }[k] || 'fade';
   const rate = fbPending && k === A.KIND.MENU_CLOSE ? PREVIEW_RATE : rates[group] || 1;
   fbPending = false;
+  // Sin origen: sin espejo la app no ve el menú de perfiles, así que PICK no
+  // sale de aquí.
   start(k, rate, dest);
 }
 

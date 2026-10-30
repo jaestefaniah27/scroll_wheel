@@ -11,7 +11,8 @@
 
 import * as compat from './compat.js';
 import { state } from './store.js';
-import { motivoParaEsperar, VUELTA_MS, RECOMPROBAR_MS } from './fw-auto.mjs';
+import * as device from './device.js';
+import { motivoParaEsperar, esActividadDelTeclado, VUELTA_MS, RECOMPROBAR_MS } from './fw-auto.mjs';
 
 const listeners = new Set();
 
@@ -104,8 +105,8 @@ export function busy() {
 }
 
 // ================= Actualización automática =================
-// El firmware se instala solo cuando el PC lleva un rato sin que nadie lo toque
-// (ver fw-auto.mjs para las reglas). Se activa por defecto: la clave
+// El firmware se instala solo cuando el teclado lleva un rato sin que nadie lo
+// toque (ver fw-auto.mjs para las reglas). Se activa por defecto: la clave
 // `autoFirmware` de la configuración solo existe si alguien lo ha apagado, así
 // que una instalación vieja sin ella queda activada.
 
@@ -114,6 +115,9 @@ let fallida = null;          // versión que falló sola en esta sesión
 let ultimaComprobacion = 0;
 let enVuelta = false;
 let avisar = null;
+// Última vez que el teclado dio señales de uso. Al conectar vale 0 (nadie lo ha
+// tocado): un teclado recién enchufado se actualiza sin esperar, ver alConectar.
+let ultimaActividad = 0;
 
 export function autoEnabled() {
   return autoOn;
@@ -132,7 +136,18 @@ export async function iniciarAuto(aviso) {
   try {
     autoOn = (await window.orby.getConfig())?.autoFirmware !== false;
   } catch { /* sin configuración legible se queda el valor por defecto */ }
+  device.on('telemetry', (linea) => {
+    if (esActividadDelTeclado(linea)) ultimaActividad = Date.now();
+  });
+  device.on('connected', () => { ultimaActividad = 0; });
   setInterval(vuelta, VUELTA_MS);
+}
+
+// Lo llama main.js cuando la conexión ya está preparada (perfiles leídos,
+// macros sincronizadas y versión publicada comprobada): si hay firmware nuevo y
+// nadie ha tocado el teclado, se instala ahora, sin esperar a la siguiente vuelta.
+export function alConectar() {
+  return vuelta();
 }
 
 async function vuelta() {
@@ -151,8 +166,9 @@ async function vuelta() {
       version: fw.latest?.version,
       ocupado: busy(),
       sinGuardar: state.dirty,
+      sincronizando: state.syncing,
       bootsel: compat.supports(state.deviceInfo, 'bootsel'),
-      inactivoMs: autoOn ? await window.orby.firmware.idleMs() : null,
+      inactivoMs: Date.now() - ultimaActividad,
       fallida,
     });
     if (motivo) return;
@@ -160,7 +176,7 @@ async function vuelta() {
     const version = fw.latest.version;
     await update();
     if (fw.status === 'done') {
-      avisar?.(`Firmware del teclado actualizado a la ${version} mientras no lo usabas`, 'success', 8000);
+      avisar?.(`Firmware del teclado actualizado a la ${version}`, 'success', 8000);
     } else if (fw.status === 'error') {
       fallida = version;
       avisar?.(`No se pudo actualizar el firmware solo: ${fw.error}. Puedes reintentarlo desde Ajustes`, 'error', 9000);

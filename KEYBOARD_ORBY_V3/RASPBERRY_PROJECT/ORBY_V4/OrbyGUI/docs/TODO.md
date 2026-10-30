@@ -1,3 +1,27 @@
+### Pendiente con el teclado y el PC delante (firmware 4.17, 2026-10-30)
+
+La animación de elegir perfil (succión y explosión, tipo `PICK`) está en `main` y solo se ha
+probado en simulación (`tools/test/test_anim.cpp`) y compilando en Linux. Falta en casa:
+
+* [ ] Flashear la 4.17 con `.\flash.ps1` (cerrar antes OrbyGUI desde la bandeja: **Salir**).
+* [ ] Probarla en el teclado de verdad, con cada forma de elegir perfil:
+  * tecla de menú mantenida y tocar un perfil («menú + perfil»);
+  * menú principal → Perfiles → elegir;
+  * mando de menú (`SET_MENUENC`): mantener, girar y soltar;
+  * con más de diez perfiles, eligiendo uno de la segunda ventana (el origen es
+    `perfil - perf_menu_first`: comprobar que sale de la pantalla correcta);
+  * elegir el perfil que ya estaba puesto: tiene que cerrar el menú como antes, sin succión.
+* [ ] Juzgar el ritmo en los OLED reales. Si la succión va demasiado rápida o lenta, se cambia
+  `SUCK` en `include/oled_anim.h` **y** en `OrbyGUI/src/oled-anim.mjs`, y se regenera el
+  dorado (`tools/test/anim_golden.cpp`). Cambiar solo la velocidad del grupo «perfil»
+  en Ajustes también la mueve, pero junto con la onda de cambiar de perfil.
+* [ ] Ver en `npm run tauri:dev` que el Inicio repite la animación con el espejo
+  (`EV:SCR:GO:9:<ritmo>:<origen>`) y que sale de la misma pantalla que en el teclado.
+* [ ] Pasar `tools/test/run.ps1` en Windows (en Linux ya pasan `test_anim` y los 62 tests de Node).
+* [ ] Si todo va bien: publicar la release `fw-v4.17` (prerelease) desde el servidor, como
+  dice el `CLAUDE.md` de la raíz. Para verla en el Inicio hace falta la app 1.1.3, que
+  sigue sin publicar.
+
 * [ ] Añadir biblioteca de perfiles para que los usuarios no tengan que crear los suyos desde cero. Los usuarios pueden aportar al pool de perfiles en el apartado perfiles de la comunidad. Los usuarios tienen que aportar Nombre del perfil y descripción. EN la biblioteca de perfiles sale el número total de atajos, el número de páginas, etc.
 * [ ] He pensado en monetizar perfiles o paquetes de perfiles: el software básico es gratis pero hay que pagar una baja cantidad de € para obtener acceso a un paquete de perfiles para unos cuantos programas como Altium, excel, word, etc, o pagar cada uno por separado. Estudiar viavilidad de esto.
 * [ ] **Que ORBY parezca un producto, no un proyecto.** La app ya es algo que usaría a diario

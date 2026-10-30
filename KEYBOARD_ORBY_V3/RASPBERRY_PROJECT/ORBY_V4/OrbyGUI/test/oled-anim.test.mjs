@@ -37,20 +37,25 @@ test('cada fotograma de cada transición coincide con oled_anim.h', () => {
   // El teclado calcula en float: el ritmo y el instante llegan redondeados así.
   const rates = [1, Math.fround(1.4)];
   const out = new Uint8Array(A.FB);
-  let comparados = 0;
+  let comparados = 0, pick = 0;
   for (const linea of golden) {
     const p = linea.split(' ');
     if (p[0] === 'press') continue;
-    const [k, r, ti] = p.slice(0, 3).map(Number);
+    // `pick <origen> <r> <ti> <crc>`: PICK depende además de la pantalla de origen.
+    const esPick = p[0] === 'pick';
+    const [k, origen, r, ti] = esPick ? [A.KIND.PICK, ...p.slice(1, 4).map(Number)]
+      : [Number(p[0]), 4, Number(p[1]), Number(p[2])];
     let c = 0;
     for (let i = 0; i < A.N; i++) {
-      A.render(k, ti * Math.fround(0.0125), i, from, to, out, rates[r]);
+      A.render(k, ti * Math.fround(0.0125), i, from, to, out, rates[r], origen);
       c = crc32(c, out);
     }
-    assert.equal(c.toString(16).padStart(8, '0'), p[3], `tipo ${k}, ritmo ${rates[r]}, t=${ti}`);
-    comparados++;
+    assert.equal(c.toString(16).padStart(8, '0'), p[esPick ? 4 : 3],
+      `tipo ${k}, origen ${origen}, ritmo ${rates[r]}, t=${ti}`);
+    if (esPick) pick++; else comparados++;
   }
-  assert.equal(comparados, 8 * 2 * 41);
+  assert.equal(comparados, 9 * 2 * 41);
+  assert.equal(pick, 2 * 2 * 41);
 });
 
 test('la pulsación se hunde con el mismo muelle', () => {
@@ -70,4 +75,16 @@ test('pasada su duración, la transición deja el destino tal cual', () => {
     A.render(k, A.duration(k, 1.3) + 0.001, 4, from, to, out, 1.3);
     assert.deepEqual(out, to[4]);
   }
+  for (const origen of [0, 4, 9]) {
+    A.render(A.KIND.PICK, A.duration(A.KIND.PICK, 1.3) + 0.001, 6, from, to, out, 1.3, origen);
+    assert.deepEqual(out, to[6]);
+  }
+});
+
+test('un tipo desconocido dura 0 y deja el destino', () => {
+  const { from, to } = datos();
+  const out = new Uint8Array(A.FB);
+  assert.equal(A.duration(99, 1), 0);
+  A.render(99, 0, 2, from, to, out, 1);
+  assert.deepEqual(out, to[2]);
 });

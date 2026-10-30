@@ -1,22 +1,39 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { motivoParaEsperar, INACTIVO_MS } from '../src/fw-auto.mjs';
+import { motivoParaEsperar, esActividadDelTeclado, INACTIVO_MS } from '../src/fw-auto.mjs';
 
 const listo = {
   activado: true, conectado: true, disponible: true, version: '4.11', ocupado: false,
-  sinGuardar: false, bootsel: true, inactivoMs: INACTIVO_MS, fallida: null,
+  sinGuardar: false, sincronizando: false, bootsel: true, inactivoMs: INACTIVO_MS, fallida: null,
 };
 
 test('con todo a favor se actualiza', () => {
   assert.equal(motivoParaEsperar(listo), null);
 });
 
-test('no se actualiza mientras el PC está en uso', () => {
+test('no se actualiza mientras el teclado está en uso', () => {
   assert.ok(motivoParaEsperar({ ...listo, inactivoMs: INACTIVO_MS - 1 }));
+});
+
+test('hay que esperar 2 minutos sin tocar el teclado', () => {
+  assert.equal(INACTIVO_MS, 2 * 60 * 1000);
+});
+
+test('cuenta como uso lo que se toca del teclado, no lo que manda solo', () => {
+  for (const l of ['KEY_EV:3:1', 'ENC:1:-2', 'ENC_SW:2:1', 'WHEEL:5:2100', 'MODE:MENU', 'EV:CTX:OFIM:0:1']) {
+    assert.ok(esActividadDelTeclado(l), l);
+  }
+  for (const l of ['EV:SCR:1:00ff', 'EV:INV:5', 'EV:DISP:0', 'STATE:MODE:NORMAL', 'HOST_APP:OK:1']) {
+    assert.ok(!esActividadDelTeclado(l), l);
+  }
 });
 
 test('sin dato de inactividad se espera, no se flashea a ciegas', () => {
   assert.ok(motivoParaEsperar({ ...listo, inactivoMs: null }));
+});
+
+test('no se reinicia a mitad de una sincronización con el teclado', () => {
+  assert.ok(motivoParaEsperar({ ...listo, sincronizando: true }));
 });
 
 test('los cambios sin guardar en Flash lo frenan', () => {

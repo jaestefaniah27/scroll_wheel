@@ -104,7 +104,7 @@ function hopDelay(i) {
 // Mismo orden que OledAnim::Kind: el teclado manda el número tal cual.
 export const KIND = {
   CUT: 0, CROSSFADE: 1, PAGE_NEXT: 2, PAGE_PREV: 3, MENU_OPEN: 4,
-  MENU_CLOSE: 5, PUSH: 6, POP: 7, PROFILE: 8,
+  MENU_CLOSE: 5, PUSH: 6, POP: 7, PROFILE: 8, PICK: 9,
 };
 
 const FOLDER_MIN = 0.03;
@@ -115,8 +115,19 @@ const CAROUSEL_GAP = 70;
 const PITCH = W + CAROUSEL_GAP;
 const CANVAS = 3 * PITCH;
 
+// Paso vertical entre pantallas: igual que el horizontal (en la foto cenital el
+// paso de teclas sale igual en las dos direcciones).
+const ROW_PITCH = PITCH;
+
+// PICK (elegir perfil en el menú): lo ajeno se aspira hacia la pantalla elegida
+// y de ella salen los iconos del perfil nuevo. Mismas constantes que el .h.
+const SUCK = { delay: 0, duration: 0.28, curve: EASE_IN };
+const SUCK_MIN = 0.15;
+const GULP = 0.12;
+const BURST_MIN = 0.2;
+
 const SETTLE = (() => {
-  const s = new Array(9).fill(0);
+  const s = new Array(10).fill(0);
   s[KIND.CROSSFADE] = fadeEnd(SWAP);
   s[KIND.PAGE_NEXT] = settle(NUDGE, CANVAS);
   s[KIND.PAGE_PREV] = s[KIND.PAGE_NEXT];
@@ -128,6 +139,17 @@ const SETTLE = (() => {
   s[KIND.POP] = s[KIND.PUSH];
   s[KIND.PROFILE] = Math.max(fadeEnd(OPEN_OUTER),
     Math.max(settle(FOLDER, (1 - PROFILE_MIN) * W / 2), fadeEnd(OPEN_INNER)) + hopDelay(9));
+  // La explosión tiene que poder llegar a la pantalla más lejana del origen,
+  // sea cual sea: se mide el viaje mayor entre cualquier pareja.
+  let viajeMax = 0;
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      const dc = COL[i] - COL[j], dr = ROW[i] - ROW[j];
+      const d = Math.hypot(dc * PITCH, dr * ROW_PITCH);
+      if (d > viajeMax) viajeMax = d;
+    }
+  }
+  s[KIND.PICK] = fadeEnd(SUCK) + settle(FOLDER, viajeMax);
   return s;
 })();
 
@@ -135,7 +157,11 @@ const SETTLE = (() => {
 // manda el ritmo del grupo calculado (base de fábrica x ajuste del usuario),
 // así que aquí no hace falta saber nada de grupos.
 export function duration(kind, rate = 1) {
-  return SETTLE[kind] / rate;
+  // `?? 0`: si el teclado manda un tipo que esta app aún no conoce (firmware
+  // más nuevo), SETTLE[kind] es undefined y undefined / rate da NaN. Con NaN,
+  // `t >= duration` nunca se cumple y la app se quedaría animando para siempre.
+  // Con 0 la transición termina al instante y deja el destino.
+  return (SETTLE[kind] ?? 0) / rate;
 }
 
 // --- Dibujo ---
@@ -216,21 +242,34 @@ function drawCarousel(out, i, shift, from, to) {
   }
 }
 
+// Dibuja `src` centrado en el punto (X, Y) del lienzo, con esa escala, tal como
+// se ve desde la pantalla i. Si no toca la ventana de i se descarta antes de
+// recorrer píxeles: por cada pantalla pasan diez iconos y casi todos están en otra.
+function drawFlying(out, i, src, X, Y, scale, opaque) {
+  const dx = X - COL[i] * PITCH;
+  const dy = Y - ROW[i] * ROW_PITCH;
+  if (Math.abs(dx) >= (W * scale + W) * 0.5) return;
+  if (Math.abs(dy) >= (H * scale + H) * 0.5) return;
+  drawLayer(out, src, scale, dx, dy, 0, 16, opaque);
+}
+
 function same(a, b) {
   for (let k = 0; k < FB; k++) if (a[k] !== b[k]) return false;
   return true;
 }
 
 // Un fotograma de la pantalla i en el instante t (segundos reales desde que
-// empezó). `from` y `to` son arrays de 10 framebuffers.
-export function render(kind, t, i, from, to, out, rate = 1) {
+// empezó). `from` y `to` son arrays de 10 framebuffers. `origin` es la pantalla
+// de la que sale PICK; fuera de rango vale 4, igual que set_origin en el .h.
+export function render(kind, t, i, from, to, out, rate = 1, origin = 4) {
   if (kind === KIND.CUT || t >= duration(kind, rate)) { out.set(to[i]); return; }
 
   out.fill(0);
   const a = from[i];
   const b = to[i];
 
-  if (kind !== KIND.PAGE_NEXT && kind !== KIND.PAGE_PREV && same(a, b)) {
+  // Salvo en el carrusel y en PICK: por esas pantallas pasan iconos de otras.
+  if (kind !== KIND.PAGE_NEXT && kind !== KIND.PAGE_PREV && kind !== KIND.PICK && same(a, b)) {
     out.set(b);
     return;
   }
@@ -287,6 +326,38 @@ export function render(kind, t, i, from, to, out, rate = 1) {
       const ni = alpha16(fade(OPEN_INNER, tl));
       drawLayer(out, a, 1 - 0.1 * fo, 0, 0, 16 - no, 16, false);
       if (tl > 0) drawLayer(out, b, PROFILE_MIN + (1 - PROFILE_MIN) * p, 0, 0, 0, ni, false);
+      return;
+    }
+    case KIND.PICK: {
+      const s = Number.isInteger(origin) && origin >= 0 && origin < N ? origin : 4;
+      const Psx = COL[s] * PITCH, Psy = ROW[s] * ROW_PITCH;
+      const ts = fadeEnd(SUCK);
+      // El teclado compara en float32 y este caso cae justo en el filo: con el
+      // ritmo 1,4 y t=0,2 s, tv y ts valen EXACTAMENTE lo mismo en float32 (pasa
+      // a la fase 2), pero en doble tv sale una milmillonésima por debajo. Se
+      // redondean ambos a float32 solo para decidir la fase.
+      if (Math.fround(tv) < Math.fround(ts)) {
+        // Fase 1: todo lo ajeno se aspira hacia la elegida, que va la última y
+        // opaca para que lo que llega desaparezca dentro de ella.
+        const u = fade(SUCK, tv);
+        for (let j = 0; j < N; j++) {
+          if (j === s) continue;
+          const Pjx = COL[j] * PITCH, Pjy = ROW[j] * ROW_PITCH;
+          const X = Pjx + (Psx - Pjx) * u;
+          const Y = Pjy + (Psy - Pjy) * u;
+          drawFlying(out, i, from[j], X, Y, 1 + (SUCK_MIN - 1) * u, false);
+        }
+        drawFlying(out, i, from[s], Psx, Psy, 1 + GULP * u, true);
+        return;
+      }
+      // Fase 2: explota. Cada imagen nueva sale de la elegida hacia su pantalla.
+      const p = spring(FOLDER, tv - ts);
+      for (let j = 0; j < N; j++) {
+        const Pjx = COL[j] * PITCH, Pjy = ROW[j] * ROW_PITCH;
+        const X = Psx + (Pjx - Psx) * p;
+        const Y = Psy + (Pjy - Psy) * p;
+        drawFlying(out, i, to[j], X, Y, BURST_MIN + (1 - BURST_MIN) * p, false);
+      }
       return;
     }
     default:
