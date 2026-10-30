@@ -11,6 +11,7 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost;" />
   <title>Orvy</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 
   <!-- Pantalla de carga.
        Va EN LÍNEA y no en src/styles/index.css a propósito: esa hoja la importa
@@ -44,18 +45,18 @@
     /* Al irse crece un poco mientras se funde: el mismo gesto que una app de
        iOS al abrirse desde su icono. */
     #app-splash.gone { opacity: 0; transform: scale(1.04); pointer-events: none; }
-    /* Squircle negra con el punto de luz de un píxel OLED: el icono de Orvy. */
+    /* El icono de la app (assets/brand/orvy-icono-app.svg). No cambia con el
+       tema: es el mismo objeto que se ve en la barra de tareas. */
     .splash-logo {
       width: 84px;
       height: 84px;
-      border-radius: 20px;
-      background:
-        radial-gradient(circle at 50% 50%, #e6fbff 0 14%, rgba(79, 227, 255, .6) 24%, transparent 46%),
-        linear-gradient(160deg, #1b2229, #05070a);
-      box-shadow: inset 0 0 0 1px rgba(157, 233, 255, .25), 0 12px 50px rgba(79, 227, 255, .25);
+      filter: drop-shadow(0 12px 34px rgba(79, 227, 255, .22));
       animation: splash-in .8s cubic-bezier(.34, 1.36, .64, 1) both;
     }
-    .splash-name { font-size: 20px; font-weight: 800; letter-spacing: .2em; animation: splash-fade .6s .15s both; }
+    .splash-logo svg, .splash-name svg { display: block; width: 100%; height: auto; }
+    /* El logotipo sí cambia: toma el color del texto y el píxel pasa al cian
+       profundo en claro, donde el cian vivo no tiene contraste. */
+    .splash-name { width: 92px; --splash-dot: #4fe3ff; animation: splash-fade .6s .15s both; }
     .splash-msg {
       font-size: 13px;
       color: #98989f;
@@ -101,12 +102,14 @@
       html:not([data-theme="dark"]) .splash-bar { background: rgba(0, 0, 0, .1); }
       html:not([data-theme="dark"]) .splash-bar::after { background: #1d1d1f; }
       html:not([data-theme="dark"]) .splash-msg { color: #6e6e73; }
+      html:not([data-theme="dark"]) .splash-name { --splash-dot: #0089a8; }
     }
     html[data-theme="light"], html[data-theme="light"] body,
     html[data-theme="light"] #app-splash { background: #f5f5f7; color: #1d1d1f; }
     html[data-theme="light"] .splash-bar { background: rgba(0, 0, 0, .1); }
     html[data-theme="light"] .splash-bar::after { background: #1d1d1f; }
     html[data-theme="light"] .splash-msg { color: #6e6e73; }
+    html[data-theme="light"] .splash-name { --splash-dot: #0089a8; }
     /* Sin animaciones si el sistema las tiene desactivadas. */
     @media (prefers-reduced-motion: reduce) {
       .splash-logo, .splash-name, .splash-bar, .splash-bar::after { animation: none; }
@@ -118,8 +121,8 @@
        JavaScript y hasta entonces lo de debajo es HTML sin estilar. Lo quita
        src/splash.js cuando la interfaz está montada. -->
   <div id="app-splash">
-    <div class="splash-logo"></div>
-    <div class="splash-name">ORVY</div>
+    <div class="splash-logo"><svg viewBox="0 0 1024 1024" aria-hidden="true"><defs><linearGradient id="splash-f" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#1b2229"/><stop offset="1" stop-color="#05070a"/></linearGradient><radialGradient id="splash-h"><stop offset="0" stop-color="#4fe3ff" stop-opacity=".55"/><stop offset="1" stop-color="#4fe3ff" stop-opacity="0"/></radialGradient></defs><rect width="1024" height="1024" rx="230" fill="url(#splash-f)"/><rect x="2" y="2" width="1020" height="1020" rx="228" fill="none" stroke="#9de9ff" stroke-opacity=".18" stroke-width="4"/><circle cx="677.4" cy="346.6" r="150" fill="url(#splash-h)"/><g transform="translate(122 122) scale(7.8)"><path d="M79.65 45.46A30 30 0 1 1 54.54 20.35" fill="none" stroke="#f2f6f8" stroke-width="13.5" stroke-linecap="round"/><circle cx="71.21" cy="28.79" r="6.75" fill="#4fe3ff"/></g></svg></div>
+    <div class="splash-name"><svg viewBox="0 20 228 94" role="img" aria-label="Orvy"><g fill="none" stroke="currentColor" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"><path d="M54.22 46.29A24.5 24.5 0 1 1 33.71 25.78"/><path d="M79.5 74.5V43.5A18 18 0 0 1 97.5 25.5"/><path d="M116.5 25.5L138.5 74.5L160.5 25.5"/><path d="M178 25.5L200 74.5M222 25.5L184.96 108"/></g><circle cx="47.32" cy="32.68" r="5.5" style="fill: var(--splash-dot)"/></svg></div>
     <div class="splash-bar"></div>
     <div class="splash-msg" id="splash-msg">Iniciando…</div>
   </div>

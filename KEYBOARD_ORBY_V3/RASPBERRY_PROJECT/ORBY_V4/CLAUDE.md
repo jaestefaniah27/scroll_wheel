@@ -307,8 +307,9 @@ y se ven en la lista, pero **todavía no hay quién los ejecute**: devuelven un 
 - **El toolchain de Rust es GNU, sin las Build Tools de MSVC.** Por eso las dependencias
   se eligen sin nada en C: `rustls` y no `native-tls`, `zip` solo con `deflate`, Win32
   llamado directo en vez de módulos nativos de Node.
-- **`assets/orby-icon.png` es un JPEG** con extensión `.png`. Electron-builder lo traga;
-  el generador de iconos de Tauri no. Hay que convertirlo antes de dárselo.
+- **Los iconos de la app salen de `OrbyGUI/assets/brand/`**, la marca de Orvy (el dial). Para
+  regenerarlos: `npx tauri icon assets/brand/orvy-icono-app-1024.png -o src-tauri/icons` y borrar
+  las carpetas `android/` e `ios/` que crea. El SVG maestro es `orvy-icono-app.svg`.
 - **Rutas largas de Windows.** El repo está anidado y bajo OneDrive: operaciones de
   ficheros recursivas pueden fallar con "Filename too long". Usa el prefijo `\\?\`.
 - **La app de escritorio y la WebGUI no pueden usar el teclado a la vez.** En Windows
