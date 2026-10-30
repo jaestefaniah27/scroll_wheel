@@ -4,21 +4,21 @@ La animación de elegir perfil (succión y explosión, tipo `PICK`) está en `ma
 probado en simulación (`tools/test/test_anim.cpp`) y compilando en Linux. Falta en casa:
 
 * [x] Flashear la 4.17 con `.\flash.ps1` (cerrar antes OrbyGUI desde la bandeja: **Salir**).
-* [ ] Probarla en el teclado de verdad, con cada forma de elegir perfil:
+* [x] Probarla en el teclado de verdad, con cada forma de elegir perfil:
   * tecla de menú mantenida y tocar un perfil («menú + perfil»);
   * menú principal → Perfiles → elegir;
   * mando de menú (`SET_MENUENC`): mantener, girar y soltar;
   * con más de diez perfiles, eligiendo uno de la segunda ventana (el origen es
     `perfil - perf_menu_first`: comprobar que sale de la pantalla correcta);
   * elegir el perfil que ya estaba puesto: tiene que cerrar el menú como antes, sin succión.
-* [ ] Juzgar el ritmo en los OLED reales. Si la succión va demasiado rápida o lenta, se cambia
+* [x] Juzgar el ritmo en los OLED reales. Si la succión va demasiado rápida o lenta, se cambia
   `SUCK` en `include/oled_anim.h` **y** en `OrbyGUI/src/oled-anim.mjs`, y se regenera el
   dorado (`tools/test/anim_golden.cpp`). Cambiar solo la velocidad del grupo «perfil»
   en Ajustes también la mueve, pero junto con la onda de cambiar de perfil.
 * [ ] Ver en `npm run tauri:dev` que el Inicio repite la animación con el espejo
   (`EV:SCR:GO:9:<ritmo>:<origen>`) y que sale de la misma pantalla que en el teclado.
 * [x] Pasar `tools/test/run.ps1` en Windows: en verde (2026-10-30), y los 62 tests de Node con Node 22.
-* [ ] Si todo va bien: publicar la release `fw-v4.17` (prerelease) desde el servidor, como
+* [x] Publicada como `fw-v4.18` (2026-10-30, con los mandos al revés por defecto) en vez de `fw-v4.17`; (prerelease) desde el servidor, como
   dice el `CLAUDE.md` de la raíz. La app 1.1.3, que hace falta para verla en el Inicio,
   ya está publicada (2026-10-30).
 
