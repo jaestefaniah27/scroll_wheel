@@ -689,8 +689,9 @@ function renderMenuKey() {
     encDesc.textContent = global
       ? 'Girarlo cambia de página. Mantenlo pulsado y gira, sin soltar, hasta el perfil que '
         + 'quieras: al soltar, el teclado cambia a él (con SUPER, el gestor de páginas). Ese mando '
-        + 'deja de configurarse por perfil. Con el menú abierto, las teclas siguen haciendo lo '
-        + 'que tengan asignado.'
+        + 'deja de configurarse por perfil, la tecla 10 queda libre y el otro mando ya no puede '
+        + 'abrir menús (las páginas sí puede llevarlas). Con el menú abierto, las teclas siguen '
+        + 'haciendo lo que tengan asignado.'
       : 'Girarlo cambia de página y pulsarlo abre el selector de perfiles, en la capa normal de '
         + 'todas las páginas. Se puede cambiar después perfil a perfil, en Rueda y mandos.';
   }
@@ -728,6 +729,8 @@ function initMenuKey() {
       try {
         await device.setMenuKey(val);
         state.menuKeyMode = val;
+        // Un solo dueño del menú: el firmware suelta el mando si vuelve la tecla.
+        if (val === 0 && compat.supports(state.deviceInfo, 'menuEncoder')) state.menuEncoder = 0;
         markDirty();
         render();
         dashboard.render();
@@ -750,6 +753,8 @@ function initMenuKey() {
         try {
           await device.setMenuEncoder(enc);
           state.menuEncoder = enc;
+          // Con un mando de menú el firmware deja libre la tecla 10.
+          if (enc) state.menuKeyMode = 1;
           markDirty();
           render();
           dashboard.render();
@@ -942,6 +947,15 @@ function renderWheelCalib() {
     </div>`;
 
   paintDialMarker(wheelDial.angle());
+}
+
+// Para los enlaces desde otras vistas (el panel del mando de menú): abre Ajustes
+// y lleva la tarjeta pedida a la vista.
+export function openTarget(params) {
+  render();
+  if (params?.section === 'menukey') {
+    document.getElementById('settings-menukey')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
 }
 
 export function render() {

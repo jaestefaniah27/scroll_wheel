@@ -12,10 +12,10 @@
 //
 // Al subir la versión hay que tocar también, en el mismo commit:
 //   - docs/COMPATIBILIDAD.md          (qué versión trae qué)
-//   - OrbyGUI/src/compat.js           (hasta dónde llega esta app)
+//   - OrbyGUI/src/compat.json         (la entrada de esta versión; sube `rev`)
 
 #define ORBY_FW_MAJOR 4
-#define ORBY_FW_MINOR 18
+#define ORBY_FW_MINOR 19
 
 #define ORBY_STR_(x) #x
 #define ORBY_STR(x)  ORBY_STR_(x)

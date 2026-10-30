@@ -440,6 +440,12 @@ static inline int girar(uint8_t bit, int delta) {
 // menu_key_mode, para no dejar a nadie sin forma de llegar a los menús.
 volatile uint8_t menu_encoder = 0;
 
+// El menú lo lleva UNA sola cosa: la tecla 10 o un mando. Con dueño, el
+// «Abrir menú» que un perfil deje en cualquier otro mando se ignora: si no, dos
+// gestos distintos abrirían el selector y el usuario no sabría cuál manda. Las
+// páginas no se reparten así: ROT_PAGE vale siempre, en el mando que sea.
+static inline bool menu_owned() { return menu_key_is_menu() || menu_encoder != 0; }
+
 // Velocidad de las animaciones estilo Apple (oled_anim.h). Cada grupo tiene un
 // ritmo base, en % del muelle "de fábrica" de SpringBoard (ver
 // OledAnim::set_rate), y el usuario elige un % sobre esa base: 100 es lo que
@@ -1231,6 +1237,8 @@ void load_settings() {
         menu_key_mode          = (s->menu_key_mode == MENUKEY_NORMAL) ? MENUKEY_NORMAL : MENUKEY_MENU;
         rot_invert_mask        = s->rot_invert_mask & ROTINV_ALL;
         menu_encoder           = (s->menu_encoder <= 2) ? s->menu_encoder : 0;
+        // Teclados de la 4.16 al 4.18 podían guardar los dos a la vez.
+        if (menu_encoder) menu_key_mode = MENUKEY_NORMAL;
         for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) anim_speed_pct[g] = s->anim_speed[g];
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
@@ -2020,7 +2028,10 @@ static void page_steps(int32_t steps) {
 
 // Una sola repetición de una acción discreta (tecla o multimedia).
 static void emit_discrete(const RotaryAction& a) {
-    if (a.type == ROT_MENU) { open_menu_from_rotary(a.keycode); return; }
+    if (a.type == ROT_MENU) {
+        if (!menu_owned()) open_menu_from_rotary(a.keycode);
+        return;
+    }
     if (a.type == ROT_CONSUMER) {
         HidOut::consumer_tap(get_consumer_key_from_index(a.keycode));
     } else if (a.type == ROT_KEY) {
@@ -2895,6 +2906,8 @@ void process_command(const char* cmd) {
             // como una suelta y HidOut::key_up no hace nada con una tecla que
             // no tenía nada pulsado: no hace falta limpiarlo.
             menu_key_mode = (uint8_t)val;
+            // Un solo dueño del menú: si vuelve a ser la tecla, el mando suelta.
+            if (val == MENUKEY_MENU) menu_encoder = 0;
             push_system_refresh();
             cdc_printf("MENUKEY:OK:%d\n", (int)menu_key_mode);
         } else {
@@ -2922,6 +2935,8 @@ void process_command(const char* cmd) {
         int val = atoi(cmd + 12);
         if (val >= 0 && val <= 2) {
             menu_encoder = (uint8_t)val;
+            // Un solo dueño del menú: con un mando, la tecla 10 queda libre.
+            if (val != 0) { menu_key_mode = MENUKEY_NORMAL; push_system_refresh(); }
             // Un gesto a medias con el reparto anterior no debe acabar de abrir
             // algo con el nuevo.
             enc_hold[0].armed = enc_hold[0].open = false;
@@ -3647,6 +3662,7 @@ static void menu_turn(int delta) {
 // Qué menú abre el clic de este mando ahora mismo, o -1 si no abre ninguno.
 static int8_t enc_menu_for(uint8_t enc) {
     if (menu_encoder == enc) return super_active ? ROT_MENU_PAGES : ROT_MENU_PROFILES;
+    if (menu_owned()) return -1;
     const RotaryAction& a = cur_page().rotary[rot_slot(enc == 1 ? ROT_ENC1_CLICK : ROT_ENC2_CLICK,
                                                        super_active)];
     return (a.type == ROT_MENU) ? (int8_t)a.keycode : (int8_t)-1;

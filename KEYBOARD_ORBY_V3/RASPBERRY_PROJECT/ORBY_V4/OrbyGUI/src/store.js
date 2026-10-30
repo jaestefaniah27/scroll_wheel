@@ -147,6 +147,13 @@ export function isMenuEncoderSlot(baseSlot) {
   return state.menuEncoder === 1 ? baseSlot <= 2 : baseSlot >= 3 && baseSlot <= 5;
 }
 
+// El menú lo lleva una sola cosa: la tecla 10 (mientras no se libere) o un
+// mando. Con dueño, «Abrir menú» no se ofrece en ningún otro mando; las
+// páginas, en cambio, se pueden poner en cualquiera.
+export function menuOwned() {
+  return state.menuKeyMode !== 1 || Boolean(state.menuEncoder);
+}
+
 export function labelForKey(prof, keyIndex, layer) {
   const screen = KEY_TO_SCREEN[keyIndex];
   if (!screen || !prof) return null;
@@ -243,7 +250,9 @@ export async function syncFromDevice({ expected = null, iconOf = null, onProgres
       if (Number.isInteger(s.timeout))      state.timeout = s.timeout;
       state.menuKeyMode = s.menuKeyMode === 1 ? 1 : 0;
       state.menuEncoder = [1, 2].includes(s.menuEncoder) ? s.menuEncoder : 0;
-      state.rotInvert   = Number.isInteger(s.rotInvert) ? s.rotInvert & 7 : 0;
+      // Un solo dueño del menú, como en el firmware (que ya lo normaliza).
+      if (state.menuEncoder) state.menuKeyMode = 1;
+      state.rotInvert  = Number.isInteger(s.rotInvert) ? s.rotInvert & 7 : 0;
       if (s.animSpeed) state.animSpeed = s.animSpeed;
       if (typeof s.superActive === 'boolean') state.superActive = s.superActive;
       if (s.mode)   state.deviceMode = s.mode;

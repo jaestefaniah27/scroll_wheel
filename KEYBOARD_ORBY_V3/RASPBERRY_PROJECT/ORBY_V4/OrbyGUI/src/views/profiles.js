@@ -15,7 +15,7 @@
 
 import * as device from '../device.js';
 import { state, notify, markDirty, subscribe, syncFromDevice, profileMeta, labelSlot, keymapSlot,
-         rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU, keyRole, isMenuEncoderSlot,
+         rotarySlot, layerIndex, scrollFor, KEY_TO_SCREEN, KEY_SUPER, KEY_MENU, keyRole, isMenuEncoderSlot, menuOwned,
          hasPages, maxPages, pageCountOf, selectPage, addPage, removePage } from '../store.js';
 import { MODIFIERS, CONSUMER_MODIFIER, CONSUMER_ACTIONS, CONSUMER_TURN_OPTIONS, consumerPairFor,
          GOTO_PAGE_MODIFIER, PAGE_STATE_MODIFIER,
@@ -478,6 +478,8 @@ function onClick(e) {
     // Pulsar la que ya está abierta la cierra, como una fila desplegable.
     view.variantId = el.dataset.id && el.dataset.id !== view.variantId ? el.dataset.id : null;
     render();
+  } else if (act === 'go-menu-settings') {
+    goTo('view-settings', { section: 'menukey' });
   } else if (act === 'go-pages') {
     // Desde el panel del Inicio: las páginas se gestionan en la ficha del
     // perfil, y hasta ahora había que saber que estaban allí.
@@ -1626,7 +1628,17 @@ function renderMenuEncoderPanel(piece) {
     <p class="kp-note">Se mantiene pulsado y se gira, sin soltar, hasta el elemento que se quiere;
       al soltar se elige. Un toque corto lo deja abierto hasta confirmar con otro clic. Mientras está
       abierto, las teclas siguen haciendo lo que les hayas asignado. Este mando no se configura por
-      perfil; para usarlo de otra forma, quítalo en Ajustes → Tecla 10.</p>`;
+      perfil.</p>
+    <div class="kp-list">
+      <button class="nav-row" data-act="go-menu-settings" data-tint="orange">
+        <span class="nav-icon">${icon('settings', 15)}</span>
+        <span class="nav-row-text">
+          <span class="nav-row-title">Cambiar quién lleva el menú</span>
+          <span class="nav-row-sub">Ajustes → Tecla 10 y mando de menú</span>
+        </span>
+        <span class="nav-row-chev">${icon('chevron', 14)}</span>
+      </button>
+    </div>`;
 }
 
 // Nombre de cada gesto tal como se hace con la mano.
@@ -1932,7 +1944,8 @@ function renderRotaryInspector() {
   const invertido = puedeInvertirPlugin ? giroInvertido(base, pluginStep)
     : consumerPair ? consumerGiroInvertido(base, action) : false;
   const types = ROTARY_TYPE_OPTIONS.filter((t) => !(isClick && t.turnOnly) && !(!isClick && t.clickOnly)
-    && (!t.feature || compat.supports(state.deviceInfo, t.feature)));
+    && (!t.feature || compat.supports(state.deviceInfo, t.feature))
+    && !(t.type === ROTARY_TYPES.MENU && menuOwned() && action.type !== ROTARY_TYPES.MENU));
 
   const variant = editingVariant();
   const changed = Boolean(variant && variants.override(variant, 'rotary', rotarySlot(base, view.layer)));
