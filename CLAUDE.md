@@ -13,5 +13,10 @@ usuario `ubuntu`).
   cuenta (`~/.ssh/github_poker`): sirve para las etiquetas.
 - Crear la release y subir el `.uf2` va por la API de GitHub y necesita un token con permiso de escritura en
   scroll_wheel, en `~/.config/github/token` del mismo servidor (fuera del repo, `chmod 600`).
+- Pasos: (1) compilar el `.uf2` en la sesión y subirlo, con su `.sha256` y `notas.md`, a una rama temporal
+  `release-assets/<etiqueta>` de scroll_wheel (las ramas sí se pueden subir desde la sesión); (2) en el servidor,
+  traerla a `~/orvy-release/<etiqueta>/`, etiquetar y `git push` la etiqueta desde el clon; (3)
+  `~/orvy-release/publicar-release.sh <etiqueta> "<título>" <notas.md> <1|0> <ficheros>` crea la release y sube
+  los ficheros; (4) borrar la rama temporal.
 - Firmware: siempre `--prerelease` / `"prerelease": true`; con `ORBY_V4-fw-X.Y.uf2` y su `.sha256` como assets.
   Detalle y motivo en `KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/docs/COMPATIBILIDAD.md`.
