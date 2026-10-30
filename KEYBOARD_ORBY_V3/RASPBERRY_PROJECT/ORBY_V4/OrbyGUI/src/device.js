@@ -274,7 +274,7 @@ export function getState() {
       }
       if (line.startsWith('STATE:TIMEOUT:'))    { state.timeout   = parseInt(line.slice(14), 10); return true; }
       if (line.startsWith('STATE:ANIMSPEED:')) {
-        const [menu, carousel, submenu, profile, fade] = line.slice(17).split(':').map(Number);
+        const [menu, carousel, submenu, profile, fade] = line.slice(16).split(':').map(Number);
         state.animSpeed = { menu, carousel, submenu, profile, fade };
         return true;
       }

@@ -445,8 +445,15 @@ async function onDeviceConnected(info) {
   // Antes, la copia de las macros que guarda el teclado (firmware 4.7): si
   // viene de otro PC, aquí se recuperan sus macros, y las secuencias que el
   // teclado sabe tocar ya salen de la lista buena.
+  //
+  // Entre medias se quitan las macros que ya no usa ninguna tecla, pero solo
+  // si el almacén del teclado se ha podido juntar: sin él, alguna de las que
+  // parecen sobrar podría ser justo la que el teclado iba a traer de vuelta.
   (profiles.syncMacroStore?.() ?? Promise.resolve(0))
-    .then((n) => { if (n) toast(`${n === 1 ? 'Recuperada 1 macro' : `Recuperadas ${n} macros`} del teclado`); })
+    .then(async (n) => {
+      if (n) toast(`${n === 1 ? 'Recuperada 1 macro' : `Recuperadas ${n} macros`} del teclado`);
+      await profiles.pruneUnusedMacros?.().catch((err) => console.warn('[macros] limpieza:', err));
+    })
     .catch((err) => toast(`No se pudieron leer las macros del teclado: ${err.message}`, 'error'))
     .finally(() => profiles.syncAllMacrosToDevice?.().catch(() => {}));
 

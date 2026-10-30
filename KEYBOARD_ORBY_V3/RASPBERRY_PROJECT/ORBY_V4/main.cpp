@@ -460,11 +460,12 @@ static inline bool cur_scroll_invert() {
 // ==========================================
 // DISPOSICIÓN DE LA FLASH
 // ==========================================
-//   0 –  200 KB   el programa (con los iconos y la fuente de las pantallas)
+//   0 –  220 KB   el programa (con los iconos y la fuente de las pantallas)
 //        ...libre...
+//    896 – 1024 KB  secuencias que reproduce el propio teclado (desde la 4.14)
 //   1024 – 1536 KB  banco de iconos: 64 tramos (16 perfiles × 4 páginas) de 8 KB
 //   1536 – 1560 KB  ajustes: perfiles con sus páginas y las máscaras de iconos
-//   1560 – 1592 KB  secuencias que reproduce el propio teclado
+//   1560 – 1592 KB  secuencias hasta la 4.13: solo se leen para traérselas
 //        ...libre...
 //   1600 – 2048 KB  copia de las macros del PC, dos bancos de 224 KB (macro_store.h)
 //
@@ -672,7 +673,17 @@ static_assert(OLED_PAGE_STRIDE % FLASH_PAGE_SIZE == 0,
 // resolución/escala de la pantalla del PC, que el teclado no puede saber) sigue
 // yendo por CDC: una secuencia que la use se queda en el camino viejo (ver
 // trigger_macro: sin copia jugable en el teclado, avisa por CDC como antes).
-#define MACRO_MAX_COUNT  64
+//
+// Eran 64 hasta la 4.13, y se quedaban cortas: hasta Orvy 1.1.3 la app no
+// liberaba el id de una macro que ya no usa ninguna tecla (cambiar de pestaña,
+// pegar una tecla o instalar un perfil de la biblioteca estrenan uno), así que
+// con el uso los ids pasaban de 63. Una secuencia rehecha a partir de ahí estrenaba un id que el
+// teclado no podía guardar, y aunque solo llevara teclas y clics se quedaba
+// tachada sin la app (una configuración real ya iba por el id 160). La app lee
+// este número del handshake (MAXMACROS), así que subirlo basta para que vuelvan
+// a caber sin tocar la app. Se sube hasta el tope duro, 255: el id viaja en el
+// keycode de la tecla, que es un byte.
+#define MACRO_MAX_COUNT  255
 // Cada paso "real" (tecla, clic, movimiento) que añade el editor se guarda con
 // una espera delante (menos el primero), así que el tope efectivo de pasos
 // jugables en el teclado es la mitad de este número, no el número entero.
@@ -728,56 +739,103 @@ struct FlashMacro {
 // aquí, y la Flash es solo persistencia entre arranques.
 static FlashMacro macros[MACRO_MAX_COUNT];
 
-#define FLASH_MACROS_OFFSET  (FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES)
-#define FLASH_MACROS_SECTORS 8
+// Con 255 secuencias (120 KB) ya no caben en su hueco de antes, entre los
+// ajustes y el almacén de macros (40 KB), así que se mudan al hueco libre que hay
+// debajo del banco de iconos. El programa ocupa unos 220 KB: sobra margen.
+#define FLASH_MACROS_OFFSET  (FLASH_OLED_OFFSET - FLASH_MACROS_BYTES)
+#define FLASH_MACROS_SECTORS 32
 #define FLASH_MACROS_BYTES   (FLASH_MACROS_SECTORS * FLASH_SECTOR_SIZE)
-#define MACROS_MAGIC 0xDEB0AC10
+// Otra firma que la de la 4.13: lo que hubiera en este hueco de antes (nada que
+// escribiera este firmware) no se puede tomar por secuencias.
+#define MACROS_MAGIC 0xDEB0AC11
 
-struct MacrosBlob {
-    uint32_t   magic;
-    FlashMacro items[MACRO_MAX_COUNT];
-};
-#define MACROS_BLOB_SIZE (((sizeof(MacrosBlob) + FLASH_PAGE_SIZE - 1) / FLASH_PAGE_SIZE) * FLASH_PAGE_SIZE)
+// Hasta la 4.13: 64 secuencias detrás de los ajustes. Solo se lee, para traerse
+// las del usuario al arrancar por primera vez con este firmware.
+#define FLASH_MACROS_OFFSET_V1 (FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES)
+#define MACROS_MAGIC_V1        0xDEB0AC10
+#define MACRO_MAX_COUNT_V1     64
 
-static uint8_t macros_blob[MACROS_BLOB_SIZE];
+// En Flash: la firma y detrás `macros` tal cual. Se escribe sector a sector
+// desde la propia copia viva en vez de montar antes el bloque entero en otro
+// búfer: ese búfer serían otros 120 KB de RAM, solo para guardar.
+#define MACROS_FLASH_LEN     (sizeof(uint32_t) + sizeof(macros))
+#define MACROS_FLASH_SECTORS ((MACROS_FLASH_LEN + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE)
+static uint8_t macros_sector[FLASH_SECTOR_SIZE];
 
-static_assert(FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES <= PICO_FLASH_SIZE_BYTES,
-              "Las secuencias se salen de la Flash del módulo");
-static_assert(MACROS_BLOB_SIZE <= FLASH_MACROS_BYTES,
+static_assert(FLASH_MACROS_OFFSET % FLASH_SECTOR_SIZE == 0,
+              "La región de las secuencias tiene que empezar en un sector");
+static_assert(MACROS_FLASH_LEN <= FLASH_MACROS_BYTES,
               "Las secuencias ya no caben en su región reservada de Flash");
+static_assert(MACRO_MAX_COUNT <= 255,
+              "El id de una macro viaja en el keycode de la tecla, que es un byte");
+static_assert(FLASH_MACROS_OFFSET_V1 + sizeof(uint32_t) + MACRO_MAX_COUNT_V1 * sizeof(FlashMacro)
+                  <= FLASH_TARGET_OFFSET + FLASH_SETTINGS_BYTES + 8 * FLASH_SECTOR_SIZE,
+              "El formato viejo ocupaba sus 8 sectores, ni uno más");
 
+// Solo se reescriben los sectores que han cambiado. Son 31, y borrarlos todos
+// de una vez era más de un segundo con las interrupciones cortadas (USB y
+// pantallas parados) en cada guardado automático, casi siempre para dejar lo
+// mismo: lo normal es que cambie una secuencia, o ninguna. De paso la Flash
+// gasta ciclos de borrado solo donde hace falta.
+//
+// El sector 0, el de la firma, va el último: si se va la luz en el primer
+// guardado tras actualizar, la región nueva se queda sin firma y el arranque
+// siguiente vuelve a leer las de la 4.13, en vez de dar por buena una a medias.
 static void save_macros() {
-    MacrosBlob* b = (MacrosBlob*)macros_blob;
-    memset(macros_blob, 0, sizeof(macros_blob));
-    b->magic = MACROS_MAGIC;
-    memcpy(b->items, macros, sizeof(macros));
+    const uint32_t magic = MACROS_MAGIC;
+    const uint8_t* src = (const uint8_t*)macros;
 
-    tud_task();
-    watchdog_update();
-    const bool lock = multicore_lockout_victim_is_initialized(1);
-    uint32_t ints = save_and_disable_interrupts();
-    if (lock) multicore_lockout_start_blocking();
-    flash_range_erase(FLASH_MACROS_OFFSET, FLASH_MACROS_BYTES);
-    flash_range_program(FLASH_MACROS_OFFSET, macros_blob, MACROS_BLOB_SIZE);
-    if (lock) multicore_lockout_end_blocking();
-    restore_interrupts(ints);
+    for (uint32_t k = 1; k <= MACROS_FLASH_SECTORS; k++) {
+        const uint32_t sec  = k % MACROS_FLASH_SECTORS;
+        const uint32_t base = sec * FLASH_SECTOR_SIZE;
+        for (uint32_t i = 0; i < FLASH_SECTOR_SIZE; i++) {
+            const uint32_t at = base + i;
+            macros_sector[i] = at < sizeof(magic)    ? ((const uint8_t*)&magic)[at]
+                             : at < MACROS_FLASH_LEN ? src[at - sizeof(magic)]
+                             : 0;
+        }
+        if (memcmp(macros_sector, (const uint8_t*)(XIP_BASE + FLASH_MACROS_OFFSET + base),
+                   FLASH_SECTOR_SIZE) == 0) continue;
+
+        tud_task();
+        watchdog_update();
+        const bool lock = multicore_lockout_victim_is_initialized(1);
+        uint32_t ints = save_and_disable_interrupts();
+        if (lock) multicore_lockout_start_blocking();
+        flash_range_erase(FLASH_MACROS_OFFSET + base, FLASH_SECTOR_SIZE);
+        flash_range_program(FLASH_MACROS_OFFSET + base, macros_sector, FLASH_SECTOR_SIZE);
+        if (lock) multicore_lockout_end_blocking();
+        restore_interrupts(ints);
+    }
 }
 
 static void load_macros() {
-    const uint32_t magic = *(const uint32_t*)(XIP_BASE + FLASH_MACROS_OFFSET);
-    if (magic == MACROS_MAGIC) {
-        const MacrosBlob* b = (const MacrosBlob*)(XIP_BASE + FLASH_MACROS_OFFSET);
-        memcpy(macros, b->items, sizeof(macros));
-    } else {
-        memset(macros, 0, sizeof(macros));
+    memset(macros, 0, sizeof(macros));
+    if (*(const uint32_t*)(XIP_BASE + FLASH_MACROS_OFFSET) == MACROS_MAGIC) {
+        memcpy(macros, (const uint8_t*)(XIP_BASE + FLASH_MACROS_OFFSET + sizeof(uint32_t)), sizeof(macros));
+    } else if (*(const uint32_t*)(XIP_BASE + FLASH_MACROS_OFFSET_V1) == MACROS_MAGIC_V1) {
+        // Mismo FlashMacro, solo cambian sitio y cuántas caben: las 64 de antes
+        // pasan a ser las 64 primeras. Se quedan en RAM hasta el próximo
+        // SAVE_STATE, que ya las escribe en la región nueva; mientras tanto se
+        // vuelven a leer de la vieja en cada arranque, que sigue intacta.
+        memcpy(macros, (const uint8_t*)(XIP_BASE + FLASH_MACROS_OFFSET_V1 + sizeof(uint32_t)),
+               MACRO_MAX_COUNT_V1 * sizeof(FlashMacro));
+    }
+    // Un recuento imposible (Flash borrada a 0xFF bajo una firma buena) haría
+    // que el reproductor leyera pasos fuera del array: esa secuencia se da por
+    // vacía y la ejecuta el PC hasta que la app la vuelva a subir.
+    for (uint16_t i = 0; i < MACRO_MAX_COUNT; i++) {
+        if (macros[i].step_count > MACRO_MAX_STEPS) memset(&macros[i], 0, sizeof(macros[i]));
     }
 }
 
 // ==========================================
 // ALMACÉN DE LAS MACROS DEL PC (ver include/macro_store.h)
 // ==========================================
-static_assert(FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES <= MStore::OFFSET,
-              "El almacén de macros pisa las secuencias del teclado");
+static_assert(FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES <= FLASH_OLED_OFFSET,
+              "Las secuencias del teclado pisan el banco de iconos");
+static_assert(FLASH_MACROS_OFFSET_V1 + 8 * FLASH_SECTOR_SIZE <= MStore::OFFSET,
+              "El almacén de macros pisa las secuencias de la 4.13, que aún se leen");
 static_assert(MStore::OFFSET + 2 * MStore::BANK <= PICO_FLASH_SIZE_BYTES,
               "El almacén de macros se sale de la Flash del módulo");
 static_assert(MStore::PAGE == FLASH_PAGE_SIZE && MStore::SECTOR == FLASH_SECTOR_SIZE,
@@ -2578,7 +2636,8 @@ void process_command(const char* cmd) {
         // MAXMACROS dice cuántas secuencias caben en el teclado. La app las
         // numera por su cuenta y antes subía cualquier id: a partir de 64 el
         // firmware contestaba ERR:BAD_ARGS a un comando que nadie esperaba, y
-        // la petición se moría de vieja (4 s) una por macro.
+        // la petición se moría de vieja (4 s) una por macro. Desde la 4.14
+        // son 255 (ver MACRO_MAX_COUNT).
         // BOOTSEL=1: este firmware sabe reiniciarse en el cargador de la ROM a
         // petición de la app, así que se puede actualizar sin desenchufar el
         // cable con el botón pulsado.
