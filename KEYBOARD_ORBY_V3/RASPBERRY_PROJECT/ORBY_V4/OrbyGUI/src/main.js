@@ -95,9 +95,12 @@ function initChrome() {
   document.getElementById('btn-back').addEventListener('click', goBack);
   // Pulsar otra vez el botón de la vista abierta vuelve al Inicio: es un
   // conmutador, como los de una barra de herramientas de macOS.
-  document.getElementById('btn-settings').addEventListener('click',
-    () => switchView(activeView === 'view-settings' ? 'view-dashboard' : 'view-settings'));
-  document.getElementById('btn-profiles').addEventListener('click', () => {
+  document.getElementById('btn-settings').addEventListener('click', async () => {
+    if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
+    switchView(activeView === 'view-settings' ? 'view-dashboard' : 'view-settings');
+  });
+  document.getElementById('btn-profiles').addEventListener('click', async () => {
+    if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
     if (activeView === 'view-profiles') switchView('view-dashboard');
     else switchView('view-profiles', { profile: state.activeProfileIdx });
   });
@@ -209,7 +212,10 @@ function parentOf(view) {
   return view === 'view-oled' ? oledFrom : PARENT[view] || 'view-dashboard';
 }
 
-function goBack() {
+// Salir del editor de iconos con la flecha también tiene que preguntar si hay
+// un dibujo sin guardar: antes la flecha lo tiraba sin decir nada.
+async function goBack() {
+  if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
   switchView(parentOf(activeView));
 }
 

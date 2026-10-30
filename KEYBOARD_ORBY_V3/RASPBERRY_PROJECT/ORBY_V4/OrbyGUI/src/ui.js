@@ -111,8 +111,9 @@ export function confirmar({ titulo, mensaje = '', aceptar = 'Aceptar', cancelar 
 // CSS no sabe leer el valor de un <input type=range>, así que se le pasa en una
 // variable. Va por delegación y con un observador porque las vistas pintan sus
 // controles con innerHTML en cada render: engancharse a cada input se perdería
-// en el siguiente repintado.
-function pintarDeslizador(el) {
+// en el siguiente repintado. Se exporta para quien cambie el valor por código:
+// eso no dispara `input` y el tramo se quedaría donde estaba.
+export function pintarDeslizador(el) {
   const min = Number(el.min) || 0;
   const max = Number(el.max) || 100;
   const pct = max > min ? ((Number(el.value) - min) / (max - min)) * 100 : 0;
