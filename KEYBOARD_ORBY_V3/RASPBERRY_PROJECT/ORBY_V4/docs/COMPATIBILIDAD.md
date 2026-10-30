@@ -31,7 +31,7 @@ varias gana la de `rev` más alto.
 
 ```json
 { "schema": 1, "rev": 7, "fwMin": "2.0",
-  "firmware": { "4.18": { "minApp": "1.1.3" }, "4.19": { "minApp": "1.1.3" } } }
+  "firmware": { "4.19": { "minApp": "1.1.3" }, "4.20": { "minApp": "1.1.3" } } }
 ```
 
 Cada app ofrece hasta el firmware más alto cuyo `minApp` ya cumple. Dos casos:
@@ -58,6 +58,7 @@ compilado y siguen necesitando app nueva.
 <!-- tabla:inicio -->
 | Firmware | Qué trajo | OrbyGUI |
 |---|---|---|
+| **4.20** | **El teclado escribe textos él solo.** Paso de secuencia nuevo `MSTEP_TEXT` (tipo 6) y bandera `MACROTEXT=1`: `a`, `b` y `gap` llevan cada uno una tecla (`(modificador << 8) \| tecla`, 0 = fin), tres por paso, y el reproductor las pulsa de una en una con la cola de salida vacía. La app traduce el texto a teclas con la distribución **española** (`src/web/text-keys.mjs`); lo que no se pueda traducir, o no quepa en 48 pasos (unos 144 caracteres), sigue escribiéndolo el PC. Con la app viva (`HOST_APP`) y una secuencia que es solo texto, el teclado avisa por CDC (`MACRO:<id>`) y escribe el PC, que es más rápido; sin app teclea el teclado. Un firmware anterior salta el paso sin hacer nada, así que la app no sube texto sin la bandera. En la WebGUI la pestaña «Escribir texto» ya no está desactivada | Orvy 1.1.5 o posterior para usarlo; con una anterior la macro de texto sigue yendo por el PC |
 | **4.19** | **Un solo dueño del menú.** La tecla 10 o un mando: con un mando de menú (`SET_MENUENC` ≠ 0) la tecla 10 queda libre, y volver a la tecla (`SET_MENUKEY:0`) suelta el mando. Con dueño, el «Abrir menú» que un perfil tenga en cualquier otro mando se ignora; las páginas (`ROT_PAGE`) valen en cualquiera. Al cargar de la Flash se corrige lo guardado por la 4.16-4.18, que permitían ambos a la vez. Sin comando ni bandera nueva | Orvy 1.1.3 o posterior; la app oculta «Abrir menú» en los demás mandos con la próxima versión |
 | **4.18** | **Los mandos giran al revés por defecto.** El sentido de fábrica de los dos encoders pasa a ser el contrario al de antes (el que había que marcar con `SET_ROTINV`). Los bits de `ROTINV` siguen queriendo decir «al revés de lo normal», ahora sobre ese sentido nuevo: un teclado que tenía marcados los dos mandos (máscara 3) vuelve a girar como antes hasta que se desmarcan. La rueda y la telemetría `ENC:` no cambian. Sin cambios de protocolo ni bandera nueva | Orvy 1.1.4 o posterior para que la app lo ofrezca como actualización; con cualquiera que tenga `ROTINV` se usa igual |
 | **4.17** | **Animación al elegir perfil en el menú.** Al elegir un perfil en el menú físico, los iconos de las demás pantallas son succionados hacia la pantalla del perfil elegido y, cuando llegan todos, salen disparadas las imágenes del perfil nuevo, cada una hacia su pantalla. Es el tipo de transición `PICK` (9), del grupo de velocidad «perfil». Sin cambios de protocolo: con el espejo encendido (`MIRROR:1`), `EV:SCR:GO` lleva un campo más, `<origen>` (0-9, la pantalla del perfil elegido), que las apps anteriores ignoran. No hay bandera nueva | Orvy 1.1.3 o posterior para verla también en el Inicio; con una anterior el teclado la hace igual y el Inicio salta al destino sin animar |

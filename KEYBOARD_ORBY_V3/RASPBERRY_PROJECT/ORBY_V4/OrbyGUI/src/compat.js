@@ -105,6 +105,7 @@ export const FEATURES = {
   menuKey:    { since: '4.15', label: 'cambiar de página y abrir menús con los mandos, y dejar libre la tecla de menú', flag: 'menukey' },
   rotInvert:  { since: '4.16', label: 'invertir el sentido de cada mando y de la rueda', flag: 'rotinv' },
   menuEncoder: { since: '4.16', label: 'un mando de menú: mantenerlo, girar y soltar para elegir perfil', flag: 'menuenc' },
+  macroText:  { since: '4.20', label: 'escribir un texto desde el teclado, sin la app', flag: 'macrotext' },
 };
 
 // Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y

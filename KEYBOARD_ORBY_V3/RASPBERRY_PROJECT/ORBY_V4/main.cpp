@@ -788,6 +788,14 @@ enum MacroStepType : uint8_t {
     // reproductor y el protocolo (SET_MACRO_STEP tipo 5, MACRO_TEST para
     // depurar) se dejan tal cual para retomarlo con la calibración.
     MSTEP_HOME_MOVE = 5,
+    // a, b y gap llevan un carácter cada uno: (modificador << 8) | keycode HID, y
+    // 0 es "aquí se acaba". Tres por paso, y no una tecla por paso, porque las
+    // secuencias tienen 48 pasos y un texto con esperas entre letras no cabría
+    // ni en la mitad. Qué tecla da cada carácter lo decide la app según la
+    // distribución del teclado del PC (src/web/text-keys.mjs): el teclado solo
+    // las pulsa. Un firmware anterior salta este tipo sin hacer nada, por eso
+    // la app no sube texto sin la bandera MACROTEXT.
+    MSTEP_TEXT      = 6,
 };
 
 struct MacroStep {
@@ -1713,8 +1721,10 @@ struct MacroPlayer {
     // Repeticiones que le quedan al paso actual (MSTEP_KEY/MSTEP_CLICK), 0 =
     // todavía no se ha cargado para este paso (ver macro_player_tick).
     uint8_t  rep_left;
+    // Cuántos de los tres caracteres del MSTEP_TEXT en curso ya se han tecleado.
+    uint8_t  text_pos;
 };
-static MacroPlayer macro_player = { false, 0, 0, 0, 0, false, { 0, 0, 0, 0, 0 }, 0, 0, false, 0 };
+static MacroPlayer macro_player = { false, 0, 0, 0, 0, false, { 0, 0, 0, 0, 0 }, 0, 0, false, 0, 0 };
 
 static void macro_queue_report(uint8_t buttons, int8_t dx, int8_t dy) {
     macro_player.pending_report = { buttons, dx, dy, 0, 0 };
@@ -1739,6 +1749,7 @@ static void macro_player_start(uint8_t id) {
     macro_player.deadline = to_ms_since_boot(get_absolute_time());
     macro_player.debug = false;
     macro_player.rep_left = 0;
+    macro_player.text_pos = 0;
 }
 
 // Tras completar un MSTEP_KEY o la suelta de un MSTEP_CLICK: si al paso le
@@ -1873,6 +1884,21 @@ static void macro_player_tick(uint32_t now) {
             break;
         }
 
+        case MSTEP_TEXT: {
+            // Un carácter cada vez y solo con la cola de salida vacía: tap() mete
+            // en una cola de 32 sin avisar si se llena, y el reproductor avanza
+            // una vuelta tras otra más deprisa de lo que el endpoint la vacía.
+            if (!HidOut::idle()) break;
+            const int16_t ch[3] = { s.a, s.b, s.gap };
+            if (mp.text_pos >= 3 || ch[mp.text_pos] == 0) {
+                mp.step++; mp.rep_left = 0; mp.text_pos = 0; mp.deadline = now;
+                break;
+            }
+            const uint16_t c = (uint16_t)ch[mp.text_pos++];
+            HidOut::tap((uint8_t)(c >> 8), (uint8_t)(c & 0xFF));
+            break;
+        }
+
         case MSTEP_HOME_MOVE:
             mp.chunk_remaining_x = MACRO_HOME_BURST_PX;
             mp.chunk_remaining_y = MACRO_HOME_BURST_PX;
@@ -1897,8 +1923,23 @@ static void macro_player_tick(uint32_t now) {
 // exige saber algo que el teclado no puede saber (posición ABSOLUTA del
 // ratón, ver MSTEP_HOME_MOVE arriba); el resto de tipos de paso siempre caben
 // en el teclado.
+static inline bool host_app_alive();
+
+// Una secuencia que solo escribe texto. Con la app delante la escribe ella, que es
+// bastante más rápido (pega de golpe por el portapapeles en vez de pulsar tecla a
+// tecla) y no depende de la distribución del teclado del PC; sin ella la teclea el
+// propio teclado. El resto de secuencias van siempre por el teclado.
+static bool macro_is_text_only(uint8_t id) {
+    const FlashMacro& m = macros[id];
+    if (m.step_count == 0) return false;
+    for (uint8_t i = 0; i < m.step_count; i++)
+        if (m.steps[i].type != MSTEP_TEXT) return false;
+    return true;
+}
+
 static void trigger_macro(uint8_t id) {
-    const bool device_has_it = (id < MACRO_MAX_COUNT && macros[id].step_count > 0);
+    const bool device_has_it = (id < MACRO_MAX_COUNT && macros[id].step_count > 0)
+                            && !(macro_is_text_only(id) && host_app_alive());
 
     if (device_has_it) {
         // Si ya hay una en marcha se ignora el reintento en vez de encolarla o
@@ -2826,7 +2867,7 @@ void process_command(const char* cmd) {
         // grupo de las animaciones de las pantallas), en % sobre la base de
         // fábrica de cada grupo. Con =1 (4.8/4.9) el % era sobre el muelle de
         // Apple, y la app tiene que traducir.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MODE=%s\n",
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;

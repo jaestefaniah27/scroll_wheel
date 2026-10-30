@@ -13,6 +13,7 @@ import { ensureInstalledApps, installedAppsDatalist, seqKeyBuilder,
          capturePosEditIndex, lastMousePos, stepUnits, seqInsertAt } from './macro-tabs.js';
 import { escape, keycodeOptions } from './util.js';
 import * as platform from '../../platform.js';
+import * as compat from '../../compat.js';
 
 // Editor de una macro (secuencia ejecutada en el PC): lista de acciones con
 // botón de borrar cada una, botones para añadir las de un solo paso, y un modo
@@ -185,9 +186,7 @@ export function renderSequenceEditor(macroId) {
         </button>
         <button class="secondary-btn" data-act="seq-add-click">${icon('bolt', 16)} Clic</button>
         <button class="secondary-btn" data-act="seq-add-move">${icon('reset', 16)} Mover ratón</button>
-        <button class="secondary-btn ${platform.can('text') ? '' : 'unsupported'}"
-                ${platform.can('text') ? '' : 'disabled title="Necesita Orvy de escritorio"'}
-                data-act="seq-add-text">${icon('pencil', 16)} Escribir texto</button>
+        <button class="secondary-btn" data-act="seq-add-text">${icon('pencil', 16)} Escribir texto</button>
         <button class="secondary-btn ${platform.can('openApp') ? '' : 'unsupported'}"
                 ${platform.can('openApp') ? '' : 'disabled title="Necesita Orvy de escritorio"'}
                 data-act="seq-add-open">${icon('upload', 16)} Abrir app/archivo</button>
@@ -226,6 +225,15 @@ export function renderSequenceEditor(macroId) {
     </div>`;
 }
 
+// Por qué un texto no lo teclea el teclado: o el firmware es anterior a la 4.20, o
+// lleva algún carácter sin tecla en la distribución española (emojis, otros
+// alfabetos), o no cabe en los pasos de una secuencia.
+function textoSinTeclado() {
+  return compat.supports(state.deviceInfo, 'macroText')
+    ? `escribe un texto con caracteres que el teclado no sabe teclear (solo la distribución española, sin emojis ni otros alfabetos) o demasiado largo para sus ${MACRO_MAX_STEPS_DEVICE} pasos`
+    : 'escribe un texto, y el teclado solo aprendió a teclearlo en el firmware 4.20: el PC lo manda como unicode';
+}
+
 // Dice si esta secuencia la toca el propio teclado (sigue funcionando aunque
 // cierres la app) o si necesita el PC, y por qué: espera, tecla, clic (con
 // repeticiones incluidas, ver macro_repeat_or_advance en main.cpp) y
@@ -243,7 +251,7 @@ export function renderSequenceLocation(macro) {
   const reason = needsOpen
     ? 'abre una app o un archivo, algo que solo sabe hacer el PC'
     : needsText
-    ? 'escribe un texto, y eso el PC lo manda como unicode: el teclado solo sabe mandar códigos de tecla, que cambian con la distribución'
+    ? textoSinTeclado()
     : needsPos
     ? 'usa una posición de ratón absoluta, que de momento solo sabe reproducir el PC'
     : `tiene más de ${MACRO_MAX_STEPS_DEVICE} pasos, o alguno de un formato antiguo`;

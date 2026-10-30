@@ -14,6 +14,7 @@ import * as plugins from '../../plugins.js';
 import * as variants from '../../variants.js';
 import * as compat from '../../compat.js';
 import { encode, decode, merge, canonical, crc32 } from '../../web/macro-blob.mjs';
+import { textToSteps } from '../../web/text-keys.mjs';
 
 // --- Macros (secuencias ejecutadas en el PC) --------------------------------
 // Viven en la configuración local (window.orby.getConfig/setConfig), no en el
@@ -97,7 +98,8 @@ export function nextMacroId() {
 // camino del PC) y la esquina de home queda aparcada. Retomar con una
 // pantalla de calibración en el editor antes de reactivarlo. Aparcada a
 // petición expresa del usuario — no es la prioridad ahora.
-export const DEVICE_STEP_TYPE = { delay: 1, hotkey: 2, mouse_move: 3, mouse_click: 4 };
+// `text` (tipo 6, firmware 4.20) lleva tres caracteres por paso: ver text-keys.mjs.
+export const DEVICE_STEP_TYPE = { delay: 1, hotkey: 2, mouse_move: 3, mouse_click: 4, text: 6 };
 export const MACRO_MAX_STEPS_DEVICE = 48; // == MACRO_MAX_STEPS en main.cpp
 export const CLICK_BUTTON_CODE = { left: 0, middle: 1, right: 2 };
 
@@ -137,29 +139,42 @@ export const DEFAULT_REPEAT_GAP_MS = 20;
 
 export function macroDeviceEligible(m) {
   const acts = m?.actions || [];
-  return acts.length > 0
-      && acts.length <= MACRO_MAX_STEPS_DEVICE
-      && m.id < deviceMacroCapacity()
-      && acts.every((a) => a.type in DEVICE_STEP_TYPE);
+  if (acts.length === 0 || m.id >= deviceMacroCapacity()
+      || !acts.every((a) => a.type in DEVICE_STEP_TYPE)) return false;
+  // Un texto necesita firmware que sepa teclearlo y que cada carácter tenga
+  // tecla (si no, lo escribe el PC, que no depende de la distribución).
+  if (acts.some((a) => a.type === 'text') && !compat.supports(state.deviceInfo, 'macroText')) return false;
+  const steps = deviceStepsOf(m);
+  return steps !== null && steps.length > 0 && steps.length <= MACRO_MAX_STEPS_DEVICE;
 }
 
 // Los pasos de una macro tal y como los quiere el teclado. Se saca aparte
 // porque sirve para dos cosas: subirlos y compararlos con los que ya tiene.
+// Devuelve null si algún texto lleva un carácter sin tecla conocida.
 function deviceStepsOf(m) {
-  return m.actions.map((a) => {
-    const type = DEVICE_STEP_TYPE[a.type];
-    let a1 = 0, b1 = 0;
-    if (a.type === 'delay') a1 = Math.max(0, Math.min(32767, Math.round(a.ms) || 0));
-    else if (a.type === 'hotkey') { a1 = a.modifier || 0; b1 = a.keycode || 0; }
-    else if (a.type === 'mouse_move') { a1 = a.dx || 0; b1 = a.dy || 0; }
-    else if (a.type === 'mouse_click') { a1 = CLICK_BUTTON_CODE[a.button] ?? 0; }
-    // Solo tecla y clic saben repetirse en el firmware (ver sameStep en macro-tabs.js): el
-    // resto de tipos siempre suben con 1 repetición y sin hueco.
-    const repeatable = a.type === 'hotkey' || a.type === 'mouse_click';
-    const repeat = repeatable ? Math.max(1, Math.min(255, a.count || 1)) : 1;
-    const gap = repeat > 1 ? Math.max(0, Math.min(32767, Math.round(a.gap ?? DEFAULT_REPEAT_GAP_MS))) : 0;
-    return { type, a: a1, b: b1, repeat, gap };
-  });
+  const out = [];
+  for (const a of m.actions) {
+    if (a.type !== 'text') { out.push(deviceStepOf(a)); continue; }
+    const trozos = textToSteps(a.text || '');
+    if (!trozos) return null;
+    for (const t of trozos) out.push({ type: DEVICE_STEP_TYPE.text, a: t.a, b: t.b, repeat: 1, gap: t.gap });
+  }
+  return out;
+}
+
+function deviceStepOf(a) {
+  const type = DEVICE_STEP_TYPE[a.type];
+  let a1 = 0, b1 = 0;
+  if (a.type === 'delay') a1 = Math.max(0, Math.min(32767, Math.round(a.ms) || 0));
+  else if (a.type === 'hotkey') { a1 = a.modifier || 0; b1 = a.keycode || 0; }
+  else if (a.type === 'mouse_move') { a1 = a.dx || 0; b1 = a.dy || 0; }
+  else if (a.type === 'mouse_click') { a1 = CLICK_BUTTON_CODE[a.button] ?? 0; }
+  // Solo tecla y clic saben repetirse en el firmware (ver sameStep en macro-tabs.js): el
+  // resto de tipos siempre suben con 1 repetición y sin hueco.
+  const repeatable = a.type === 'hotkey' || a.type === 'mouse_click';
+  const repeat = repeatable ? Math.max(1, Math.min(255, a.count || 1)) : 1;
+  const gap = repeat > 1 ? Math.max(0, Math.min(32767, Math.round(a.gap ?? DEFAULT_REPEAT_GAP_MS))) : 0;
+  return { type, a: a1, b: b1, repeat, gap };
 }
 
 // Si el teclado ya tiene exactamente esos pasos. Con `steps` vacío pregunta por

@@ -300,7 +300,7 @@ const KEY_KINDS = [
   { id: 'shortcut', label: 'Atajo de teclado', icon: 'keyboard', tint: 'blue' },
   { id: 'media',    label: 'Multimedia y PC',  icon: 'music',    tint: 'pink' },
   { id: 'app',      label: 'Abrir app',        icon: 'app',      tint: 'green',  cap: 'openApp' },
-  { id: 'text',     label: 'Escribir texto',   icon: 'text',     tint: 'orange', cap: 'text' },
+  { id: 'text',     label: 'Escribir texto',   icon: 'text',     tint: 'orange' },
   { id: 'sequence', label: 'Secuencia',        icon: 'steps',    tint: 'indigo' },
   { id: 'record',   label: 'Grabar',           icon: 'record',   tint: 'red',    cap: 'recorder' },
   { id: 'pages',    label: 'Ir a página',      icon: 'pages',    tint: 'cyan',   pages: true },

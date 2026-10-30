@@ -15,7 +15,7 @@
 //   - OrbyGUI/src/compat.json         (la entrada de esta versión; sube `rev`)
 
 #define ORBY_FW_MAJOR 4
-#define ORBY_FW_MINOR 19
+#define ORBY_FW_MINOR 20
 
 #define ORBY_STR_(x) #x
 #define ORBY_STR(x)  ORBY_STR_(x)

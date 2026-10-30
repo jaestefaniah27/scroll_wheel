@@ -16,7 +16,7 @@ import { DEFAULT_STEP_DELAY_MS, ROTARY_DOWN_SLOTS, ROTARY_TWIN } from './constan
 import { view, currentProfile, selectedRotarySlot, editingVariant, currentAction,
          currentRotary, currentMacroId, isActiveView, rerender, pluginValuePick } from './view-state.js';
 import { macroById, nextMacroId, ensureMacro, savePCMacros,
-         isPowerMacro, pluginMacroOf } from './macros-store.js';
+         isPowerMacro, pluginMacroOf, macroDeviceEligible, MACRO_MAX_STEPS_DEVICE } from './macros-store.js';
 import { applyKeymap, applyRotary, applyRotaryPair } from './keys.js';
 import { escape, getCurrentWindowInfo } from './util.js';
 
@@ -510,6 +510,30 @@ export function renderAppTab(macroId) {
     <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar</button>`;
 }
 
+// Quién escribe el texto. El teclado lo teclea él solo (firmware 4.20) si cada carácter
+// tiene tecla en la distribución española y cabe en una secuencia; si no, lo escribe
+// el PC por unicode, que sale igual con cualquier distribución.
+function textLocationNote(macroId) {
+  const m = macroId === null ? null : macroById(macroId);
+  if (m && macroDeviceEligible(m)) {
+    return `<p class="setting-desc">
+      Con esta app abierta lo escribe ella (de golpe, más rápido y con cualquier distribución);
+      sin ella lo teclea el propio teclado, como si el PC tuviera la distribución
+      <strong>española</strong>: con otra, los símbolos saldrían cambiados.
+      Los saltos de línea se mandan como Intro y los tabuladores como Tab.
+    </p>`;
+  }
+  return `<p class="setting-desc">
+      Lo escribe el PC, así que necesita esta app abierta (vale con el icono de la bandeja).
+      Al ir por unicode y no por códigos de tecla, sale igual con cualquier distribución: eñes,
+      acentos y símbolos incluidos. Los textos de más de cuatro letras entran de golpe por el
+      portapapeles y un Ctrl+V (se restaura lo que tuvieras copiado); donde Ctrl+V no pegue
+      —la consola clásica, algún juego— no aparecerá nada. Para que lo teclee el teclado sin la
+      app hace falta el firmware 4.20 y un texto sin emojis ni alfabetos ajenos al español, de
+      unos ${MACRO_MAX_STEPS_DEVICE * 3} caracteres como mucho.
+    </p>`;
+}
+
 // Pestaña "Texto": un solo campo, el texto que escribe la tecla. Para meterlo
 // entre clics, esperas u otras teclas está la pestaña Secuencia, que tiene el
 // mismo paso ("Escribir texto") junto a los demás.
@@ -523,14 +547,7 @@ export function renderTextTab(macroId) {
                 placeholder="Por ejemplo tu correo, una firma o un trozo de código">${escape(step.text || '')}</textarea>
     </label>
 
-    <p class="setting-desc">
-      Lo escribe el PC, así que necesita esta app abierta (vale con el icono de la bandeja).
-      Al ir por unicode y no por códigos de tecla, sale igual con cualquier distribución: eñes,
-      acentos y símbolos incluidos. Los textos de más de cuatro letras entran de golpe por el
-      portapapeles y un Ctrl+V (se restaura lo que tuvieras copiado), así que da igual lo largos
-      que sean; donde Ctrl+V no pegue —la consola clásica, algún juego— no aparecerá nada. Los
-      saltos de línea se mandan como Intro y los tabuladores como Tab.
-    </p>
+    ${textLocationNote(macroId)}
 
     <button class="secondary-btn full" data-act="seq-clear">${icon('trash', 16)} Quitar</button>`;
 }

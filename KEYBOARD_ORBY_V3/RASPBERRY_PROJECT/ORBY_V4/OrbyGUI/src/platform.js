@@ -31,7 +31,6 @@ export function isTauri() {
 // las tocara el navegador, se quita de aquí y ya está.
 const PC_ONLY = new Set([
   'openApp',      // abrir una aplicación o un archivo
-  'text',         // escribir un texto por el teclado del sistema
   'power',        // suspender, apagar, bloquear
   'recorder',     // grabar y reproducir ratón y teclado
   'plugins',      // complementos

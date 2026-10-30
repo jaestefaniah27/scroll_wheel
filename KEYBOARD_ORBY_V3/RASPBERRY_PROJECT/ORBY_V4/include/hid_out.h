@@ -174,6 +174,10 @@ namespace HidOut
         push(e);
     }
 
+    // Nada en cola ni por soltar: es cuando el reproductor de secuencias puede
+    // meter el siguiente carácter de un texto sin arriesgarse a llenar la cola.
+    static inline bool idle() { return q_empty() && pending_release == 0; }
+
     // Modificadores que el host tiene puestos ahora mismo de verdad. El zoom lo
     // consulta para no mandar la rueda antes de que el Ctrl haya llegado.
     static inline uint8_t sent_modifiers() { return sent_mods; }
