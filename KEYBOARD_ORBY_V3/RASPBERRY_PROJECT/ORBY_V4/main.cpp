@@ -422,6 +422,16 @@ static inline bool menu_key_is_menu() { return menu_key_mode == MENUKEY_MENU; }
 #define ROTINV_ALL   0x07
 volatile uint8_t rot_invert_mask = 0;
 
+// Desde la 4.18 los dos mandos giran por defecto al revés que el encoder:
+// es el sentido que se acabó prefiriendo, y antes había que marcar «invertir»
+// en cada teclado. El bit de rot_invert_mask sigue significando «al revés de
+// lo normal», ahora sobre este sentido nuevo. La rueda no cambia.
+#define ROTINV_FABRICA (ROTINV_ENC1 | ROTINV_ENC2)
+
+static inline int girar(uint8_t bit, int delta) {
+    return ((rot_invert_mask ^ ROTINV_FABRICA) & bit) ? -delta : delta;
+}
+
 // Mando que hace de menú: 0 ninguno, 1 izquierdo, 2 derecho. Es el hueco de la
 // tecla 10 hecho mando. Girarlo cambia de página; mantenerlo pulsado abre el
 // selector de perfiles (con SUPER, el gestor de páginas), se gira sin soltarlo
@@ -3891,7 +3901,7 @@ int main() {
         if (delta_izq_real != 0) {
             activity_detected = true;
             // La telemetría lleva el giro real; lo que hace el teclado, el ajustado.
-            const int delta_izq = (rot_invert_mask & ROTINV_ENC1) ? -delta_izq_real : delta_izq_real;
+            const int delta_izq = girar(ROTINV_ENC1, delta_izq_real);
 
             if (current_mode == MODE_NORMAL) {
                 // Telemetría serie
@@ -3917,7 +3927,7 @@ int main() {
         const int delta_der_real = rueda_der.get_delta();
         if (delta_der_real != 0) {
             activity_detected = true;
-            const int delta_der = (rot_invert_mask & ROTINV_ENC2) ? -delta_der_real : delta_der_real;
+            const int delta_der = girar(ROTINV_ENC2, delta_der_real);
 
             if (current_mode == MODE_NORMAL) {
                 // Telemetría serie
@@ -4032,8 +4042,8 @@ int main() {
                     mirror_pump(0);
                     const int d1 = rueda_izq.get_delta();
                     const int d2 = rueda_der.get_delta();
-                    if (d1 != 0) menu_turn((rot_invert_mask & ROTINV_ENC1) ? -d1 : d1);
-                    if (d2 != 0) menu_turn((rot_invert_mask & ROTINV_ENC2) ? -d2 : d2);
+                    if (d1 != 0) menu_turn(girar(ROTINV_ENC1, d1));
+                    if (d2 != 0) menu_turn(girar(ROTINV_ENC2, d2));
                     sleep_ms(10);
                 }
                 if (menu_cursor_moved && current_mode == MODE_MENU_MAIN) menu_click();
