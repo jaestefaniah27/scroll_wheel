@@ -64,13 +64,71 @@ export function sameStep(a, b) {
   return false;
 }
 
-// Añade un paso y, si ya había alguno antes, la espera por defecto entre los
-// dos: así cada dos pasos consecutivos tienen siempre un hueco configurable
-// de por medio, sin tener que pedirlo aparte.
+// --- Pasos de una secuencia -------------------------------------------------
+// En los datos, la espera entre dos pasos es una acción más ({type:'delay'})
+// que va entre ambos: así la ejecutan el PC y el teclado. En el editor, en
+// cambio, cada paso lleva dentro la espera que le sigue, para no dedicarle
+// una fila entera. stepUnits() pasa de una forma a la otra y buildActions()
+// deshace el camino.
 //
-// Si el paso nuevo es exactamente el mismo gesto que el último de la lista
-// (mismo atajo, mismo botón de clic...), no se añade una línea más: se suma
-// a su contador de repeticiones. Así "flecha abajo ×15" o un doble clic no
+// Una unidad es { idx, action, delayIdx }: idx es la posición del paso en
+// m.actions y delayIdx la de su espera posterior (null en el último paso, o
+// si por lo que sea no la tiene). Las esperas sueltas al principio o
+// repetidas no se pueden crear desde el editor; si vienen de una secuencia
+// antigua se suman a la del paso de antes, que es lo que tardaban en total.
+export function stepUnits(actions) {
+  const units = [];
+  actions.forEach((a, i) => {
+    if (a.type !== 'delay') { units.push({ idx: i, action: a, delayIdx: null, extra: 0 }); return; }
+    const u = units[units.length - 1];
+    if (!u) return;
+    if (u.delayIdx === null) u.delayIdx = i;
+    else u.extra += a.ms || 0;
+  });
+  return units;
+}
+
+// Monta m.actions desde unidades ya ordenadas. Cada paso menos el último
+// lleva su espera; un paso que pasa a estar en medio sin tener una (era el
+// último) estrena la de por defecto.
+function buildActions(actions, units) {
+  const out = [];
+  units.forEach((u, k) => {
+    out.push(u.action);
+    if (k === units.length - 1) return;
+    const ms = u.delayIdx !== null ? (actions[u.delayIdx].ms || 0) + u.extra : DEFAULT_STEP_DELAY_MS;
+    out.push({ type: 'delay', ms });
+  });
+  return out;
+}
+
+// Dónde se meten los pasos nuevos: antes del paso número `at` (0 = al
+// principio). null es "al final", lo de siempre. Va atado a la macro: elegir
+// otra tecla vuelve a añadir al final sin tener que acordarse de quitarlo.
+let insertPoint = null; // { macroId, at }
+
+export function seqInsertAt() {
+  const id = currentMacroId();
+  if (!insertPoint || insertPoint.macroId !== id) return null;
+  const m = macroById(id);
+  const total = m ? stepUnits(m.actions).length : 0;
+  return insertPoint.at >= total ? null : insertPoint.at;
+}
+
+export function setSeqInsertAt(at) {
+  const id = currentMacroId();
+  insertPoint = (id === null || at === null) ? null : { macroId: id, at };
+  rerender();
+}
+
+// Añade un paso donde marque el punto de inserción (por defecto, al final), y
+// con él la espera por defecto que tiene que haber entre dos pasos seguidos.
+// Tras añadir, el punto avanza detrás del paso nuevo: así varios seguidos
+// quedan en el orden en que se añaden, igual que al escribir.
+//
+// Si el paso nuevo es exactamente el mismo gesto que el de justo antes (mismo
+// atajo, mismo botón de clic...), no se añade una línea más: se suma a su
+// contador de repeticiones. Así "flecha abajo ×15" o un doble clic no
 // acumulan pasos de verdad (ni cuentan contra el límite de la macro en el
 // propio teclado), y grabar la misma tecla varias veces seguidas no llena la
 // lista de líneas idénticas.
@@ -78,19 +136,51 @@ export function seqAddAction(action) {
   const id = currentMacroId();
   if (id === null) return;
   const m = ensureMacro(id);
-  const last = m.actions[m.actions.length - 1];
-  if (last && last.type !== 'delay' && sameStep(last, action)) {
-    last.count = (last.count || 1) + (action.count || 1);
+  const units = stepUnits(m.actions);
+  const at = seqInsertAt() ?? units.length;
+  const prev = units[at - 1];
+
+  if (prev && sameStep(prev.action, action)) {
+    prev.action.count = (prev.action.count || 1) + (action.count || 1);
     savePCMacros(id);
     rerender();
     return;
   }
-  if (m.actions.length && m.actions[m.actions.length - 1].type !== 'delay') {
-    m.actions.push({ type: 'delay', ms: DEFAULT_STEP_DELAY_MS });
-  }
-  m.actions.push({ ...action, count: action.count || 1 });
+
+  const step = { ...action, count: action.count || 1 };
+  units.splice(at, 0, { idx: -1, action: step, delayIdx: null, extra: 0 });
+  m.actions = buildActions(m.actions, units);
+  if (insertPoint?.macroId === id && at < units.length - 1) insertPoint.at = at + 1;
   savePCMacros(id);
   rerender();
+}
+
+// Lleva el paso número `from` a la posición `to`, con su espera: la espera
+// se ve dentro del paso, así que se mueve con él.
+export function seqMoveStep(from, to) {
+  const id = currentMacroId();
+  const m = id === null ? null : macroById(id);
+  if (!m || from === to) return;
+  const units = stepUnits(m.actions);
+  if (!units[from] || to < 0 || to >= units.length) return;
+  const [u] = units.splice(from, 1);
+  units.splice(to, 0, u);
+  m.actions = buildActions(m.actions, units);
+  savePCMacros(id);
+  rerender();
+}
+
+// Espera que sigue al paso que está en m.actions[stepIdx]. Si no tiene una
+// (una secuencia vieja con dos pasos pegados), se crea.
+export function seqSetDelayAfter(stepIdx, ms) {
+  const id = currentMacroId();
+  const m = id === null ? null : macroById(id);
+  if (!m) return;
+  const u = stepUnits(m.actions).find((x) => x.idx === stepIdx);
+  if (!u) return;
+  if (u.delayIdx !== null) m.actions[u.delayIdx].ms = ms;
+  else m.actions.splice(stepIdx + 1, 0, { type: 'delay', ms });
+  savePCMacros(id);
 }
 
 // --- Pestaña "App": una tecla que abre directamente una app o un archivo ---
@@ -343,8 +433,13 @@ export async function pickAppFocus() {
 export let installedApps = [];
 export let installedAppsLoading = false;
 
+// Se pide una sola vez aunque la lista llegue vacía o falle: repintar al
+// terminar vuelve a pasar por aquí, y mirando solo installedApps.length una
+// lista vacía se pedía y repintaba sin fin, colgando la ventana.
+let installedAppsAsked = false;
 export function ensureInstalledApps() {
-  if (installedAppsLoading || installedApps.length) return;
+  if (installedAppsLoading || installedAppsAsked) return;
+  installedAppsAsked = true;
   installedAppsLoading = true;
   window.orby.listInstalledApps()
     .then((list) => { installedApps = list || []; })
@@ -501,27 +596,14 @@ export function seqRemoveAction(index) {
   if (id === null) return;
   const m = macroById(id);
   if (!m) return;
+  // El punto de inserción va por número de paso: si se borra uno de antes,
+  // tiene que correrse para seguir señalando el mismo hueco.
+  if (insertPoint?.macroId === id && m.actions[index]?.type !== 'delay') {
+    const step = stepUnits(m.actions).findIndex((u) => u.idx === index);
+    if (step >= 0 && step < insertPoint.at) insertPoint.at--;
+  }
   m.actions.splice(index, 1);
   normalizeSequence(m);
-  savePCMacros(id);
-  rerender();
-}
-
-// Reordena un paso real (nunca una espera) intercambiándolo con el paso real
-// más cercano en esa dirección. Las esperas se quedan donde están: siguen
-// marcando el hueco entre "el paso de antes" y "el de después" de esa
-// posición de la lista, sea cual sea la acción que acabe ocupándola.
-export function seqMoveAction(index, dir) {
-  const id = currentMacroId();
-  if (id === null) return;
-  const m = macroById(id);
-  if (!m) return;
-  const acts = m.actions;
-  if (!acts[index] || acts[index].type === 'delay') return;
-  let j = index + dir;
-  while (acts[j] && acts[j].type === 'delay') j += dir;
-  if (!acts[j]) return;
-  [acts[index], acts[j]] = [acts[j], acts[index]];
   savePCMacros(id);
   rerender();
 }

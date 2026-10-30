@@ -35,6 +35,8 @@ import { ROTARY_SLOTS } from '../hid-keys.js';
 import * as profiles from './profiles.js';
 import { keyScreen } from '../key-screen.js';
 import * as variants from '../variants.js';
+import { armDrag, startSortDrag } from './profiles/drag-sort.js';
+import { MOVABLE_KEYS, reorderKeys } from './profiles/keys.js';
 
 let wheelDecay = null;
 
@@ -136,6 +138,7 @@ export function init() {
   cache.onChange(render);
 
   container.addEventListener('click', onClick);
+  container.addEventListener('pointerdown', onKeyHold);
   document.getElementById('zoom-panel').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="panel-done"]')) closeZoom();
   });
@@ -183,6 +186,36 @@ function onClick(e) {
   }
   const rotary = e.target.closest('[data-rotary]');
   if (rotary) openZoom('wheel', { rotary: Number(rotary.dataset.rotary) });
+}
+
+// Mover teclas, como las apps del iPhone: con las teclas ampliadas, mantener
+// una pulsada la levanta, y al arrastrarla las demás se apartan para hacerle
+// hueco. Solo en ese modo: en reposo un clic ya abre el zoom, y el editor
+// (perfil, capa, variación) está definido solo con el panel abierto.
+//
+// Se arrastra la tapa con su pantalla (.hw-cap), no la tecla entera: el hueco
+// de la carcasa es del aparato y se queda donde está. MENÚ y SUPER tampoco se
+// mueven (ver MOVABLE_KEYS); las demás saltan por encima de ellas.
+const KEY_HOLD_MS = 380;
+
+function onKeyHold(e) {
+  if (zoom !== 'keys' || !state.connected) return;
+  const key = e.target.closest('.hw-key[data-key]');
+  if (!key) return;
+  const pos = MOVABLE_KEYS.indexOf(Number(key.dataset.key));
+  if (pos < 0) return;
+  const board = key.closest('.orby-board');
+  const caps = MOVABLE_KEYS.map((k) => document.getElementById(`hw-key-${k + 1}`)?.querySelector('.hw-cap'));
+  if (caps.some((c) => !c)) return;
+  armDrag(e, {
+    holdMs: KEY_HOLD_MS,
+    threshold: 6,
+    pressEl: caps[pos],
+    start: (ev) => startSortDrag({
+      items: caps, fromIndex: pos, event: ev, layout: 'grid', container: board,
+      onDrop: (from, to) => { reorderKeys(from, to); },
+    }),
+  });
 }
 
 function openZoom(zone, target) {

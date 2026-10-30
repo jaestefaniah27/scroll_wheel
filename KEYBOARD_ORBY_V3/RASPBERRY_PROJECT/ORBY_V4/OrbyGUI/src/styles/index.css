@@ -1766,24 +1766,133 @@ button { font-family: inherit; }
 .type-chip.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .type-chip.small { padding: 5px 8px; font-size: 10px; }
 
-/* Pasos de una macro (secuencia ejecutada en el PC). */
-.seq-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+/* Pasos de una macro (secuencia ejecutada en el PC). Una fila por paso, con
+   la espera hasta el siguiente dentro de la propia fila: así caben muchos más
+   a la vista que con una fila de "Espera" entre cada dos. */
+.seq-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; position: relative; container-type: inline-size; }
 .seq-item {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 8px 10px; font-size: 12px; color: var(--text-main);
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px 4px 2px; min-height: 38px; font-size: 12px; color: var(--text-main);
   background: var(--fill-soft); border: 1px solid transparent;
   border-radius: var(--radius-sm);
 }
-/* Paso "Abrir" de una secuencia: además de la fila título+borrar, lleva
-   selector de tipo, botones y campo de búsqueda debajo, así que necesita
-   apilar en vertical en vez del layout de una sola fila del resto de pasos. */
-.seq-item-open { display: block; }
-.seq-item .select-input.compact { width: auto; min-width: 92px; padding: 6px 8px; font-size: 12px; }
-.seq-gap { background: transparent; border-style: dashed; color: var(--text-muted); }
-.seq-gap-input { min-width: 56px; text-align: right; }
-.seq-pos-input { min-width: 60px; max-width: 72px; text-align: right; padding: 6px 8px; font-size: 12px; }
-.seq-count-input { min-width: 44px; max-width: 52px; text-align: center; padding: 6px 6px; font-size: 12px; }
-.seq-gap-input { min-width: 56px; max-width: 68px; text-align: center; padding: 6px 6px; font-size: 12px; }
+.seq-item .select-input.compact { width: auto; min-width: 92px; padding: 4px 8px; font-size: 12px; }
+.seq-item .tool-btn.small { width: 26px; height: 26px; }
+.seq-handle {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 28px; flex-shrink: 0; border-radius: 6px;
+  color: var(--text-muted); cursor: grab; touch-action: none;
+}
+.seq-handle:hover { color: var(--text-main); background: var(--fill); }
+.seq-num {
+  min-width: 18px; flex-shrink: 0; text-align: right;
+  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-muted);
+}
+.seq-title { flex-shrink: 0; font-weight: 600; white-space: nowrap; }
+.seq-kbd {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  padding: 2px 6px; border-radius: 5px; background: var(--fill); color: var(--text-main);
+}
+.seq-fields { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.seq-item-wide .seq-fields { flex-wrap: nowrap; }
+/* Texto y Abrir llevan un campo largo: en el panel estrecho del zoom no caben
+   en la fila sin aplastarlo, así que el campo baja a una segunda línea y la
+   espera y la papelera se quedan arriba, en su sitio de siempre. */
+@container (max-width: 540px) {
+  .seq-item-wide { flex-wrap: wrap; row-gap: 4px; }
+  .seq-item-wide .seq-fields { order: 5; flex: 1 0 100%; padding: 0 0 2px 48px; }
+  .seq-item-wide .seq-wait { margin-left: auto; }
+  .seq-item-wide .seq-del { margin-left: 0; }
+}
+.seq-del { margin-left: auto; flex-shrink: 0; }
+/* `.seq-item` delante para ganarle a `.text-input.compact`, que les pone un
+   ancho mínimo pensado para campos sueltos. */
+.seq-item .seq-pos-input { flex: none; width: 62px; min-width: 0; text-align: right; padding: 4px 6px; font-size: 12px; }
+.seq-count { display: inline-flex; align-items: center; gap: 2px; color: var(--text-muted); font-size: 11px; }
+.seq-item .seq-count-input { flex: none; width: 42px; min-width: 0; text-align: center; padding: 4px; font-size: 12px; }
+.seq-item .seq-gap-input { flex: none; width: 58px; min-width: 0; text-align: center; padding: 4px; font-size: 12px; }
+.seq-item .seq-text-input {
+  flex: 1; width: auto; min-width: 80px; min-height: 28px; padding: 5px 8px;
+  font-size: 12px; line-height: 1.35; resize: vertical; field-sizing: content; max-height: 120px;
+}
+.seq-item .seq-open-input { flex: 1; width: auto; min-width: 90px; padding: 4px 8px; font-size: 12px; }
+.seq-seg { display: inline-flex; gap: 2px; flex-shrink: 0; }
+/* La espera hasta el paso siguiente: un reloj pequeño con su valor, apagado
+   para que no compita con lo que hace el paso. */
+.seq-wait {
+  display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
+  padding: 0 4px 0 6px; height: 26px; border-radius: 13px;
+  color: var(--text-muted); background: var(--fill-soft); font-size: 10px;
+}
+.seq-item .seq-wait input {
+  flex: none; width: 44px; min-width: 0; padding: 2px 2px; font-size: 11px; text-align: right;
+  background: transparent; border-color: transparent; box-shadow: none;
+}
+.seq-item .seq-wait input:focus { background: var(--fill); }
+
+/* Punto de inserción: una franja invisible en el borde de arriba de cada paso
+   (y otra debajo del último). Al pasar por encima aparece la línea con su +;
+   el hueco elegido se queda dibujado. Va en absoluto para no cambiar la
+   altura de la lista, que el arrastre mide al empezar. */
+.seq-insert-btn {
+  position: absolute; left: 30px; right: 8px; top: -7px; height: 10px; z-index: 2;
+  padding: 0; border: none; background: transparent; cursor: copy;
+  opacity: 0; transition: opacity 0.15s var(--ease-out);
+}
+.seq-insert-btn.after { top: auto; bottom: -7px; }
+.seq-insert-btn::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 4px; height: 2px;
+  border-radius: 1px; background: var(--primary);
+}
+.seq-insert-btn > span {
+  position: absolute; left: -9px; top: -2px; width: 14px; height: 14px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--primary); color: var(--on-primary);
+}
+.seq-insert-btn:hover { opacity: 1; }
+.seq-item.insert-before > .seq-insert-btn:not(.after) { opacity: 1; }
+.seq-list.is-sorting .seq-insert-btn { display: none; }
+.seq-insert-hint { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 2px 0 8px; font-size: 11px; color: var(--text-muted); }
+.seq-insert-hint.on { color: var(--primary); }
+.seq-link-btn {
+  margin-left: auto; padding: 2px 8px; border: none; border-radius: 10px; cursor: pointer;
+  font: inherit; font-size: 11px; color: var(--text-main); background: var(--fill);
+}
+.seq-link-btn:hover { background: var(--fill-soft); }
+
+/* Arrastre (drag-sort.js). El que se arrastra sigue al puntero sin
+   transición; los demás se apartan a su hueco con una curva suave. */
+body.is-sort-dragging, body.is-sort-dragging * { cursor: grabbing !important; user-select: none; }
+.is-shifting { transition: transform 0.28s var(--ease-out) !important; }
+.is-dragging { z-index: 20; transition: none !important; }
+.is-dropping { z-index: 20; transition: transform 0.22s var(--ease-out) !important; }
+.seq-item.is-dragging {
+  border-color: var(--border-active); background: var(--bg-elevated); box-shadow: var(--shadow-pop);
+}
+
+/* Mover teclas en la réplica ampliada. Mantener pulsada la levanta un poco
+   (se nota que va a pasar algo); arrastrando, las demás tiemblan como las
+   apps del iPhone. El temblor va en `rotate`, aparte de `transform`, que es
+   el que usa el arrastre para apartarlas. Cada .hw-key es su propio contexto
+   de apilado (lleva `translate`), así que es ella la que tiene que subir para
+   que la tapa arrastrada pase por encima de las vecinas. */
+.hw-cap.is-pressing { transform: scale(1.08); transition: transform 0.38s var(--ease-out); }
+.hw-key:has(> .hw-cap:is(.is-dragging, .is-dropping, .is-pressing)) { z-index: 20; }
+.hw-key .hw-cap.is-dragging {
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.5),
+    0 0 0 calc(0.9 * var(--u)) rgb(79, 227, 255),
+    0 calc(6 * var(--u)) calc(10 * var(--u)) rgba(0,0,0,0.45);
+}
+.orby-board.is-sorting .hw-cap.is-shifting { animation: cap-jiggle 0.3s ease-in-out infinite alternate; }
+.orby-board.is-sorting .hw-key:nth-child(odd) .hw-cap.is-shifting { animation-delay: -0.15s; animation-direction: alternate-reverse; }
+.orby-board.is-sorting .hw-key.no-screen { opacity: 0.45; }
+@keyframes cap-jiggle { from { rotate: -1.6deg; } to { rotate: 1.6deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .orby-board.is-sorting .hw-cap.is-shifting { animation: none; }
+}
+
 .mod-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .mod-chip, .consumer-chip, .chip, .preset-btn {
   background: var(--fill-soft); border: 1px solid transparent;

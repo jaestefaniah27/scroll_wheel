@@ -5,7 +5,7 @@
 // guarda como diferencia en el PC en vez de ir al perfil.
 
 import * as device from '../../device.js';
-import { state, markDirty, keymapSlot, labelSlot, rotarySlot } from '../../store.js';
+import { state, markDirty, keymapSlot, labelSlot, rotarySlot, KEY_TO_SCREEN, syncFromDevice } from '../../store.js';
 import { MACRO_MODIFIER, isScrollType } from '../../hid-keys.js';
 import { toast, requireDevice } from '../../ui.js';
 import * as cache from '../../oled-cache.js';
@@ -197,6 +197,103 @@ export async function pasteKey() {
   }
 
   toast('Tecla pegada');
+}
+
+// --- Reordenar teclas arrastrando --------------------------------------------
+// Las teclas que se pueden mover son las que tienen pantalla: la de SUPER y la
+// del menú tienen un papel fijo en el firmware y se quedan en su sitio (las
+// demás saltan por encima de ellas al hacer hueco).
+export const MOVABLE_KEYS = KEY_TO_SCREEN.map((screen, i) => (screen ? i : -1)).filter((i) => i >= 0);
+
+let reordering = false;
+
+// Lleva la tecla que está en la posición `from` de MOVABLE_KEYS a la `to`, y
+// las de en medio se corren una, como los iconos del iPhone. Se mueve todo lo
+// que se ve de cada tecla en la capa en pantalla: acción, etiqueta e icono.
+// La otra capa no se toca: cada capa se organiza por su cuenta.
+//
+// Primero se cambia el modelo y se repinta (el gesto tiene que quedar donde
+// se soltó, sin esperar al puerto serie); luego se escribe en el teclado solo
+// lo que ha cambiado. Si el teclado no confirma algo, se vuelve a leer todo de
+// él: dejar la app con un orden que el teclado no tiene sería peor.
+export async function reorderKeys(from, to) {
+  if (from === to || reordering) return;
+  if (!requireDevice()) return;
+  const prof = currentProfile();
+  if (!prof) return;
+  if (editingVariant()) {
+    toast('Las teclas se reordenan en el perfil base, no dentro de una variación', 'error');
+    rerenderKeyGrid();
+    return;
+  }
+
+  const profileIdx = view.editingProfile;
+  const layer = view.layer;
+  const content = MOVABLE_KEYS.map((k) => {
+    const lslot = labelSlot(k, layer);
+    const own = Boolean(prof.oledMask & (1 << lslot));
+    const bmp = cache.get(profileIdx, lslot);
+    return {
+      action: { ...(prof.keys[keymapSlot(k, layer)] || { modifier: 0, keycode: 0 }) },
+      label: prof.labels[lslot] || '',
+      icon: own && bmp ? Uint8Array.from(bmp) : null,
+      own,
+      loaded: !own || (cache.has(profileIdx, lslot) && bmp),
+    };
+  });
+  // Sin el icono en la app no hay qué llevar a la tecla de destino: moverla
+  // así la dejaría con la pantalla vacía.
+  if (content.some((c) => !c.loaded)) {
+    toast('Espera a que terminen de leerse los iconos del teclado', 'error');
+    rerenderKeyGrid();
+    return;
+  }
+
+  const order = content.map((_, i) => i);
+  order.splice(from, 1);
+  order.splice(to, 0, from);
+
+  const changed = [];
+  order.forEach((orig, pos) => {
+    if (orig === pos) return;
+    const k = MOVABLE_KEYS[pos];
+    const c = content[orig];
+    const lslot = labelSlot(k, layer);
+    const kslot = keymapSlot(k, layer);
+    changed.push({ kslot, lslot, c, hadOwn: content[pos].own });
+    prof.keys[kslot] = { ...c.action };
+    prof.labels[lslot] = c.label;
+    if (c.icon) prof.oledMask |= (1 << lslot);
+    else prof.oledMask &= ~(1 << lslot);
+    cache.set(profileIdx, lslot, c.icon ? Uint8Array.from(c.icon) : null);
+  });
+
+  // La selección se va con la tecla, no se queda en el hueco.
+  const sel = selectedKeyIndex();
+  const selPos = MOVABLE_KEYS.indexOf(sel);
+  if (selPos >= 0) view.selected = { kind: 'key', index: MOVABLE_KEYS[order.indexOf(selPos)] };
+  rerender();
+
+  reordering = true;
+  try {
+    for (const { kslot, lslot, c, hadOwn } of changed) {
+      await device.setKeymap(profileIdx, kslot, c.action.modifier, c.action.keycode);
+      await device.setLabel(profileIdx, lslot, c.label);
+      if (c.icon) await device.uploadOled(profileIdx, lslot, c.icon);
+      else if (hadOwn) await device.clearOled(profileIdx, lslot);
+    }
+    markDirty();
+    for (const { kslot, lslot } of changed) {
+      await variants.reassertSlot('keys', kslot);
+      await variants.reassertSlot('labels', lslot);
+    }
+  } catch {
+    toast('El teclado no confirmó el cambio de orden: se vuelve a leer de él', 'error');
+    try { await syncFromDevice(); } catch { /* sin teclado no hay de dónde releer */ }
+    rerender();
+  } finally {
+    reordering = false;
+  }
 }
 
 // Núcleo compartido de escritura de mandos: aplica una lista de [hueco, acción]

@@ -42,6 +42,7 @@ import { loadPCMacros, savePCMacros, macroById, ensureMacro, nextMacroId, POWER_
          isRecordOrResetMacro, describeKey, keyNeedsApp, rotaryNeedsApp } from './profiles/macros-store.js';
 import { applyKeymap, blankKeyScreen, keyClipboard, copyKey, pasteKey,
          applyRotary } from './profiles/keys.js';
+import { armDrag, startSortDrag } from './profiles/drag-sort.js';
 import { recordMacro, detachResetKey, onRecorderState, setRecordMode, setRecordSpeed,
          clearRecording, toggleRecording, renderRecordTab,
          startRecordingKey } from './profiles/recorder.js';
@@ -49,7 +50,7 @@ import { seqAddAction, currentAppStep, setAppKind, currentTextStep, setPowerActi
          giroInvertido, consumerGiroInvertido, invertirGiroPar, setRotaryPluginAction, setRotaryConsumerPair,
          pickAppTarget, pickAppFocus,
          renderAppTab, renderTextTab, pickOpenTarget, setSeqOpenKind, pickSeqOpenFocus,
-         seqRemoveAction, seqMoveAction, seqActionAt, seqKeyBuilder, startPositionCapture,
+         seqRemoveAction, seqMoveStep, seqSetDelayAfter, setSeqInsertAt, seqActionAt, seqKeyBuilder, startPositionCapture,
          stopPositionCapture, applyRotaryMacro, cancelPositionPoll,
          openPluginValuePick, setPluginValuePickValue, cancelPluginValuePick,
          confirmPluginValuePick } from './profiles/macro-tabs.js';
@@ -150,6 +151,7 @@ function wire(host) {
   host.addEventListener('click', onClick);
   host.addEventListener('change', onChange);
   host.addEventListener('input', onInput);
+  host.addEventListener('pointerdown', onPointerDown);
   // Enter en el campo de aplicaciones añade, para poder encadenar varias.
   host.addEventListener('keydown', (e) => {
     if (e.target.id === 'variant-new-match' && e.key === 'Enter') {
@@ -587,10 +589,8 @@ function onClick(e) {
     seqKeyBuilder.keycode = 0;
   } else if (act === 'seq-del') {
     seqRemoveAction(Number(el.dataset.index));
-  } else if (act === 'seq-move-up') {
-    seqMoveAction(Number(el.dataset.index), -1);
-  } else if (act === 'seq-move-down') {
-    seqMoveAction(Number(el.dataset.index), 1);
+  } else if (act === 'seq-insert-at') {
+    setSeqInsertAt(el.dataset.at === 'end' ? null : Number(el.dataset.at));
   } else if (act === 'seq-record') {
     view.capturing = view.capturing === 'sequence' ? false : 'sequence';
     render();
@@ -643,6 +643,25 @@ function onClick(e) {
   }
 }
 
+// Arrastrar un paso de la secuencia por su asa (lo mueve drag-sort.js). Las
+// teclas se arrastran en la réplica del Inicio: ver dashboard.js.
+function onPointerDown(e) {
+  const handle = e.target.closest('[data-drag="seq-step"]');
+  if (!handle) return;
+  // Sin esto el navegador empieza a seleccionar texto de las filas.
+  e.preventDefault();
+  const list = handle.closest('.seq-list');
+  armDrag(e, {
+    start: (ev) => {
+      const items = [...list.querySelectorAll(':scope > .seq-item')];
+      startSortDrag({
+        items, fromIndex: Number(handle.dataset.step), event: ev, layout: 'list', container: list,
+        onDrop: (from, to) => seqMoveStep(from, to),
+      });
+    },
+  });
+}
+
 function onChange(e) {
   const act = e.target.dataset.act;
   if (act === 'panel-variant') {
@@ -679,9 +698,10 @@ function onChange(e) {
       savePCMacros(currentMacroId());
       render();
     }
-  } else if (act === 'seq-delay-ms') {
-    const step = seqActionAt(Number(e.target.dataset.index));
-    if (step) { step.ms = Math.max(0, Number(e.target.value) || 0); savePCMacros(currentMacroId()); }
+  } else if (act === 'seq-wait') {
+    const ms = Math.max(0, Math.round(Number(e.target.value)) || 0);
+    e.target.value = ms;
+    seqSetDelayAfter(Number(e.target.dataset.index), ms);
   } else if (act === 'seq-gap-ms') {
     const step = seqActionAt(Number(e.target.dataset.index));
     if (step) {
