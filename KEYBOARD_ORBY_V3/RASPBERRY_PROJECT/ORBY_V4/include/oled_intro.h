@@ -7,10 +7,11 @@
 // ============================================================================
 // INTRO DE ARRANQUE — reproductor
 // ============================================================================
-// Aquí no se calcula nada: la animación se diseña en tools/anim/index.html y se
-// exporta ya horneada a píxeles en include/orby_intro_data.h. El firmware solo
-// descomprime y vuelca. Lo que se ve en el editor es exactamente lo que sale en
-// las pantallas, sin dos implementaciones que mantener en paralelo.
+// Aquí no se calcula nada: las intros se generan con tools/anim/intro_orvy.py y
+// llegan ya horneadas a píxeles en include/orby_intro_data.h, varias a elegir
+// (intro_clips). El firmware solo descomprime y vuelca. Lo que se ve en la vista
+// previa es exactamente lo que sale en las pantallas, sin dos implementaciones
+// que mantener en paralelo.
 //
 // Si no existe el archivo de datos, la intro no hace nada más que pintar el
 // contenido normal, así que el firmware compila igual sin él.
@@ -47,14 +48,22 @@ static bool rle_decode(const uint8_t* src, uint16_t len, uint8_t* dst) {
     return o == 360;
 }
 
-// should_skip : cualquier tecla corta la intro (puede ser NULL)
+// Reproduce el flujo entero. Si llega al final devuelve true y deja las diez
+// pantallas en negro (así acaba el flujo): los iconos los abre después Core 1
+// con la transición de SUPER, que depende del perfil cargado y no se puede
+// hornear. Si no la hay o no se reproduce entera, pinta el contenido normal
+// sin animar y devuelve false.
+//
+// variant     : cuál de intro_clips; una que no exista es la 0.
+// should_skip : no la reproduce (tras un reinicio por watchdog). Ya no la corta
+//               ninguna tecla: se mira solo al empezar. Puede ser NULL.
 // paint_final : pinta una pantalla con su contenido normal (refresh_single_screen)
-static void run(HardwareOled& oleds,
-                bool (*should_skip)(),
-                void (*paint_final)(HardwareOled&, uint8_t)) {
+static bool play(HardwareOled& oleds, uint8_t variant, bool (*should_skip)()) {
+    if (should_skip && should_skip()) return false;
 
-    const uint8_t* p   = intro_stream;
-    const uint8_t* end = intro_stream + sizeof(intro_stream);
+    const IntroClip& clip = intro_clips[variant < INTRO_COUNT ? variant : 0];
+    const uint8_t* p   = clip.data;
+    const uint8_t* end = clip.data + clip.size;
     uint8_t fb[360];
 
     // Ritmo con espera activa en vez de sleep_until: este core no tiene nada
@@ -63,38 +72,50 @@ static void run(HardwareOled& oleds,
     const uint32_t frame_us = 1000000u / INTRO_FPS;
     absolute_time_t next = make_timeout_time_us(frame_us);
 
-    for (uint16_t f = 0; f < INTRO_FRAMES; f++) {
-        if (should_skip && should_skip()) break;
-        if (p + 2 > end) break;
+    for (uint16_t f = 0; f < clip.frames; f++) {
+        if (p + 2 > end) return false;
 
         uint16_t mask = (uint16_t)(p[0] | (p[1] << 8));
         p += 2;
 
         for (int s = 0; s < 10; s++) {
             if (!(mask & (1u << s))) continue;
-            if (p + 2 > end) return;
+            if (p + 2 > end) return false;
             uint16_t len = (uint16_t)(p[0] | (p[1] << 8));
             p += 2;
-            if (p + len > end) return;
-            if (rle_decode(p, len, fb)) oleds.paint_screen((uint8_t)(s + 1), fb);
+            if (p + len > end) return false;
+            if (!rle_decode(p, len, fb)) return false;
+            oleds.paint_screen((uint8_t)(s + 1), fb);
             p += len;
         }
 
         busy_wait_until(next);
         next = delayed_by_us(next, frame_us);
     }
+    return true;
+}
 
-    // Termine como termine, las diez acaban con su contenido de verdad.
+static bool run(HardwareOled& oleds, uint8_t variant,
+                bool (*should_skip)(),
+                void (*paint_final)(HardwareOled&, uint8_t)) {
+    if (play(oleds, variant, should_skip)) return true;
+    // Datos rotos a medias o intro saltada: nada de dejar las pantallas a
+    // medio dibujar.
     for (uint8_t i = 1; i <= 10; i++) paint_final(oleds, i);
+    return false;
 }
 
 #else // Sin animación horneada
 
-static void run(HardwareOled& oleds,
+#define INTRO_COUNT 1
+
+static bool run(HardwareOled& oleds, uint8_t variant,
                 bool (*should_skip)(),
                 void (*paint_final)(HardwareOled&, uint8_t)) {
+    (void)variant;
     (void)should_skip;
     for (uint8_t i = 1; i <= 10; i++) paint_final(oleds, i);
+    return false;
 }
 
 #endif

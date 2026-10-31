@@ -227,6 +227,12 @@ def preview(frames):
 
 
 if __name__ == '__main__':
+    # Desde la 4.25 el .h lleva varias intros (intro_orvy.py) y el reproductor
+    # ya no entiende el formato de una sola que escribe esto: hoy este fichero
+    # se usa como biblioteca de geometría.
+    if '--force' not in sys.argv:
+        sys.exit('intro_dial.py escribe el formato anterior a la 4.25 y rompería la '
+                 'compilación; usa intro_orvy.py (o --force si sabes lo que haces).')
     stream, frames = bake()
     dst = ROOT / 'include' / 'orby_intro_data.h'
     dst.write_text(header(stream), encoding='utf-8', newline='\n')

@@ -5,13 +5,20 @@ gusto expórtala. **No hace falta compilar el firmware para probarla.**
 
 ## La intro de hoy no sale de aquí
 
-Desde el firmware 4.22 la intro es la marca de Orvy: el dial gira, se encienden las
-diez pantallas y queda el logotipo. Es un dibujo concreto, no algo que se pueda pedir
-con los parámetros de este editor, así que la genera `intro_dial.py` a partir de la
-geometría de `OrbyGUI/assets/brand/`, en el mismo formato:
+Desde el firmware 4.25 hay tres intros, y la app (Ajustes → Intro de arranque)
+deja elegir una o que salga una al azar cada vez, que es lo de fábrica. Todas escriben «orvy» en la columna central (teclas 2, 5, 8 y 11) y
+cambian en el final: ventilador, viento o lija. Lo común está en `orvy_comun.py`
+y cada final en su `final_*.py`; `intro_orvy.py` las hornea todas en el mismo
+`.h`, en el orden que guarda el teclado:
 
-    python tools/anim/intro_dial.py            # escribe include/orby_intro_data.h
-    python tools/anim/intro_dial.py --preview  # y un PNG por fotograma en _preview/
+    python tools/anim/intro_orvy.py            # escribe include/orby_intro_data.h
+    python tools/anim/intro_orvy.py --preview  # y un GIF por intro en _preview/
+
+Cada flujo acaba con las diez pantallas en negro y el firmware abre encima los
+iconos con la transición de SUPER, así que una intro nueva debe acabar también en
+negro. Va al final de `FINALES`, para no cambiar la que tenga elegida nadie. La
+de la 4.22 (el dial girando) es `intro_dial.py`, que escribe el formato antiguo
+de una sola intro: ya no la entiende este reproductor.
 
 El editor sigue sirviendo para probar otras ideas; exportar desde él sustituye la intro.
 

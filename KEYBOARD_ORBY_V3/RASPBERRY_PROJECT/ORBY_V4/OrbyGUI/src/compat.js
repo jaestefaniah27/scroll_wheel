@@ -106,6 +106,7 @@ export const FEATURES = {
   rotInvert:  { since: '4.16', label: 'invertir el sentido de cada mando y de la rueda', flag: 'rotinv' },
   menuEncoder: { since: '4.16', label: 'un mando de menú: mantenerlo, girar y soltar para elegir perfil', flag: 'menuenc' },
   macroText:  { since: '4.20', label: 'escribir un texto desde el teclado, sin la app', flag: 'macrotext' },
+  intro:      { since: '4.25', label: 'elegir la intro de arranque (o que salga una al azar) y verla desde la app', flag: 'intro' },
 };
 
 // Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y

@@ -141,6 +141,14 @@ export const setMenuEncoder = (enc) => request(`SET_MENUENC:${enc}`, {
 // la 4.10, % sobre el ritmo de fábrica del grupo (ver views/settings.js).
 export const setAnimSpeed = (group, pct) =>
   request(`SET_ANIMSPEED:${group}:${pct}`, { match: (l) => l.startsWith('ANIMSPEED:OK:') });
+// Intro de arranque (firmware 4.25, bandera INTRO con cuántas trae): cuál sale
+// al encender (0 al azar, n la n-ésima desde 1), y verla ya en el teclado para
+// elegir mirándolo.
+export const setIntro = (n) => request(`SET_INTRO:${n}`, {
+  match: (l) => l.startsWith('INTRO:OK:'),
+  fail: (l) => l.startsWith('ERR:INTRO'),
+});
+export const playIntro = () => request('PLAY_INTRO', { match: (l) => l === 'INTRO:PLAY:OK' });
 // Espejo de las pantallas (firmware 4.12): con él encendido el teclado manda
 // el destino de cada transición (EV:SCR) y el dashboard la anima igual. Ver
 // src/oled-mirror.js.
@@ -296,6 +304,7 @@ export function getState() {
       if (line.startsWith('STATE:MENUKEY:'))    { state.menuKeyMode = parseInt(line.slice(14), 10); return true; }
       if (line.startsWith('STATE:ROTINV:'))     { state.rotInvert   = parseInt(line.slice(13), 10); return true; }
       if (line.startsWith('STATE:MENUENC:'))    { state.menuEncoder = parseInt(line.slice(14), 10); return true; }
+      if (line.startsWith('STATE:INTRO:'))      { state.intro = parseInt(line.slice(12), 10); return true; }
       if (line.startsWith('STATE:ANIMSPEED:')) {
         const [menu, carousel, submenu, profile, fade] = line.slice(16).split(':').map(Number);
         state.animSpeed = { menu, carousel, submenu, profile, fade };

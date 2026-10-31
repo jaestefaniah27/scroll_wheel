@@ -35,6 +35,9 @@ export const state = {
   // sobre el muelle de Apple y la vista de Ajustes traduce. Con un firmware
   // anterior al 4.8 no llega, y compat.js esconde el control.
   animSpeed: { menu: 100, carousel: 100, submenu: 100, profile: 100, fade: 100 },
+  // Intro de arranque (firmware 4.25): 0 una al azar cada vez, n la n-ésima
+  // desde 1, como la guarda el teclado. Con uno anterior no llega.
+  intro: 0,
   scroll: { detentsPerRev: 60, invert: false, hires: false }, // lo que aplica ahora mismo
   profiles: [],       // rellenado desde el firmware
   profilesComplete: false, // `profiles` es la lista entera del teclado (ver syncFromDevice)
@@ -254,6 +257,7 @@ export async function syncFromDevice({ expected = null, iconOf = null, onProgres
       if (state.menuEncoder) state.menuKeyMode = 1;
       state.rotInvert  = Number.isInteger(s.rotInvert) ? s.rotInvert & 7 : 0;
       if (s.animSpeed) state.animSpeed = s.animSpeed;
+      if (Number.isInteger(s.intro)) state.intro = s.intro;
       if (typeof s.superActive === 'boolean') state.superActive = s.superActive;
       if (s.mode)   state.deviceMode = s.mode;
       if (s.scroll) state.scroll = s.scroll;

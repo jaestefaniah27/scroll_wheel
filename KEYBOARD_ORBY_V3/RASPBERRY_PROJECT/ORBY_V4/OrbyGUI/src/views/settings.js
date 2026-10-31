@@ -85,6 +85,7 @@ export function init() {
   });
 
   initAnimSpeed();
+  initIntro();
   initMenuKey();
   initRotInvert();
   if (hayAutostart) initAutostart();
@@ -599,6 +600,60 @@ function renderAnimSpeed() {
   }).join('');
 }
 
+// ================= Intro de arranque =================
+// El teclado guarda 0 para «una al azar cada vez» y n para la n-ésima, en el
+// orden de tools/anim/intro_orvy.py (FINALES). Si un firmware trae más de las
+// que conoce esta app, las de más salen con un nombre genérico en vez de
+// quedarse sin poder elegirse.
+const INTRO_AZAR = { name: 'Aleatoria', desc: 'Cada vez que se enciende sale una distinta, al azar.' };
+const INTROS = [
+  { name: 'Ventilador', desc: 'La O gira como un ventilador y su torbellino se traga las letras en espiral; luego se desintegra ella.' },
+  { name: 'Viento', desc: 'Cada píxel de «orvy» se suelta y se va con el viento en su propio remolino.' },
+  { name: 'Lija', desc: 'La O se descontrola, crece hasta cruzar el teclado arrasando las letras y se gasta como una lija.' },
+];
+
+const introCount = () => Math.max(1, parseInt(state.deviceInfo?.intro, 10) || 0);
+
+function initIntro() {
+  document.getElementById('intro-selector')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.opt-btn');
+    if (!btn || !requireDevice()) return;
+    const n = Number(btn.dataset.val);
+    if (n === state.intro) return;
+    try {
+      await device.setIntro(n);
+      state.intro = n;
+      markDirty();
+      renderIntro();
+    } catch {
+      toast('El teclado no confirmó la intro', 'error');
+    }
+  });
+  document.getElementById('btn-play-intro')?.addEventListener('click', async () => {
+    if (!requireDevice()) return;
+    try {
+      await device.playIntro();
+    } catch {
+      toast('El teclado no respondió', 'error');
+    }
+  });
+}
+
+function renderIntro() {
+  const card = document.getElementById('settings-intro');
+  if (!card) return;
+  if (!compat.supports(state.deviceInfo, 'intro')) {
+    card.classList.add('hidden');
+    return;
+  }
+  card.classList.remove('hidden');
+  const opts = [INTRO_AZAR, ...Array.from({ length: introCount() }, (_, i) => INTROS[i] || { name: `Intro ${i + 1}`, desc: '' })];
+  document.getElementById('intro-selector').innerHTML = opts.map((o, i) =>
+    `<button class="opt-btn${i === state.intro ? ' active' : ''}" data-val="${i}">${o.name}</button>`).join('');
+  document.getElementById('intro-desc').textContent =
+    `${opts[state.intro]?.desc || ''} Mientras dura, el teclado no responde: dura unos segundos y no se puede cortar.`.trim();
+}
+
 // ================= Tecla 10 =================
 // Con la tecla de menú libre, las páginas y el selector de perfiles se llevan
 // con un mando (ROTARY_TYPES.PAGE y MENU, firmware 4.15). El menú principal no
@@ -967,6 +1022,7 @@ export function render() {
   });
 
   renderAnimSpeed();
+  renderIntro();
   renderMenuKey();
   renderRotInvert();
 

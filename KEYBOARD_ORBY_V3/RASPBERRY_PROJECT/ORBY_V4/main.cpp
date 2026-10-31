@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
+#include "pico/rand.h"
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 #include "hardware/watchdog.h"
@@ -491,10 +492,36 @@ volatile uint32_t menu_tap_glitches = 0;
 volatile bool displays_on = true;
 volatile bool display_power_req = false;
 
-// La intro de arranque la reproduce Core 1; Core 0 solo avisa de que hay una
-// tecla pulsada para poder cortarla.
-volatile bool intro_running = false;
+// La intro de arranque la reproduce Core 1 y no se puede cortar: mientras dura,
+// incluida la apertura de los iconos que la cierra, Core 0 no atiende teclas,
+// mandos ni rueda. Empieza a true para que no quede un hueco entre que arranca
+// el bucle de Core 0 y Core 1 empieza a reproducir. intro_skip_req solo la
+// salta entera, tras un reinicio por watchdog.
+volatile bool intro_running = true;
 volatile bool intro_skip_req = false;
+// Qué intro sale: 0 una al azar cada vez (la de fábrica: es lo que leen los
+// ajustes de antes de la 4.25, que tenían relleno a cero en su sitio) y n la
+// n-ésima de intro_clips, desde 1.
+volatile uint8_t intro_variant = 0;
+
+// La intro que toca ahora. Al azar, sin repetir la última que se ha visto
+// mientras el teclado sigue encendido (al pedirla desde la app varias veces
+// seguidas, cada vez sale otra).
+static uint8_t intro_pick() {
+    static int8_t ultima = -1;
+    uint8_t n;
+    if (intro_variant >= 1 && intro_variant <= INTRO_COUNT) {
+        n = (uint8_t)(intro_variant - 1);
+    } else if (INTRO_COUNT > 1 && ultima >= 0) {
+        n = (uint8_t)((ultima + 1 + get_rand_32() % (INTRO_COUNT - 1)) % INTRO_COUNT);
+    } else {
+        n = (uint8_t)(get_rand_32() % INTRO_COUNT);
+    }
+    ultima = (int8_t)n;
+    return n;
+}
+// La app pide verla otra vez para que se pueda elegir mirando el teclado.
+volatile bool intro_play_req = false;
 static bool intro_should_skip() { return intro_skip_req; }
 
 // Latido de Core 1. Core 0 solo alimenta el watchdog mientras esto siga
@@ -716,7 +743,9 @@ struct Settings {
     uint8_t  rot_invert_mask;
     uint8_t  menu_encoder;
     uint8_t  anim_speed[OledAnim::G_COUNT];  // % por grupo, ver OledAnim::Group
-    uint8_t  padding2[3];
+    // Relleno hasta la 4.24, siempre a cero: cero es una intro al azar.
+    uint8_t  intro;
+    uint8_t  padding2[2];
     uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
     Profile  profiles[MAX_PROFILES];
 };
@@ -1146,6 +1175,7 @@ void save_settings() {
     s->menu_encoder           = menu_encoder;
     // memcpy no admite un origen volatile: se copia campo a campo.
     for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) s->anim_speed[g] = anim_speed_pct[g];
+    s->intro                  = intro_variant;
     memcpy(s->custom_oled_mask, custom_oled_mask, sizeof(custom_oled_mask));
     memcpy(s->profiles, profiles, sizeof(profiles));
 
@@ -1249,6 +1279,8 @@ void load_settings() {
         // Teclados de la 4.16 al 4.18 podían guardar los dos a la vez.
         if (menu_encoder) menu_key_mode = MENUKEY_NORMAL;
         for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) anim_speed_pct[g] = s->anim_speed[g];
+        // Una intro que este firmware no trae (bajado de versión): al azar.
+        intro_variant          = (s->intro <= INTRO_COUNT) ? s->intro : 0;
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
         sanitize_loaded();
@@ -2510,23 +2542,59 @@ void core1_entry() {
     OledAnim::init();
     apply_anim_speed();
 
-    // Intro de arranque. Si no hay animación horneada se limita a pintar el
-    // contenido normal. Termine como termine, deja `oled_shown` al día.
-    intro_running = true;
-    OledIntro::run(oleds, intro_should_skip, refresh_single_screen);
-    intro_running = false;
+    // Intro de arranque. Si no hay animación horneada, o se salta, se limita a
+    // pintar el contenido normal y deja `oled_shown` al día.
+    const bool intro_entera = OledIntro::run(oleds, intro_pick(), intro_should_skip, refresh_single_screen);
     memcpy(oled_target, oled_shown, sizeof(oled_target));
 
     ScreenCtx ctx = screen_ctx();
     OledAnim::Kind kind = OledAnim::CUT;
     bool animando = false;
     uint64_t t0 = 0;
+
+    // Las intros acaban con las diez en negro, y los iconos del perfil entran
+    // como cuando se pulsa SUPER: es el mismo código, así que no hay una
+    // segunda versión de esa animación que mantener. intro_running sigue a
+    // true hasta que acaba esta transición.
+    auto abrir_iconos = [&]() {
+        memset(oled_shown, 0, sizeof(oled_shown));
+        memcpy(oled_from, oled_shown, sizeof(oled_from));
+        for (int i = 0; i < 10; i++) render_screen((uint8_t)(i + 1), oled_target[i]);
+        ctx = screen_ctx();
+        kind = OledAnim::MENU_OPEN;
+        mirror_publish(kind);
+        t0 = time_us_64();
+        animando = true;
+    };
+    if (intro_entera) abrir_iconos();
+    else              intro_running = false;
     OledAnim::Press pulsada[10];
     uint16_t current_inversions = 0;
     uint64_t antes = time_us_64();
 
     while (true) {
         core1_heartbeat++; // Core 0 no alimenta el watchdog si esto se para
+
+        // La app pide ver la intro elegida. Igual que al arrancar: no se corta
+        // y, mientras dura, el teclado no hace nada. Con las pantallas en
+        // reposo no se vería, así que no se reproduce.
+        if (intro_play_req) {
+            intro_play_req = false;
+            if (displays_on) {
+                intro_running = true;
+                for (int i = 1; i <= 10; i++) oleds.invert_screen(i, false);
+                current_inversions = 0;
+                if (OledIntro::run(oleds, intro_pick(), nullptr, refresh_single_screen)) {
+                    abrir_iconos();
+                } else {
+                    memcpy(oled_target, oled_shown, sizeof(oled_target));
+                    animando = false;
+                    intro_running = false;
+                }
+                antes = time_us_64();
+            }
+        }
+
         const uint64_t ahora = time_us_64();
 
         // El encendido y apagado del reposo lo pide Core 0 pero lo ejecuta este
@@ -2586,6 +2654,7 @@ void core1_entry() {
             }
         }
         if (animando && t >= OledAnim::duration(kind)) animando = false;
+        if (!animando) intro_running = false;
 
         // El negativo de la tecla pulsada va por hardware: es instantáneo, que
         // es lo que tiene que ser la respuesta a un dedo. El muelle de arriba
@@ -2888,8 +2957,10 @@ void process_command(const char* cmd) {
         // grupo de las animaciones de las pantallas), en % sobre la base de
         // fábrica de cada grupo. Con =1 (4.8/4.9) el % era sobre el muelle de
         // Apple, y la app tiene que traducir.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:MODE=%s\n",
-                   (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
+        // INTRO=n: trae n intros de arranque; SET_INTRO elige una o el azar
+        // (0) y PLAY_INTRO la enseña ya.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:MODE=%s\n",
+                   (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT, (int)INTRO_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
     }
@@ -2965,6 +3036,7 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:MENUKEY:%d\n", (int)menu_key_mode);
         cdc_printf("STATE:ROTINV:%d\n", (int)rot_invert_mask);
         cdc_printf("STATE:MENUENC:%d\n", (int)menu_encoder);
+        cdc_printf("STATE:INTRO:%d:%d\n", (int)intro_variant, (int)INTRO_COUNT);
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
         cdc_printf("STATE:MENUGLITCH:%lu\n", (unsigned long)menu_tap_glitches);
@@ -3084,6 +3156,25 @@ void process_command(const char* cmd) {
         mirror_inv_sent  = -1;
         if (mirror_on) system_refresh_req = true;
         cdc_printf("MIRROR:OK:%d\n", mirror_on ? 1 : 0);
+        return;
+    }
+
+    // SET_INTRO:<n> — qué intro sale al arrancar: 0 una al azar cada vez, n la
+    // n-ésima de intro_clips (desde 1). Va a la Flash con el guardado de
+    // siempre. PLAY_INTRO enseña ya la que toque.
+    if (strncmp(cmd, "SET_INTRO:", 10) == 0) {
+        const int n = atoi(cmd + 10);
+        if (n >= 0 && n <= INTRO_COUNT) {
+            intro_variant = (uint8_t)n;
+            cdc_printf("INTRO:OK:%d\n", n);
+        } else {
+            cdc_printf("ERR:INTRO_VALUE\n");
+        }
+        return;
+    }
+    if (strcmp(cmd, "PLAY_INTRO") == 0) {
+        intro_play_req = true;
+        cdc_printf("INTRO:PLAY:OK\n");
         return;
     }
 
@@ -3907,6 +3998,12 @@ int main() {
     bool     key_stable[12]  = {false};
     uint32_t key_edge_us[12] = {0};
 
+    // Lo que se tocó durante la intro no cuenta hasta soltarlo: una tecla
+    // sujeta al acabar no debe dispararse sola, ni una soltada después debe
+    // valer como pulsación corta de la tecla de menú. 0-11 teclas, 12-13
+    // pulsadores de los mandos.
+    bool held_in_intro[14] = {false};
+
     const uint8_t key_to_oled[12] = {
         1, 2, 3, 4, 5, 6, 7, 8, 9,  // Teclas 1-9 → OLED 1-9
         0,   // Tecla 10 → sin pantalla
@@ -3959,13 +4056,6 @@ int main() {
             if (intro_running || (uint32_t)(ms - last_hb_ms) < 3000) watchdog_update();
         }
 
-        // Quien tenga prisa corta la intro con cualquier tecla o pulsador.
-        if (intro_running && !intro_skip_req) {
-            for (int i = 0; i < 12; i++) {
-                if (!gpio_get(key_pins[i])) { intro_skip_req = true; break; }
-            }
-            if (!gpio_get(Pins::ENC1_SW) || !gpio_get(Pins::ENC2_SW)) intro_skip_req = true;
-        }
 
         // --- PROCESAR COMANDOS CDC (POLLING) ---
         if (tud_cdc_available()) {
@@ -3987,6 +4077,23 @@ int main() {
 
         uint32_t now = to_ms_since_boot(get_absolute_time());
         bool activity_detected = false;
+
+        // La intro no se corta ni deja hacer nada: se apunta lo que esté
+        // pulsado y se vacían mandos y rueda para que su giro no se acumule y
+        // salga todo de golpe al acabar. Los comandos del CDC sí se atienden.
+        if (intro_running) {
+            for (int i = 0; i < 12; i++)
+                if (!gpio_get(key_pins[i])) held_in_intro[i] = true;
+            if (!gpio_get(Pins::ENC1_SW)) held_in_intro[12] = true;
+            if (!gpio_get(Pins::ENC2_SW)) held_in_intro[13] = true;
+            (void)rueda_izq.get_delta();
+            (void)rueda_der.get_delta();
+            int32_t descartado;
+            (void)wheel.poll(descartado);
+            last_activity_time = now;
+            sleep_us(250);
+            continue;
+        }
 
         // Volver al uso normal, por el camino que sea, cierra el «menú de un
         // mando»: el siguiente que se abra decide de nuevo cómo se abrió.
@@ -4064,6 +4171,7 @@ int main() {
 
         // --- BOTONES DE LOS ENCODERS (DEBOUNCED) ---
         bool raw_enc1_sw = !gpio_get(Pins::ENC1_SW);
+        if (held_in_intro[12]) { if (!raw_enc1_sw) held_in_intro[12] = false; raw_enc1_sw = false; }
         if (raw_enc1_sw != stable_enc1_sw_state) {
             enc1_sw_debounce_cnt++;
             if (enc1_sw_debounce_cnt >= 15) {
@@ -4085,6 +4193,7 @@ int main() {
         }
 
         bool raw_enc2_sw = !gpio_get(Pins::ENC2_SW);
+        if (held_in_intro[13]) { if (!raw_enc2_sw) held_in_intro[13] = false; raw_enc2_sw = false; }
         if (raw_enc2_sw != stable_enc2_sw_state) {
             enc2_sw_debounce_cnt++;
             if (enc2_sw_debounce_cnt >= 15) {
@@ -4223,6 +4332,7 @@ int main() {
             uint32_t now_us = time_us_32();
             for (int i = 0; i < 12; i++) {
                 bool raw = !gpio_get(key_pins[i]);
+                if (held_in_intro[i]) { if (!raw) held_in_intro[i] = false; raw = false; }
                 if (raw == key_stable[i]) {
                     key_edge_us[i] = now_us; // sigue como estaba: reloj a cero
                 } else if ((uint32_t)(now_us - key_edge_us[i]) >= KEY_DEBOUNCE_US) {
