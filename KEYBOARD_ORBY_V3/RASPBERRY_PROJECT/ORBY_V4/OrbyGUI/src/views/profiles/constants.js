@@ -42,7 +42,7 @@ export const ROTARY_TYPE_OPTIONS = [
   { type: ROTARY_TYPES.KEY,      label: 'Atajo de teclado' },
   { type: ROTARY_TYPES.SCROLL_V, label: 'Desplazar vertical', turnOnly: true },
   { type: ROTARY_TYPES.SCROLL_H, label: 'Desplazar horizontal', turnOnly: true },
-  { type: ROTARY_TYPES.ZOOM,     label: 'Zoom (Ctrl + rueda)', turnOnly: true },
+  { type: ROTARY_TYPES.ZOOM,     label: 'Zoom', turnOnly: true },
   // Solo con un firmware que los entienda (compat: menuKey): uno anterior
   // rechaza el tipo en SET_ROTARY.
   { type: ROTARY_TYPES.PAGE,     label: 'Cambiar de página', turnOnly: true, feature: 'menuKey' },

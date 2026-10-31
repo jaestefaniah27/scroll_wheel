@@ -1891,7 +1891,7 @@ function renderKeyGrid() {
 // arriba/abajo (Volumen, Brillo, Zoom) reparte su valor entre CW y CCW por
 // construcción: no tiene sentido editarlos por separado, así que la lista los
 // enseña como un único control "Giro". Lo mismo vale para desplazamiento y el
-// zoom por Ctrl+rueda, que ya llegan con la misma acción en los dos huecos
+// zoom, que ya llegan con la misma acción en los dos huecos
 // (ver isScrollType en applyRotary, keys.js). Atajo de teclado y las acciones
 // multimedia sueltas (Silenciar, Reproducir/Pausa…) sí necesitan una tecla
 // distinta por sentido, así que esas se quedan con sus dos filas de siempre.

@@ -23,6 +23,7 @@
 #include "hid_hires.h"
 #include "hid_out.h"
 #include "wheel_out.h"
+#include "ptp_out.h"
 #include "hardware_as5600.h"
 
 // Las combinaciones con modificador (Ctrl+C y compañía) se envían como
@@ -73,7 +74,7 @@ enum RotaryType : uint8_t {
     ROT_KEY,        // modifier + keycode HID
     ROT_SCROLL_V,   // rueda vertical (bidireccional por sí misma)
     ROT_SCROLL_H,   // paneo horizontal AC Pan
-    ROT_ZOOM,       // Ctrl + rueda vertical
+    ROT_ZOOM,       // pellizco de touchpad (4.24); Ctrl + rueda si el host no lo admite
     // Navegación (4.15): para poder dejar libre la tecla de menú. ROT_PAGE es
     // bidireccional como los desplazamientos (una acción cubre los dos
     // sentidos: horario avanza de página, antihorario retrocede). ROT_MENU es
@@ -2000,10 +2001,18 @@ static void emit_scroll(uint8_t type, int32_t detents) {
         return;
     }
 
+    if (type == ROT_ZOOM && g_ptp_active) {
+        // Pellizco de dos dedos por la interfaz de touchpad: el host lo trata
+        // como el de un trackpad, sin Ctrl de por medio. Lo gestiona PtpOut::tick.
+        PtpOut::add(detents);
+        return;
+    }
+
     if (type == ROT_ZOOM) {
-        // Ctrl mantenido mientras dura el desplazamiento: es lo que interpretan
-        // navegadores y editores como acercar/alejar. Lo suelta el bucle
-        // principal cuando pasa ZOOM_HOLD_MS sin más pasos.
+        // Respaldo cuando el host no ha activado el touchpad (Linux, macOS...):
+        // Ctrl mantenido mientras dura el desplazamiento, que es lo que
+        // interpretan navegadores y editores como acercar/alejar. Lo suelta el
+        // bucle principal cuando pasa ZOOM_HOLD_MS sin más pasos.
         zoom_hold_until = to_ms_since_boot(get_absolute_time()) + ZOOM_HOLD_MS;
         WheelOut::zoom_arm();
         HidOut::set_sticky_mod(KEYBOARD_MODIFIER_LEFTCTRL);
@@ -2132,6 +2141,14 @@ void wheel_accumulate(int32_t delta_counts) {
     }
     if (cw.type == ROT_SCROLL_H && g_hires_pan != 0) {
         WheelOut::add_pan(units);
+        return;
+    }
+    // El zoom por pellizco también es continuo: la separación de los dedos
+    // sigue el giro fino de la rueda en vez de saltar de clic en clic. Va con
+    // el signo cambiado respecto a los encoders: en la rueda, el sentido que
+    // se siente natural para acercar es el contrario.
+    if (cw.type == ROT_ZOOM && g_ptp_active) {
+        PtpOut::add_units(-units);
         return;
     }
 
@@ -2874,6 +2891,41 @@ void process_command(const char* cmd) {
         cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:MODE=%s\n",
                    (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
+        return;
+    }
+
+    // ZOOMTEST:<pasos>: pasos de zoom como si se girase un mando en ZOOM. Solo
+    // para diagnóstico desde el PC (la app no lo usa): permite medir qué hace el
+    // host con el gesto sin nadie girando la rueda. Responde si el touchpad está
+    // activo (1) o se ha caído al Ctrl + rueda (0).
+    if (strncmp(cmd, "ZOOMTEST:", 9) == 0) {
+        emit_scroll(ROT_ZOOM, (int32_t)atoi(cmd + 9));
+        cdc_printf("ZOOMTEST:OK:%d\n", (int)g_ptp_active);
+        return;
+    }
+    // ZOOMU:<unidades>: lo mismo en unidades de alta resolución (120 por clic),
+    // como llega de la rueda magnética.
+    if (strncmp(cmd, "ZOOMU:", 6) == 0) {
+        if (g_ptp_active) PtpOut::add_units((int32_t)atoi(cmd + 6));
+        cdc_printf("ZOOMU:OK:%d\n", (int)g_ptp_active);
+        return;
+    }
+    // ZOOMCFG:<modelo>:<tau_ms>:<omega>:<apoyo_ms>:<reapoyo_ms>:<reposo_ms>:<zoom_x1000>
+    // Ajusta en caliente el gesto del zoom (diagnóstico, no se guarda).
+    if (strncmp(cmd, "ZOOMCFG:", 8) == 0) {
+        int m, tau, om, s1, s2, idle, z;
+        if (sscanf(cmd + 8, "%d:%d:%d:%d:%d:%d:%d", &m, &tau, &om, &s1, &s2, &idle, &z) == 7) {
+            PtpOut::cfg.model           = (uint8_t)m;
+            PtpOut::cfg.tau_us          = (uint32_t)tau * 1000u;
+            PtpOut::cfg.omega           = (float)om;
+            PtpOut::cfg.settle_first_us = (uint32_t)s1 * 1000u;
+            PtpOut::cfg.settle_again_us = (uint32_t)s2 * 1000u;
+            PtpOut::cfg.idle_us         = (uint32_t)idle * 1000u;
+            PtpOut::cfg.zoom_per_detent = z / 1000.0f;
+            cdc_printf("ZOOMCFG:OK\n");
+        } else {
+            cdc_printf("ERR:ZOOMCFG\n");
+        }
         return;
     }
 
@@ -4128,6 +4180,7 @@ int main() {
         // La rueda tiene preferencia sobre el endpoint: es lo que más se nota
         // si se retrasa. Después va lo que haya pendiente de teclado.
         WheelOut::flush();
+        PtpOut::tick();
         HidOut::pump();
         macro_player_tick(now);
 

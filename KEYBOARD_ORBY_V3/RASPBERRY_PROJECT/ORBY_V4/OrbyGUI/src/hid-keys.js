@@ -118,7 +118,7 @@ export function describeRotary(action) {
   switch (action.type) {
     case ROTARY_TYPES.SCROLL_V: return 'Desplazar vertical';
     case ROTARY_TYPES.SCROLL_H: return 'Desplazar horizontal';
-    case ROTARY_TYPES.ZOOM:     return 'Zoom (Ctrl + rueda)';
+    case ROTARY_TYPES.ZOOM:     return 'Zoom';
     case ROTARY_TYPES.PAGE:     return 'Cambiar de página';
     case ROTARY_TYPES.MENU: {
       const m = ROTARY_MENUS.find((x) => x.value === action.keycode);

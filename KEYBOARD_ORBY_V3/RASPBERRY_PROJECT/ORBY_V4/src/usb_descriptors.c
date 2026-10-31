@@ -1,6 +1,8 @@
 #include "tusb.h"
 #include "pico/unique_id.h"
 #include "hid_hires.h"
+#include "hid_ptp.h"
+#include "hid_ptp_blob.h"
 #include "orby_version.h"
 
 //--------------------------------------------------------------------+
@@ -24,7 +26,9 @@
 // 0x4007: el paneo horizontal pasa de 8 a 16 bits y el Feature report gana un
 // segundo multiplicador. Sin subir el PID, Windows reutilizaría el descriptor
 // viejo y leería el informe descuadrado.
-#define ORBY_USB_PID 0x4007u
+// 0x4009: el touchpad de precisión (zoom) manda los dos dedos en un solo
+// informe; 0x4008 los mandaba en dos.
+#define ORBY_USB_PID 0x4009u
 
 // La versión de firmware en BCD (ORBY_USB_BCD_DEVICE) sale de orby_version.h,
 // el mismo sitio del que sale el `FW=` del handshake: escrita a mano aquí, se
@@ -40,6 +44,7 @@ enum {
     STRID_SERIAL,
     STRID_CDC,
     STRID_HID,
+    STRID_HID_PTP,
 };
 
 // Multiplicadores de resolución negociados con el host (ver hid_hires.h). Son
@@ -47,6 +52,11 @@ enum {
 // en el otro.
 volatile uint8_t g_hires_multiplier = 0;
 volatile uint8_t g_hires_pan        = 0;
+
+// Modo de entrada del touchpad (hid_ptp.h) y último valor del Feature de
+// conmutación de funciones, que el host lee de vuelta.
+volatile uint8_t g_ptp_active = 0;
+static uint8_t   ptp_func_switch = 0x03;
 
 //--------------------------------------------------------------------+
 // Device Descriptors
@@ -174,9 +184,157 @@ uint8_t const desc_hid_report[] = {
     TUD_HID_REPORT_DESC_CONSUMER( HID_REPORT_ID(REPORT_ID_CONSUMER) )
 };
 
+// Un dedo: confianza, punta, ID de contacto, X e Y. Se repite una vez por
+// contacto dentro del mismo informe (modo paralelo). Empieza reponiendo la
+// página Digitizers porque la copia anterior acaba en Generic Desktop.
+#define ORBY_PTP_FINGER \
+    0x05, 0x0D,        /* Usage Page (Digitizers)               */ \
+    0x09, 0x22,        /*   Usage (Finger)                      */ \
+    0xA1, 0x02,        /*   Collection (Logical)                */ \
+    0x15, 0x00,        /*     Logical Minimum (0)               */ \
+    0x25, 0x01,        /*     Logical Maximum (1)               */ \
+    0x09, 0x47,        /*     Usage (Confidence)                */ \
+    0x09, 0x42,        /*     Usage (Tip Switch)                */ \
+    0x95, 0x02,        /*     Report Count (2)                  */ \
+    0x75, 0x01,        /*     Report Size (1)                   */ \
+    0x81, 0x02,        /*     Input (Data,Var,Abs)              */ \
+    0x95, 0x01,        /*     Report Count (1)                  */ \
+    0x75, 0x02,        /*     Report Size (2)                   */ \
+    0x25, 0x02,        /*     Logical Maximum (2)               */ \
+    0x09, 0x51,        /*     Usage (Contact Identifier)        */ \
+    0x81, 0x02,        /*     Input (Data,Var,Abs)              */ \
+    0x75, 0x01,        /*     Report Size (1)                   */ \
+    0x95, 0x04,        /*     Report Count (4)                  */ \
+    0x81, 0x03,        /*     Input (Const,Var,Abs)             */ \
+    0x05, 0x01,        /*     Usage Page (Generic Desktop)      */ \
+    0x15, 0x00,        /*     Logical Minimum (0)               */ \
+    0x26, 0xFF, 0x0F,  /*     Logical Maximum (4095)            */ \
+    0x75, 0x10,        /*     Report Size (16)                  */ \
+    0x55, 0x0E,        /*     Unit Exponent (-2)                */ \
+    0x65, 0x13,        /*     Unit (Inch, EngLinear)            */ \
+    0x09, 0x30,        /*     Usage (X)                         */ \
+    0x35, 0x00,        /*     Physical Minimum (0)              */ \
+    0x46, 0x90, 0x01,  /*     Physical Maximum (400)            */ \
+    0x95, 0x01,        /*     Report Count (1)                  */ \
+    0x81, 0x02,        /*     Input (Data,Var,Abs)              */ \
+    0x46, 0x13, 0x01,  /*     Physical Maximum (275)            */ \
+    0x09, 0x31,        /*     Usage (Y)                         */ \
+    0x81, 0x02,        /*     Input (Data,Var,Abs)              */ \
+    0xC0,              /*   End Collection                      */
+
+// Touchpad de precisión de Windows, copiado del descriptor de ejemplo de
+// Microsoft («Sample Report Descriptors»), que declara obligatorio cada valor.
+// Dos contactos en un mismo informe (modo paralelo): el cuadro llega entero o no
+// llega, sin que el host pueda ver un dedo suelto entre dos informes. Se anuncian
+// hasta 5. Lo único nuestro son los IDs de informe.
+#define ORBY_HID_REPORT_DESC_PTP \
+    /* --- Touch Pad --- */                                            \
+    0x05, 0x0D,        /* Usage Page (Digitizers)               */ \
+    0x09, 0x05,        /* Usage (Touch Pad)                     */ \
+    0xA1, 0x01,        /* Collection (Application)              */ \
+    0x85, PTP_REPORTID_TOUCHPAD, /* Report ID                   */ \
+    ORBY_PTP_FINGER                                                  \
+    ORBY_PTP_FINGER                                                  \
+    0x55, 0x0C,        /*   Unit Exponent (-4)                  */ \
+    0x66, 0x01, 0x10,  /*   Unit (Seconds)                      */ \
+    0x47, 0xFF, 0xFF, 0x00, 0x00, /* Physical Maximum (65535)   */ \
+    0x27, 0xFF, 0xFF, 0x00, 0x00, /* Logical Maximum (65535)    */ \
+    0x75, 0x10,        /*   Report Size (16)                    */ \
+    0x95, 0x01,        /*   Report Count (1)                    */ \
+    0x05, 0x0D,        /*   Usage Page (Digitizers)             */ \
+    0x09, 0x56,        /*   Usage (Scan Time)                   */ \
+    0x81, 0x02,        /*   Input (Data,Var,Abs)                */ \
+    0x09, 0x54,        /*   Usage (Contact Count)               */ \
+    0x25, 0x7F,        /*   Logical Maximum (127)               */ \
+    0x95, 0x01,        /*   Report Count (1)                    */ \
+    0x75, 0x08,        /*   Report Size (8)                     */ \
+    0x81, 0x02,        /*   Input (Data,Var,Abs)                */ \
+    0x05, 0x09,        /*   Usage Page (Button)                 */ \
+    0x09, 0x01,        /*   Usage (Button 1)                    */ \
+    0x09, 0x02,        /*   Usage (Button 2)                    */ \
+    0x09, 0x03,        /*   Usage (Button 3)                    */ \
+    0x25, 0x01,        /*   Logical Maximum (1)                 */ \
+    0x75, 0x01,        /*   Report Size (1)                     */ \
+    0x95, 0x03,        /*   Report Count (3)                    */ \
+    0x81, 0x02,        /*   Input (Data,Var,Abs)                */ \
+    0x95, 0x05,        /*   Report Count (5)                    */ \
+    0x81, 0x03,        /*   Input (Const,Var,Abs)               */ \
+    0x05, 0x0D,        /*   Usage Page (Digitizers)             */ \
+    0x85, PTP_REPORTID_MAX_COUNT, /* Report ID (Feature)        */ \
+    0x09, 0x55,        /*   Usage (Contact Count Maximum)       */ \
+    0x09, 0x59,        /*   Usage (Pad Type)                    */ \
+    0x75, 0x04,        /*   Report Size (4)                     */ \
+    0x95, 0x02,        /*   Report Count (2)                    */ \
+    0x25, 0x0F,        /*   Logical Maximum (15)                */ \
+    0xB1, 0x02,        /*   Feature (Data,Var,Abs)              */ \
+    0x06, 0x00, 0xFF,  /*   Usage Page (Vendor Defined)         */ \
+    0x85, PTP_REPORTID_PTPHQA, /* Report ID (PTPHQA)            */ \
+    0x09, 0xC5,        /*   Usage (Vendor Usage 0xC5)           */ \
+    0x15, 0x00,        /*   Logical Minimum (0)                 */ \
+    0x26, 0xFF, 0x00,  /*   Logical Maximum (255)               */ \
+    0x75, 0x08,        /*   Report Size (8)                     */ \
+    0x96, 0x00, 0x01,  /*   Report Count (256)                  */ \
+    0xB1, 0x02,        /*   Feature (Data,Var,Abs)              */ \
+    0xC0,              /* End Collection                        */ \
+    /* --- Configuración --- */                                        \
+    0x05, 0x0D,        /* Usage Page (Digitizers)               */ \
+    0x09, 0x0E,        /* Usage (Configuration)                 */ \
+    0xA1, 0x01,        /* Collection (Application)              */ \
+    0x85, PTP_REPORTID_FEATURE, /* Report ID (Feature)          */ \
+    0x09, 0x22,        /*   Usage (Finger)                      */ \
+    0xA1, 0x02,        /*   Collection (Logical)                */ \
+    0x09, 0x52,        /*     Usage (Input Mode)                */ \
+    0x15, 0x00,        /*     Logical Minimum (0)               */ \
+    0x25, 0x0A,        /*     Logical Maximum (10)              */ \
+    0x75, 0x08,        /*     Report Size (8)                   */ \
+    0x95, 0x01,        /*     Report Count (1)                  */ \
+    0xB1, 0x02,        /*     Feature (Data,Var,Abs)            */ \
+    0xC0,              /*   End Collection                      */ \
+    0x09, 0x22,        /*   Usage (Finger)                      */ \
+    0xA1, 0x00,        /*   Collection (Physical)               */ \
+    0x85, PTP_REPORTID_FUNCSWITCH, /* Report ID (Feature)       */ \
+    0x09, 0x57,        /*     Usage (Surface Switch)            */ \
+    0x09, 0x58,        /*     Usage (Button Switch)             */ \
+    0x75, 0x01,        /*     Report Size (1)                   */ \
+    0x95, 0x02,        /*     Report Count (2)                  */ \
+    0x25, 0x01,        /*     Logical Maximum (1)               */ \
+    0xB1, 0x02,        /*     Feature (Data,Var,Abs)            */ \
+    0x95, 0x06,        /*     Report Count (6)                  */ \
+    0xB1, 0x03,        /*     Feature (Const,Var,Abs)           */ \
+    0xC0,              /*   End Collection                      */ \
+    0xC0,              /* End Collection                        */ \
+    /* --- Ratón de reserva (lo exige la plantilla de Microsoft) --- */ \
+    0x05, 0x01,        /* Usage Page (Generic Desktop)          */ \
+    0x09, 0x02,        /* Usage (Mouse)                         */ \
+    0xA1, 0x01,        /* Collection (Application)              */ \
+    0x85, PTP_REPORTID_MOUSE, /* Report ID (Mouse)              */ \
+    0x09, 0x01,        /*   Usage (Pointer)                     */ \
+    0xA1, 0x00,        /*   Collection (Physical)               */ \
+    0x05, 0x09,        /*     Usage Page (Button)               */ \
+    0x19, 0x01,        /*     Usage Minimum (Button 1)          */ \
+    0x29, 0x02,        /*     Usage Maximum (Button 2)          */ \
+    0x25, 0x01,        /*     Logical Maximum (1)               */ \
+    0x75, 0x01,        /*     Report Size (1)                   */ \
+    0x95, 0x02,        /*     Report Count (2)                  */ \
+    0x81, 0x02,        /*     Input (Data,Var,Abs)              */ \
+    0x95, 0x06,        /*     Report Count (6)                  */ \
+    0x81, 0x03,        /*     Input (Const,Var,Abs)             */ \
+    0x05, 0x01,        /*     Usage Page (Generic Desktop)      */ \
+    0x09, 0x30,        /*     Usage (X)                         */ \
+    0x09, 0x31,        /*     Usage (Y)                         */ \
+    0x75, 0x10,        /*     Report Size (16)                  */ \
+    0x95, 0x02,        /*     Report Count (2)                  */ \
+    0x25, 0x0A,        /*     Logical Maximum (10)              */ \
+    0x81, 0x06,        /*     Input (Data,Var,Rel)              */ \
+    0xC0,              /*   End Collection                      */ \
+    0xC0               /* End Collection                        */
+
+uint8_t const desc_hid_report_ptp[] = {
+    ORBY_HID_REPORT_DESC_PTP
+};
+
 uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance) {
-    (void) instance;
-    return desc_hid_report;
+    return instance == PTP_ITF_INSTANCE ? desc_hid_report_ptp : desc_hid_report;
 }
 
 //--------------------------------------------------------------------+
@@ -186,16 +344,22 @@ enum {
     ITF_NUM_CDC = 0,
     ITF_NUM_CDC_DATA,
     ITF_NUM_HID,
+    ITF_NUM_HID_PTP,
     ITF_NUM_TOTAL
 };
 
-#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_HID_DESC_LEN)
+#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 2 * TUD_HID_DESC_LEN)
+
+// Tamaño de paquete de los endpoints HID. Es independiente de
+// CFG_TUD_HID_EP_BUFSIZE (el búfer de TinyUSB), que ahora es mucho mayor.
+#define ORBY_HID_EP_SIZE  16
 
 #define EPNUM_CDC_NOTIF   0x81
 #define EPNUM_CDC_OUT     0x02
 #define EPNUM_CDC_IN      0x82
 
 #define EPNUM_HID         0x83
+#define EPNUM_HID_PTP     0x84
 
 uint8_t const desc_configuration[] = {
     // Config number, interface count, string index, total length, attribute, power in mA
@@ -207,7 +371,10 @@ uint8_t const desc_configuration[] = {
     // Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval.
     // bInterval = 1 ms (1000 Hz): a 5 ms el scroll de alta resolución se
     // percibía escalonado porque limitaba la cadencia de informes a 200 Hz.
-    TUD_HID_DESCRIPTOR(ITF_NUM_HID, STRID_HID, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report), EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 1)
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, STRID_HID, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report), EPNUM_HID, ORBY_HID_EP_SIZE, 1),
+
+    // Touchpad de precisión: interfaz propia (ver hid_ptp.h).
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID_PTP, STRID_HID_PTP, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report_ptp), EPNUM_HID_PTP, ORBY_HID_EP_SIZE, 1)
 };
 
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
@@ -228,7 +395,8 @@ char const* string_desc_arr [] = {
     "Orby V4",                     // 2: producto
     NULL,                          // 3: número de serie, generado en tiempo de ejecución
     "Orby V4 Control",             // 4: interfaz CDC
-    "Orby V4 Input"                // 5: interfaz HID
+    "Orby V4 Input",               // 5: interfaz HID
+    "Orby V4 Touchpad"             // 6: interfaz HID del touchpad (zoom)
 };
 
 // El número de serie sale del ID único de la flash de la Pico. Con el "123456"
@@ -284,7 +452,27 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
 // del multiplicador de resolución. Si esta petición falla, Windows descarta el
 // soporte de alta resolución y vuelve al scroll de 3 líneas por detent.
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen) {
-    (void) instance;
+    if (instance == PTP_ITF_INSTANCE) {
+        if (report_type != HID_REPORT_TYPE_FEATURE) return 0;
+        switch (report_id) {
+        case PTP_REPORTID_MAX_COUNT:
+            // Nibble bajo: contactos máximos (5, el tope que admite Windows).
+            // Alto: tipo de pad, 1 = sin clic físico.
+            buffer[0] = 0x15;
+            return 1;
+        case PTP_REPORTID_PTPHQA:
+            if (reqlen < sizeof(ptp_cert_blob)) return 0;
+            memcpy(buffer, ptp_cert_blob, sizeof(ptp_cert_blob));
+            return sizeof(ptp_cert_blob);
+        case PTP_REPORTID_FEATURE:
+            buffer[0] = g_ptp_active ? PTP_INPUT_MODE_PTP : 0;
+            return 1;
+        case PTP_REPORTID_FUNCSWITCH:
+            buffer[0] = ptp_func_switch;
+            return 1;
+        }
+        return 0;
+    }
 
     if (report_type == HID_REPORT_TYPE_FEATURE && report_id == REPORT_ID_MOUSE && reqlen >= 1) {
         // Bits 0-1 el multiplicador vertical, bits 2-3 el horizontal.
@@ -298,8 +486,6 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 // El host escribe el Feature Report para activar (1) o desactivar (0) la alta
 // resolución. Windows lo pone a 1 al enumerar y lo devuelve a 0 al suspender.
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
-    (void) instance;
-
     if (report_type != HID_REPORT_TYPE_FEATURE || bufsize == 0) return;
 
     uint8_t id = report_id;
@@ -311,6 +497,17 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
         id = data[0];
         data++;
         len--;
+    }
+
+    if (instance == PTP_ITF_INSTANCE) {
+        // Windows pone el modo de entrada a 3 (touchpad) al enumerar y lo
+        // devuelve a 0 (ratón) al suspender o cerrar.
+        if (id == PTP_REPORTID_FEATURE && len >= 1) {
+            g_ptp_active = (data[0] == PTP_INPUT_MODE_PTP);
+        } else if (id == PTP_REPORTID_FUNCSWITCH && len >= 1) {
+            ptp_func_switch = data[0];
+        }
+        return;
     }
 
     if (id == REPORT_ID_MOUSE && len >= 1) {
