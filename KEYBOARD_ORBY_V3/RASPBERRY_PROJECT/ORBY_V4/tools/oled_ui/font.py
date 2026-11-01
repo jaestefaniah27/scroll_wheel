@@ -187,4 +187,21 @@ def epx(rows):
                 out[2 * y + dy][2 * x + dx] = '#' if (v or P) else '.'
     return [''.join(r) for r in out]
 
+# Letras que EPX estropea y van dibujadas a mano en grande. La ñ lleva la
+# virgulilla pegada a la n (a 7 px no hay fila libre entre las dos) y EPX las
+# fundía en una mancha que se leía como una K. En grande sí hay sitio: la
+# virgulilla en tres filas y una de aire.
+_N_BIG = None
+
+def big_rows(ch):
+    """El glifo en grande (18 filas): EPX de la pequeña, o el de a mano."""
+    global _N_BIG
+    ch = FOLD.get(ch, ch) if ch not in G else ch
+    if ch == 'ñ':
+        if _N_BIG is None:
+            body = epx(rows9('n'))[4:]
+            _N_BIG = ['.###...#', '##.##.##', '#...###.', '........'] + body
+        return _N_BIG
+    return epx(rows9(ch))
+
 SUPPORTED = sorted(set(G.keys()) | set(FOLD.keys()))

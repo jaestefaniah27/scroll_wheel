@@ -16,6 +16,11 @@ function dibuja(what) {
   const [tipo, ...resto] = what.split(':');
   const arg = resto.join(':');
   if (tipo === 'icon') { const [, ic, cap] = icono(arg); return U.screenIcon(ic, cap); }
+  if (tipo === 'big') {
+    const [prof, label] = arg.includes('/') ? arg.split('/') : ['', arg];
+    return U.screenKey(prof, label);
+  }
+  if (tipo === 'name') return U.screenName(arg);
   if (tipo === 'text') return U.screenText(arg);
   if (tipo === 'toggle') return U.screenToggle(resto[0] === '1', resto.slice(1).join(':'));
   if (tipo === 'dots') return U.screenDots(Number(resto[0]), Number(resto[1]), resto.slice(2).join(':'));
@@ -41,4 +46,10 @@ test('el catálogo se busca sin mayúsculas, con la entrada del perfil delante',
 test('una tecla sin entrada en el catálogo lleva su etiqueta en texto', () => {
   assert.equal(hex(U.screenKey('', 'F1')), hex(U.screenText('F1')));
   assert.equal(hex(U.screenKey('', '')), '00'.repeat(U.FB));
+});
+
+test('con un firmware anterior a la 4.28 la tecla lleva el icono pequeño con su nombre', () => {
+  const [, ic, cap] = icono('COPY');
+  assert.equal(hex(U.screenKey('', 'COPY', { big: false })), hex(U.screenIcon(ic, cap)));
+  assert.notEqual(hex(U.screenKey('', 'COPY')), hex(U.screenIcon(ic, cap)));
 });

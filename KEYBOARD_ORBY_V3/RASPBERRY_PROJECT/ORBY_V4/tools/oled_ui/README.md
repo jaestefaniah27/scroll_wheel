@@ -29,7 +29,9 @@ que nadie ha tocado un dibujo sin regenerar.
 ## Cómo elige el firmware qué enseñar en una tecla
 
 1. Si la tecla tiene un icono subido desde la app, ese.
-2. Si su etiqueta está en el catálogo, el icono con su nombre debajo. Se
+2. Si su etiqueta está en el catálogo, el icono en grande (x1.5, sin nombre
+   debajo desde la 4.28: `render(name, BIG_K)`; el nombre sale en el modo
+   ayuda, `screen_name`). Se
    busca por etiqueta y no por posición, así que el icono sigue a la acción si
    se mueve de tecla. Unas pocas etiquetas cambian de significado según el
    programa y llevan entrada propia (`PREM/CUT` es la cuchilla de Premiere;

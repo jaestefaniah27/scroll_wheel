@@ -101,6 +101,7 @@ SYSTEM = {
     'menu_wheel':    ('wheel', 'Rueda'),
     'menu_reset':    ('reset', 'Restablecer'),
     'menu_info':     ('info', 'Info'),
+    'menu_help':     ('help', 'Ayuda'),
     'menu_exit':     ('exit', 'Salir'),
     'back':          ('back', 'Volver'),
     'sleep_1':       ('timer1', '1 min'),

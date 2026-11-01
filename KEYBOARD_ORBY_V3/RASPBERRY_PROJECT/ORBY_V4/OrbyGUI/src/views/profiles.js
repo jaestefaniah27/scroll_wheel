@@ -339,7 +339,7 @@ function paintUndoButtons() {
 }
 
 // La pantalla de la tecla tal como la dibuja el teclado (key-screen.js): el
-// icono subido, el del catálogo con su nombre o la etiqueta en su fuente. El
+// icono subido, el del catálogo o la etiqueta en su fuente. El
 // <canvas> se pinta después de insertar el HTML (paintKeyScreens).
 function keyScreen(i, lslot, cls) {
   if (lslot < 0) {

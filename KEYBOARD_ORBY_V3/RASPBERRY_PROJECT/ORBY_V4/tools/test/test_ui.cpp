@@ -44,6 +44,17 @@ int main() {
             }
             if (e < 0) { printf("FALLO: %s no está en el catálogo\n", w); fallos++; continue; }
             screen_icon(fb, entries[e].icon, entries[e].caption);
+        } else if (!strncmp(w, "big:", 4)) {
+            // Por screen_key, que es por donde pasa una tecla de verdad.
+            const char* key = w + 4;
+            const char* slash = strchr(key, '/');
+            char prof[8] = {0};
+            if (slash) memcpy(prof, key, (size_t)(slash - key));
+            const char* label = slash ? slash + 1 : key;
+            if (lookup(prof, label) < 0) { printf("FALLO: %s no está en el catálogo\n", w); fallos++; continue; }
+            screen_key(fb, prof, label);
+        } else if (!strncmp(w, "name:", 5)) {
+            screen_name(fb, w + 5);
         } else if (!strncmp(w, "text:", 5)) {
             screen_text(fb, w + 5);
         } else if (!strncmp(w, "toggle:", 7)) {

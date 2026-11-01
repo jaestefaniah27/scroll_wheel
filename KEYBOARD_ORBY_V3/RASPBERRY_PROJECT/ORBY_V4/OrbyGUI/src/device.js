@@ -149,6 +149,12 @@ export const setIntro = (n) => request(`SET_INTRO:${n}`, {
   fail: (l) => l.startsWith('ERR:INTRO'),
 });
 export const playIntro = () => request('PLAY_INTRO', { match: (l) => l === 'INTRO:PLAY:OK' });
+// Modo ayuda (firmware 4.28, bandera HELP): cómo se sale, en segundos. 0 al
+// pulsar una tecla, 5, 10 o 30 s, 255 solo a mano.
+export const setHelp = (s) => request(`SET_HELP:${s}`, {
+  match: (l) => l.startsWith('HELP:OK:'),
+  fail: (l) => l.startsWith('ERR:HELP'),
+});
 // Espejo de las pantallas (firmware 4.12): con él encendido el teclado manda
 // el destino de cada transición (EV:SCR) y el dashboard la anima igual. Ver
 // src/oled-mirror.js.
@@ -327,6 +333,7 @@ export function getState() {
       if (line.startsWith('STATE:ROTINV:'))     { state.rotInvert   = parseInt(line.slice(13), 10); return true; }
       if (line.startsWith('STATE:MENUENC:'))    { state.menuEncoder = parseInt(line.slice(14), 10); return true; }
       if (line.startsWith('STATE:INTRO:'))      { state.intro = parseInt(line.slice(12), 10); return true; }
+      if (line.startsWith('STATE:HELP:'))       { state.helpExit = parseInt(line.slice(11), 10); return true; }
       if (line.startsWith('STATE:ANIMSPEED:')) {
         const [menu, carousel, submenu, profile, fade] = line.slice(16).split(':').map(Number);
         state.animSpeed = { menu, carousel, submenu, profile, fade };

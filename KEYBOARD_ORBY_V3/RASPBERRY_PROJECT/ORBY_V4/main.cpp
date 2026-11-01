@@ -389,6 +389,11 @@ enum AppMode {
     MODE_MENU_RESET    // confirmar reset de fábrica (por defecto en NO)
 };
 
+// Opciones del menú principal, en el orden de sus pantallas. Ayuda entró en la
+// 4.28 delante de Salir, que sigue siendo la última.
+enum MainMenuOpt : uint8_t { MM_PROFILES, MM_SLEEP, MM_WHEEL, MM_RESET, MM_INFO, MM_HELP, MM_EXIT,
+                             MAIN_MENU_OPTS };
+
 // Qué tecla (índice base 0) hay debajo de cada pantalla. Las pantallas 1 a 9 van
 // con las teclas 1 a 9, y la pantalla 10 con la tecla 11.
 static inline uint8_t key_index_for_screen(uint8_t screen_num) {
@@ -488,6 +493,44 @@ volatile uint16_t active_inversions = 0;
 // termómetro de la avería: si sube sola con el teclado quieto, la línea de la
 // tecla 10 está metiendo ruido y hay que mirar el hardware, no el firmware.
 volatile uint32_t menu_tap_glitches = 0;
+
+// --- Modo ayuda (firmware 4.28) ---
+// Desde la 4.28 las teclas llevan el icono grande y sin nombre debajo (a 24x22
+// con el nombre en 7 px no se leía ni lo uno ni lo otro). Para cuando un icono
+// no basta, el modo ayuda cambia cada icono por su nombre en grande. Se entra
+// con doble toque de SUPER o desde Ayuda en el menú principal.
+volatile bool help_active = false;
+static uint32_t help_since_ms = 0;
+// Dos toques de SUPER más juntos que esto (de pulsación a pulsación) son un
+// doble toque.
+#define HELP_TAP_MS 300
+
+// Cómo se sale, en Settings::help_exit. El 0 es 10 s porque ese byte era
+// relleno a cero hasta la 4.27, y 10 s es lo de fábrica.
+enum : uint8_t { HELPX_10S = 0, HELPX_KEY = 1, HELPX_5S = 2, HELPX_30S = 3, HELPX_MANUAL = 4 };
+static uint8_t help_exit = HELPX_10S;
+
+// Por el CDC va en segundos, que se entiende sin tabla: 0 al pulsar una tecla,
+// 255 solo a mano.
+static int help_exit_secs(uint8_t x) {
+    switch (x) {
+    case HELPX_KEY:    return 0;
+    case HELPX_5S:     return 5;
+    case HELPX_30S:    return 30;
+    case HELPX_MANUAL: return 255;
+    default:           return 10;
+    }
+}
+static int help_exit_from_secs(int s) {
+    switch (s) {
+    case 0:   return HELPX_KEY;
+    case 5:   return HELPX_5S;
+    case 10:  return HELPX_10S;
+    case 30:  return HELPX_30S;
+    case 255: return HELPX_MANUAL;
+    default:  return -1;
+    }
+}
 
 // --- Encendido de las pantallas (reposo) ---
 // Core 0 detecta la inactividad, pero quien manda al SSD1306 es Core 1: las
@@ -752,7 +795,9 @@ struct Settings {
     uint8_t  anim_speed[OledAnim::G_COUNT];  // % por grupo, ver OledAnim::Group
     // Relleno hasta la 4.24, siempre a cero: cero es una intro al azar.
     uint8_t  intro;
-    uint8_t  padding2[2];
+    // Relleno hasta la 4.27, siempre a cero: cero es HELPX_10S, lo de fábrica.
+    uint8_t  help_exit;
+    uint8_t  padding2[1];
     uint32_t custom_oled_mask[MAX_PROFILES][MAX_PAGES];
     Profile  profiles[MAX_PROFILES];
 };
@@ -1142,6 +1187,7 @@ void load_defaults() {
     menu_key_mode = MENUKEY_MENU;
     rot_invert_mask = 0;
     menu_encoder = 0;
+    help_exit = HELPX_10S;
     set_default_anim_speed();
 }
 
@@ -1188,6 +1234,7 @@ void save_settings() {
     // memcpy no admite un origen volatile: se copia campo a campo.
     for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) s->anim_speed[g] = anim_speed_pct[g];
     s->intro                  = intro_variant;
+    s->help_exit              = help_exit;
     memcpy(s->custom_oled_mask, custom_oled_mask, sizeof(custom_oled_mask));
     memcpy(s->profiles, profiles, sizeof(profiles));
 
@@ -1293,6 +1340,7 @@ void load_settings() {
         for (uint8_t g = 0; g < OledAnim::G_COUNT; g++) anim_speed_pct[g] = s->anim_speed[g];
         // Una intro que este firmware no trae (bajado de versión): al azar.
         intro_variant          = (s->intro <= INTRO_COUNT) ? s->intro : 0;
+        help_exit              = (s->help_exit <= HELPX_MANUAL) ? s->help_exit : HELPX_10S;
         memcpy(profiles, s->profiles, sizeof(profiles));
         memcpy(custom_oled_mask, s->custom_oled_mask, sizeof(custom_oled_mask));
         sanitize_loaded();
@@ -1727,6 +1775,25 @@ uint16_t get_consumer_key_from_index(uint8_t idx) {
 // Declarada más abajo (sección CDC); hace falta antes para la telemetría de
 // MACRO_TEST.
 static void cdc_printf(const char* fmt, ...);
+
+// Entrar o salir del modo ayuda. EV:HELP avisa a la app, que lo ignora si no lo
+// conoce (todo lo que empieza por EV: va directo a telemetría).
+static void help_set(bool on) {
+    if (help_active == on) return;
+    help_active = on;
+    help_since_ms = to_ms_since_boot(get_absolute_time());
+    system_refresh_req = true;
+    cdc_printf("EV:HELP:%d\n", on ? 1 : 0);
+}
+
+// Con un plazo elegido, la ayuda se va sola al cumplirse. Se cuenta desde que
+// se activa, no desde la última tecla: así siempre dura lo mismo.
+static void help_tick(uint32_t now) {
+    if (!help_active) return;
+    const int s = help_exit_secs(help_exit);
+    if (s == 0 || s == 255) return;
+    if ((uint32_t)(now - help_since_ms) >= (uint32_t)s * 1000u) help_set(false);
+}
 
 #define MACRO_CLICK_HOLD_MS 20
 
@@ -2346,6 +2413,19 @@ static void render_screen(uint8_t screen_num, uint8_t* out) {
         // su pantalla se tacha entera.
         const bool tachada = key_needs_app(act) && !host_app_alive();
 
+        // Modo ayuda: el nombre en vez del icono, también del subido desde la
+        // app (su etiqueta dice lo que hace). Una tecla sin etiqueta se queda
+        // como está: no hay nada que nombrar.
+        if (help_active) {
+            char label[9], perfil[9];
+            copy_name(label, cur_page().oled_labels[slot]);
+            copy_name(perfil, profiles[active_profile_idx].name);
+            if (screen_key_name(fb, perfil, label)) {
+                if (tachada) draw_disabled_slash(fb);
+                return;
+            }
+        }
+
         if (slot < OLED_SLOTS && oled_slot_used(active_profile_idx, active_page, slot)) {
             // Icono personalizado subido desde la app con OLED_CHUNK
             emit(fb, oled_slot_ptr(active_profile_idx, active_page, slot));
@@ -2365,9 +2445,10 @@ static void render_screen(uint8_t screen_num, uint8_t* out) {
     }
 
     case MODE_MENU_MAIN: {
-        static const uint8_t opciones[6] = {SYS_MENU_PROFILES, SYS_MENU_SLEEP, SYS_MENU_WHEEL,
-                                            SYS_MENU_RESET, SYS_MENU_INFO, SYS_MENU_EXIT};
-        if (screen_num <= 6) {
+        static const uint8_t opciones[MAIN_MENU_OPTS] = {SYS_MENU_PROFILES, SYS_MENU_SLEEP, SYS_MENU_WHEEL,
+                                                         SYS_MENU_RESET, SYS_MENU_INFO, SYS_MENU_HELP,
+                                                         SYS_MENU_EXIT};
+        if (screen_num <= MAIN_MENU_OPTS) {
             screen_system(fb, opciones[idx]);
             elegida = (selected_menu_idx == idx);
         }
@@ -3052,7 +3133,9 @@ void process_command(const char* cmd) {
         // Apple, y la app tiene que traducir.
         // INTRO=n: trae n intros de arranque; SET_INTRO elige una o el azar
         // (0) y PLAY_INTRO la enseña ya.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:PSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:MODE=%s\n",
+        // HELP=1: modo ayuda (los nombres en vez de los iconos, que desde aquí
+        // van en grande y sin nombre); SET_HELP elige cómo se sale.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:PSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:HELP=1:MODE=%s\n",
                    (int)profile_count, MAX_ACTIVE_PROFILES, MAX_PAGES, MACRO_MAX_COUNT, (int)INTRO_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
@@ -3130,6 +3213,7 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:ROTINV:%d\n", (int)rot_invert_mask);
         cdc_printf("STATE:MENUENC:%d\n", (int)menu_encoder);
         cdc_printf("STATE:INTRO:%d:%d\n", (int)intro_variant, (int)INTRO_COUNT);
+        cdc_printf("STATE:HELP:%d:%d\n", help_exit_secs(help_exit), help_active ? 1 : 0);
         cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
         cdc_printf("STATE:MENUGLITCH:%lu\n", (unsigned long)menu_tap_glitches);
@@ -3262,6 +3346,18 @@ void process_command(const char* cmd) {
             cdc_printf("INTRO:OK:%d\n", n);
         } else {
             cdc_printf("ERR:INTRO_VALUE\n");
+        }
+        return;
+    }
+    // SET_HELP:<s> — cómo se sale del modo ayuda: 0 al pulsar una tecla, 5, 10
+    // o 30 segundos, 255 solo a mano. Va a la Flash con el guardado de siempre.
+    if (strncmp(cmd, "SET_HELP:", 9) == 0) {
+        const int x = help_exit_from_secs(atoi(cmd + 9));
+        if (x >= 0) {
+            help_exit = (uint8_t)x;
+            cdc_printf("HELP:OK:%d\n", help_exit_secs(help_exit));
+        } else {
+            cdc_printf("ERR:HELP_VALUE\n");
         }
         return;
     }
@@ -3755,7 +3851,12 @@ static void menu_click() {
         else if (selected_menu_idx == 2) current_mode = MODE_MENU_SCROLL;
         else if (selected_menu_idx == 3) current_mode = MODE_MENU_RESET;
         else if (selected_menu_idx == 4) current_mode = MODE_MENU_INFO;
-        else if (selected_menu_idx == 5) {
+        else if (selected_menu_idx == MM_HELP) {
+            // Alterna: con la ayuda puesta, la misma opción la quita.
+            current_mode = MODE_NORMAL;
+            help_set(!help_active);
+            cdc_printf("MODE:NORMAL\n");
+        } else if (selected_menu_idx == MM_EXIT) {
             current_mode = MODE_NORMAL;
             char tel2[24];
             int len2 = snprintf(tel2, sizeof(tel2), "MODE:NORMAL\n");
@@ -3847,7 +3948,7 @@ static void menu_turn(int delta) {
         && current_mode != MODE_MENU_REPO && current_mode != MODE_MENU_SCROLL
         && current_mode != MODE_MENU_RESET && current_mode != MODE_MENU_PAGES) return;
     int opts = (current_mode == MODE_MENU_PERF)  ? perf_menu_count()
-             : (current_mode == MODE_MENU_MAIN)  ? 6
+             : (current_mode == MODE_MENU_MAIN)  ? MAIN_MENU_OPTS
              : (current_mode == MODE_MENU_SCROLL) ? 3
              : (current_mode == MODE_MENU_RESET)  ? 2
              : (current_mode == MODE_MENU_PAGES)  ? profiles[active_profile_idx].page_count : 5;
@@ -4130,6 +4231,7 @@ int main() {
         // Los mandos que mantienen un menú lo abren al cumplirse el tiempo.
         if (enc_hold_tick(1, now)) activity_detected = true;
         if (enc_hold_tick(2, now)) activity_detected = true;
+        help_tick(now);
 
         // Las teclas tachadas dependen de si la app está delante, y eso cambia
         // sin que nadie mande nada: al cerrarla se cae el DTR, y si se cuelga
@@ -4494,6 +4596,21 @@ int main() {
         bool super_pressed = key_stable[KEY_IDX_SUPER];
         if (super_pressed != super_active) {
             super_active = super_pressed;
+
+            // Doble toque de SUPER: modo ayuda. Se cuenta de pulsación a
+            // pulsación; mantener SUPER para usar su capa no lo dispara,
+            // porque entre las dos pulsaciones habría más de HELP_TAP_MS.
+            static uint32_t super_tap_ms = 0;
+            static bool     super_tap_armed = false;
+            if (super_pressed && current_mode == MODE_NORMAL) {
+                if (super_tap_armed && (uint32_t)(now - super_tap_ms) <= HELP_TAP_MS) {
+                    super_tap_armed = false;
+                    help_set(!help_active);
+                } else {
+                    super_tap_armed = true;
+                    super_tap_ms = now;
+                }
+            }
             if (current_mode == MODE_NORMAL) {
                 push_system_refresh();
             }
@@ -4540,6 +4657,10 @@ int main() {
                     // lo que envió cada tecla, así que cambiar de capa con una
                     // tecla hundida ya no puede dejarla pegada.
                     if (is_pressed) {
+                        // «Salir al pulsar una tecla»: sale y la tecla hace lo
+                        // suyo igual, que para eso se ha mirado su nombre.
+                        if (help_active && help_exit == HELPX_KEY && current_mode == MODE_NORMAL)
+                            help_set(false);
                         uint8_t mapping_idx = i + (super_active ? 12 : 0);
                         uint8_t mod = cur_page().key_mappings[mapping_idx].modifier;
                         uint8_t key = cur_page().key_mappings[mapping_idx].keycode;
@@ -4588,8 +4709,9 @@ int main() {
                         push_system_refresh();
                     }
                 } else if (is_pressed) {
-                    // En cualquier menú, las teclas 1 a 6 actúan como atajos de selección
-                    if (i >= 0 && i <= 5) {
+                    // En cualquier menú, las teclas 1 a 6 actúan como atajos de
+                    // selección; en el principal también la 7 (Salir, desde la 4.28).
+                    if (i <= 5 || (i == MM_EXIT && current_mode == MODE_MENU_MAIN)) {
                         selected_menu_idx = i;
 
                         if (current_mode == MODE_MENU_MAIN) {
@@ -4598,7 +4720,11 @@ int main() {
                             else if (selected_menu_idx == 2) current_mode = MODE_MENU_SCROLL;
                             else if (selected_menu_idx == 3) current_mode = MODE_MENU_RESET;
                             else if (selected_menu_idx == 4) current_mode = MODE_MENU_INFO;
-                            else if (selected_menu_idx == 5) {
+                            else if (selected_menu_idx == MM_HELP) {
+                                current_mode = MODE_NORMAL;
+                                help_set(!help_active);
+                                cdc_printf("MODE:NORMAL\n");
+                            } else if (selected_menu_idx == MM_EXIT) {
                                 current_mode = MODE_NORMAL;
                                 char tel[24];
                                 int len = snprintf(tel, sizeof(tel), "MODE:NORMAL\n");
@@ -4711,6 +4837,8 @@ int main() {
                 is_sleeping = true;
                 displays_on = false;
                 display_power_req = true;
+                // Al despertar se quiere ver el teclado de siempre, no la ayuda.
+                help_set(false);
             }
         }
 

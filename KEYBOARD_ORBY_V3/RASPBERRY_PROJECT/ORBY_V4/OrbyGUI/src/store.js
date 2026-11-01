@@ -38,6 +38,9 @@ export const state = {
   // Intro de arranque (firmware 4.25): 0 una al azar cada vez, n la n-ésima
   // desde 1, como la guarda el teclado. Con uno anterior no llega.
   intro: 0,
+  // Modo ayuda (firmware 4.28): cómo se sale, en segundos como lo cuenta el
+  // teclado (0 al pulsar una tecla, 255 solo a mano). 10 es lo de fábrica.
+  helpExit: 10,
   scroll: { detentsPerRev: 60, invert: false, hires: false }, // lo que aplica ahora mismo
   profiles: [],       // rellenado desde el firmware
   profilesComplete: false, // `profiles` es la lista entera del teclado (ver syncFromDevice)
@@ -258,6 +261,7 @@ export async function syncFromDevice({ expected = null, iconOf = null, onProgres
       state.rotInvert  = Number.isInteger(s.rotInvert) ? s.rotInvert & 7 : 0;
       if (s.animSpeed) state.animSpeed = s.animSpeed;
       if (Number.isInteger(s.intro)) state.intro = s.intro;
+      if (Number.isInteger(s.helpExit)) state.helpExit = s.helpExit;
       if (typeof s.superActive === 'boolean') state.superActive = s.superActive;
       if (s.mode)   state.deviceMode = s.mode;
       if (s.scroll) state.scroll = s.scroll;

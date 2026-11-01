@@ -388,6 +388,28 @@
                 </div>
               </div>
             </div>
+
+            <!-- Modo ayuda (firmware 4.28). Ver renderHelp en settings.js. -->
+            <div class="settings-card glass-panel hidden" id="settings-help" data-tint="violet">
+              <div class="card-header">
+                <span data-icon="info" data-icon-size="16"></span>
+                <h2>Modo ayuda</h2>
+              </div>
+              <div class="setting-body">
+                <p class="setting-desc">
+                  Cambia cada icono de las teclas por su nombre. Se activa con un doble toque
+                  de la tecla SUPER, o desde Ayuda en el menú del teclado.
+                </p>
+                <div class="timeout-selector" id="help-selector">
+                  <button class="opt-btn" data-val="0">Al pulsar una tecla</button>
+                  <button class="opt-btn" data-val="5">5 s</button>
+                  <button class="opt-btn" data-val="10">10 s</button>
+                  <button class="opt-btn" data-val="30">30 s</button>
+                  <button class="opt-btn" data-val="255">Solo a mano</button>
+                </div>
+                <p class="setting-desc" id="help-desc"></p>
+              </div>
+            </div>
             </div>
 
             <div class="settings-pane" id="pane-dispositivo" data-pane="dispositivo">

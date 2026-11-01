@@ -61,7 +61,7 @@ def main():
         bm = [[c == '#' for c in r] for r in r9]
         sg.append((ord(ch), len(r9[0]), len(small)))
         small += cols(bm)
-        e = font.epx(r9)
+        e = font.big_rows(ch)
         bg.append((ord(ch), len(e[0]), len(big)))
         big += cols([[c == '#' for c in r] for r in e])
     w('// Fuente pequeña: 9 filas (7 de mayúscula + 2 de rabo), una palabra por columna.')
@@ -116,6 +116,25 @@ def main():
     w('};')
     w('')
 
+    # --- iconos grandes ---------------------------------------------------------------
+    # Los mismos dibujos a x1.5, para las teclas. Miden más de 32 filas, así que
+    # no caben en una palabra por columna: van 5 bytes por columna, como las 5
+    # páginas del SSD1306. Uno por icono, en el orden de SPR_ (los iconos van
+    # delante de las piezas de interfaz).
+    bigdata = []
+    for n in icons.ICONS:
+        for v in cols(icons.render(n, icons.BIG_K)):
+            bigdata += [(v >> (8 * k)) & 0xFF for k in range(5)]
+    w('// Iconos grandes de las teclas (x%s): BIG_W columnas de 5 bytes por icono,' % icons.BIG_K)
+    w('// bit 0 del primer byte arriba. Solo los iconos, no las piezas de interfaz.')
+    w('static constexpr int BIG_W = %d, BIG_H = %d;' % (icons.BIW, icons.BIH))
+    w('static const uint16_t BIG_COUNT = %d;' % len(icons.ICONS))
+    w('static const uint8_t big_icon_cols[] = {')
+    for i in range(0, len(bigdata), 20):
+        w('    ' + ', '.join('0x%02x' % v for v in bigdata[i:i + 20]) + ',')
+    w('};')
+    w('')
+
     # --- catálogo -------------------------------------------------------------------
     w('// Etiqueta de tecla → icono y nombre. «PERFIL/ETIQUETA» gana a la genérica;')
     w('// «@NOMBRE» es el icono de un perfil en el menú de perfiles.')
@@ -142,8 +161,17 @@ def main():
     for key in ('COPY', 'CALC', 'PREM/CUT', 'EYE', '3D', 'SNAP'):
         ic, cap = catalog.ENTRIES[key]
         cases.append(('icon:' + key, layout.screen_icon(icons.render(ic), cap)))
+    for key in ('COPY', 'PREM/CUT', '3D', 'GRAD'):
+        ic, _cap = catalog.ENTRIES[key]
+        cases.append(('big:' + key, layout.screen_icon_big(icons.render(ic, icons.BIG_K))))
     for s in ('F1', 'WIRE', 'P2/2', 'ABCDEFG', 'ñandú', 'Año 2026'):
         cases.append(('text:' + s, layout.screen_text(s)))
+    # Modo ayuda: una línea grande, dos por espacio, dos con guion, pequeño en
+    # una y pequeño en dos.
+    for s in ('Copiar', 'Capa nueva', 'Calculadora', 'Selección', 'Comprobar', 'Cuentagotas',
+              'Pantalla completa', 'F1', 'Abrir carpeta', 'Alto contraste', 'Nueva pestaña',
+              'Sobreexponer', 'Rellenar dcha.', 'Ajustar a la pantalla del monitor'):
+        cases.append(('name:' + s, layout.screen_name(s)))
     cases.append(('toggle:1:Normal', layout.screen_toggle(True, 'Normal')))
     cases.append(('toggle:0:SUPER', layout.screen_toggle(False, 'SUPER')))
     cases.append(('dots:1:3:Página 2 de 3', layout.screen_dots(1, 3, 'Página 2 de 3')))
@@ -179,6 +207,8 @@ def main():
     J.append('export const FONT_BIG = %s;' % json.dumps(bg))
     J.append('export const FOLD = %s;' % json.dumps([[ord(a), ord(b)] for a, b in sorted(font.FOLD.items())]))
     J.append('export const SPRITE_COLS = new Uint32Array(%s);' % json.dumps(data))
+    J.append('export const BIG_W = %d, BIG_H = %d;' % (icons.BIW, icons.BIH))
+    J.append('export const BIG_ICON_COLS = new Uint8Array(%s);' % json.dumps(bigdata))
     J.append('export const SPRITES = %s;' % json.dumps([[sw, sh, off] for _n, sw, sh, off in table]))
     J.append('export const SPR = %s;' % json.dumps({cid(n): k for k, (n, *_r) in enumerate(table)
                                                     if n in icons.SPRITES or n in icons.ASCII_SPRITES}))
@@ -209,7 +239,8 @@ def main():
         open(p, 'w', encoding='utf-8').write(txt)
 
     print('%s: %d glifos, %d dibujos (%d bytes), %d etiquetas' % (
-        os.path.relpath(OUT, ROOT), len(sg), len(table), 4 * len(data) + 2 * len(small) + 4 * len(big),
+        os.path.relpath(OUT, ROOT), len(sg), len(table),
+        4 * len(data) + 2 * len(small) + 4 * len(big) + len(bigdata),
         len(catalog.ENTRIES)))
     print('%s: %d casos' % (os.path.relpath(FIX, ROOT), len(cases)))
 

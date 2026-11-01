@@ -7,7 +7,8 @@
 // sabía pintar el icono subido; lo demás —todos los perfiles de la biblioteca—
 // salía como la etiqueta en texto (WIDTH, RTMODE…).
 
-import { pageCountOf, labelSlot, keymapSlot } from './store.js';
+import { state, pageCountOf, labelSlot, keymapSlot } from './store.js';
+import * as compat from './compat.js';
 import { PAGE_STATE_MODIFIER } from './hid-keys.js';
 import * as cache from './oled-cache.js';
 import * as fb from './oled-fb.js';
@@ -27,7 +28,11 @@ export function keyScreen(prof, profileIdx, keyIndex, layer, page, over = {}) {
   }
   const bmp = cache.get(profileIdx, slot, page);
   if (bmp) return bmp;
-  return ui.screenKey(prof.name, over.label ?? prof.labels?.[slot] ?? '');
+  // Un firmware anterior a la 4.28 pone el icono pequeño con su nombre debajo:
+  // la réplica tiene que enseñar lo mismo que el teclado. Sin teclado (copia
+  // del PC), como el firmware de hoy.
+  const big = !state.deviceInfo || compat.supports(state.deviceInfo, 'helpMode');
+  return ui.screenKey(prof.name, over.label ?? prof.labels?.[slot] ?? '', { big });
 }
 
 // Icono de un perfil: el subido, o el de fábrica si su nombre está en el

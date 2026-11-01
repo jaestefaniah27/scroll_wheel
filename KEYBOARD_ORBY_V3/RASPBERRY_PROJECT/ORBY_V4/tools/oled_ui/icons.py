@@ -20,18 +20,21 @@ TH = 0.5             # umbral de cobertura para encender un píxel
 
 
 class Canvas:
-    def __init__(self, w=IW, h=IH):
-        self.w, self.h = w, h
-        self.im = Image.new('L', (w * SS, h * SS), 0)
+    def __init__(self, w=IW, h=IH, k=1):
+        # `k` escala el dibujo entero (coordenadas, trazos y radios) sin tocar
+        # las funciones de los iconos: así sale la versión grande de cada uno.
+        self.w, self.h, self.k = w, h, k
+        self.s = SS * k
+        self.im = Image.new('L', (round(w * self.s), round(h * self.s)), 0)
         self.d = ImageDraw.Draw(self.im)
 
     # -- utilidades internas ---------------------------------------------------
     def _p(self, x, y):
-        return (x * SS, y * SS)
+        return (x * self.s, y * self.s)
 
     def _disc(self, x, y, r, v):
-        r *= SS
-        x, y = x * SS, y * SS
+        r *= self.s
+        x, y = x * self.s, y * self.s
         self.d.ellipse((x - r, y - r, x + r, y + r), fill=v)
 
     def _seg(self, a, b, w, v):
@@ -61,8 +64,8 @@ class Canvas:
         return pts
 
     def circle(self, cx, cy, r, w=2, v=255):
-        R, ri = (r + w / 2) * SS, (r - w / 2) * SS
-        x, y = cx * SS, cy * SS
+        R, ri = (r + w / 2) * self.s, (r - w / 2) * self.s
+        x, y = cx * self.s, cy * self.s
         self.d.ellipse((x - R, y - R, x + R, y + R), fill=v)
         if ri > 0:
             self.d.ellipse((x - ri, y - ri, x + ri, y + ri), fill=0 if v else 255)
@@ -89,7 +92,7 @@ class Canvas:
     def fill(self, x0, y0, x1, y1, r=0, v=255):
         if x1 <= x0 or y1 <= y0:
             return
-        self.d.rounded_rectangle((x0 * SS, y0 * SS, x1 * SS - 1, y1 * SS - 1), radius=r * SS, fill=v)
+        self.d.rounded_rectangle((x0 * self.s, y0 * self.s, x1 * self.s - 1, y1 * self.s - 1), radius=r * self.s, fill=v)
 
     def poly(self, *pts, v=255):
         self.d.polygon([self._p(x, y) for x, y in pts], fill=v)
@@ -127,8 +130,9 @@ class Canvas:
 
     # -- salida --------------------------------------------------------------
     def bitmap(self):
-        small = self.im.resize((self.w, self.h), Image.BOX)
-        return [[small.getpixel((x, y)) >= 255 * TH for x in range(self.w)] for y in range(self.h)]
+        w, h = round(self.w * self.k), round(self.h * self.k)
+        small = self.im.resize((w, h), Image.BOX)
+        return [[small.getpixel((x, y)) >= 255 * TH for x in range(w)] for y in range(h)]
 
 
 # ============================================================================
@@ -694,8 +698,18 @@ def _(c):
     c.circle(12, 11, 9.5)
     c.dot(12, 6.5, 1.7)
     c.fill(11, 9.5, 13, 16.5)
-    c.fill(9.5, 9.5, 12, 11)
-    c.fill(9.5, 15, 14.5, 16.5)
+
+# Modo ayuda: la misma moneda que «info», con la interrogación. Va en bloques
+# sobre la rejilla: un arco tan pequeño se emborrona al rasterizarlo.
+@icon('help')
+def _(c):
+    c.circle(12, 11, 9.5)
+    c.fill(10, 5, 14, 7)
+    c.fill(8, 6, 10, 9)
+    c.fill(14, 6, 16, 10)
+    c.fill(12, 9, 15, 11)
+    c.fill(11, 10, 13, 13)
+    c.fill(11, 15, 13, 17)
 
 @icon('exit')
 def _(c):
@@ -780,23 +794,36 @@ def _apply_texts(cv, bm):
         if big:
             rows = font.epx(rows)
         h = len(rows)
+        if cv.k != 1:
+            # Las letras no se escalan (perderían la rejilla): se mueve su
+            # centro, para que sigan en el mismo sitio del dibujo.
+            w = len(rows[0]) if rows else 0
+            ch_h = 14 if big else 7
+            x0 = round((x0 + w / 2) * cv.k - w / 2)
+            y0 = round((y0 + ch_h / 2) * cv.k - ch_h / 2)
         for yy, row in enumerate(rows):
             # Cursiva: cada 4 filas hacia arriba, un píxel a la derecha.
             sh = (h - 1 - yy) // 4 if italic else 0
             for xx, ch in enumerate(row):
                 X, Y = x0 + xx + sh, y0 + yy
-                if ch == '#' and 0 <= X < cv.w and 0 <= Y < cv.h:
+                if ch == '#' and 0 <= Y < len(bm) and 0 <= X < len(bm[0]):
                     bm[Y][X] = v
 
 
-def render(name):
-    cv = Canvas()
+# Versión grande, para las teclas: sin el nombre debajo, el icono puede
+# ocupar casi todo el alto de la pantalla.
+BIG_K = 1.5
+BIW, BIH = round(IW * BIG_K), round(IH * BIG_K)
+
+
+def render(name, k=1):
+    cv = Canvas(k=k)
     ICONS[name](cv)
     bm = cv.bitmap()
     _apply_texts(cv, bm)
     g = getattr(cv, '_gradient', None)
     if g:
-        x0, y0, x1, y1 = g
+        x0, y0, x1, y1 = (round(v * k) for v in g)
         B = ((0, 8, 2, 10), (12, 4, 14, 6), (3, 11, 1, 9), (15, 7, 13, 5))
         for y in range(y0, y1):
             for x in range(x0, x1):

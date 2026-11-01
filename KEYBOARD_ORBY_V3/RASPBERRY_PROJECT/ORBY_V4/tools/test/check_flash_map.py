@@ -77,18 +77,23 @@ if bank_end > SETTINGS_OFFSET:
 if SETTINGS_OFFSET + SETTINGS_BYTES > FLASH_SIZE:
     errors.append('los ajustes se salen de los 2 MB')
 
-# 4. Hueco para el programa. El binario ocupa ~120 KB; si el banco baja
-#    demasiado, se lo come.
+# 4. Hueco para el programa. Desde la 4.14 las secuencias viven justo debajo
+#    del banco (FLASH_MACROS_OFFSET), asi que el tope del binario es ese y no
+#    el banco: el enlazador no lo comprueba. La regla de antes («no mas de la
+#    mitad del hueco») era de cuando el binario ocupaba ~120 KB; con las intros
+#    de la 4.26 ya pasaba de 680 KB.
+MACROS_OFFSET = OLED_OFFSET - define('FLASH_MACROS_SECTORS') * SECTOR
 elf = os.path.join(HERE, '..', '..', 'build', 'ORBY_V4.elf')
 if os.path.exists(elf):
     size = os.path.getsize(os.path.join(HERE, '..', '..', 'build', 'ORBY_V4.bin')) \
         if os.path.exists(os.path.join(HERE, '..', '..', 'build', 'ORBY_V4.bin')) else 0
     if size:
-        print('binario : %d KB' % (size // K))
-        if size > OLED_OFFSET:
-            errors.append('el binario (%d KB) pisa el banco (%d KB)' % (size // K, OLED_OFFSET // K))
-        elif size > OLED_OFFSET * 0.5:
-            errors.append('el binario ocupa mas de la mitad del hueco hasta el banco')
+        print('binario : %d KB de %d KB (secuencias desde %d KB)'
+              % (size // K, MACROS_OFFSET // K, MACROS_OFFSET // K))
+        if size > MACROS_OFFSET:
+            errors.append('el binario (%d KB) pisa las secuencias (%d KB)' % (size // K, MACROS_OFFSET // K))
+        elif size > MACROS_OFFSET * 0.9:
+            print('  nota: el binario pasa del 90%% del hueco: queda poco sitio')
 
 # 5. La migracion: el banco viejo (detras de los ajustes) tiene que ser disjunto
 #    del nuevo, o copiar de uno a otro se destruiria a si mismo.

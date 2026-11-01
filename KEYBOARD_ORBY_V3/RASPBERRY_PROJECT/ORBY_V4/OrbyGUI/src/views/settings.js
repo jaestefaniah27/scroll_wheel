@@ -168,6 +168,7 @@ export function init() {
 
   initAnimSpeed();
   initIntro();
+  initHelp();
   initMenuKey();
   initRotInvert();
   if (hayAutostart) initAutostart();
@@ -736,6 +737,48 @@ function renderIntro() {
     `${opts[state.intro]?.desc || ''} Mientras dura, el teclado no responde: dura unos segundos y no se puede cortar.`.trim();
 }
 
+// ================= Modo ayuda =================
+// Cómo se sale del modo ayuda (firmware 4.28). El teclado lo cuenta en
+// segundos: 0 al pulsar una tecla, 255 solo a mano.
+const HELP_DESC = {
+  0: 'Se quita al pulsar cualquier tecla, que hace lo suyo igual.',
+  5: 'Se quita sola a los 5 segundos de activarla.',
+  10: 'Se quita sola a los 10 segundos de activarla.',
+  30: 'Se quita sola a los 30 segundos de activarla.',
+  255: 'Se queda hasta que la quites con otro doble toque o desde el menú.',
+};
+
+function initHelp() {
+  document.getElementById('help-selector')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.opt-btn');
+    if (!btn || !requireDevice()) return;
+    const s = Number(btn.dataset.val);
+    if (s === state.helpExit) return;
+    try {
+      await device.setHelp(s);
+      state.helpExit = s;
+      markDirty();
+      renderHelp();
+    } catch {
+      toast('El teclado no confirmó el modo ayuda', 'error');
+    }
+  });
+}
+
+function renderHelp() {
+  const card = document.getElementById('settings-help');
+  if (!card) return;
+  if (!compat.supports(state.deviceInfo, 'helpMode')) {
+    card.classList.add('hidden');
+    return;
+  }
+  card.classList.remove('hidden');
+  card.querySelectorAll('#help-selector .opt-btn').forEach((b) => {
+    b.classList.toggle('active', Number(b.dataset.val) === state.helpExit);
+  });
+  document.getElementById('help-desc').textContent = HELP_DESC[state.helpExit] || '';
+}
+
 // ================= Tecla 10 =================
 // Con la tecla de menú libre, las páginas y el selector de perfiles se llevan
 // con un mando (ROTARY_TYPES.PAGE y MENU, firmware 4.15). El menú principal no
@@ -1105,6 +1148,7 @@ export function render() {
 
   renderAnimSpeed();
   renderIntro();
+  renderHelp();
   renderMenuKey();
   renderRotInvert();
   renderNav();

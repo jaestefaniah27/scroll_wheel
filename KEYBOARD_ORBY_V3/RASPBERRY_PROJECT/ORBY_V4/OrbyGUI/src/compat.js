@@ -132,6 +132,7 @@ export const FEATURES = {
   menuEncoder: { since: '4.16', label: 'un mando de menú: mantenerlo, girar y soltar para elegir perfil', flag: 'menuenc' },
   macroText:  { since: '4.20', label: 'escribir un texto desde el teclado, sin la app', flag: 'macrotext' },
   intro:      { since: '4.25', label: 'elegir la intro de arranque (o que salga una al azar) y verla desde la app', flag: 'intro' },
+  helpMode:   { since: '4.28', label: 'iconos grandes en las teclas y modo ayuda con sus nombres', flag: 'help' },
 };
 
 // Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y
