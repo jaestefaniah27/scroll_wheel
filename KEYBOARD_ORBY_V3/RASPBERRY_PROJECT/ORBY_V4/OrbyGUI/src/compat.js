@@ -22,7 +22,7 @@
 
 
 import { compareFw, masReciente, fwRecomendado as topeDe, appNecesaria, validar } from './compat-tabla.mjs';
-import base from './compat.json';
+import base from './compat.json' with { type: 'json' };
 
 export { compareFw };
 
