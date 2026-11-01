@@ -33,7 +33,9 @@ export { compareFw };
 const URL_TABLA = 'https://raw.githubusercontent.com/jaestefaniah27/scroll_wheel/main/'
   + 'KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/OrbyGUI/src/compat.json';
 const CLAVE_CACHE = 'orby.compat.tabla';
-const ESPERA_RED_MS = 5000;
+const ESPERA_RED_MS = 8000;
+const INTENTOS = 3;
+const PAUSA_REINTENTO_MS = 2000;
 
 // Lo define vite.config.mjs desde package.json. Sin él (un harness sin vite) la
 // tabla no puede decidir nada y se queda con el mínimo.
@@ -56,25 +58,47 @@ function guardarCache(t) {
   } catch { /* sin almacenamiento (ventana privada) se vuelve a bajar la próxima */ }
 }
 
+async function bajarTabla() {
+  const ctl = new AbortController();
+  const corte = setTimeout(() => ctl.abort(), ESPERA_RED_MS);
+  try {
+    // El parámetro salta la caché del CDN de raw.githubusercontent (unos minutos):
+    // sin él, un firmware recién publicado tarda en verse aunque `no-store` evite
+    // la caché del propio navegador.
+    const resp = await fetch(`${URL_TABLA}?t=${Date.now()}`, { cache: 'no-store', signal: ctl.signal });
+    if (!resp.ok) throw new Error(String(resp.status));
+    const remota = validar(await resp.json());
+    if (!remota) throw new Error('tabla no válida');
+    return remota;
+  } finally {
+    clearTimeout(corte);
+  }
+}
+
 // Idempotente: lo llaman main.js al arrancar y quien necesite la tabla antes
 // de decidir (la conexión, la comprobación de firmware). Nunca rechaza: sin red
 // o con una tabla rota la app sigue con la que ya tenía.
+//
+// Un intento fallido NO se memoriza: la tabla compilada dentro de la app no
+// conoce los firmware posteriores a ella, así que quedarse con ella toda la
+// sesión por un fallo de red puntual (la app arranca con la sesión, a veces
+// antes de que haya red) dejaba el firmware nuevo sin ofrecer.
 export function tablaLista() {
   carga ??= (async () => {
     tabla = masReciente(base, leerCache()) ?? base;
-    try {
-      const ctl = new AbortController();
-      const corte = setTimeout(() => ctl.abort(), ESPERA_RED_MS);
-      const resp = await fetch(URL_TABLA, { cache: 'no-store', signal: ctl.signal });
-      clearTimeout(corte);
-      if (!resp.ok) throw new Error(String(resp.status));
-      const remota = validar(await resp.json());
-      if (!remota) throw new Error('tabla no válida');
-      tabla = masReciente(tabla, remota);
-      guardarCache(tabla);
-    } catch (err) {
-      console.warn('[compat] se usa la tabla que ya había:', err?.message ?? err);
+    let ultimoError = null;
+    for (let intento = 0; intento < INTENTOS; intento++) {
+      if (intento) await new Promise((r) => setTimeout(r, PAUSA_REINTENTO_MS * intento));
+      try {
+        tabla = masReciente(tabla, await bajarTabla());
+        guardarCache(tabla);
+        return tabla;
+      } catch (err) {
+        ultimoError = err;
+      }
     }
+    console.warn('[compat] se usa la tabla que ya había:', ultimoError?.message ?? ultimoError);
+    carga = null; // la próxima petición (p. ej. «Comprobar» en Ajustes) lo vuelve a intentar
     return tabla;
   })();
   return carga;
