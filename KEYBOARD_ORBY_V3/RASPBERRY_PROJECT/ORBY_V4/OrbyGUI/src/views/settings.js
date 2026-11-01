@@ -32,7 +32,47 @@ function backupBusy(message) {
   if (load) load.disabled = Boolean(message);
 }
 
+// ================= Apartados =================
+// Un apartado por asunto, con su botón en el panel de la izquierda. Los apartados
+// cuyas tarjetas están todas ocultas (por plataforma o por firmware) no se ofrecen:
+// un botón que lleva a una página vacía es peor que no tenerlo.
+let paneActivo = 'general';
+try { paneActivo = localStorage.getItem('orby.settingsPane') || paneActivo; } catch { /* sin almacenamiento */ }
+
+function paneVacio(pane) {
+  const tarjetas = pane.querySelectorAll('.settings-card');
+  // El host de complementos está siempre vacío hasta que hay alguno con ajustes.
+  return ![...tarjetas].some((c) => !c.classList.contains('hidden'));
+}
+
+function mostrarPane(id) {
+  const panes = [...document.querySelectorAll('#view-settings .settings-pane')];
+  const valido = panes.find((p) => p.dataset.pane === id && !paneVacio(p));
+  const destino = valido ? id : 'general';
+  paneActivo = destino;
+  panes.forEach((p) => p.classList.toggle('active', p.dataset.pane === destino));
+  document.querySelectorAll('#settings-nav .settings-nav-item')
+    .forEach((b) => b.classList.toggle('active', b.dataset.pane === destino));
+  try { localStorage.setItem('orby.settingsPane', destino); } catch { /* sin almacenamiento */ }
+}
+
+function initNav() {
+  document.getElementById('settings-nav').addEventListener('click', (e) => {
+    const b = e.target.closest('.settings-nav-item');
+    if (b) mostrarPane(b.dataset.pane);
+  });
+}
+
+function renderNav() {
+  document.querySelectorAll('#settings-nav .settings-nav-item').forEach((b) => {
+    const pane = document.getElementById(`pane-${b.dataset.pane}`);
+    b.classList.toggle('hidden', !pane || paneVacio(pane));
+  });
+  mostrarPane(paneActivo);
+}
+
 export function init() {
+  initNav();
   // Las tarjetas que dependen del PC se ocultan enteras en vez de deshabilitarse: un
   // interruptor de autoarranque de Windows dentro de una pestaña de Chrome no es un
   // ajuste apagado, es un ajuste que no significa nada.
@@ -1009,6 +1049,7 @@ function renderWheelCalib() {
 export function openTarget(params) {
   render();
   if (params?.section === 'menukey') {
+    mostrarPane('controles');
     document.getElementById('settings-menukey')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 }
@@ -1025,6 +1066,7 @@ export function render() {
   renderIntro();
   renderMenuKey();
   renderRotInvert();
+  renderNav();
 
   const list = document.getElementById('device-info-list');
   if (!list) return;

@@ -214,9 +214,20 @@
         <!-- Ajustes: una columna de grupos, como Ajustes del Sistema de macOS.
              data-tint pone el color de la baldosa del icono de cada grupo. -->
         <section id="view-settings" class="view">
+          <div class="settings-layout">
+          <nav class="settings-nav" id="settings-nav" aria-label="Apartados de ajustes">
+            <button class="settings-nav-item" data-pane="general"><span data-icon="gear" data-icon-size="16"></span><span>General</span></button>
+            <button class="settings-nav-item" data-pane="controles"><span data-icon="knob" data-icon-size="16"></span><span>Controles</span></button>
+            <button class="settings-nav-item" data-pane="pantallas"><span data-icon="sparkles" data-icon-size="16"></span><span>Pantallas y energía</span></button>
+            <button class="settings-nav-item" data-pane="dispositivo"><span data-icon="chip" data-icon-size="16"></span><span>Dispositivo y firmware</span></button>
+            <button class="settings-nav-item" data-pane="complementos"><span data-icon="plug" data-icon-size="16"></span><span>Complementos</span></button>
+            <button class="settings-nav-item" data-pane="datos"><span data-icon="save" data-icon-size="16"></span><span>Copias y restablecer</span></button>
+            <button class="settings-nav-item" data-pane="herramientas"><span data-icon="bolt" data-icon-size="16"></span><span>Herramientas</span></button>
+          </nav>
           <div class="settings-grid">
-            <h2 class="settings-section">General</h2>
 
+            <div class="settings-pane" id="pane-general" data-pane="general">
+              <header class="pane-head"><h2>General</h2><p>Apariencia, arranque con Windows y actualizaciones de la app.</p></header>
             <div class="settings-card glass-panel" data-tint="indigo">
               <div class="card-header">
                 <span data-icon="invert" data-icon-size="16"></span>
@@ -251,41 +262,37 @@
               </div>
             </div>
 
-            <h2 class="settings-section">Teclado</h2>
-
-            <div class="settings-card glass-panel" data-tint="blue">
+            <div class="settings-card glass-panel" id="settings-app" data-tint="cyan">
               <div class="card-header">
-                <span data-icon="moon" data-icon-size="16"></span>
-                <h2>Reposo automático</h2>
+                <span data-icon="app" data-icon-size="16"></span>
+                <h2>Aplicación</h2>
               </div>
               <div class="setting-body">
-                <div class="timeout-selector" id="timeout-selector">
-                  <button class="opt-btn" data-val="1">1 min</button>
-                  <button class="opt-btn active" data-val="5">5 min</button>
-                  <button class="opt-btn" data-val="10">10 min</button>
-                  <button class="opt-btn" data-val="0">Nunca</button>
+                <ul class="info-list">
+                  <li><span class="lbl">Versión instalada</span><span class="val" id="app-version">—</span></li>
+                  <li><span class="lbl">Actualizaciones</span><span class="val" id="app-update-status">—</span></li>
+                </ul>
+                <div class="row-inline">
+                  <button class="secondary-btn" id="btn-check-update">
+                    <span data-icon="refresh" data-icon-size="16"></span> Buscar actualizaciones
+                  </button>
+                  <button class="primary-btn hidden" id="btn-install-update">
+                    <span data-icon="download" data-icon-size="16"></span>
+                    <span id="btn-install-update-label">Instalar y reiniciar</span>
+                  </button>
                 </div>
-                <p class="setting-desc">Inactividad antes de apagar las pantallas para proteger los diodos.</p>
+                <!-- El texto de este botón y el de abajo los pone initAppCard: lo que pasa al
+                     pulsarlo depende de dónde corra la app (ver src/views/settings.js). -->
+                <p class="setting-desc" id="app-update-desc">
+                  Se comprueba al arrancar y cada seis horas. La descarga es automática; instalarla
+                  cierra Orvy un momento.
+                </p>
               </div>
             </div>
-
-            <!-- Sentido de cada mando y de la rueda (firmware 4.16). Ver renderRotInvert
-                 en settings.js. -->
-            <div class="settings-card glass-panel hidden" id="settings-rotinv" data-tint="blue">
-              <div class="card-header">
-                <span data-icon="reset" data-icon-size="16"></span>
-                <h2>Sentido de mandos y rueda</h2>
-              </div>
-              <div class="setting-body">
-                <div class="timeout-selector" id="rotinv-selector">
-                  <button class="opt-btn" data-bit="1">Mando izquierdo</button>
-                  <button class="opt-btn" data-bit="2">Mando derecho</button>
-                  <button class="opt-btn" data-bit="4">Rueda</button>
-                </div>
-                <p class="setting-desc" id="rotinv-desc"></p>
-              </div>
             </div>
 
+            <div class="settings-pane" id="pane-controles" data-pane="controles">
+              <header class="pane-head"><h2>Controles</h2><p>Cómo se comportan la tecla 10, los mandos y la rueda.</p></header>
             <!-- Tecla 10: la de menú, o una tecla normal llevando páginas y menú
                  con un mando (firmware 4.15). Ver renderMenuKey en settings.js. -->
             <div class="settings-card glass-panel hidden" id="settings-menukey" data-tint="orange">
@@ -306,6 +313,50 @@
                   <button class="opt-btn" data-enc="2">Mando derecho</button>
                 </div>
                 <p class="setting-desc" id="menukey-enc-desc"></p>
+              </div>
+            </div>
+
+            <!-- Sentido de cada mando y de la rueda (firmware 4.16). Ver renderRotInvert
+                 en settings.js. -->
+            <div class="settings-card glass-panel hidden" id="settings-rotinv" data-tint="blue">
+              <div class="card-header">
+                <span data-icon="reset" data-icon-size="16"></span>
+                <h2>Sentido de mandos y rueda</h2>
+              </div>
+              <div class="setting-body">
+                <div class="timeout-selector" id="rotinv-selector">
+                  <button class="opt-btn" data-bit="1">Mando izquierdo</button>
+                  <button class="opt-btn" data-bit="2">Mando derecho</button>
+                  <button class="opt-btn" data-bit="4">Rueda</button>
+                </div>
+                <p class="setting-desc" id="rotinv-desc"></p>
+              </div>
+            </div>
+
+            <div class="settings-card glass-panel" id="settings-wheel-calib" data-tint="graphite">
+              <div class="card-header">
+                <span data-icon="wheel" data-icon-size="16"></span>
+                <h2>Calibración de la rueda</h2>
+              </div>
+              <div class="setting-body" id="settings-wheel-calib-body"></div>
+            </div>
+            </div>
+
+            <div class="settings-pane" id="pane-pantallas" data-pane="pantallas">
+              <header class="pane-head"><h2>Pantallas y energía</h2><p>Reposo, animaciones y la intro de arranque.</p></header>
+            <div class="settings-card glass-panel" data-tint="blue">
+              <div class="card-header">
+                <span data-icon="moon" data-icon-size="16"></span>
+                <h2>Reposo automático</h2>
+              </div>
+              <div class="setting-body">
+                <div class="timeout-selector" id="timeout-selector">
+                  <button class="opt-btn" data-val="1">1 min</button>
+                  <button class="opt-btn active" data-val="5">5 min</button>
+                  <button class="opt-btn" data-val="10">10 min</button>
+                  <button class="opt-btn" data-val="0">Nunca</button>
+                </div>
+                <p class="setting-desc">Inactividad antes de apagar las pantallas para proteger los diodos.</p>
               </div>
             </div>
 
@@ -337,15 +388,10 @@
                 </div>
               </div>
             </div>
-
-            <div class="settings-card glass-panel" id="settings-wheel-calib" data-tint="graphite">
-              <div class="card-header">
-                <span data-icon="wheel" data-icon-size="16"></span>
-                <h2>Calibración de la rueda</h2>
-              </div>
-              <div class="setting-body" id="settings-wheel-calib-body"></div>
             </div>
 
+            <div class="settings-pane" id="pane-dispositivo" data-pane="dispositivo">
+              <header class="pane-head"><h2>Dispositivo y firmware</h2><p>Estado de la conexión y actualización del teclado.</p></header>
             <div class="settings-card glass-panel device-info" data-tint="gray">
               <div class="card-header">
                 <span data-icon="info" data-icon-size="16"></span>
@@ -397,9 +443,10 @@
                 </p>
               </div>
             </div>
+            </div>
 
-            <h2 class="settings-section" id="settings-section-plugins">Ampliaciones</h2>
-
+            <div class="settings-pane" id="pane-complementos" data-pane="complementos">
+              <header class="pane-head"><h2>Complementos</h2><p>Amplían el teclado con cosas que Orvy no conoce de serie.</p></header>
             <div class="settings-card glass-panel" id="settings-plugins" data-tint="pink">
               <div class="card-header">
                 <span data-icon="plug" data-icon-size="16"></span>
@@ -433,31 +480,10 @@
                  src/views/settings.js). display:contents las deja caer en la
                  misma columna que las demás. -->
             <div id="plugin-settings-cards" class="settings-card-host"></div>
-
-            <!-- Lo que antes tenía entrada propia en la barra lateral y se usa
-                 poco: filas que llevan a su vista, como las de Ajustes de iOS. -->
-            <h2 class="settings-section">Herramientas</h2>
-            <div class="settings-card glass-panel nav-list">
-              <button class="nav-row" data-goto="view-auto" data-tint="orange">
-                <span class="nav-icon" data-icon="bolt" data-icon-size="15"></span>
-                <span class="nav-row-text">
-                  <span class="nav-row-title">Cambio automático</span>
-                  <span class="nav-row-sub">Cambia de perfil según la aplicación que tengas delante</span>
-                </span>
-                <span class="nav-row-chev" data-icon="chevron" data-icon-size="14"></span>
-              </button>
-              <button class="nav-row" data-goto="view-console" data-tint="graphite">
-                <span class="nav-icon" data-icon="console" data-icon-size="15"></span>
-                <span class="nav-row-text">
-                  <span class="nav-row-title">Consola serie</span>
-                  <span class="nav-row-sub">Lo que dice el teclado por USB, y comandos a mano</span>
-                </span>
-                <span class="nav-row-chev" data-icon="chevron" data-icon-size="14"></span>
-              </button>
             </div>
 
-            <h2 class="settings-section">Datos y aplicación</h2>
-
+            <div class="settings-pane" id="pane-datos" data-pane="datos">
+              <header class="pane-head"><h2>Copias y restablecer</h2><p>Respaldo de la configuración y vuelta a fábrica.</p></header>
             <div class="settings-card glass-panel" data-tint="blue">
               <div class="card-header">
                 <span data-icon="save" data-icon-size="16"></span>
@@ -481,34 +507,6 @@
               </div>
             </div>
 
-            <div class="settings-card glass-panel" id="settings-app" data-tint="cyan">
-              <div class="card-header">
-                <span data-icon="app" data-icon-size="16"></span>
-                <h2>Aplicación</h2>
-              </div>
-              <div class="setting-body">
-                <ul class="info-list">
-                  <li><span class="lbl">Versión instalada</span><span class="val" id="app-version">—</span></li>
-                  <li><span class="lbl">Actualizaciones</span><span class="val" id="app-update-status">—</span></li>
-                </ul>
-                <div class="row-inline">
-                  <button class="secondary-btn" id="btn-check-update">
-                    <span data-icon="refresh" data-icon-size="16"></span> Buscar actualizaciones
-                  </button>
-                  <button class="primary-btn hidden" id="btn-install-update">
-                    <span data-icon="download" data-icon-size="16"></span>
-                    <span id="btn-install-update-label">Instalar y reiniciar</span>
-                  </button>
-                </div>
-                <!-- El texto de este botón y el de abajo los pone initAppCard: lo que pasa al
-                     pulsarlo depende de dónde corra la app (ver src/views/settings.js). -->
-                <p class="setting-desc" id="app-update-desc">
-                  Se comprueba al arrancar y cada seis horas. La descarga es automática; instalarla
-                  cierra Orvy un momento.
-                </p>
-              </div>
-            </div>
-
             <div class="settings-card glass-panel" data-tint="red">
               <div class="card-header">
                 <span data-icon="reset" data-icon-size="16"></span>
@@ -523,6 +521,30 @@
                 </div>
               </div>
             </div>
+            </div>
+
+            <div class="settings-pane" id="pane-herramientas" data-pane="herramientas">
+              <header class="pane-head"><h2>Herramientas</h2><p>Lo que se usa poco: cambio automático y consola serie.</p></header>
+            <div class="settings-card glass-panel nav-list">
+              <button class="nav-row" data-goto="view-auto" data-tint="orange">
+                <span class="nav-icon" data-icon="bolt" data-icon-size="15"></span>
+                <span class="nav-row-text">
+                  <span class="nav-row-title">Cambio automático</span>
+                  <span class="nav-row-sub">Cambia de perfil según la aplicación que tengas delante</span>
+                </span>
+                <span class="nav-row-chev" data-icon="chevron" data-icon-size="14"></span>
+              </button>
+              <button class="nav-row" data-goto="view-console" data-tint="graphite">
+                <span class="nav-icon" data-icon="console" data-icon-size="15"></span>
+                <span class="nav-row-text">
+                  <span class="nav-row-title">Consola serie</span>
+                  <span class="nav-row-sub">Lo que dice el teclado por USB, y comandos a mano</span>
+                </span>
+                <span class="nav-row-chev" data-icon="chevron" data-icon-size="14"></span>
+              </button>
+            </div>
+            </div>
+          </div>
           </div>
         </section>
 
