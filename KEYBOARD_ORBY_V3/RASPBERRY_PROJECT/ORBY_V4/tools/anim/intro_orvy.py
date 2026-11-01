@@ -24,13 +24,26 @@ import sys
 from intro_dial import ROOT, COL, ROW, W, H, rle
 from orvy_comun import FPS, screens
 
+# A cuántos fotogramas por segundo se hornea. El guion va en fotogramas de 30
+# (FPS) y se muestrea aquí más fino. Los paneles barren a unos 170 Hz (oscilador
+# por defecto, 40 filas) y el SPI a 10 MHz repinta las diez en 3 ms, así que 120
+# es lo más alto que todavía se ve. El precio es Flash: cada vez que se dobla,
+# las intros ocupan casi el doble (a 120, unos 470 KB las tres).
+OUT_FPS = 120
+
 FINALES = ['ventilador', 'viento', 'lija']
+
+
+def frames_of(fin):
+    return round(fin.T_END * OUT_FPS / FPS)
 
 
 def bake(fin):
     stream, prev, frames = bytearray(), [None] * 10, []
     blank = bytes(360)
-    for f in range(fin.T_END):
+    n = frames_of(fin)
+    for k in range(n):
+        f = k * FPS / OUT_FPS
         scr = screens(fin.pixels_at(f)) if f < fin.T_END - 2 else [blank] * 10
         frames.append(scr)
         mask, payload = 0, bytearray()
@@ -54,14 +67,14 @@ def header(clips):
         '// OrbyGUI/assets/brand/): python tools/anim/intro_orvy.py',
     ]
     for i, (name, s, n) in enumerate(clips):
-        lines.append(f'//   {i} {name}: {n} fotogramas ({n / FPS:.2f} s), {len(s)} bytes')
+        lines.append(f'//   {i} {name}: {n} fotogramas ({n / OUT_FPS:.2f} s), {len(s)} bytes')
     lines += [
         f'// {total} bytes en total',
         '// ============================================================',
         '#pragma once',
         '#include <stdint.h>',
         '',
-        f'#define INTRO_FPS   {FPS}',
+        f'#define INTRO_FPS   {OUT_FPS}',
         f'#define INTRO_COUNT {len(clips)}',
         '',
         '// Por fotograma: uint16 con las pantallas que cambian (bit 0 = OLED 1) y,',
@@ -103,7 +116,7 @@ def gif(name, frames):
                     px[ox + x, oy + y] = (157, 233, 255) if on else (2, 3, 4)
         ims.append(im.resize((cw * k, ch * k), Image.NEAREST))
     dst = out / f'intro_{name}.gif'
-    ims[0].save(dst, save_all=True, append_images=ims[1:], duration=1000 // FPS, loop=0)
+    ims[0].save(dst, save_all=True, append_images=ims[1:], duration=round(1000 / OUT_FPS), loop=0)
     print(f'vista previa en {dst}')
 
 
@@ -112,8 +125,8 @@ if __name__ == '__main__':
     for name in FINALES:
         fin = importlib.import_module(f'final_{name}')
         stream, frames = bake(fin)
-        clips.append((name, stream, fin.T_END))
-        print(f'{name}: {fin.T_END} fotogramas, {len(stream)} bytes')
+        clips.append((name, stream, frames_of(fin)))
+        print(f'{name}: {frames_of(fin)} fotogramas, {len(stream)} bytes')
         if '--preview' in sys.argv:
             gif(name, frames)
     dst = ROOT / 'include' / 'orby_intro_data.h'

@@ -851,7 +851,9 @@ static FlashMacro macros[MACRO_MAX_COUNT];
 
 // Con 255 secuencias (120 KB) ya no caben en su hueco de antes, entre los
 // ajustes y el almacén de macros (40 KB), así que se mudan al hueco libre que hay
-// debajo del banco de iconos. El programa ocupa unos 220 KB: sobra margen.
+// debajo del banco de iconos. El programa ocupa unos 680 KB desde la 4.26, casi
+// todo intros a 120 fps (orby_intro_data.h, unos 450 KB), y tiene que acabar
+// antes de los 896 KB donde empieza esto: el enlazador no lo comprueba.
 #define FLASH_MACROS_OFFSET  (FLASH_OLED_OFFSET - FLASH_MACROS_BYTES)
 #define FLASH_MACROS_SECTORS 32
 #define FLASH_MACROS_BYTES   (FLASH_MACROS_SECTORS * FLASH_SECTOR_SIZE)

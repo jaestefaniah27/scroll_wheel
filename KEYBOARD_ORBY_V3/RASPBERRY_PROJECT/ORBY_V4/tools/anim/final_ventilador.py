@@ -5,7 +5,7 @@ import random
 
 from intro_dial import dial
 from orvy_comun import (W, H, S_ISO, S_TOP, screen_origin, screen_center, placed,
-                        to_pixels, phase, hash01)
+                        to_pixels, phase, hash01, track_at)
 
 # La O se queda en la tecla 2 y se pone a girar cada vez más rápido. Su giro
 # levanta un torbellino que arranca las letras píxel a píxel, de la más cercana
@@ -65,12 +65,16 @@ class Swirl:
 
     def at(self, f):
         t = f - self.f0
-        if t < 0 or t >= len(self.path):
+        if t < 0 or t > len(self.path) - 1:
             return None
+        i = int(t)
         # Los de la O se apagan parpadeando al final: en 1 bit no hay fundido.
-        if self.out and t > len(self.path) * 0.6 and hash01(self.seed, t) < 0.5:
+        if self.out and t > len(self.path) * 0.6 and hash01(self.seed, i) < 0.5:
             return None
-        return self.path[t]
+        # La trayectoria está calculada a 30 fps: entre dos puntos se interpola.
+        (x0, y0), (x1, y1) = self.path[i], self.path[min(i + 1, len(self.path) - 1)]
+        fr = t - i
+        return round(x0 + (x1 - x0) * fr), round(y0 + (y1 - y0) * fr)
 
 
 LETTERS = [to_pixels([it]) for it in placed(T_SPIN)[1:]]   # [0] es el dial: r, v, y
@@ -125,7 +129,7 @@ def dial_pixels(f):
     """Píxeles de la O girando, menos lo que ya se ha desprendido. El grano va
     pegado a ella (coordenadas giradas con el dial) y no depende del tiempo, así
     que un agujero solo crece."""
-    rot, jx, jy = TRACK[f - T_SPIN]
+    rot, jx, jy = track_at(TRACK, f - T_SPIN, {0})
     cx, cy = _C[0] + jx, _C[1] + jy
     ox, oy = screen_origin(S_TOP)
     shape = dial(rot)

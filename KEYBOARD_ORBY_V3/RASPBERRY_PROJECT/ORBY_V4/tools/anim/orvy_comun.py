@@ -18,6 +18,9 @@ import math
 
 from intro_dial import (W, H, COL, ROW, ROOT, d_seg, d_arc, dial, rle)
 
+# El guion se escribe en fotogramas de 30 fps (las constantes T_* de cada
+# fichero); intro_orvy.py lo muestrea a OUT_FPS pidiendo instantes fraccionarios,
+# así que todo lo que depende de f tiene que aceptar un f no entero.
 FPS = 30
 PITCH = 142            # 72 px de panel + 70 de hueco: el paso real entre teclas
 
@@ -99,6 +102,27 @@ def elastic(p, k=5.0):
     return 1 - math.exp(-k * p) * math.cos(2.5 * math.pi * p)
 
 
+def spring(p, a=7.0, w=9.0):
+    """Muelle que sale de parado: arranca suave, se pasa un poco (~8 %) y se
+    asienta. Con elastic() la subida del dial empezaba a toda velocidad y en el
+    primer fotograma ya había saltado más de lo que mide la pantalla."""
+    if p <= 0:
+        return 0.0
+    if p >= 1:
+        return 1.0
+    return 1 - math.exp(-a * p) * (math.cos(w * p) + a / w * math.sin(w * p))
+
+
+def track_at(track, t, lerp):
+    """Fila de una pista precalculada por fotograma (de 30 fps) en el instante t,
+    que puede ser fraccionario. Los campos marcados en `lerp` se interpolan; el
+    resto (el temblor, que es al azar) se queda con el del fotograma."""
+    i = max(0, min(len(track) - 1, int(math.floor(t))))
+    j = min(len(track) - 1, i + 1)
+    fr = t - i if t > i else 0.0
+    return tuple(a + (b - a) * fr if k in lerp else a for k, (a, b) in enumerate(zip(track[i], track[j])))
+
+
 def ease_in_out(p):
     p = max(0.0, min(1.0, p))
     return 4 * p ** 3 if p < .5 else 1 - (-2 * p + 2) ** 3 / 2
@@ -125,7 +149,7 @@ def placed(f):
     cx2, cy2 = screen_center(S_TOP)
     if f >= T_ZOOM[0]:
         z = elastic(phase(f, *T_ZOOM))
-        y = cy5 + (cy2 - cy5) * elastic(phase(f, *T_UP), k=6.5)
+        y = cy5 + (cy2 - cy5) * spring(phase(f, *T_UP))
         out.append((dial_pts(z), cx5, y))
     for pts, t, s, dx, dy in ((R_PTS, T_R, S_MID, ENTRY, 0),
                               (V_PTS, T_V, S_LOW, -ENTRY, 0),

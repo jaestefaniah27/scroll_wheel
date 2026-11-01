@@ -7,7 +7,7 @@ import random
 
 from intro_dial import dial
 from orvy_comun import (W, H, PITCH, S_ISO, S_TOP, screen_origin, screen_center,
-                        placed, to_pixels, phase, hash01)
+                        placed, to_pixels, phase, hash01, track_at)
 
 # El dial se pinta directamente en el plano común, porque crece hasta cruzar
 # todo el teclado y no cabe en un sprite. Pero es siempre la misma figura,
@@ -80,7 +80,7 @@ def wear(f):
 
 def ring_pixels(f, s):
     """Píxeles del dial en la pantalla s, en coordenadas del plano."""
-    rot, jx, jy, r, hw = TRACK[f - T_SPIN]
+    rot, jx, jy, r, hw = track_at(TRACK, f - T_SPIN, {0, 3, 4})
     cx, cy = _C[0] + jx, _C[1] + jy
     ox, oy = screen_origin(s)
     # La pantalla entera dentro del agujero, o entera fuera del anillo: nada.
