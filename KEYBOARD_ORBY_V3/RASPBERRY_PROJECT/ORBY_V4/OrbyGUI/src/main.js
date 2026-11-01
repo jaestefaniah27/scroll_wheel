@@ -459,6 +459,9 @@ async function onDeviceConnected(info) {
   const macrosListas = (profiles.syncMacroStore?.() ?? Promise.resolve(0))
     .then(async (n) => {
       if (n) toast(`${n === 1 ? 'Recuperada 1 macro' : `Recuperadas ${n} macros`} del teclado`);
+      // Los perfiles desactivados también usan macros: hay que saber cuáles antes
+      // de decidir qué sobra. Si no se pueden leer, la limpieza se salta.
+      await profiles.loadArchive?.().catch((err) => console.warn('[perfiles] archivo:', err));
       await profiles.pruneUnusedMacros?.().catch((err) => console.warn('[macros] limpieza:', err));
     })
     .catch((err) => toast(`No se pudieron leer las macros del teclado: ${err.message}`, 'error'))

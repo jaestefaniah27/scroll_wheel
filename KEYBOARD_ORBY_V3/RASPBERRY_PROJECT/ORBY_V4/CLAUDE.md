@@ -93,7 +93,7 @@ HID, pinout, pantallas) y `src/` (descriptores USB).
   (`src/profile-library.js`). Ver `tools/perfiles/README.md`.
 - Las macros del PC (abrir apps, textos, grabaciones...) se guardan además en el
   teclado (`include/macro_store.h`, comandos `MSTORE_*`, firmware 4.7): un bloque
-  opaco en dos bancos de 224 KB que la app escribe y lee (`src/web/macro-blob.mjs`).
+  opaco en dos bancos de 112 KB (los otros 224 KB son el archivo de perfiles desactivados, `PSTORE_*`, firmware 4.27: `OrbyGUI/src/views/profiles/archive.js`) que la app escribe y lee (`src/web/macro-blob.mjs`).
   Así otro PC sabe qué hace cada tecla de macro. El teclado no las ejecuta: solo
   las guarda. La copia del teclado manda; la app junta y sube al conectar
   (`syncMacroStore` en `views/profiles/macros-store.js`).

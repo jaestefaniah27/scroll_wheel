@@ -124,6 +124,7 @@ export const FEATURES = {
   profileIcon: { since: '4.4', label: 'icono propio para cada perfil', flag: 'picon' },
   hostApp:    { since: '4.5', label: 'tachar en las pantallas las teclas que necesitan la app', flag: 'hostapp' },
   macroStore: { since: '4.7', label: 'llevar en el teclado lo que hace cada macro, para usarlo en otro PC', flag: 'mstore' },
+  profileArchive: { since: '4.27', label: 'guardar en el teclado, comprimidos, los perfiles desactivados', flag: 'pstore' },
   animSpeed:  { since: '4.8', label: 'ajustar la velocidad de las animaciones de las pantallas', flag: 'animspeed' },
   mirror:     { since: '4.12', label: 'ver en el dashboard las animaciones de las pantallas', flag: 'mirror' },
   menuKey:    { since: '4.15', label: 'cambiar de página y abrir menús con los mandos, y dejar libre la tecla de menú', flag: 'menukey' },

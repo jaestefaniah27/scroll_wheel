@@ -57,12 +57,12 @@ export function canonical(macros) {
   return JSON.stringify({ macros: list.map(sortKeys) });
 }
 
-async function pipe(bytes, stream) {
+export async function pipe(bytes, stream) {
   const out = new Blob([bytes]).stream().pipeThrough(stream);
   return new Uint8Array(await new Response(out).arrayBuffer());
 }
 
-const canCompress = () => typeof CompressionStream === 'function'
+export const canCompress = () => typeof CompressionStream === 'function'
                        && typeof DecompressionStream === 'function';
 
 export async function encode(macros) {

@@ -21,6 +21,12 @@
 // bueno cuando su CRC cuadra y se graba su cabecera, que es lo último que se
 // escribe. Si se corta la corriente a medias, el banco anterior sigue intacto.
 //
+// El mismo mecanismo guarda, en otro rincón de la Flash, el archivo de los
+// perfiles desactivados (PStore, firmware 4.27): la app comprime cada perfil que
+// saca de los nueve activos y el teclado solo conserva los bytes. Va aparte del
+// de las macros porque una app anterior reescribe el bloque de macros entero
+// sin mirar qué más llevaba, y se llevaría los perfiles por delante.
+//
 // Las operaciones de Flash se reciben de fuera (MStore::Ops) para poder probar
 // todo esto en el PC con una Flash de mentira: tools/test/test_macro_store.cpp.
 
@@ -29,10 +35,16 @@ namespace MStore {
 static constexpr uint32_t SECTOR = 4096;
 static constexpr uint32_t PAGE   = 256;
 static constexpr uint32_t OFFSET = 1600 * 1024;     // tras las secuencias del teclado
-static constexpr uint32_t BANK   = 224 * 1024;
+// Hasta la 4.26 cada banco de macros eran 224 KB; ahora son 112 y la otra mitad
+// de la zona es del archivo de perfiles. Una copia de macros real ocupa unos
+// pocos KB (comprimida), así que no se echa en falta.
+static constexpr uint32_t BANK   = 112 * 1024;
+static constexpr uint32_t OLD_BANK = 224 * 1024;
+static constexpr uint32_t PS_OFFSET = OFFSET + 2 * BANK;   // acaba justo en los 2 MB
 static constexpr uint32_t HDR    = PAGE;            // la cabecera ocupa la primera página
 static constexpr uint32_t MAX    = BANK - HDR;
 static constexpr uint32_t MAGIC  = 0x4D53544Fu;
+static constexpr uint32_t PS_MAGIC = 0x5053544Fu;   // "PSTO"
 static constexpr uint32_t CHUNK  = 192;             // bytes por línea: 384 hex caben en CMD_BUF_SIZE
 
 struct Header {
@@ -44,6 +56,13 @@ struct Header {
 
 // `read` devuelve un puntero a la Flash mapeada; `idle` se llama entre
 // operaciones largas (atender el USB, alimentar el watchdog).
+struct Layout {
+    uint32_t offset;   // dónde empieza el banco 0
+    uint32_t magic;
+};
+static constexpr Layout MACROS   = { OFFSET, MAGIC };
+static constexpr Layout PROFILES = { PS_OFFSET, PS_MAGIC };
+
 struct Ops {
     const uint8_t* (*read)(uint32_t off);
     void (*erase)(uint32_t off, uint32_t len);
@@ -55,7 +74,7 @@ enum Result { OK, ERR_SIZE, ERR_ORDER, ERR_SHORT, ERR_CRC, ERR_CLOSED };
 
 class Store {
 public:
-    explicit Store(const Ops& ops) : ops_(ops) {}
+    explicit Store(const Ops& ops, const Layout& lay = MACROS) : ops_(ops), lay_(lay) {}
 
     // Elige el banco vigente. Se llama al arrancar y tras cada escritura.
     void scan() {
@@ -68,6 +87,7 @@ public:
 
     uint32_t len() const { return active_ >= 0 ? cur_.len : 0; }
     uint32_t crc() const { return active_ >= 0 ? cur_.crc : 0; }
+    uint32_t seq() const { return active_ >= 0 ? cur_.seq : 0; }
 
     // Puntero al contenido vigente, o nullptr si no hay.
     const uint8_t* data() const {
@@ -122,7 +142,7 @@ public:
         if (crc != w_.crc) return ERR_CRC;
         uint8_t hdr[PAGE];
         memset(hdr, 0xFF, sizeof(hdr));
-        const Header h = { MAGIC, w_.seq, w_.len, crc };
+        const Header h = { lay_.magic, w_.seq, w_.len, crc };
         memcpy(hdr, &h, sizeof(h));
         ops_.program(bank_at(w_.bank), hdr, PAGE);
         scan();
@@ -130,7 +150,7 @@ public:
     }
 
 private:
-    static uint32_t bank_at(uint8_t bank) { return OFFSET + bank * BANK; }
+    uint32_t bank_at(uint8_t bank) const { return lay_.offset + bank * BANK; }
 
     uint32_t crc_of(uint8_t bank, uint32_t len) const {
         const uint8_t* p = ops_.read(bank_at(bank) + HDR);
@@ -148,7 +168,7 @@ private:
     bool bank_ok(uint8_t bank, Header* out) const {
         Header h;
         memcpy(&h, ops_.read(bank_at(bank)), sizeof(h));
-        if (h.magic != MAGIC || h.len == 0 || h.len > MAX) return false;
+        if (h.magic != lay_.magic || h.len == 0 || h.len > MAX) return false;
         if (crc_of(bank, h.len) != h.crc) return false;
         *out = h;
         return true;
@@ -163,6 +183,7 @@ private:
     }
 
     Ops ops_;
+    Layout lay_;
     int8_t active_ = -1;
     Header cur_ = {};
     struct {
@@ -173,5 +194,36 @@ private:
         uint32_t fill = 0;
     } w_;
 };
+
+// Hasta la 4.26 el banco 1 de macros empezaba donde hoy empieza el archivo de
+// perfiles. Si ahí hay una copia de macros más nueva que la del banco 0, se
+// pasa al sitio nuevo antes de que nadie escriba encima; si no, se borra solo
+// la cabecera vieja para que no se confunda con nada. Devuelve true si movió algo.
+//
+// Se puede interrumpir en cualquier punto: la cabecera vieja se borra la última,
+// así que un corte deja la copia vieja a la vista y se reintenta en el arranque
+// siguiente. Se llama tras `macros.scan()`.
+inline bool adopt_wide_bank(const Ops& ops, Store& macros) {
+    const uint32_t at = OFFSET + OLD_BANK;
+    Header h;
+    memcpy(&h, ops.read(at), sizeof(h));
+    if (h.magic != MAGIC) return false;
+
+    bool moved = false;
+    if (h.len > 0 && h.len <= MAX && h.seq > macros.seq()) {
+        const uint8_t* p = ops.read(at + HDR);
+        uint32_t crc = CFGHASH_INIT;
+        crc = crc32_feed(crc, p, h.len) ^ 0xFFFFFFFFu;
+        if (crc == h.crc && macros.begin(h.len, h.crc) == OK) {
+            for (uint32_t off = 0; off < h.len; off += CHUNK) {
+                const uint32_t n = (h.len - off < CHUNK) ? (h.len - off) : CHUNK;
+                macros.write(off, p + off, n);
+            }
+            moved = macros.end() == OK;
+        }
+    }
+    ops.erase(at, SECTOR);
+    return moved;
+}
 
 } // namespace MStore

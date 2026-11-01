@@ -163,6 +163,11 @@ struct Profile {
 // Cuántos perfiles caben. Los cuatro primeros son los de fábrica; el resto se
 // crean desde la app con ADD_PROFILE o DUP_PROFILE.
 #define MAX_PROFILES      16
+// Cuántos perfiles puede tener activos el teclado (desde la 4.27). La Flash
+// sigue reservando sitio para MAX_PROFILES: quien ya tenía más de nueve no
+// pierde ninguno, pero no puede crear más hasta desactivar alguno (la app los
+// guarda comprimidos en el archivo de perfiles, PSTORE_*).
+#define MAX_ACTIVE_PROFILES 9
 #define DEFAULT_PROFILES  4
 
 // Los perfiles de fábrica se declaran sin páginas —solo nombre, etiquetas y
@@ -561,7 +566,9 @@ static inline bool cur_scroll_invert() {
 //   1536 – 1560 KB  ajustes: perfiles con sus páginas y las máscaras de iconos
 //   1560 – 1592 KB  secuencias hasta la 4.13: solo se leen para traérselas
 //        ...libre...
-//   1600 – 2048 KB  copia de las macros del PC, dos bancos de 224 KB (macro_store.h)
+//   1600 – 1824 KB  copia de las macros del PC, dos bancos de 112 KB (macro_store.h)
+//   1824 – 2048 KB  archivo de los perfiles desactivados, otros dos de 112 KB (desde la 4.27;
+//                   hasta la 4.26 el banco 1 de macros ocupaba aquí 224 KB)
 //
 // El banco acaba justo donde empiezan los ajustes. Está debajo y no encima
 // porque encima no cabía: 1536 + 512 se sale de los 2 MB del módulo.
@@ -948,8 +955,8 @@ static_assert(FLASH_MACROS_OFFSET + FLASH_MACROS_BYTES <= FLASH_OLED_OFFSET,
               "Las secuencias del teclado pisan el banco de iconos");
 static_assert(FLASH_MACROS_OFFSET_V1 + 8 * FLASH_SECTOR_SIZE <= MStore::OFFSET,
               "El almacén de macros pisa las secuencias de la 4.13, que aún se leen");
-static_assert(MStore::OFFSET + 2 * MStore::BANK <= PICO_FLASH_SIZE_BYTES,
-              "El almacén de macros se sale de la Flash del módulo");
+static_assert(MStore::PS_OFFSET + 2 * MStore::BANK <= PICO_FLASH_SIZE_BYTES,
+              "El archivo de perfiles se sale de la Flash del módulo");
 static_assert(MStore::PAGE == FLASH_PAGE_SIZE && MStore::SECTOR == FLASH_SECTOR_SIZE,
               "macro_store.h asume la página y el sector de la Flash del RP2040");
 
@@ -983,7 +990,10 @@ static void mstore_idle() {
     watchdog_update();
 }
 
-static MStore::Store mstore({ mstore_read, mstore_erase, mstore_program, mstore_idle });
+static const MStore::Ops MSTORE_OPS = { mstore_read, mstore_erase, mstore_program, mstore_idle };
+static MStore::Store mstore(MSTORE_OPS);
+// Perfiles desactivados, comprimidos por la app (firmware 4.27).
+static MStore::Store pstore(MSTORE_OPS, MStore::PROFILES);
 
 // ==========================================
 // ACCESO A LOS ICONOS
@@ -1484,7 +1494,7 @@ static void oled_copy_profile(uint8_t dst, uint8_t src) {
 
 // Devuelve el índice del perfil nuevo, o -1 si ya no caben más.
 static int profile_add(int copy_from) {
-    if (profile_count >= MAX_PROFILES) return -1;
+    if (profile_count >= MAX_ACTIVE_PROFILES) return -1;
 
     uint8_t idx = profile_count;
     // El tramo de banco que ya tenía reservado este hueco se conserva: los
@@ -2791,6 +2801,85 @@ static const char* next_field(const char* p, int* out) {
     return (*end == ':') ? end + 1 : end;
 }
 
+// MSTORE_INFO → MSTORE:INFO:<longitud>:<crc>:<máximo>. Longitud 0 = vacío.
+// MSTORE_GET:<desde>:<cuántos> → MSTORE:DATA:<desde>:<hex>
+// MSTORE_BEGIN:<longitud>:<crc en hex> prepara el banco libre, MSTORE_DATA:<desde>:<hex>
+// lo llena y MSTORE_END solo da por vigente lo escrito si el CRC cuadra.
+// `name` es el prefijo ("MSTORE" o "PSTORE") y `sub` lo que viene tras el guion bajo.
+static void store_command(MStore::Store& st, const char* name, const char* sub) {
+    if (strcmp(sub, "INFO") == 0) {
+        cdc_printf("%s:INFO:%lu:%08lx:%lu\n", name, (unsigned long)st.len(),
+                   (unsigned long)st.crc(), (unsigned long)MStore::MAX);
+        return;
+    }
+
+    if (strncmp(sub, "GET:", 4) == 0) {
+        int off = 0, n = 0;
+        const char* p = next_field(sub + 4, &off);
+        p = next_field(p, &n);
+        if (!p || !st.data() || off < 0 || n <= 0 || n > (int)MStore::CHUNK
+            || (uint32_t)off >= st.len()) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        if ((uint32_t)(off + n) > st.len()) n = (int)(st.len() - (uint32_t)off);
+        const uint8_t* src = st.data() + off;
+        static const char HEX[] = "0123456789abcdef";
+        char line[24 + 2 * MStore::CHUNK];
+        int len = snprintf(line, sizeof(line), "%s:DATA:%d:", name, off);
+        for (int i = 0; i < n; i++) {
+            line[len++] = HEX[src[i] >> 4];
+            line[len++] = HEX[src[i] & 0x0F];
+        }
+        line[len++] = '\n';
+        cdc_write_all(line, (uint32_t)len);
+        return;
+    }
+
+    if (strncmp(sub, "BEGIN:", 6) == 0) {
+        char* end = nullptr;
+        const unsigned long len = strtoul(sub + 6, &end, 10);
+        if (!end || *end != ':') { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        const unsigned long crc = strtoul(end + 1, nullptr, 16);
+        if (st.begin((uint32_t)len, (uint32_t)crc) != MStore::OK) {
+            cdc_printf("ERR:%s_SIZE:%lu\n", name, (unsigned long)MStore::MAX);
+            return;
+        }
+        cdc_printf("%s:READY\n", name);
+        return;
+    }
+
+    if (strncmp(sub, "DATA:", 5) == 0) {
+        int off = 0;
+        const char* p = next_field(sub + 5, &off);
+        uint8_t buf[MStore::CHUNK];
+        uint32_t n = 0;
+        while (p && p[0] && p[1] && n < sizeof(buf)) {
+            const int hi = hex_nibble(p[0]), lo = hex_nibble(p[1]);
+            if (hi < 0 || lo < 0) break;
+            buf[n++] = (uint8_t)((hi << 4) | lo);
+            p += 2;
+        }
+        if (!p || off < 0 || st.write((uint32_t)off, buf, n) != MStore::OK) {
+            cdc_printf("ERR:%s_ORDER:%lu\n", name, (unsigned long)st.written());
+            return;
+        }
+        cdc_printf("%s:ACK:%lu\n", name, (unsigned long)st.written());
+        return;
+    }
+
+    if (strcmp(sub, "END") == 0) {
+        uint32_t crc = 0;
+        const MStore::Result r = st.end(&crc);
+        if (r == MStore::OK)           cdc_printf("%s:OK:%08lx\n", name, (unsigned long)crc);
+        else if (r == MStore::ERR_CRC) cdc_printf("ERR:%s_CRC:%08lx\n", name, (unsigned long)crc);
+        else                           cdc_printf("ERR:%s_SHORT:%lu\n", name, (unsigned long)st.written());
+        return;
+    }
+
+    cdc_printf("ERR:UNKNOWN_CMD\n");
+}
+
 // Refleja la rueda tal y como está funcionando ahora mismo: perfil activo y
 // capa que se esté pulsando.
 static void send_scroll_state() {
@@ -2948,6 +3037,8 @@ void process_command(const char* cmd) {
         // teclas que necesitan la app de PC mientras no esté anunciada.
         // MSTORE=1: guarda una copia de las macros del PC (MSTORE_*), para que
         // otro ordenador sepa qué hace cada tecla de macro.
+        // PSTORE=1: lo mismo para los perfiles desactivados (PSTORE_*), que la
+        // app comprime. MAXPROFILES es desde la 4.27 el tope de perfiles ACTIVOS.
         // MIRROR=1: sabe mandar a la app lo que enseñan las pantallas
         // (MIRROR:1, EV:SCR) para que el dashboard las anime igual.
         // MENUKEY=1: la tecla de menú se puede dejar libre (SET_MENUKEY) y los
@@ -2961,8 +3052,8 @@ void process_command(const char* cmd) {
         // Apple, y la app tiene que traducir.
         // INTRO=n: trae n intros de arranque; SET_INTRO elige una o el azar
         // (0) y PLAY_INTRO la enseña ya.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:MODE=%s\n",
-                   (int)profile_count, MAX_PROFILES, MAX_PAGES, MACRO_MAX_COUNT, (int)INTRO_COUNT,
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:PSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:MODE=%s\n",
+                   (int)profile_count, MAX_ACTIVE_PROFILES, MAX_PAGES, MACRO_MAX_COUNT, (int)INTRO_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
         return;
     }
@@ -3033,7 +3124,7 @@ void process_command(const char* cmd) {
 
     if (strcmp(cmd, "GET_STATE") == 0) {
         cdc_printf("STATE:PROFILE:%d\n", (int)active_profile_idx);
-        cdc_printf("STATE:PROFILES:%d:%d\n", (int)profile_count, MAX_PROFILES);
+        cdc_printf("STATE:PROFILES:%d:%d\n", (int)profile_count, MAX_ACTIVE_PROFILES);
         cdc_printf("STATE:TIMEOUT:%d\n", (int)reposo_timeout_min);
         cdc_printf("STATE:MENUKEY:%d\n", (int)menu_key_mode);
         cdc_printf("STATE:ROTINV:%d\n", (int)rot_invert_mask);
@@ -3306,7 +3397,7 @@ void process_command(const char* cmd) {
         }
 
         int idx = profile_add(from);
-        if (idx < 0) { cdc_printf("ERR:PROFILE_FULL:%d\n", MAX_PROFILES); return; }
+        if (idx < 0) { cdc_printf("ERR:PROFILE_FULL:%d\n", MAX_ACTIVE_PROFILES); return; }
         cdc_printf("PROFILE:ADDED:%d\n", idx);
         send_profile_count();
         return;
@@ -3388,79 +3479,10 @@ void process_command(const char* cmd) {
         return;
     }
 
-    // ---------- Almacén de las macros del PC (include/macro_store.h) ----------
-    // MSTORE_INFO → MSTORE:INFO:<longitud>:<crc>:<máximo>. Longitud 0 = vacío.
-    if (strcmp(cmd, "MSTORE_INFO") == 0) {
-        cdc_printf("MSTORE:INFO:%lu:%08lx:%lu\n", (unsigned long)mstore.len(),
-                   (unsigned long)mstore.crc(), (unsigned long)MStore::MAX);
-        return;
-    }
-
-    // MSTORE_GET:<desde>:<cuántos> → MSTORE:DATA:<desde>:<hex>
-    if (strncmp(cmd, "MSTORE_GET:", 11) == 0) {
-        int off = 0, n = 0;
-        const char* p = next_field(cmd + 11, &off);
-        p = next_field(p, &n);
-        if (!p || !mstore.data() || off < 0 || n <= 0 || n > (int)MStore::CHUNK
-            || (uint32_t)off >= mstore.len()) {
-            cdc_printf("ERR:BAD_ARGS\n");
-            return;
-        }
-        if ((uint32_t)(off + n) > mstore.len()) n = (int)(mstore.len() - (uint32_t)off);
-        const uint8_t* src = mstore.data() + off;
-        static const char HEX[] = "0123456789abcdef";
-        char line[24 + 2 * MStore::CHUNK];
-        int len = snprintf(line, sizeof(line), "MSTORE:DATA:%d:", off);
-        for (int i = 0; i < n; i++) {
-            line[len++] = HEX[src[i] >> 4];
-            line[len++] = HEX[src[i] & 0x0F];
-        }
-        line[len++] = '\n';
-        cdc_write_all(line, (uint32_t)len);
-        return;
-    }
-
-    // MSTORE_BEGIN:<longitud>:<crc en hex> — prepara el banco libre.
-    if (strncmp(cmd, "MSTORE_BEGIN:", 13) == 0) {
-        char* end = nullptr;
-        const unsigned long len = strtoul(cmd + 13, &end, 10);
-        if (!end || *end != ':') { cdc_printf("ERR:BAD_ARGS\n"); return; }
-        const unsigned long crc = strtoul(end + 1, nullptr, 16);
-        if (mstore.begin((uint32_t)len, (uint32_t)crc) != MStore::OK) {
-            cdc_printf("ERR:MSTORE_SIZE:%lu\n", (unsigned long)MStore::MAX);
-            return;
-        }
-        cdc_printf("MSTORE:READY\n");
-        return;
-    }
-
-    // MSTORE_DATA:<desde>:<hex>
-    if (strncmp(cmd, "MSTORE_DATA:", 12) == 0) {
-        int off = 0;
-        const char* p = next_field(cmd + 12, &off);
-        uint8_t buf[MStore::CHUNK];
-        uint32_t n = 0;
-        while (p && p[0] && p[1] && n < sizeof(buf)) {
-            const int hi = hex_nibble(p[0]), lo = hex_nibble(p[1]);
-            if (hi < 0 || lo < 0) break;
-            buf[n++] = (uint8_t)((hi << 4) | lo);
-            p += 2;
-        }
-        if (!p || off < 0 || mstore.write((uint32_t)off, buf, n) != MStore::OK) {
-            cdc_printf("ERR:MSTORE_ORDER:%lu\n", (unsigned long)mstore.written());
-            return;
-        }
-        cdc_printf("MSTORE:ACK:%lu\n", (unsigned long)mstore.written());
-        return;
-    }
-
-    // MSTORE_END — solo si lo escrito cuadra pasa a ser la copia vigente.
-    if (strcmp(cmd, "MSTORE_END") == 0) {
-        uint32_t crc = 0;
-        const MStore::Result r = mstore.end(&crc);
-        if (r == MStore::OK)           cdc_printf("MSTORE:OK:%08lx\n", (unsigned long)crc);
-        else if (r == MStore::ERR_CRC) cdc_printf("ERR:MSTORE_CRC:%08lx\n", (unsigned long)crc);
-        else                           cdc_printf("ERR:MSTORE_SHORT:%lu\n", (unsigned long)mstore.written());
+    // ---------- Almacenes de la app: MSTORE_* (macros) y PSTORE_* (perfiles) ----------
+    // Mismo protocolo para los dos (include/macro_store.h).
+    if ((cmd[0] == 'M' || cmd[0] == 'P') && strncmp(cmd + 1, "STORE_", 6) == 0) {
+        store_command(cmd[0] == 'M' ? mstore : pstore, cmd[0] == 'M' ? "MSTORE" : "PSTORE", cmd + 7);
         return;
     }
 
@@ -3953,6 +3975,10 @@ int main() {
     load_settings();
     load_macros();
     mstore.scan();
+    // Antes de que nadie escriba en el archivo de perfiles: ahí empezaba el banco 1
+    // de macros hasta la 4.26.
+    MStore::adopt_wide_bank(MSTORE_OPS, mstore);
+    pstore.scan();
 
     // Si venimos de un reinicio por watchdog, algo se colgó: nada de intro, a
     // dejar el teclado operativo cuanto antes.

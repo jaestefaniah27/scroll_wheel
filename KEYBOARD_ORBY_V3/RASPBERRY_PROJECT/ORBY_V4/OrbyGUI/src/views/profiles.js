@@ -30,6 +30,7 @@ import * as variants from '../variants.js';
 import * as plugins from '../plugins.js';
 import * as platform from '../platform.js';
 import * as compat from '../compat.js';
+import * as archive from './profiles/archive.js';
 import { LIBRARY, installProfile } from '../profile-library.js';
 import { addRulesFor } from './auto.js';
 
@@ -62,6 +63,8 @@ import { keyScreen as screenOfKey, profileScreen, paintProfileScreens } from '..
 // Subir las secuencias al teclado lo hace ahora macros-store.js, pero main.js
 // se lo sigue pidiendo a esta vista: era parte de su interfaz antes del corte.
 export { syncAllMacrosToDevice, syncMacroStore, pruneUnusedMacros } from './profiles/macros-store.js';
+// Lo mismo con el archivo de perfiles: main.js lo lee antes de limpiar macros.
+export { load as loadArchive } from './profiles/archive.js';
 
 
 export function init() {
@@ -592,6 +595,12 @@ function onClick(e) {
     createProfile(view.editingProfile);
   } else if (act === 'profile-del') {
     removeProfile();
+  } else if (act === 'profile-archive') {
+    archiveProfile();
+  } else if (act === 'arch-activate') {
+    activateArchived(el.dataset.uid);
+  } else if (act === 'arch-discard') {
+    discardArchived(el.dataset.uid);
   } else if (act === 'profile-icon') {
     goTo('view-oled', { profile: view.editingProfile, kind: 'profile' });
   } else if (act === 'scroll-preset') {
@@ -1126,6 +1135,124 @@ function renderLibrary() {
     </div>`;
 }
 
+// --- Perfiles desactivados (archivo del teclado, ver profiles/archive.js) ---
+
+// Lee el archivo la primera vez que hace falta pintarlo. Si falla se enseña el
+// motivo en vez de reintentar en cada repintado.
+function ensureArchiveLoaded() {
+  if (view.archiveLoading || view.archiveError) return;
+  view.archiveLoading = true;
+  archive.load()
+    .then(refreshArchiveUsage)
+    .catch((err) => { view.archiveError = err.message; })
+    .finally(() => { view.archiveLoading = false; render(); });
+}
+
+async function refreshArchiveUsage() {
+  try { view.archiveUsage = await archive.usage(); } catch { view.archiveUsage = null; }
+}
+
+function renderArchivedList() {
+  if (!archive.supported()) return '';
+  const list = archive.archived();
+  if (list === null) ensureArchiveLoaded();
+  const kb = (n) => `${Math.max(1, Math.round(n / 1024))} KB`;
+  const use = view.archiveUsage;
+  return `
+    <h4 class="pm-section">Desactivados</h4>
+    ${view.archiveError ? `<div class="pm-row-sub pm-arch-note">No se pudo leer: ${escape(view.archiveError)}</div>`
+      : list === null ? '<div class="pm-row-sub pm-arch-note">Leyendo…</div>'
+      : !list.length ? '<div class="pm-row-sub pm-arch-note">Ninguno. Desactiva un perfil para guardarlo comprimido en el teclado.</div>'
+      : list.map((e) => {
+        const pages = e.data?.pages?.length || 1;
+        return `
+        <div class="pm-row pm-arch">
+          <span class="pm-row-text">
+            <span class="pm-row-name">${escape(e.name || '')}</span>
+            <span class="pm-row-sub">${pages === 1 ? '1 página' : `${pages} páginas`}</span>
+          </span>
+          <button class="secondary-btn" data-act="arch-activate" data-uid="${escape(e.uid)}"
+                  ${view.busy || state.profiles.length >= state.maxProfiles ? 'disabled' : ''}
+                  title="${state.profiles.length >= state.maxProfiles ? 'Desactiva otro perfil antes' : 'Volver a ponerlo en el teclado'}">Activar</button>
+          <button class="pm-arch-del" data-act="arch-discard" data-uid="${escape(e.uid)}"
+                  ${view.busy ? 'disabled' : ''} title="Eliminar para siempre">${icon('trash', 15)}</button>
+        </div>`;
+      }).join('')}
+    ${use ? `<div class="pm-row-sub pm-arch-note">Archivo del teclado: ${kb(use.used)} de ${kb(use.max)}</div>` : ''}`;
+}
+
+async function archiveProfile() {
+  if (view.busy) return;
+  if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
+  const prof = currentProfile();
+  if (!await confirmar({
+    titulo: `¿Desactivar «${prof?.name || ''}»?`,
+    mensaje: 'Se guarda comprimido en el teclado, tal cual está, y deja de estar entre los '
+           + 'perfiles activos. Podrás activarlo cuando quieras, también desde otro PC.\n\n'
+           + 'Las variaciones por aplicación de este perfil no se conservan.',
+    aceptar: 'Desactivar',
+  })) return;
+
+  view.busy = true;
+  render();
+  try {
+    await archive.deactivate(view.editingProfile);
+    view.editingProfile = Math.min(view.editingProfile, state.profiles.length - 1);
+    view.variantId = null;
+    view.selected = null;
+    await refreshArchiveUsage();
+    toast('Perfil desactivado');
+  } catch (err) {
+    toast(`No se pudo desactivar: ${err.message}`, 'error');
+  } finally {
+    view.busy = false;
+    render();
+  }
+}
+
+async function activateArchived(uid) {
+  if (view.busy) return;
+  if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
+  view.busy = true;
+  render();
+  try {
+    view.editingProfile = await archive.activate(uid);
+    view.variantId = null;
+    view.selected = null;
+    await refreshArchiveUsage();
+    toast('Perfil activado');
+  } catch (err) {
+    toast(`No se pudo activar: ${err.message}`, 'error');
+  } finally {
+    view.busy = false;
+    render();
+  }
+}
+
+async function discardArchived(uid) {
+  if (view.busy) return;
+  if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
+  const entry = (archive.archived() || []).find((e) => e.uid === uid);
+  if (!await confirmar({
+    titulo: `¿Eliminar «${entry?.name || ''}» para siempre?`,
+    mensaje: 'Es un perfil desactivado: se va con sus atajos, mandos e iconos y no hay forma de recuperarlo.',
+    aceptar: 'Eliminar',
+    peligro: true,
+  })) return;
+  view.busy = true;
+  render();
+  try {
+    await archive.discard(uid);
+    await refreshArchiveUsage();
+    toast('Perfil eliminado');
+  } catch (err) {
+    toast(`No se pudo eliminar: ${err.message}`, 'error');
+  } finally {
+    view.busy = false;
+    render();
+  }
+}
+
 async function removeProfile() {
   if (view.busy) return;
   if (!state.connected) { toast('Teclado no conectado', 'error'); return; }
@@ -1328,6 +1455,7 @@ export function render() {
                   hasPages() && pageCountOf(p) > 1 ? `${i === state.activeProfileIdx ? ' · ' : ''}${pageCountOf(p)} páginas` : ''}</span>
               </span>
             </button>`).join('')}
+          ${renderArchivedList()}
         </div>
         <div class="pm-list-foot">
           <button class="pm-foot-btn" data-act="profile-new" ${full || view.busy ? 'disabled' : ''}
@@ -1338,7 +1466,7 @@ export function render() {
                   title="Perfiles listos para Altium, KiCad, VS Code, Office, Photoshop...">
             ${icon('download', 15)} Biblioteca
           </button>
-          <span class="pm-count">${state.profiles.length} / ${state.maxProfiles}</span>
+          <span class="pm-count" title="${full ? 'Desactiva alguno para poder crear más' : ''}">${state.profiles.length} / ${state.maxProfiles}</span>
         </div>
       </aside>
 
@@ -1407,6 +1535,9 @@ function renderProfileDetail() {
               attrs: hasProfileIcon ? '' : 'disabled' })}
       ${row({ act: 'profile-dup', ic: 'copy', tint: 'gray', title: 'Duplicar', sub: 'Una copia con sus iconos, al final de la lista',
               attrs: full || view.busy ? 'disabled' : '', chev: false })}
+      ${archive.supported() ? row({ act: 'profile-archive', ic: 'download', tint: 'orange', title: 'Desactivar',
+              sub: 'Lo guarda comprimido en el teclado y libera un hueco',
+              attrs: state.profiles.length < 2 || view.busy ? 'disabled' : '', chev: false }) : ''}
     </div>
 
     ${hasPages() ? `

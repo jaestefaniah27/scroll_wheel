@@ -33,42 +33,84 @@ function backupBusy(message) {
 }
 
 // ================= Apartados =================
-// Un apartado por asunto, con su botón en el panel de la izquierda. Los apartados
-// cuyas tarjetas están todas ocultas (por plataforma o por firmware) no se ofrecen:
-// un botón que lleva a una página vacía es peor que no tenerlo.
-let paneActivo = 'general';
-try { paneActivo = localStorage.getItem('orby.settingsPane') || paneActivo; } catch { /* sin almacenamiento */ }
+// Todos los apartados van seguidos en una sola página que se desliza de principio a
+// fin; el panel de la izquierda salta a cada uno y marca el que se está viendo. Los
+// apartados cuyas tarjetas están todas ocultas (por plataforma o por firmware) no
+// existen: un botón que lleva a una sección vacía es peor que no tenerlo.
+const vista = () => document.getElementById('view-settings');
+const panes = () => [...document.querySelectorAll('#view-settings .settings-pane')];
 
 function paneVacio(pane) {
   const tarjetas = pane.querySelectorAll('.settings-card');
-  // El host de complementos está siempre vacío hasta que hay alguno con ajustes.
   return ![...tarjetas].some((c) => !c.classList.contains('hidden'));
 }
 
-function mostrarPane(id) {
-  const panes = [...document.querySelectorAll('#view-settings .settings-pane')];
-  const valido = panes.find((p) => p.dataset.pane === id && !paneVacio(p));
-  const destino = valido ? id : 'general';
-  paneActivo = destino;
-  panes.forEach((p) => p.classList.toggle('active', p.dataset.pane === destino));
+function marcarNav(id) {
   document.querySelectorAll('#settings-nav .settings-nav-item')
-    .forEach((b) => b.classList.toggle('active', b.dataset.pane === destino));
-  try { localStorage.setItem('orby.settingsPane', destino); } catch { /* sin almacenamiento */ }
+    .forEach((b) => b.classList.toggle('active', b.dataset.pane === id));
+}
+
+// Distancia del borde superior de la vista al de un apartado, en el eje del scroll.
+function topDe(pane) {
+  return vista().scrollTop + pane.getBoundingClientRect().top - vista().getBoundingClientRect().top;
+}
+
+// El último apartado es corto: sin hueco debajo, saltar a él se quedaría a medias y
+// la sección marcada no coincidiría con la que el usuario acaba de elegir.
+function ajustarCola() {
+  const grid = document.querySelector('#view-settings .settings-grid');
+  const visibles = panes().filter((p) => !p.classList.contains('hidden'));
+  const ultimo = visibles[visibles.length - 1];
+  if (!grid || !ultimo) return;
+  const hueco = vista().clientHeight - ultimo.offsetHeight - 38;
+  grid.style.paddingBottom = `${Math.max(24, hueco)}px`;
+}
+
+// Apartado que ocupa la parte alta de la vista: el último cuyo comienzo ya quedó
+// por encima de la línea de lectura.
+function apartadoActual() {
+  const v = vista();
+  const visibles = panes().filter((p) => !p.classList.contains('hidden'));
+  if (!visibles.length) return null;
+  const linea = v.scrollTop + 80;
+  let actual = visibles[0];
+  for (const p of visibles) if (topDe(p) <= linea) actual = p;
+  return actual.dataset.pane;
+}
+
+function irA(id) {
+  const pane = document.getElementById(`pane-${id}`);
+  if (!pane) return;
+  // `instant` a propósito: con el scroll suave de CSS el salto cruzaría todos los
+  // apartados del medio y el panel parpadearía por cada uno.
+  vista().scrollTo({ top: Math.max(0, topDe(pane) - 6), behavior: 'instant' });
+  marcarNav(id);
 }
 
 function initNav() {
   document.getElementById('settings-nav').addEventListener('click', (e) => {
     const b = e.target.closest('.settings-nav-item');
-    if (b) mostrarPane(b.dataset.pane);
+    if (b) irA(b.dataset.pane);
   });
+
+  // Sin requestAnimationFrame: son siete medidas y marcar un botón que ya lo está no
+  // cuesta nada, así que no hace falta agrupar los eventos de scroll.
+  vista().addEventListener('scroll', () => {
+    const id = apartadoActual();
+    if (id) marcarNav(id);
+  }, { passive: true });
+
+  window.addEventListener('resize', ajustarCola);
 }
 
 function renderNav() {
+  panes().forEach((p) => p.classList.toggle('hidden', paneVacio(p)));
   document.querySelectorAll('#settings-nav .settings-nav-item').forEach((b) => {
-    const pane = document.getElementById(`pane-${b.dataset.pane}`);
-    b.classList.toggle('hidden', !pane || paneVacio(pane));
+    b.classList.toggle('hidden', document.getElementById(`pane-${b.dataset.pane}`)?.classList.contains('hidden') ?? true);
   });
-  mostrarPane(paneActivo);
+  ajustarCola();
+  const id = apartadoActual();
+  if (id) marcarNav(id);
 }
 
 export function init() {
@@ -1049,7 +1091,6 @@ function renderWheelCalib() {
 export function openTarget(params) {
   render();
   if (params?.section === 'menukey') {
-    mostrarPane('controles');
     document.getElementById('settings-menukey')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 }

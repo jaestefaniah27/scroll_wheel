@@ -15,6 +15,8 @@ import * as variants from '../../variants.js';
 import * as compat from '../../compat.js';
 import { encode, decode, merge, canonical, crc32 } from '../../web/macro-blob.mjs';
 import { textToSteps } from '../../web/text-keys.mjs';
+import { archived } from './archive-state.js';
+import { macroIdsUsed } from '../../web/pstore-blob.mjs';
 
 // --- Macros (secuencias ejecutadas en el PC) --------------------------------
 // Viven en la configuración local (window.orby.getConfig/setConfig), no en el
@@ -329,6 +331,14 @@ export function usedMacroIds() {
   for (const v of variants.variants) {
     Object.values(v.keys || {}).forEach((a) => add(macroIdOfKey(a)));
     Object.values(v.rotary || {}).forEach((a) => add(macroIdOfRotary(a)));
+  }
+  // Los perfiles desactivados (archivo del teclado) también las usan. Sin
+  // leerlo no se sabe cuáles: mejor no limpiar nada que dejar teclas muertas
+  // en un perfil que alguien active luego en otro PC.
+  if (compat.supports(state.deviceInfo, 'profileArchive')) {
+    const guardados = archived();
+    if (!guardados) return null;
+    macroIdsUsed(guardados, MACRO_MODIFIER, ROTARY_TYPES.KEY).forEach(add);
   }
   // La tecla de borrado de una grabación apunta a la suya por `target`: si la
   // de borrado se usa, la grabación también, aunque su tecla esté en otra capa.

@@ -1485,8 +1485,9 @@ button { font-family: inherit; }
   max-width: 720px;
   padding-bottom: 24px;
 }
-.settings-pane { display: none; flex-direction: column; gap: 12px; }
-.settings-pane.active { display: flex; }
+.settings-pane { display: flex; flex-direction: column; gap: 12px; }
+.settings-pane + .settings-pane { margin-top: 32px; }
+.settings-pane.hidden { display: none; }
 .pane-head { margin-bottom: 4px; }
 .pane-head h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 .pane-head p { margin-top: 2px; font-size: 13px; color: var(--text-muted); }

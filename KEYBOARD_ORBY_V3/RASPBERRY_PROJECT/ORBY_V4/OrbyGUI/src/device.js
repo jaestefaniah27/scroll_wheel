@@ -250,6 +250,28 @@ export const mstoreData = (offset, hex) =>
   mstoreRequest(`MSTORE_DATA:${offset}:${hex}`, 'MSTORE:ACK:');
 export const mstoreEnd = () => mstoreRequest('MSTORE_END', 'MSTORE:OK:', 8000);
 
+// --- Archivo de perfiles desactivados (PSTORE_*, firmware 4.27) --------------
+// Mismo protocolo que el de las macros, en otro banco de la Flash. El formato
+// del bloque está en web/pstore-blob.mjs.
+export async function pstoreInfo() {
+  const [len, crc, max] = (await mstoreRequest('PSTORE_INFO', 'PSTORE:INFO:')).slice(12).split(':');
+  return { len: parseInt(len, 10) || 0, crc: parseInt(crc, 16) >>> 0, max: parseInt(max, 10) || 0 };
+}
+
+export async function pstoreGet(offset, count) {
+  const line = await mstoreRequest(`PSTORE_GET:${offset}:${count}`, `PSTORE:DATA:${offset}:`);
+  const hex = line.slice(`PSTORE:DATA:${offset}:`.length);
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+}
+
+export const pstoreBegin = (len, crc) =>
+  mstoreRequest(`PSTORE_BEGIN:${len}:${(crc >>> 0).toString(16)}`, 'PSTORE:READY', 15000);
+export const pstoreData = (offset, hex) =>
+  mstoreRequest(`PSTORE_DATA:${offset}:${hex}`, 'PSTORE:ACK:');
+export const pstoreEnd = () => mstoreRequest('PSTORE_END', 'PSTORE:OK:', 8000);
+
 // Los pasos que el teclado tiene guardados de una secuencia.
 //
 // Hace falta para no reescribirla si ya es la que toca: al conectar se

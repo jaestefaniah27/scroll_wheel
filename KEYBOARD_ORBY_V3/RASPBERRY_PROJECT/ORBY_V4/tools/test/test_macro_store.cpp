@@ -131,6 +131,73 @@ int main() {
         CHECK(holds(s, last), "con la cabecera rota no se vuelve a la copia anterior");
     }
 
+    // ---- El archivo de perfiles (PStore) vive al lado sin pisar las macros ----
+    static_assert(PS_OFFSET + 2 * BANK == 2048 * 1024, "el archivo de perfiles no acaba en los 2 MB");
+    {
+        std::fill(flash.begin(), flash.end(), 0xFF);
+        Store m(OPS), ps(OPS, PROFILES);
+        m.scan(); ps.scan();
+        const auto M = blob(3000, 5), P = blob(20000, 6), P2 = blob(MAX, 7);
+        CHECK(write_all(m, M, crc_of(M)) == OK, "macros");
+        CHECK(write_all(ps, P, crc_of(P)) == OK, "perfiles");
+        CHECK(write_all(m, M, crc_of(M) ^ 1) == ERR_CRC, "macros con CRC malo");
+        CHECK(write_all(ps, P2, crc_of(P2)) == OK, "el máximo de perfiles no cabe");
+        CHECK(write_all(ps, P, crc_of(P)) == OK, "perfiles otra vez");
+        m = reboot();
+        Store ps2(OPS, PROFILES); ps2.scan();
+        CHECK(holds(m, M), "las macros se estropean al escribir perfiles");
+        CHECK(holds(ps2, P), "los perfiles no sobreviven");
+        // Cada almacén ignora el magic del otro.
+        Store cruzado(OPS, Layout{ OFFSET, PS_MAGIC }); cruzado.scan();
+        CHECK(cruzado.len() == 0, "un almacén lee las cabeceras del otro");
+    }
+
+    // ---- Paso de bancos de 224 KB (<= 4.26) a los de 112 KB ----
+    {
+        // Una copia vieja en el banco 1 antiguo, más nueva que la del banco 0.
+        std::fill(flash.begin(), flash.end(), 0xFF);
+        const auto old0 = blob(2000, 21), old1 = blob(50000, 22);
+        auto put = [&](uint32_t at, const std::vector<uint8_t>& v, uint32_t seq) {
+            const uint32_t crc = crc_of(v);
+            for (uint32_t o = 0; o < v.size(); o += PAGE) {
+                uint8_t pg[PAGE]; memset(pg, 0xFF, PAGE);
+                memcpy(pg, v.data() + o, std::min<size_t>(PAGE, v.size() - o));
+                f_program(at + HDR + o, pg, PAGE);
+            }
+            uint8_t h[PAGE]; memset(h, 0xFF, PAGE);
+            const Header hd = { MAGIC, seq, (uint32_t)v.size(), crc };
+            memcpy(h, &hd, sizeof(hd));
+            f_program(at, h, PAGE);
+        };
+        put(OFFSET, old0, 4);
+        put(OFFSET + OLD_BANK, old1, 5);
+        Store m(OPS); m.scan();
+        CHECK(holds(m, old0), "antes de adoptar debería verse la copia del banco 0");
+        CHECK(adopt_wide_bank(OPS, m), "no adopta la copia nueva del banco ancho");
+        CHECK(holds(m, old1), "tras adoptar no se ve la copia del banco ancho");
+        CHECK(!adopt_wide_bank(OPS, m), "adopta dos veces");
+        m = reboot();
+        CHECK(holds(m, old1), "la copia adoptada no sobrevive al reinicio");
+        Store ps(OPS, PROFILES); ps.scan();
+        CHECK(ps.len() == 0, "el banco ancho viejo se ve como archivo de perfiles");
+
+        // Si el banco 0 ya era el más nuevo, el viejo solo se borra.
+        std::fill(flash.begin(), flash.end(), 0xFF);
+        put(OFFSET, old0, 9);
+        put(OFFSET + OLD_BANK, old1, 5);
+        Store n(OPS); n.scan();
+        CHECK(!adopt_wide_bank(OPS, n) && holds(n, old0), "pisa una copia más nueva con una vieja");
+        CHECK(*(const uint32_t*)(flash.data() + OFFSET + OLD_BANK) == 0xFFFFFFFFu, "queda la cabecera vieja");
+
+        // Si la copia vieja no cabe en 112 KB, se descarta sin tocar la buena.
+        std::fill(flash.begin(), flash.end(), 0xFF);
+        const auto huge = blob(150 * 1024, 23);
+        put(OFFSET, old0, 4);
+        put(OFFSET + OLD_BANK, huge, 5);
+        Store q(OPS); q.scan();
+        CHECK(!adopt_wide_bank(OPS, q) && holds(q, old0), "una copia que no cabe rompe la buena");
+    }
+
     CHECK(sin_borrar == 0, "se programaron %d bytes sin borrar", sin_borrar);
     if (fallos) { printf("%d fallos\n", fallos); return 1; }
     printf("OK: almacén de macros\n");
