@@ -91,6 +91,7 @@ fn main() {
             window::window_maximize,
             window::window_close,
             serial::serial_send,
+            serial::serial_send_bytes,
             serial::serial_get_info,
             serial::serial_get_status,
             serial::serial_reconnect,

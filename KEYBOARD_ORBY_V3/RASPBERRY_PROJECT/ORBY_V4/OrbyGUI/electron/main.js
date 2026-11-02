@@ -471,6 +471,7 @@ ipcMain.handle('serial:send', async (_e, cmd) => {
   else if (CAMBIA_ALGO.test(cmd)) log(`[serie] > ${cmd}`);
   return serial ? serial.sendCommand(cmd) : false;
 });
+ipcMain.handle('serial:sendBytes', async (_e, bytes) => (serial ? serial.sendBytes(bytes) : false));
 ipcMain.handle('serial:getInfo', async () => serial?.getDeviceInfo() ?? null);
 ipcMain.handle('serial:getStatus', async () => serial?.getStatus() ?? 'disconnected');
 ipcMain.handle('serial:reconnect', async () => {

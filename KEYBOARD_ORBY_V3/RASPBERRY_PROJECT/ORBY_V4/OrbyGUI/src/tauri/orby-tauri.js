@@ -32,6 +32,9 @@ export async function instalarOrbyTauri() {
 
     // Comunicación serie
     sendCommand: (cmd) => invoke('serial_send', { cmd }),
+    // Bytes crudos para los fotogramas de los juegos. Un Uint8Array como único
+    // argumento viaja como cuerpo binario, sin pasar por JSON.
+    sendBytes: (bytes) => invoke('serial_send_bytes', bytes),
     getDeviceInfo: () => invoke('serial_get_info'),
     getStatus: () => invoke('serial_get_status'),
     reconnect: () => invoke('serial_reconnect'),
@@ -70,15 +73,15 @@ export async function instalarOrbyTauri() {
       set: (enabled) => invoke('autostart_set', { enabled }),
     },
 
-    // Copias de seguridad en un archivo del PC
-    saveBackup: (data) => invoke('backup_save', { data }),
-    loadBackup: () => invoke('backup_load'),
     // Vídeos de los consejos: la app los baja una vez y los sirve desde el disco.
     tips: {
       videoSrc: (id) => invoke('tips_video_src', { id }),
       sync: () => invoke('tips_sync'),
     },
 
+    // Copias de seguridad en un archivo del PC
+    saveBackup: (data) => invoke('backup_save', { data }),
+    loadBackup: () => invoke('backup_load'),
 
     // Elegir una app o archivo (pestaña "App" y paso "Abrir…" de una secuencia)
     pickAppOrFile: (kind) => invoke('dialog_pick_app_or_file', { kind }),

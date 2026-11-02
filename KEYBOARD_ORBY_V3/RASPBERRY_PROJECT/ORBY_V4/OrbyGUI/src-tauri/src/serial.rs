@@ -38,6 +38,17 @@ const RASTREO_MS: u64 = 3_000;
 /// renderer (frente a los 4 s que espera `device.js`, no cuenta).
 const TIC_MS: u64 = 20;
 
+/// El pulso mientras hay un juego en marcha. Un fotograma que el renderer encola espera
+/// como mucho un pulso a que el hilo lo vea (el hilo duerme dentro del `read`), y con los
+/// 20 ms normales eso son 20 ms de latencia y un techo de ~50 fotogramas por segundo.
+/// A 1 ms el hilo sigue sin girar en vacío —duerme igualmente en el `read`—, solo
+/// despierta más veces.
+const TIC_JUEGO_MS: u64 = 1;
+
+/// Cuánto sigue valiendo «hay un juego» después del último fotograma. Pasado esto el
+/// hilo vuelve solo al pulso normal, sin que nadie tenga que avisar de que se acabó.
+const JUEGO_VIGENCIA: Duration = Duration::from_millis(1_500);
+
 /// Con el puerto cerrado no hay nada que leer y el pulso rápido no aporta nada.
 const REPOSO_MS: u64 = 200;
 
@@ -63,9 +74,14 @@ struct Compartido {
     info: Option<Value>,
     /// Los comandos no escriben en el puerto: lo hace el hilo que lo posee. Así no hay
     /// dos escritores sobre el mismo handle ni hace falta duplicarlo.
-    salientes: VecDeque<String>,
+    ///
+    /// En bytes y no en `String`: los fotogramas de los juegos llevan carga binaria
+    /// que no es UTF-8 válido.
+    salientes: VecDeque<Vec<u8>>,
     /// El botón «Reconectar»: fuerza soltar lo que haya y rastrear ya.
     rescan: bool,
+    /// Hasta cuándo el hilo va al pulso rápido por haber un juego en marcha.
+    juego_hasta: Option<Instant>,
 }
 
 pub struct Serie(Arc<Mutex<Compartido>>);
@@ -92,7 +108,25 @@ pub fn serial_send(estado: tauri::State<'_, Serie>, cmd: String) -> bool {
         return false;
     }
     let linea = if cmd.ends_with('\n') { cmd } else { format!("{cmd}\n") };
-    c.salientes.push_back(linea);
+    c.salientes.push_back(linea.into_bytes());
+    true
+}
+
+/// Bytes tal cual, sin salto de línea añadido: los fotogramas de los juegos
+/// (`GAME_BIN:<máscara>:<n>\n` seguido de 360 bytes crudos por pantalla). Llegan como
+/// cuerpo binario de la llamada y no como JSON, porque convertir 3,6 KB a una lista de
+/// números por fotograma costaría más que mandarlos.
+#[tauri::command]
+pub fn serial_send_bytes(estado: tauri::State<'_, Serie>, request: tauri::ipc::Request<'_>) -> bool {
+    let tauri::ipc::InvokeBody::Raw(datos) = request.body() else {
+        return false;
+    };
+    let mut c = estado.0.lock().unwrap();
+    if !c.conectado {
+        return false;
+    }
+    c.salientes.push_back(datos.clone());
+    c.juego_hasta = Some(Instant::now() + JUEGO_VIGENCIA);
     true
 }
 
@@ -176,12 +210,16 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
             // Lo que el renderer haya encolado desde la última vuelta, al final de la cola
             // de bytes: detrás de lo que la máquina de estados ya hubiera puesto y de lo
             // que quedara a medias de la vuelta anterior.
-            {
+            let tic = {
                 let mut c = compartido.lock().unwrap();
                 for linea in c.salientes.drain(..) {
-                    por_escribir.extend(linea.as_bytes());
+                    por_escribir.extend(linea);
                 }
-            }
+                match c.juego_hasta {
+                    Some(hasta) if ahora < hasta => TIC_JUEGO_MS,
+                    _ => TIC_MS,
+                }
+            };
 
             let mut se_rompio = false;
             // El plazo del puerto es el pulso del hilo (20 ms), y `serialport` lo usa para
@@ -227,7 +265,7 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
             // Vuelta al plazo corto: es el que hace que el hilo duerma dentro del `read` en
             // vez de girar en vacío, y con los 2 s de la escritura el bucle iría a paso de
             // tortuga cada vez que el teclado no dijera nada.
-            let _ = p.set_timeout(Duration::from_millis(TIC_MS));
+            let _ = p.set_timeout(Duration::from_millis(tic));
 
             if !se_rompio {
                 match p.read(&mut buf) {
@@ -237,6 +275,14 @@ fn hilo(app: AppHandle, compartido: Arc<Mutex<Compartido>>) {
                         let (lineas, nuevo) = split_lines(&resto, &trozo);
                         resto = nuevo;
                         for linea in lineas {
+                            // El teclado pide jugar desde su selector de perfiles. Los juegos
+                            // corren en el renderer, y cerrar la ventana la destruye aunque la
+                            // app siga viva en la bandeja: se reconstruye para que haya quien
+                            // los lleve. Con la ventana ya abierta no se toca (`mostrar` la
+                            // maximizaría y le robaría el foco).
+                            if linea.trim() == "GAME:OPEN" && app.get_webview_window("main").is_none() {
+                                crate::window::mostrar(&app);
+                            }
                             let salidas = maquina.al_recibir(&linea);
                             aplicar(salidas, &app, &compartido, &mut puerto, &mut por_escribir, &mut resto, &ruta);
                             // Una de esas líneas pudo hacer que se soltara el puerto.

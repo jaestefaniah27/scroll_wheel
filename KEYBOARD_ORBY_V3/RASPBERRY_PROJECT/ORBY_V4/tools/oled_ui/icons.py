@@ -877,3 +877,4 @@ def render_sprite(name):
 
 # Los iconos de los perfiles de la biblioteca, en ficheros aparte por familia.
 import icons_apps  # noqa: E402,F401  (se registran solos en ICONS)
+import icons_juegos  # noqa: E402,F401  (los de los juegos, detrás: no mueven los identificadores de los demás)

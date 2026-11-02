@@ -28,6 +28,7 @@ import * as auto from './views/auto.js';
 import * as settings from './views/settings.js';
 import * as consoleView from './views/console.js';
 import * as tips from './views/tips.js';
+import * as games from './views/games.js';
 import { iniciarAvisos } from './tips-notice.js';
 
 const VIEWS = {
@@ -38,6 +39,7 @@ const VIEWS = {
   'view-settings': settings,
   'view-console': consoleView,
   'view-tips': tips,
+  'view-games': games,
 };
 
 let activeView = 'view-dashboard';
@@ -101,6 +103,10 @@ function initChrome() {
   document.getElementById('btn-settings').addEventListener('click', async () => {
     if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
     switchView(activeView === 'view-settings' ? 'view-dashboard' : 'view-settings');
+  });
+  document.getElementById('btn-games').addEventListener('click', async () => {
+    if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
+    switchView(activeView === 'view-games' ? 'view-dashboard' : 'view-games');
   });
   document.getElementById('btn-tips').addEventListener('click', async () => {
     if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
@@ -210,6 +216,7 @@ const VIEW_TITLES = {
   'view-settings': 'Ajustes',
   'view-console': 'Consola serie',
   'view-tips': 'Consejos',
+  'view-games': 'Juegos',
 };
 
 // El editor de iconos se abre desde el panel del Inicio o desde Perfiles, así
@@ -250,6 +257,7 @@ function switchView(target, params) {
   document.getElementById('btn-settings').classList.toggle('on', target === 'view-settings');
   document.getElementById('btn-profiles').classList.toggle('on', target === 'view-profiles');
   document.getElementById('btn-tips').classList.toggle('on', target === 'view-tips');
+  document.getElementById('btn-games').classList.toggle('on', target === 'view-games');
 
   if (params && VIEWS[target]?.openTarget) VIEWS[target].openTarget(params);
   else VIEWS[target]?.render?.();
@@ -613,6 +621,7 @@ function arrancarApp() {
   oled.init();
   settings.init();
   tips.init();
+  games.init();
   iniciarAvisos();
   consoleView.init();
   // cfg.autoProfile no existe en la WebGUI (config-merge.mjs lo quita de DEFAULTS

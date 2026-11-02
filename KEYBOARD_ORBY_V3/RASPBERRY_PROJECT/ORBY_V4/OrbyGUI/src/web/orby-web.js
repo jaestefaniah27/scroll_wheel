@@ -28,6 +28,7 @@ export async function instalarOrbyWeb() {
 
     // Comunicación serie
     sendCommand: (cmd) => serie.enviar(cmd),
+    sendBytes: (bytes) => serie.enviarBytes(bytes),
     getDeviceInfo: async () => serie.info(),
     getStatus: async () => serie.estado(),
     reconnect: () => serie.reconectar(),
@@ -69,7 +70,6 @@ export async function instalarOrbyWeb() {
       openFolder: async () => ({ ok: false }),
     },
 
-    autostart: {
     // Sin disco donde guardarlos: el navegador ve el vídeo directo desde GitHub, y la
     // caché HTTP hace de "descarga única". Un 404 (aún sin grabar) lo trata la vista.
     tips: {
@@ -78,6 +78,7 @@ export async function instalarOrbyWeb() {
       sync: async () => ({ descargados: 0, fallos: 0 }),
     },
 
+    autostart: {
       get: async () => false,
       set: async () => false,
     },

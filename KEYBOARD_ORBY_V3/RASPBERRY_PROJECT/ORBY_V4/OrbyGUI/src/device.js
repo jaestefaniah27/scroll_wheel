@@ -160,6 +160,31 @@ export const setHelp = (s) => request(`SET_HELP:${s}`, {
 // src/oled-mirror.js.
 export const setMirror = (on) =>
   request(`MIRROR:${on ? 1 : 0}`, { match: (l) => l.startsWith('MIRROR:OK:') });
+// Modo juego (firmware 4.29, bandera GAMES): el teclado cede sus diez pantallas a la app
+// y le cuenta las teclas, los mandos y la rueda. Ver src/games/engine.js. Entrar falla con
+// ERR:GAME_BUSY si hay un menú abierto en el teclado.
+export const gameStart = () => request('GAME:1', {
+  match: (l) => l === 'GAME:OK:1',
+  fail: (l) => l.startsWith('ERR:GAME'),
+  timeout: 3000,
+});
+export const gameStop = () => request('GAME:0', { match: (l) => l === 'GAME:OK:0', timeout: 2000 });
+
+// Un fotograma ya armado (proto.mjs: cabecera GAME_BIN + bytes). No pasa por la cola de
+// peticiones ni por la consola: a 100 por segundo la ahogaría, y el acuse llega como
+// telemetría (GAME:SHOWN).
+export function gameFrame(bytes) {
+  if (!linkUp) return false;
+  window.orby.sendBytes(bytes);
+  return true;
+}
+
+// Mantiene al teclado en el juego mientras la pantalla no cambia (sale solo a los 3 s
+// sin oír a la app). No se anuncia en la consola por lo mismo.
+export function gameKeepAlive() {
+  if (linkUp) window.orby.sendCommand('GAME_SHOW');
+}
+
 export const saveToFlash   = ()   => request('SAVE_STATE',          { match: (l) => l.startsWith('SAVE:OK'), timeout: 8000 });
 export const resetDefaults = ()   => request('RESET_DEFAULTS',      { match: (l) => l.startsWith('RESET:OK') });
 
@@ -680,7 +705,9 @@ export function init() {
       return;
     }
 
-    emit('rx', line);
+    // Los acuses de los fotogramas de un juego son uno por fotograma (cien por
+    // segundo); en la consola no dirían nada y la desbordarían.
+    if (!line.startsWith('GAME:SHOWN:')) emit('rx', line);
     const consumed = settlePending(line);
     if (!consumed) emit('telemetry', line);
     else emit('response', line);

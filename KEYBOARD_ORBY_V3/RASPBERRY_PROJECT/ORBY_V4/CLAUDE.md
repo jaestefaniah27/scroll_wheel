@@ -126,6 +126,21 @@ la 4.17 que las apps anteriores ignoran), más `EV:INV` (teclas sujetas) y `EV:D
 `device.js` manda todo lo que empieza por `EV:` directo a telemetría, sin pasar por
 la cola de peticiones, y no enseña las imágenes en la consola.
 
+Con `GAME:1` (firmware 4.29, bandera `GAMES=1`) el teclado cede las diez pantallas a la app y
+solo cuenta las entradas: es el **modo juego**. Los juegos corren en el PC, no en el firmware.
+`MODE_GAME` es un valor más de `current_mode`, así que HID, perfiles y menús se callan solos.
+Los fotogramas van en binario, `GAME_BIN:<máscara>:<n>
+` + 360 bytes crudos por pantalla marcada
+(la lee `cdc_feed`, no `process_command`), a un búfer aparte que se copia a `game_fb` al
+completarse; `GAME:SHOWN:<n>:<µs>` lo emite Core 1 al pintarlo, y la app lleva unos pocos en vuelo. En juego, `KEY_EV` lleva un tercer campo con el µs de la pulsación (antes del antirrebote): con los dos, en el reloj del teclado, Reflejos mide de pantalla a dedo sin el USB (`msEntre` en `proto.mjs`; sin esos campos cae al reloj del PC).
+`GAME_FB`/`GAME_SHOW` son la vía en hexadecimal (más lenta, ~21 fps frente a ~120). Si la app calla 3 s
+el teclado sale solo (`GAME:TIMEOUT`); en juego no se publica el espejo (`MIRROR`), que si no
+inundaba el CDC. Entradas: `KEY_EV` (teclas 1-12; la 11 es la pantalla 10, la 10 y la 12 no tienen),
+`ENC`, `ENC_SW` y `WHEEL` (100 Hz en juego, 20 fuera).
+El modo también lo abre el teclado: «Juegos» es la pantalla 10 del selector de perfiles (`PERF_GAMES_OPT`, ver
+`perf_has_games`), y `games_enter()` entra en `MODE_GAME` y avisa con `GAME:OPEN`; la app adopta el modo aunque
+llegue tarde (`MODE=GAME` en el saludo y `STATE:MODE:GAME`). `serial.rs` reconstruye la ventana al ver `GAME:OPEN`.
+
 ### Versiones y compatibilidad
 La versión del firmware sale de `include/orby_version.h` y de ahí van el `FW=`
 del handshake y el `bcdDevice` del USB. Lo que la app sabe usar está en
@@ -238,6 +253,16 @@ JS vanilla con módulos ES, sin framework. Vistas en `src/views/`, cada una con
   posición de mandos y rueda algo distintos, no lo copies.
 - `ui.js` — avisos (`toast`) y `confirmar()`, la alerta al estilo iOS. No uses
   `confirm()`: en WebView2 sale como diálogo de navegador con "localhost dice".
+
+- `games/` — el motor de juegos. `engine.js` lleva la sesión (entra en `GAME:1`, reloj en un Worker
+  porque la ventana está siempre tapada y Chromium frena sus temporizadores, control de flujo con los
+  acuses, salida con la tecla 10); `proto.mjs` arma los fotogramas y lee los eventos; `scores.mjs`
+  guarda récord e historial en la configuración local (`cfg.juegos`); `dibujo.mjs` tiene las primitivas
+  y `Malla`, que ve varias pantallas como un lienzo continuo con sus huecos. Cada juego es un fichero
+  `.mjs` (para poder probarlo en Node) dado de alta en `catalogo.mjs`; la vista es `views/games.js`.
+  El jugar necesita el teclado siempre: no hay modo de ratón. `gestor.js` lleva la sesión venga de la app o del
+  teclado (menú → partida → pantalla final, ver `flujo.mjs`, que es lo que se prueba): el menú y la pantalla final
+  son «juegos» más para el motor (`menu.mjs`, `final.mjs`), y la tecla 10 siempre vuelve un nivel atrás o sale.
 
 ### OrbyGUI — las tres vías
 El mismo renderer arranca en tres sitios, y `src/entry.js` decide cuál montando el

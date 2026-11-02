@@ -386,8 +386,44 @@ enum AppMode {
     MODE_MENU_INFO,
     MODE_MENU_PAGES,   // gestor de páginas: un número por pantalla
     MODE_MENU_SCROLL,  // invertir sentido de la rueda (normal / SUPER)
-    MODE_MENU_RESET    // confirmar reset de fábrica (por defecto en NO)
+    MODE_MENU_RESET,   // confirmar reset de fábrica (por defecto en NO)
+    MODE_GAME          // la app pinta las diez pantallas y lee las entradas (GAME:1)
 };
+
+// Pantallas del modo juego: las pinta la app con GAME_FB y Core 1 las copia en
+// cada refresco. Core 0 escribe y Core 1 lee sin candado: lo peor que puede
+// pasar es un fotograma a medias, que el siguiente repinta.
+static uint8_t  game_fb[10][OLED_FB_SIZE];
+
+// Fotograma binario en camino (GAME_BIN). Los bytes crudos van a un búfer
+// aparte y solo se copian a game_fb cuando está entero: Core 1 puede estar
+// leyendo game_fb en cualquier momento, y así no pinta una pantalla a medias.
+static uint8_t  game_rx[10][OLED_FB_SIZE];
+static uint16_t game_bin_mask = 0;     // qué pantallas trae (bit 0 = pantalla 1)
+static uint32_t game_bin_need = 0;     // bytes que faltan; 0 = no hay fotograma en camino
+static uint32_t game_bin_pos  = 0;     // byte dentro de la pantalla en curso
+static uint32_t game_bin_scr  = 0;     // pantalla (0-9) que se está llenando
+static uint32_t game_bin_seq  = 0;     // número del fotograma + 1; 0 = sin número
+// Core 0 anota el último fotograma pedido y Core 1 el último que ha pintado
+// de verdad: el acuse que ve la app sale del segundo, no de haber recibido.
+static volatile uint32_t game_seq_req  = 0;
+static volatile uint32_t game_seq_done = 0;
+// Cuándo acabó Core 1 de mandar al panel ese fotograma, en µs del reloj del teclado
+// (time_us_32). Va en el acuse junto con el número: con él y con el instante de cada
+// tecla (KEY_EV en juego), un juego de reflejos mide de pantalla a dedo sin que entre
+// en la cuenta ni el USB ni lo que tarde el PC en atender. Se escribe antes que
+// game_seq_done, así que quien ve el número nuevo ve ya su instante.
+static volatile uint32_t game_shown_us = 0;
+// Último comando GAME_* recibido. Si la app se cuelga o se cierra a media
+// partida, el teclado no puede quedarse con las pantallas secuestradas: pasados
+// GAME_TIMEOUT_MS sin noticias vuelve solo al uso normal.
+static uint32_t game_last_ms = 0;
+static constexpr uint32_t GAME_TIMEOUT_MS = 3000;
+// Entrar desde el selector de perfiles lo decide el teclado, y la app tiene que enterarse
+// (GAME:OPEN) y contestar. Si la app está viva pero sin ventana, abrirla lleva unos
+// segundos: hasta el primer GAME:1 se espera más, y solo si había app a la que esperar.
+static bool game_espera_app = false;
+static constexpr uint32_t GAME_ESPERA_MS = 12000;
 
 // Opciones del menú principal, en el orden de sus pantallas. Ayuda entró en la
 // 4.28 delante de Salir, que sigue siendo la última.
@@ -1704,8 +1740,26 @@ volatile bool perf_menu_back = true;
 // lo abre así no venía de él.
 volatile bool perf_menu_back_to_normal = false;
 
+// «Juegos» ocupa siempre la última pantalla (la 10, la tecla 11): las nueve primeras son de
+// los perfiles. Solo cabe si no hay más de nueve perfiles y, abierto desde el menú principal,
+// si «Volver» (justo detrás del último perfil) no se la come; con nueve perfiles y Volver
+// esa pantalla es de Volver y los juegos se abren por el gesto de mantener la tecla de menú.
+#define PERF_GAMES_OPT 9
+
+static inline bool perf_has_games() {
+    return profile_count <= 9 && (!perf_menu_back || profile_count + 1 <= 9);
+}
+
+// ¿Esta opción existe? Con juegos puede haber un hueco entre «Volver» y «Juegos», y el
+// cursor no debe pararse en él.
+static inline bool perf_option_valid(uint8_t o) {
+    if (o < profile_count) return true;
+    if (o == profile_count && perf_menu_back) return true;
+    return o == PERF_GAMES_OPT && perf_has_games();
+}
+
 static inline uint8_t perf_menu_count() {
-    return (uint8_t)(profile_count + (perf_menu_back ? 1 : 0));
+    return perf_has_games() ? (uint8_t)10 : (uint8_t)(profile_count + (perf_menu_back ? 1 : 0));
 }
 
 // Primera opción visible en las pantallas.
@@ -2444,6 +2498,10 @@ static void render_screen(uint8_t screen_num, uint8_t* out) {
         return;
     }
 
+    case MODE_GAME:
+        memcpy(fb, game_fb[idx], OLED_FB_SIZE);
+        return;
+
     case MODE_MENU_MAIN: {
         static const uint8_t opciones[MAIN_MENU_OPTS] = {SYS_MENU_PROFILES, SYS_MENU_SLEEP, SYS_MENU_WHEEL,
                                                          SYS_MENU_RESET, SYS_MENU_INFO, SYS_MENU_HELP,
@@ -2462,7 +2520,8 @@ static void render_screen(uint8_t screen_num, uint8_t* out) {
         uint8_t option = (uint8_t)(perf_menu_first + idx);
         if (option < profile_count)       render_profile_tile(fb, option);
         else if (option == profile_count && perf_menu_back) screen_system(fb, SYS_BACK);
-        if (option < perf_menu_count()) elegida = (selected_menu_idx == option);
+        else if (option == PERF_GAMES_OPT && perf_has_games()) screen_icon_big(fb, SPR_GAMEPAD);
+        if (perf_option_valid(option)) elegida = (selected_menu_idx == option);
         break;
     }
 
@@ -2569,7 +2628,11 @@ static volatile uint8_t  mirror_origin = 4;    // pantalla de la que sale PICK
 volatile bool mirror_on = false;
 
 static void mirror_publish(OledAnim::Kind kind) {
-    if (!mirror_on) return;
+    // En un juego la app es quien manda las pantallas: devolvérselas por el
+    // espejo duplicaría el tráfico (diez líneas de 7 KB por fotograma) y, si la
+    // app no las lee a tiempo, llena la cola de salida del CDC y el firmware se
+    // queda escribiendo sin atender lo que le llega.
+    if (!mirror_on || current_mode == MODE_GAME) return;
     mirror_seq = mirror_seq + 1;
     __dmb();
     memcpy(mirror_fb, oled_target, sizeof(mirror_fb));
@@ -2597,6 +2660,9 @@ static ScreenCtx screen_ctx() {
 
 static OledAnim::Kind classify(const ScreenCtx& a, const ScreenCtx& b, int* origen) {
     using namespace OledAnim;
+    // Dentro de un juego cada fotograma es el definitivo: animar el cambio lo
+    // convertiría en un fundido de varios cientos de ms entre dos imágenes.
+    if (a.mode == MODE_GAME && b.mode == MODE_GAME) return CUT;
     const bool en_menu_a = a.mode != MODE_NORMAL, en_menu_b = b.mode != MODE_NORMAL;
     if (!en_menu_a && en_menu_b) return MENU_OPEN;
     // Elegir un perfil distinto en el menú de perfiles: los iconos se aspiran
@@ -2663,6 +2729,7 @@ void core1_entry() {
     else              intro_running = false;
     OledAnim::Press pulsada[10];
     uint16_t current_inversions = 0;
+    uint32_t game_seq_pend = 0;   // fotograma de juego cuyo acuse sale al pintarlo
     uint64_t antes = time_us_64();
 
     while (true) {
@@ -2699,13 +2766,22 @@ void core1_entry() {
 
         if (system_refresh_req) {
             system_refresh_req = false;
+            // Se apunta ANTES de leer game_fb: si llega otro fotograma entre
+            // medias se pinta ese, con el acuse del anterior, y no al revés.
+            game_seq_pend = game_seq_req;
 
             // La inversión por hardware queda solo para la tecla pulsada; los
             // menús llevan la selección dibujada. Se pone todo a normal en cada
             // refresco por si algún panel se quedó invertido (reset a medias,
             // un comando perdido): sale barato y no deja restos.
-            for (int i = 1; i <= 10; i++) oleds.invert_screen(i, false);
-            current_inversions = 0;
+            // Dentro de un juego se salta: son diez comandos SPI por fotograma
+            // y no hay nada invertido que limpiar. La entrada (ctx todavía no
+            // es de juego) sí limpia, por si había una tecla sujeta, y la
+            // salida también, porque entonces current_mode ya no lo es.
+            if (!(current_mode == MODE_GAME && ctx.mode == MODE_GAME)) {
+                for (int i = 1; i <= 10; i++) oleds.invert_screen(i, false);
+                current_inversions = 0;
+            }
 
             const ScreenCtx nuevo = screen_ctx();
             // Con las pantallas apagadas no hay nada que animar: se cambia y ya.
@@ -2732,6 +2808,7 @@ void core1_entry() {
             if (OledAnim::press_step(pulsada[i], ((sujetas >> i) & 1) ? 1.0f : 0.0f, dt)) muelles = true;
 
         const float t = animando ? (float)(ahora - t0) * 1e-6f : 0.0f;
+        uint32_t pintado_us = 0;
         for (int i = 0; i < 10; i++) {
             if (animando) OledAnim::render(kind, t, i, oled_from, oled_target, oled_frame);
             else          memcpy(oled_frame, oled_target[i], OLED_FB_SIZE);
@@ -2744,7 +2821,16 @@ void core1_entry() {
             if (memcmp(f, oled_shown[i], OLED_FB_SIZE) != 0) {
                 oleds.paint_screen((uint8_t)(i + 1), f);
                 memcpy(oled_shown[i], f, OLED_FB_SIZE);
+                pintado_us = time_us_32();
             }
+        }
+        // Ya está en el panel: ahora sí se puede decir que el fotograma salió. El
+        // instante es el de la última pantalla que cambió, no el de acabar la vuelta:
+        // un fotograma de reflejos cambia una sola y eso es lo que se ve.
+        if (game_seq_pend) {
+            game_shown_us = pintado_us ? pintado_us : time_us_32();
+            game_seq_done = game_seq_pend;
+            game_seq_pend = 0;
         }
         if (animando && t >= OledAnim::duration(kind)) animando = false;
         if (!animando) intro_running = false;
@@ -2768,6 +2854,10 @@ void core1_entry() {
             // lento, el siguiente simplemente llega más lejos.
             const int64_t resto = 16667 - (int64_t)(time_us_64() - ahora);
             if (resto > 0) sleep_us((uint64_t)resto);
+        } else if (current_mode == MODE_GAME) {
+            // Un fotograma de juego espera como mucho 0,25 ms a que Core 1 lo
+            // vea, no los 10 de abajo: ese sueño era el techo de ~100 fps.
+            sleep_us(250);
         } else {
             sleep_ms(10); // Polling ligero para no acaparar CPU si no hay mensajes
         }
@@ -2777,7 +2867,8 @@ void core1_entry() {
 // ==========================================
 // CALLBACKS CDC (SERIAL) — Core 0
 // ==========================================
-#define CMD_BUF_SIZE 512
+// 1024: GAME_FB lleva una pantalla entera (720 caracteres hexadecimales).
+#define CMD_BUF_SIZE 1024
 static char cmd_buf[CMD_BUF_SIZE];
 static int  cmd_pos = 0;
 
@@ -3135,9 +3226,9 @@ void process_command(const char* cmd) {
         // (0) y PLAY_INTRO la enseña ya.
         // HELP=1: modo ayuda (los nombres en vez de los iconos, que desde aquí
         // van en grande y sin nombre); SET_HELP elige cómo se sale.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:PSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:HELP=1:MODE=%s\n",
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:PSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:HELP=1:GAMES=1:MODE=%s\n",
                    (int)profile_count, MAX_ACTIVE_PROFILES, MAX_PAGES, MACRO_MAX_COUNT, (int)INTRO_COUNT,
-                   (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
+                   (current_mode == MODE_NORMAL) ? "NORMAL" : (current_mode == MODE_GAME) ? "GAME" : "MENU");
         return;
     }
 
@@ -3214,7 +3305,7 @@ void process_command(const char* cmd) {
         cdc_printf("STATE:MENUENC:%d\n", (int)menu_encoder);
         cdc_printf("STATE:INTRO:%d:%d\n", (int)intro_variant, (int)INTRO_COUNT);
         cdc_printf("STATE:HELP:%d:%d\n", help_exit_secs(help_exit), help_active ? 1 : 0);
-        cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : "MENU");
+        cdc_printf("STATE:MODE:%s\n", (current_mode == MODE_NORMAL) ? "NORMAL" : (current_mode == MODE_GAME) ? "GAME" : "MENU");
         cdc_printf("STATE:SUPER:%d\n", super_active ? 1 : 0);
         cdc_printf("STATE:MENUGLITCH:%lu\n", (unsigned long)menu_tap_glitches);
         cdc_printf("STATE:PAGE:%d:%d:%d\n", (int)active_page,
@@ -3320,6 +3411,96 @@ void process_command(const char* cmd) {
         } else {
             cdc_printf("ERR:ANIMSPEED_VALUE\n");
         }
+        return;
+    }
+
+    // ---------- Modo juego (la lógica corre en la app) ----------
+    // GAME:1 secuestra las diez pantallas y GAME:0 las devuelve. Mientras dura,
+    // las teclas, los mandos y la rueda no hacen nada en el PC (ni HID ni
+    // acciones de perfil) y solo se cuentan por el CDC con la telemetría de
+    // siempre: KEY_EV, ENC, ENC_SW y WHEEL.
+    //   GAME_FB:<pantalla 1-10>:<desplazamiento>:<hex>  trozo del fotograma
+    //   GAME_SHOW[:<n>]  lo muestra; responde GAME:SHOWN:<n> para medir el viaje
+    // La vía binaria (GAME_BIN) acusa con GAME:SHOWN:<n>:<µs pintado>, y en juego
+    // KEY_EV lleva un tercer campo con el µs de la pulsación: ver game_shown_us.
+    // Cualquiera de los tres alimenta game_last_ms: sin ninguno durante
+    // GAME_TIMEOUT_MS el teclado sale solo del juego.
+    if (strncmp(cmd, "GAME:", 5) == 0) {
+        game_last_ms = to_ms_since_boot(get_absolute_time());
+        game_espera_app = false;   // la app ha contestado
+        if (cmd[5] == '1') {
+            if (current_mode == MODE_NORMAL) {
+                memset(game_fb, 0, sizeof(game_fb));
+                game_bin_need = 0;
+                game_seq_req = game_seq_done = 0;   // los números de una partida no valen en la siguiente
+                // Una tecla ya sujeta tiene su HID puesto, y al soltarla en
+                // modo juego nadie lo quitaría.
+                HidOut::release_all();
+                current_mode = MODE_GAME;
+                push_system_refresh();
+                cdc_printf("GAME:OK:1\n");
+            } else if (current_mode == MODE_GAME) {
+                cdc_printf("GAME:OK:1\n");
+            } else {
+                cdc_printf("ERR:GAME_BUSY\n");   // hay un menú abierto
+            }
+        } else {
+            if (current_mode == MODE_GAME) {
+                current_mode = MODE_NORMAL;
+                push_system_refresh();
+                cdc_printf("MODE:NORMAL\n");
+            }
+            cdc_printf("GAME:OK:0\n");
+        }
+        return;
+    }
+
+    if (strncmp(cmd, "GAME_FB:", 8) == 0) {
+        if (current_mode != MODE_GAME) { cdc_printf("ERR:GAME_OFF\n"); return; }
+        int scr = 0, offset = 0;
+        const char* p = next_field(cmd + 8, &scr);
+        p = next_field(p, &offset);
+        if (!p || scr < 1 || scr > 10 || offset < 0 || offset >= OLED_FB_SIZE) {
+            cdc_printf("ERR:BAD_ARGS\n");
+            return;
+        }
+        uint8_t* dst = game_fb[scr - 1];
+        for (int w = offset; p[0] && p[1] && w < OLED_FB_SIZE; p += 2, w++) {
+            const int hi = hex_nibble(p[0]), lo = hex_nibble(p[1]);
+            if (hi < 0 || lo < 0) break;
+            dst[w] = (uint8_t)((hi << 4) | lo);
+        }
+        game_last_ms = to_ms_since_boot(get_absolute_time());
+        return;   // sin respuesta: a 30 fotogramas serían 300 líneas por segundo de OK
+    }
+
+    // GAME_BIN:<máscara>[:<n>] seguido, sin separador, de 360 bytes crudos por
+    // cada bit puesto en la máscara (de la pantalla 1 a la 10). Es lo rápido:
+    // la mitad de bytes que el hexadecimal, sin analizar nada por línea, y la
+    // app solo manda las pantallas que han cambiado. Se muestra solo al
+    // completarse. Quien lee los bytes es cdc_feed, no este comando.
+    if (strncmp(cmd, "GAME_BIN:", 9) == 0) {
+        if (current_mode != MODE_GAME) { cdc_printf("ERR:GAME_OFF\n"); return; }
+        int mask = 0, n = -1;
+        const char* p = next_field(cmd + 9, &mask);
+        if (p && *p) next_field(p, &n);
+        if (!p || mask < 1 || mask > 0x3FF) { cdc_printf("ERR:BAD_ARGS\n"); return; }
+        game_bin_mask = (uint16_t)mask;
+        game_bin_need = (uint32_t)__builtin_popcount((unsigned)mask) * OLED_FB_SIZE;
+        game_bin_pos  = 0;
+        game_bin_scr  = (uint32_t)__builtin_ctz((unsigned)mask);
+        game_bin_seq  = (n >= 0) ? (uint32_t)n + 1 : 0;
+        game_last_ms = to_ms_since_boot(get_absolute_time());
+        return;
+    }
+
+    if (strncmp(cmd, "GAME_SHOW", 9) == 0) {
+        if (current_mode != MODE_GAME) { cdc_printf("ERR:GAME_OFF\n"); return; }
+        int n = 0;
+        if (cmd[9] == ':') next_field(cmd + 10, &n);
+        game_last_ms = to_ms_since_boot(get_absolute_time());
+        push_system_refresh();
+        cdc_printf("GAME:SHOWN:%d\n", n);
         return;
     }
 
@@ -3839,6 +4020,29 @@ extern "C" void tud_resume_cb(void) {
     // a contar en cuanto se suelte y se pulse otra vez.
 }
 
+// Entra en el modo juego desde el selector de perfiles. La lógica del juego corre en la
+// app, así que el teclado solo avisa (GAME:OPEN) y se queda con las pantallas a la espera.
+// Mientras la app no conteste enseña qué falta, en vez de unas pantallas en negro.
+static void games_enter() {
+    memset(game_fb, 0, sizeof(game_fb));
+    game_bin_need = 0;
+    game_seq_req = game_seq_done = 0;
+    HidOut::release_all();
+    if (host_app_alive()) {
+        OledUi::screen_icon_big(game_fb[4], OledUiData::SPR_GAMEPAD);
+        game_espera_app = true;
+    } else {
+        OledUi::screen_text(game_fb[3], "ABRE");
+        OledUi::screen_text(game_fb[4], "ORVY");
+        game_espera_app = false;
+    }
+    game_last_ms = to_ms_since_boot(get_absolute_time());
+    current_mode = MODE_GAME;
+    selected_menu_idx = 0;
+    push_system_refresh();
+    cdc_printf("GAME:OPEN\n");
+}
+
 // Pulsar un encoder dentro de un menú: confirma la opción elegida. Antes
 // solo lo hacía el izquierdo; desde la 4.15 vale cualquiera de los dos,
 // porque el menú puede abrirse desde el derecho (ROT_MENU) y obligar a
@@ -3868,7 +4072,9 @@ static void menu_click() {
         else if (current_mode == MODE_MENU_RESET) reset_menu_open();
         push_system_refresh();
     } else if (current_mode == MODE_MENU_PERF) {
-        if (selected_menu_idx < profile_count) {
+        if (selected_menu_idx == PERF_GAMES_OPT && perf_has_games()) {
+            games_enter();
+        } else if (selected_menu_idx < profile_count) {
             active_profile_idx = selected_menu_idx;
             active_page = 0;
             // Guardado inmediato: es un cambio discreto (no como el
@@ -3955,6 +4161,13 @@ static void menu_turn(int delta) {
     if (opts < 1) opts = 1;
     int next = ((int)selected_menu_idx + delta) % opts;
     if (next < 0) next += opts;
+    if (current_mode == MODE_MENU_PERF) {
+        // Con juegos hay un hueco entre «Volver» y «Juegos»: se sigue en el mismo sentido
+        // hasta una opción que exista.
+        const int paso = delta < 0 ? opts - 1 : 1;
+        for (int guarda = 0; guarda < opts && !perf_option_valid((uint8_t)next); guarda++)
+            next = (next + paso) % opts;
+    }
     selected_menu_idx = (uint8_t)next;
     menu_cursor_moved = true;
     if (current_mode == MODE_MENU_PERF) perf_menu_follow();
@@ -4055,6 +4268,64 @@ static bool enc_hold_tick(uint8_t enc, uint32_t now) {
 // ==========================================
 // CORE 0: ENCODERS, TECLAS Y USB CDC / HID
 // ==========================================
+// Reparte lo que llega por el CDC: líneas de texto a process_command y, tras un
+// GAME_BIN, los bytes crudos del fotograma al búfer de recepción. Va byte a
+// byte porque la carga binaria empieza justo detrás del salto de línea, a
+// veces dentro del mismo bloque leído.
+static void cdc_feed(const char* d, uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) {
+        if (game_bin_need > 0) {
+            // Cada byte va a la pantalla que toca según la máscara; el cursor
+            // salta a la siguiente marcada al llenar una.
+            game_rx[game_bin_scr][game_bin_pos++] = (uint8_t)d[i];
+            if (game_bin_pos == OLED_FB_SIZE) {
+                game_bin_pos = 0;
+                do { game_bin_scr++; } while (game_bin_scr < 10 && !((game_bin_mask >> game_bin_scr) & 1));
+            }
+            if (--game_bin_need == 0) {
+                for (int s = 0; s < 10; s++)
+                    if ((game_bin_mask >> s) & 1) memcpy(game_fb[s], game_rx[s], OLED_FB_SIZE);
+                game_last_ms = to_ms_since_boot(get_absolute_time());
+                if (game_bin_seq) game_seq_req = game_bin_seq;
+                if (current_mode == MODE_GAME) push_system_refresh();
+            }
+            continue;
+        }
+        const char c = d[i];
+        if (c == '\n' || c == '\r') {
+            if (cmd_pos > 0) {
+                cmd_buf[cmd_pos] = 0;
+                process_command(cmd_buf);
+                cmd_pos = 0;
+            }
+        } else if (cmd_pos < CMD_BUF_SIZE - 1) {
+            cmd_buf[cmd_pos++] = c;
+        }
+    }
+}
+
+// Un fotograma binario son 3,6 KB y el bucle principal lee 256 bytes por
+// vuelta: tardaría decenas de milisegundos en recibirlo, que es lo que más
+// pesa en la tasa de fotogramas. Mientras falten bytes se queda aquí leyendo y
+// moviendo el USB, con un tope de 20 ms sin recibir nada para no colgar el
+// teclado si la carga se corta a medias.
+static void cdc_pump_rx() {
+    char tmp[256];
+    uint32_t last_us = time_us_32();
+    do {
+        if (tud_cdc_available()) {
+            cdc_feed(tmp, tud_cdc_read(tmp, sizeof(tmp)));
+            last_us = time_us_32();
+        } else if (game_bin_need > 0) {
+            tud_task();
+            if ((uint32_t)(time_us_32() - last_us) > 20000) {
+                game_bin_need = 0;
+                cdc_printf("ERR:GAME_BIN_TIMEOUT\n");
+            }
+        }
+    } while (game_bin_need > 0);
+}
+
 int main() {
     board_init();
     tusb_init();
@@ -4126,6 +4397,9 @@ int main() {
     #define KEY_DEBOUNCE_US 5000
     bool     key_stable[12]  = {false};
     uint32_t key_edge_us[12] = {0};
+    // El instante en que el pin empezó a cambiar, antes del antirrebote: es cuando se
+    // pulsó de verdad. Los 5 ms del filtro no deben contar como tiempo de reacción.
+    uint32_t key_flanco_us[12] = {0};
 
     // Lo que se tocó durante la intro no cuenta hasta soltarlo: una tecla
     // sujeta al acabar no debe dispararse sola, ni una soltada después debe
@@ -4187,20 +4461,15 @@ int main() {
 
 
         // --- PROCESAR COMANDOS CDC (POLLING) ---
-        if (tud_cdc_available()) {
-            char tmp[256];
-            uint32_t count = tud_cdc_read(tmp, sizeof(tmp));
-            for (uint32_t i = 0; i < count; i++) {
-                char c = tmp[i];
-                if (c == '\n' || c == '\r') {
-                    if (cmd_pos > 0) {
-                        cmd_buf[cmd_pos] = 0;
-                        process_command(cmd_buf);
-                        cmd_pos = 0;
-                    }
-                } else if (cmd_pos < CMD_BUF_SIZE - 1) {
-                    cmd_buf[cmd_pos++] = c;
-                }
+        if (tud_cdc_available()) cdc_pump_rx();
+
+        // Acuse de los fotogramas de juego: lo que Core 1 ha pintado de verdad.
+        {
+            static uint32_t acked = 0;
+            const uint32_t done = game_seq_done;
+            if (done != acked) {
+                acked = done;
+                if (done) cdc_printf("GAME:SHOWN:%lu:%lu\n", (unsigned long)(done - 1), (unsigned long)game_shown_us);
             }
         }
 
@@ -4233,6 +4502,16 @@ int main() {
         if (enc_hold_tick(2, now)) activity_detected = true;
         help_tick(now);
 
+        // Red de seguridad del modo juego: si la app se cuelga o se cierra con
+        // las pantallas secuestradas, el teclado vuelve solo al uso normal.
+        if (current_mode == MODE_GAME
+            && (uint32_t)(now - game_last_ms) >= (game_espera_app ? GAME_ESPERA_MS : GAME_TIMEOUT_MS)) {
+            current_mode = MODE_NORMAL;
+            push_system_refresh();
+            cdc_printf("GAME:TIMEOUT\n");
+            cdc_printf("MODE:NORMAL\n");
+        }
+
         // Las teclas tachadas dependen de si la app está delante, y eso cambia
         // sin que nadie mande nada: al cerrarla se cae el DTR, y si se cuelga
         // caduca su aviso. Sin este repaso las pantallas se quedarían mintiendo
@@ -4253,14 +4532,16 @@ int main() {
             // La telemetría lleva el giro real; lo que hace el teclado, el ajustado.
             const int delta_izq = girar(ROTINV_ENC1, delta_izq_real);
 
-            if (current_mode == MODE_NORMAL) {
+            if (current_mode == MODE_NORMAL || current_mode == MODE_GAME) {
                 // Telemetría serie
                 char tel[32];
                 int len = snprintf(tel, sizeof(tel), "ENC:1:%d\n", delta_izq_real);
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                if (menu_encoder == 1) {
+                if (current_mode == MODE_GAME) {
+                    // En un juego el giro solo se cuenta: no hace volumen ni páginas.
+                } else if (menu_encoder == 1) {
                     page_steps(delta_izq);
                 } else {
                     // Acción configurada en el perfil activo y la capa en curso
@@ -4279,14 +4560,16 @@ int main() {
             activity_detected = true;
             const int delta_der = girar(ROTINV_ENC2, delta_der_real);
 
-            if (current_mode == MODE_NORMAL) {
+            if (current_mode == MODE_NORMAL || current_mode == MODE_GAME) {
                 // Telemetría serie
                 char tel[32];
                 int len = snprintf(tel, sizeof(tel), "ENC:2:%d\n", delta_der_real);
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                if (menu_encoder == 2) {
+                if (current_mode == MODE_GAME) {
+                    // Solo se cuenta, como el otro mando.
+                } else if (menu_encoder == 2) {
                     page_steps(delta_der);
                 } else {
                     // Acción configurada en el perfil activo y la capa en curso
@@ -4315,8 +4598,12 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                if (stable_enc1_sw_state) enc_press(1, now);
-                else                      enc_release(1);
+                // En un juego el clic solo se cuenta (ENC_SW, arriba). Sin esta
+                // guarda enc_press lo trataría como el clic de un menú.
+                if (current_mode != MODE_GAME) {
+                    if (stable_enc1_sw_state) enc_press(1, now);
+                    else                      enc_release(1);
+                }
             }
         } else {
             enc1_sw_debounce_cnt = 0;
@@ -4337,8 +4624,10 @@ int main() {
                 tud_cdc_n_write(0, tel, len);
                 tud_cdc_n_write_flush(0);
 
-                if (stable_enc2_sw_state) enc_press(2, now);
-                else                      enc_release(2);
+                if (current_mode != MODE_GAME) {
+                    if (stable_enc2_sw_state) enc_press(2, now);
+                    else                      enc_release(2);
+                }
             }
         } else {
             enc2_sw_debounce_cnt = 0;
@@ -4432,7 +4721,10 @@ int main() {
             WheelOut::zoom_disarm();
         }
 
-        if (wheel_tel_accum != 0 && (uint32_t)(now - last_wheel_tel) >= 50) {
+        // 20 Hz basta para dibujar la rueda en la app; un juego que la use como
+        // mando necesita más (100 Hz), a costa de unas pocas líneas más.
+        const uint32_t wheel_tel_ms = (current_mode == MODE_GAME) ? 10 : 50;
+        if (wheel_tel_accum != 0 && (uint32_t)(now - last_wheel_tel) >= wheel_tel_ms) {
             // Además del incremento va el ángulo absoluto (0-4095): es lo que
             // permite a la app dibujar la rueda en su posición real. El campo
             // se añade al final para no romper a quien solo lea el incremento.
@@ -4467,6 +4759,7 @@ int main() {
                     key_edge_us[i] = now_us; // sigue como estaba: reloj a cero
                 } else if ((uint32_t)(now_us - key_edge_us[i]) >= KEY_DEBOUNCE_US) {
                     key_stable[i]  = raw;
+                    key_flanco_us[i] = key_edge_us[i];
                     key_edge_us[i] = now_us;
                 }
             }
@@ -4531,16 +4824,20 @@ int main() {
                             if (ki == KEY_IDX_MENU || ki == KEY_IDX_SUPER) continue;
                             if (!gpio_get(key_pins[ki])) {
                                 uint8_t option = (uint8_t)(perf_menu_first + s - 1);
-                                if (option < profile_count) {
-                                    active_profile_idx = option;
-                                    active_page = 0;
-                                    save_settings();
+                                if (option == PERF_GAMES_OPT && perf_has_games()) {
+                                    games_enter();
+                                } else {
+                                    if (option < profile_count) {
+                                        active_profile_idx = option;
+                                        active_page = 0;
+                                        save_settings();
+                                    }
+                                    current_mode = MODE_NORMAL;
+                                    push_system_refresh();
+                                    int len2 = snprintf(tel, sizeof(tel), "MODE:NORMAL\n");
+                                    tud_cdc_n_write(0, tel, len2);
+                                    tud_cdc_n_write_flush(0);
                                 }
-                                current_mode = MODE_NORMAL;
-                                push_system_refresh();
-                                int len2 = snprintf(tel, sizeof(tel), "MODE:NORMAL\n");
-                                tud_cdc_n_write(0, tel, len2);
-                                tud_cdc_n_write_flush(0);
                                 picked_ki = (int8_t)ki;
                                 break;
                             }
@@ -4696,6 +4993,15 @@ int main() {
                     } else {
                         HidOut::key_up((uint8_t)i);
                     }
+                } else if (current_mode == MODE_GAME) {
+                    // Solo telemetría, en las dos direcciones: el juego necesita
+                    // saber también cuándo se suelta. Nada de HID ni de menú. Lleva
+                    // detrás el µs de la pulsación (ver game_shown_us).
+                    char tel[32];
+                    int len = snprintf(tel, sizeof(tel), "KEY_EV:%d:%d:%lu\n", i+1, is_pressed ? 1 : 0,
+                                       (unsigned long)key_flanco_us[i]);
+                    tud_cdc_n_write(0, tel, len);
+                    tud_cdc_n_write_flush(0);
                 } else if (is_pressed && current_mode == MODE_MENU_PAGES) {
                     // Gestor de páginas: cada tecla con número salta a su página.
                     // La de la pantalla 10 sale sin cambiar nada.
@@ -4711,8 +5017,11 @@ int main() {
                 } else if (is_pressed) {
                     // En cualquier menú, las teclas 1 a 6 actúan como atajos de
                     // selección; en el principal también la 7 (Salir, desde la 4.28).
-                    if (i <= 5 || (i == MM_EXIT && current_mode == MODE_MENU_MAIN)) {
-                        selected_menu_idx = i;
+                    // La tecla 11 (la pantalla 10) es «Juegos» en el selector de perfiles.
+                    const bool tecla_juegos = current_mode == MODE_MENU_PERF
+                        && i == key_index_for_screen(10) && perf_has_games();
+                    if (i <= 5 || (i == MM_EXIT && current_mode == MODE_MENU_MAIN) || tecla_juegos) {
+                        selected_menu_idx = tecla_juegos ? PERF_GAMES_OPT : i;
 
                         if (current_mode == MODE_MENU_MAIN) {
                             if (selected_menu_idx == 0) current_mode = MODE_MENU_PERF;
@@ -4736,7 +5045,9 @@ int main() {
                             else if (current_mode == MODE_MENU_RESET) reset_menu_open();
                             push_system_refresh();
                         } else if (current_mode == MODE_MENU_PERF) {
-                            if (selected_menu_idx < profile_count) {
+                            if (selected_menu_idx == PERF_GAMES_OPT && perf_has_games()) {
+                                games_enter();
+                            } else if (selected_menu_idx < profile_count) {
                                 active_profile_idx = selected_menu_idx;
                                 active_page = 0;
                                 save_settings();

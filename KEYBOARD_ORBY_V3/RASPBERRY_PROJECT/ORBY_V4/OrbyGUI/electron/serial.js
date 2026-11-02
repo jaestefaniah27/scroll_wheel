@@ -399,6 +399,13 @@ class OrbySerial extends EventEmitter {
     return true;
   }
 
+  // Bytes tal cual, sin salto de línea: los fotogramas de los juegos llevan carga binaria.
+  sendBytes(bytes) {
+    if (!this.isConnected || !this.port) return false;
+    this._sendRaw(Buffer.from(bytes));
+    return true;
+  }
+
   disconnect() {
     this._stopWatchdog();
     clearTimeout(this._provisionalTimer);

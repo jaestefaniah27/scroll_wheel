@@ -121,3 +121,8 @@ from catalog_apps import ENTRIES as _APPS
 _dup = set(_APPS) & set(ENTRIES)
 assert not _dup, 'etiquetas repetidas entre catalog.py y catalog_apps.py: %s' % sorted(_dup)
 ENTRIES.update(_APPS)
+
+from catalog_juegos import ENTRIES as _JUEGOS
+_dup = set(_JUEGOS) & set(ENTRIES)
+assert not _dup, 'etiquetas repetidas con catalog_juegos.py: %s' % sorted(_dup)
+ENTRIES.update(_JUEGOS)

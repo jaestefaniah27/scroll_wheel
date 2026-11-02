@@ -209,6 +209,19 @@ export async function enviar(comando) {
   }
 }
 
+// Bytes tal cual, sin salto de línea añadido: los fotogramas de los juegos llevan
+// carga binaria detrás de su cabecera de texto.
+export async function enviarBytes(bytes) {
+  if (!escritor) return false;
+  try {
+    await escritor.write(bytes);
+    return true;
+  } catch (err) {
+    emitir('error', `No se pudo escribir en el puerto: ${err.message}`);
+    return false;
+  }
+}
+
 // Pide un puerto nuevo. Solo se puede llamar desde el manejador de un clic: Chrome
 // rechaza requestPort() fuera de un gesto del usuario.
 export async function pedirPuerto() {
