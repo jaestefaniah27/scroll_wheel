@@ -14,3 +14,6 @@ description = "Lógica de OrbyGUI que no depende de la plataforma: protocolo ser
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Hash de los vídeos de consejos. Puro Rust, ya estaba en el árbol por Tauri.
+sha2 = { version = "0.10", default-features = false }

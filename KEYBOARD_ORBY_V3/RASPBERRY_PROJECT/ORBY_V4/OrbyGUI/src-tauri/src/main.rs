@@ -16,6 +16,7 @@ mod mouse;
 mod plugins;
 mod recorder;
 mod serial;
+mod tips;
 mod updater;
 mod window;
 
@@ -56,6 +57,7 @@ fn main() {
             firmware::iniciar(app.handle());
             updater::iniciar(app.handle());
             plugins::iniciar(app.handle());
+            tips::iniciar();
             window::montar_bandeja(app.handle())?;
 
             // La ventana se declara `visible: false` en tauri.conf.json, así que enseñarla
@@ -125,7 +127,9 @@ fn main() {
             updater::updater_get,
             updater::updater_check,
             updater::updater_install,
-            updater::updater_ocupado
+            updater::updater_ocupado,
+            tips::tips_sync,
+            tips::tips_video_src
         ])
         .build(tauri::generate_context!())
         .expect("no se pudo arrancar la ventana de OrbyGUI")

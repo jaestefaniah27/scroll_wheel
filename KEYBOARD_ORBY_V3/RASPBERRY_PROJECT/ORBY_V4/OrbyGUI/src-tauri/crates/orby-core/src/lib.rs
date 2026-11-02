@@ -5,6 +5,7 @@
 // desde Electron. La cáscara que abre ventanas y llama a Win32 vive aparte.
 
 pub mod config;
+pub mod consejos;
 pub mod fw;
 pub mod grabacion;
 pub mod lines;

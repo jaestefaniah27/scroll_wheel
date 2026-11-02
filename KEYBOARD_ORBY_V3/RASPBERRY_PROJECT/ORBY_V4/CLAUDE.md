@@ -100,6 +100,16 @@ HID, pinout, pantallas) y `src/` (descriptores USB).
 - El dispatch de comandos serie está sobre la línea ~2180 de `main.cpp`: cadena de
   `strncmp(cmd, "...")`. Al añadir un comando, tócalo ahí **y** en `OrbyGUI/src/device.js`.
 
+### Consejos
+La bombilla de la barra abre `views/tips.js`: tarjetas con vídeo corto y un botón que lleva a donde
+se activa eso mismo. Los consejos son datos en `OrbyGUI/src/tips.mjs` (`requiere` = clave de `FEATURES`;
+`accion` = vista + params de su `openTarget`); `tips-pick.mjs` decide cuándo avisa `tips-notice.js`
+(1 al día, nunca con cambios sin guardar). Los vídeos van en git, `OrbyGUI/tips-video/`
+(`<id>.mp4`, ≤ 480 px, ≤ 300 KB; `python tools/consejos/manifiesto.py` regenera `manifest.json`) y
+la app los baja una vez a `%APPDATA%\OrbyGUI\tips\` (`src-tauri/src/tips.rs`; lógica en
+`orby_core::consejos`). Un consejo nuevo se añade en `tips.mjs`; su test (`test/tips-datos.test.mjs`)
+comprueba que apunta a una tarjeta y una función que existen.
+
 ### Protocolo serie
 Líneas de texto sobre CDC, `COMANDO:arg:arg`. No correlaciona petición y respuesta:
 eso lo pone encima [device.js](OrbyGUI/src/device.js) con una cola de `pending`, cada

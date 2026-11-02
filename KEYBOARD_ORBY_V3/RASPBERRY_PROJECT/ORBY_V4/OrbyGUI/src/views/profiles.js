@@ -197,7 +197,9 @@ function selectTarget({ key = null, rotary = null }) {
 export function openTarget({ profile = state.activeProfileIdx, section = null } = {}) {
   view.editingProfile = profile;
   view.variantId = null;
-  view.libraryOpen = false;
+  // La biblioteca es un modo de la vista, no un apartado de la ficha: los consejos
+  // llevan a ella con section: 'library'.
+  view.libraryOpen = section === 'library';
   render();
   // `section` es a dónde llevar la vista: el botón "Páginas" del panel cae
   // en esa parte de la ficha, y se resalta un instante para que se vea dónde.

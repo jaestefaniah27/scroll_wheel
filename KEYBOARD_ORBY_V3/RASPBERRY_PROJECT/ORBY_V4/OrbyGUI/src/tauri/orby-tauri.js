@@ -73,6 +73,12 @@ export async function instalarOrbyTauri() {
     // Copias de seguridad en un archivo del PC
     saveBackup: (data) => invoke('backup_save', { data }),
     loadBackup: () => invoke('backup_load'),
+    // Vídeos de los consejos: la app los baja una vez y los sirve desde el disco.
+    tips: {
+      videoSrc: (id) => invoke('tips_video_src', { id }),
+      sync: () => invoke('tips_sync'),
+    },
+
 
     // Elegir una app o archivo (pestaña "App" y paso "Abrir…" de una secuencia)
     pickAppOrFile: (kind) => invoke('dialog_pick_app_or_file', { kind }),

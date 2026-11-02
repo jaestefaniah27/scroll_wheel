@@ -47,6 +47,13 @@ contextBridge.exposeInMainWorld('orby', {
 
   // Copias de seguridad en un archivo del PC
   saveBackup: (data) => ipcRenderer.invoke('backup:save', data),
+  // Vídeos de los consejos: la vía de Electron no los descarga (hoy solo se publica la de
+  // Tauri), así que los consejos salen con su hueco de "Vídeo próximamente".
+  tips: {
+    videoSrc: async () => null,
+    sync: async () => ({ descargados: 0, fallos: 0 }),
+  },
+
   loadBackup: () => ipcRenderer.invoke('backup:load'),
 
   // Elegir una app o archivo (pestaña "App" y paso "Abrir…" de una secuencia)

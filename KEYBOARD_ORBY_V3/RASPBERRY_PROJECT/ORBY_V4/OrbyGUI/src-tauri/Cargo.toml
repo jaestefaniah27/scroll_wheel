@@ -49,6 +49,9 @@ reqwest = { version = "0.13", default-features = false, features = ["blocking", 
 # con su backend en Rust puro (`miniz_oxide`): los otros métodos de compresión (bzip2,
 # lzma, zstd) enlazan una librería en C, y aquí no hace falta ninguno de ellos.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Los vídeos de consejos se entregan a la ventana como data: URL (ver tips.rs). Ya estaba
+# en el árbol por Tauri; Rust puro.
+base64 = "0.22"
 
 # Win32 directo. Sustituye a nut-js (posición del ratón) y al PowerShell permanente que
 # hoy resuelve los accesos directos: son cuatro llamadas y desaparece el proceso hijo.

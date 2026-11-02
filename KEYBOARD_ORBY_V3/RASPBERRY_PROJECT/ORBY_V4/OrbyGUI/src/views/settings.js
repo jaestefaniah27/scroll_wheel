@@ -15,6 +15,7 @@ import * as platform from '../platform.js';
 import { icon } from '../icons.js';
 import * as dashboard from './dashboard.js';
 import * as theme from '../theme.js';
+import * as tipsState from '../tips-state.js';
 
 // Giro acumulado de la rueda para la prueba en vivo de esta tarjeta.
 let liveTotal = 0;
@@ -172,6 +173,7 @@ export function init() {
   initMenuKey();
   initRotInvert();
   if (hayAutostart) initAutostart();
+  initTipsNotice();
   if (hayPlugins) initPlugins();
 
   document.getElementById('btn-reconnect').addEventListener('click', () => {
@@ -386,6 +388,21 @@ async function initAutostart() {
     const enabled = await window.orby.autostart.set(!btn.classList.contains('on'));
     btn.classList.toggle('on', enabled);
     toast(enabled ? 'Orvy arrancará con Windows' : 'Autoarranque desactivado');
+  });
+}
+
+// El interruptor de los avisos de consejos. Se guarda en la configuración local y lo
+// lee tips-notice.js en cada comprobación, así que apagarlo surte efecto sin reiniciar.
+async function initTipsNotice() {
+  const btn = document.getElementById('btn-tips-notice');
+  if (!btn) return;
+
+  btn.classList.toggle('on', (await tipsState.leer()).activo);
+  btn.addEventListener('click', async () => {
+    const on = !btn.classList.contains('on');
+    await tipsState.setActivo(on);
+    btn.classList.toggle('on', on);
+    toast(on ? 'Verás un consejo de vez en cuando' : 'Consejos desactivados');
   });
 }
 
@@ -1135,6 +1152,16 @@ export function openTarget(params) {
   render();
   if (params?.section === 'menukey') {
     document.getElementById('settings-menukey')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  // Los consejos llevan a cualquier tarjeta por su id (o a un apartado entero, `pane-…`).
+  if (params?.card) {
+    const el = document.getElementById(params.card);
+    if (el && !el.classList.contains('hidden')) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.remove('tip-flash');
+      void el.offsetWidth;
+      el.classList.add('tip-flash');
+    }
   }
 }
 

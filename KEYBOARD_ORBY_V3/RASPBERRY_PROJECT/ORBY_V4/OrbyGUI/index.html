@@ -9,7 +9,7 @@
        Electron iba por preload. `script-src` NO se relaja: es lo que impide que un
        complemento o una respuesta de la red inyecten código en la interfaz. -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost;" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob: https://raw.githubusercontent.com; connect-src 'self' ipc: http://ipc.localhost;" />
   <title>Orvy</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 
@@ -176,6 +176,7 @@
           <span class="update-label">Actualizar</span>
         </button>
         <button class="topbar-btn" id="btn-theme" title="Modo claro u oscuro"></button>
+        <button class="topbar-btn" id="btn-tips" title="Consejos" data-icon="bulb" data-icon-size="17"></button>
         <button class="topbar-btn" id="btn-profiles" title="Perfiles" data-icon="profiles" data-icon-size="17"></button>
         <button class="topbar-btn" id="btn-settings" title="Ajustes" data-icon="gear" data-icon-size="17"></button>
         <div class="titlebar-controls">
@@ -207,6 +208,9 @@
 
         <!-- Iconos OLED (renderizado por src/views/oled.js) -->
         <section id="view-oled" class="view"></section>
+
+        <!-- Consejos (renderizado por src/views/tips.js) -->
+        <section id="view-tips" class="view"></section>
 
         <!-- Cambio automático (renderizado por src/views/auto.js) -->
         <section id="view-auto" class="view"></section>
@@ -240,6 +244,24 @@
                   <button class="opt-btn" data-val="dark">Oscuro</button>
                 </div>
                 <p class="setting-desc">En automático sigue al modo claro u oscuro del sistema y cambia con él.</p>
+              </div>
+            </div>
+
+            <div class="settings-card glass-panel" id="settings-tips" data-tint="orange">
+              <div class="card-header">
+                <span data-icon="bulb" data-icon-size="16"></span>
+                <h2>Consejos</h2>
+              </div>
+              <div class="setting-body">
+                <div class="row-inline">
+                  <span class="switch-label">Mostrar un consejo de vez en cuando</span>
+                  <button class="switch" id="btn-tips-notice" data-act="toggle" title="Activar o desactivar">
+                    <span class="switch-knob"></span>
+                  </button>
+                </div>
+                <p class="setting-desc">
+                  Como mucho uno al día, y nunca mientras editas. Todos están siempre en la bombilla de la barra superior.
+                </p>
               </div>
             </div>
 

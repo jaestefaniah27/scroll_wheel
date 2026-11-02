@@ -2922,3 +2922,40 @@ body.read-only #timeout-selector {
   background: transparent; color: var(--text-muted); cursor: pointer; }
 .pm-arch-del:hover:not(:disabled) { background: var(--fill); color: var(--text); }
 .pm-arch-note { margin: 4px 12px; }
+
+/* ================= CONSEJOS ================= */
+.tips-layout { max-width: 940px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; padding-bottom: 24px; }
+.tips-cat { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px 4px; }
+.tips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+.tip-card { display: flex; gap: 14px; padding: 14px; border-radius: 16px; align-items: flex-start; }
+.tip-card.is-off { opacity: 0.55; }
+/* El vídeo se ve pequeño a propósito: son de baja resolución y a este tamaño no se nota. */
+.tip-media {
+  position: relative; flex: 0 0 148px; width: 148px; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden;
+  background: var(--fill); display: flex; align-items: center; justify-content: center;
+}
+.tip-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tip-media-empty { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); text-align: center; padding: 6px; }
+.tip-media.has-video .tip-media-empty { display: none; }
+.tip-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.tip-body h3 { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; }
+.tip-body p { font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
+.tip-new { margin-left: 6px; padding: 1px 7px; border-radius: 8px; font-size: 10.5px; font-weight: 600; vertical-align: middle; background: rgba(var(--primary-rgb), 0.16); color: var(--primary); }
+.tip-go { align-self: flex-start; margin-top: 4px; display: inline-flex; align-items: center; gap: 4px; }
+.tip-need { font-size: 12px; font-style: italic; }
+/* Al llegar desde un aviso o un acceso directo: el mismo destello que las páginas. */
+.tip-flash { animation: pmFlash 1.6s var(--ease-out); }
+@media (max-width: 720px) {
+  .tips-grid { grid-template-columns: 1fr; }
+  .tip-card { flex-direction: column; }
+  .tip-media { width: 100%; flex-basis: auto; }
+}
+
+/* Aviso de consejo: un toast con bombilla, que se puede pulsar y cerrar. */
+.toast.toast-tip { cursor: pointer; max-width: 360px; align-items: flex-start; }
+.toast-tip > .icn { background: rgb(var(--info-rgb)); flex-shrink: 0; }
+.toast-tip .toast-tip-close .icn { width: 16px; height: 16px; padding: 2px; border-radius: 0; background: none; color: inherit; }
+.toast-tip .toast-tip-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.toast-tip .toast-tip-kicker { font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
+.toast-tip .toast-tip-close { margin-left: auto; border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 2px; border-radius: 50%; display: flex; }
+.toast-tip .toast-tip-close:hover { color: var(--text-main); background: var(--fill); }

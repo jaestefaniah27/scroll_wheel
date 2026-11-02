@@ -1,3 +1,21 @@
+### Consejos: commiteados, sin publicar (2026-11-02)
+
+La vista Consejos (bombilla de la barra), los avisos y la descarga de vídeos están en `main`
+pero **no se ha subido versión ni publicado nada**: salen con la próxima release de la app, junto
+con el resto de cambios. Diseño y plan en `docs/superpowers/` (`specs/` y `plans/`, 2026-11-01).
+
+* [ ] Al preparar esa release: subir la versión (tres ficheros, ver `docs/PUBLICACION.md`) y
+  comprobar que `OrbyGUI/tips-video/manifest.json` está en `main` (la app lo baja de GitHub).
+* [ ] Verlo en `npm run tauri:dev`: solo se ha comprobado midiendo el DOM en un arnés, sin
+  captura. Mirar el aspecto de la vista, del aviso y de la tarjeta en modo claro y oscuro.
+* [ ] Probar con el teclado conectado que cada acceso directo cae en su tarjeta y que los
+  consejos con `requiere` salen atenuados con un firmware antiguo.
+* [ ] Vídeos (tablero orvy.es/admin/tablero, tareas 55-58): probar los gestos, grabarlos,
+  comprimirlos a `tips-video/<id>.mp4` y ejecutar `python tools/consejos/manifiesto.py`.
+  La descarga única a `%APPDATA%\OrbyGUI	ips\` no se ha probado de punta a punta hasta que
+  haya al menos un vídeo subido.
+* [ ] Revisar los textos de `OrbyGUI/src/tips.mjs` (tarea 58 del tablero).
+
 ### Pendiente con el teclado y el PC delante (firmware 4.17, 2026-10-30)
 
 La animación de elegir perfil (succión y explosión, tipo `PICK`) está en `main` y solo se ha

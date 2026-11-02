@@ -70,6 +70,14 @@ export async function instalarOrbyWeb() {
     },
 
     autostart: {
+    // Sin disco donde guardarlos: el navegador ve el vídeo directo desde GitHub, y la
+    // caché HTTP hace de "descarga única". Un 404 (aún sin grabar) lo trata la vista.
+    tips: {
+      videoSrc: async (id) => `https://raw.githubusercontent.com/jaestefaniah27/scroll_wheel/main/`
+        + `KEYBOARD_ORBY_V3/RASPBERRY_PROJECT/ORBY_V4/OrbyGUI/tips-video/${encodeURIComponent(id)}.mp4`,
+      sync: async () => ({ descargados: 0, fallos: 0 }),
+    },
+
       get: async () => false,
       set: async () => false,
     },

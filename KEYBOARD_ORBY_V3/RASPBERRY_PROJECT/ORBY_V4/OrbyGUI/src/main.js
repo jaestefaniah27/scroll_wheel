@@ -27,6 +27,8 @@ import * as oled from './views/oled.js';
 import * as auto from './views/auto.js';
 import * as settings from './views/settings.js';
 import * as consoleView from './views/console.js';
+import * as tips from './views/tips.js';
+import { iniciarAvisos } from './tips-notice.js';
 
 const VIEWS = {
   'view-dashboard': dashboard,
@@ -35,6 +37,7 @@ const VIEWS = {
   'view-auto': auto,
   'view-settings': settings,
   'view-console': consoleView,
+  'view-tips': tips,
 };
 
 let activeView = 'view-dashboard';
@@ -98,6 +101,10 @@ function initChrome() {
   document.getElementById('btn-settings').addEventListener('click', async () => {
     if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
     switchView(activeView === 'view-settings' ? 'view-dashboard' : 'view-settings');
+  });
+  document.getElementById('btn-tips').addEventListener('click', async () => {
+    if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
+    switchView(activeView === 'view-tips' ? 'view-dashboard' : 'view-tips');
   });
   document.getElementById('btn-profiles').addEventListener('click', async () => {
     if (activeView === 'view-oled' && !await oled.confirmLeave()) return;
@@ -202,6 +209,7 @@ const VIEW_TITLES = {
   'view-auto': 'Cambio automático',
   'view-settings': 'Ajustes',
   'view-console': 'Consola serie',
+  'view-tips': 'Consejos',
 };
 
 // El editor de iconos se abre desde el panel del Inicio o desde Perfiles, así
@@ -241,6 +249,7 @@ function switchView(target, params) {
   back.lastElementChild.textContent = VIEW_TITLES[parentOf(target)];
   document.getElementById('btn-settings').classList.toggle('on', target === 'view-settings');
   document.getElementById('btn-profiles').classList.toggle('on', target === 'view-profiles');
+  document.getElementById('btn-tips').classList.toggle('on', target === 'view-tips');
 
   if (params && VIEWS[target]?.openTarget) VIEWS[target].openTarget(params);
   else VIEWS[target]?.render?.();
@@ -603,6 +612,8 @@ function arrancarApp() {
   profiles.init();
   oled.init();
   settings.init();
+  tips.init();
+  iniciarAvisos();
   consoleView.init();
   // cfg.autoProfile no existe en la WebGUI (config-merge.mjs lo quita de DEFAULTS
   // a propósito: no hay proceso que vigile la ventana en primer plano), y auto.init

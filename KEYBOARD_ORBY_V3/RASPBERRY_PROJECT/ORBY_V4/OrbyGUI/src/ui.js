@@ -25,6 +25,42 @@ export function toast(message, kind = 'success', ms = 2600) {
   }, ms);
 }
 
+// Aviso de un consejo: un toast que se puede pulsar (abre el consejo) y cerrar. Dura más
+// que uno normal porque hay que leerlo y decidir. Comparte contenedor y estilo con
+// toast() para no apilarse con él de otra manera.
+export function avisoConsejo({ titulo, onAbrir, ms = 8000 }) {
+  let host = document.getElementById('toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toast-host';
+    document.body.appendChild(host);
+  }
+
+  const el = document.createElement('div');
+  el.className = 'toast toast-tip';
+  el.innerHTML = `${icon('bulb', 16)}
+    <span class="toast-tip-text"><span class="toast-tip-kicker">¿Sabías que…?</span><span class="toast-tip-title"></span></span>
+    <button class="toast-tip-close" title="Cerrar" aria-label="Cerrar">${icon('close', 12)}</button>`;
+  // El título va por textContent: es texto de la lista de consejos, no HTML.
+  el.querySelector('.toast-tip-title').textContent = titulo;
+  host.appendChild(el);
+
+  const cerrar = () => {
+    clearTimeout(timer);
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 200);
+  };
+  const timer = setTimeout(cerrar, ms);
+  el.querySelector('.toast-tip-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    cerrar();
+  });
+  el.addEventListener('click', () => {
+    cerrar();
+    onAbrir?.();
+  });
+}
+
 // Portero de la edición. Sin el Orby conectado la app enseña la copia local del
 // PC en modo lectura: dejar cambiarla crearía dos versiones distintas de la
 // misma configuración, y al reconectar habría que decidir cuál se tira.
