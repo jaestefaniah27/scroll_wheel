@@ -12,7 +12,7 @@ con el resto de cambios. Diseño y plan en `docs/superpowers/` (`specs/` y `plan
   consejos con `requiere` salen atenuados con un firmware antiguo.
 * [ ] Vídeos (tablero orvy.es/admin/tablero, tareas 55-58): probar los gestos, grabarlos,
   comprimirlos a `tips-video/<id>.mp4` y ejecutar `python tools/consejos/manifiesto.py`.
-  La descarga única a `%APPDATA%\OrbyGUI	ips\` no se ha probado de punta a punta hasta que
+  La descarga única a `%APPDATA%\OrbyGUI\tips\` no se ha probado de punta a punta hasta que
   haya al menos un vídeo subido.
 * [ ] Revisar los textos de `OrbyGUI/src/tips.mjs` (tarea 58 del tablero).
 
