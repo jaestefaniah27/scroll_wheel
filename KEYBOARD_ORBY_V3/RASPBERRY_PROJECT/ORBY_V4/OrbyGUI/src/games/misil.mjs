@@ -64,7 +64,7 @@
 //     de la nada delante del jugador), y lo que queda lejos se borra para no gastar
 
 import { Malla, W, H, px, rect, destello, etiquetaValor, texto } from './dibujo.mjs';
-import { MAPA_W, MAPA_H, NODOS, SALIDAS, TRAMOS, ESTATICOS, ZONAS, construirMapa } from './misil-mapa.mjs';
+import { MAPA_W, MAPA_H, NODOS, SALIDAS, TRAMOS, ESTATICOS, ZONAS, SENDAS, construirMapa } from './misil-mapa.mjs';
 
 export const FILAS = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
 export const HUECO_X = 16;
@@ -96,6 +96,9 @@ const AVISO_MS = 1200;
 
 // El tráfico. Provisional: la fase 4 lo sustituye por la tabla NIVELES, una fila por zona.
 const TRAFICO = { llegadaMs: 6000, maxVehiculos: 6, convoyMax: 3, patrulla: 0.3 };
+// Cada cuántos ms sale un grupo a pie, por zona (0: ninguno). Provisional: la fase 4 lo mete en NIVELES.
+const PIE_MS = [0, 20000, 15000, 12000, 10000, 8000];
+const SEPARACION_PIE = 6;         // px, a lo largo de la senda, entre dos soldados de un grupo
 const HOLGURA = 4;                // aire entre dos vehículos que van en fila
 const CERCA = 200;                // los vehículos a menos de esto de la vista son los que cuentan
 const LEJOS = 400;                // y a más de esto se borran
@@ -385,11 +388,34 @@ export function trayecto(zona, k) {
 // ¿Hay algo de `entidades` dentro de lo que ve la cámara puesta en `zona`? Para saber si
 // merece la pena quedarse: sin nada que disparar, los seis misiles obligatorios serían fallos.
 export function hayObjetivosEn(entidades, zona) {
-  return entidades.some((e) => e.x + e.forma.w > zona.x && e.x < zona.x + MUNDO_W
+  // Los que caminan no retienen al VTOL: se van o se quedan quietos en un rato.
+  return entidades.some((e) => !e.pie && e.x + e.forma.w > zona.x && e.x < zona.x + MUNDO_W
     && e.y + e.forma.h > zona.y && e.y < zona.y + MUNDO_H);
 }
 
 const TIPO = Object.fromEntries(OBJETIVOS.map((o) => [o.nombre, o]));
+
+// Qué camina en un grupo. Hoy siempre soldados; la fase 4 (4.5) hace que en la zona 6 1 de cada 4
+// sea un RPG, que no dispara hasta pararse.
+const tipoAPie = () => TIPO.soldado;
+
+// El punto de la senda a `s` px de su inicio. Antes del inicio sigue la prolongación del primer
+// tramo hacia atrás: así el grupo sale en fila de la puerta.
+function puntoEnRuta(ruta, s) {
+  if (s <= 0) {
+    const [a, b] = ruta;
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    return [a[0] + ((b[0] - a[0]) / l) * s, a[1] + ((b[1] - a[1]) / l) * s];
+  }
+  let resto = s;
+  for (let i = 0; i + 1 < ruta.length; i++) {
+    const [a, b] = [ruta[i], ruta[i + 1]];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (resto <= l) return [a[0] + ((b[0] - a[0]) * resto) / l, a[1] + ((b[1] - a[1]) * resto) / l];
+    resto -= l;
+  }
+  return ruta[ruta.length - 1];
+}
 
 // Hacia dónde va un tramo de (x0, y0) a (x1, y1): siempre uno de los cuatro, porque las
 // carreteras son rectas y paralelas a los ejes.
@@ -533,8 +559,9 @@ export default {
   },
 
   // Solo para pruebas: `inmortal` (los fallos no gastan vidas, para medir un minuto de tráfico),
-  // `quieto` (sin vaivén, para apuntar a un objetivo concreto) y `zonaInicial` (empezar en otra zona).
-  crear({ aleatorio, inmortal = false, quieto = false, zonaInicial = 0 }) {
+  // `quieto` (sin vaivén, para apuntar a un objetivo concreto), `zonaInicial` (empezar en otra zona)
+  // y `pieMs` (el ritmo de los grupos a pie).
+  crear({ aleatorio, inmortal = false, quieto = false, zonaInicial = 0, pieMs }) {
     let malla = null;
     let tiempo = 0;
     let mira = null;              // { x, y } en el suelo; se centra al empezar
@@ -579,6 +606,49 @@ export default {
     }
 
     const vehiculos = () => entidades.filter((e) => e.desde);
+
+    // Grupos a pie (fase 5). `pie` en la entidad lleva { ruta, s, tope, alFinal }: `s` es lo andado por
+    // la senda (negativo mientras está en fila detrás de la puerta) y `tope` dónde se para.
+    const pieMsZona = () => pieMs ?? PIE_MS[zonaIdx];
+    const sortearPie = () => { const ms = pieMsZona(); return ms ? ms / 2 + aleatorio(ms) : Infinity; };
+    let proximoPie = sortearPie();
+
+    // 5.1: sale un grupo por la puerta de un edificio (o del estático de una senda) de esta zona. Las
+    // sendas desde aparcamientos y las de subir a un vehículo son de 5.2 y 5.3.
+    function lanzarPie() {
+      const posibles = SENDAS.filter((d) => d.zona === ZONAS[zonaIdx].nombre && d.de !== 'aparcamiento' && d.fin !== 'subir');
+      if (!posibles.length) return;
+      const { puntos: ruta, fin } = posibles[aleatorio(posibles.length)];
+      let total = 0;
+      for (let i = 1; i < ruta.length; i++) total += Math.hypot(ruta[i][0] - ruta[i - 1][0], ruta[i][1] - ruta[i - 1][1]);
+      const tipo = tipoAPie();
+      for (let k = 0, n = 2 + aleatorio(3); k < n; k++) {
+        // Los que se quedan lo hacen en fila contra el final, no todos en el mismo píxel.
+        const pie = { ruta, s: -k * SEPARACION_PIE, tope: fin === 'quedarse' ? total - k * SEPARACION_PIE : total, alFinal: fin };
+        const e = { tipo, forma: tipo, x: 0, y: 0, dir: 'der', vel: tipo.velocidad, pie };
+        colocarPie(e);
+        entidades.push(e);
+      }
+    }
+
+    function colocarPie(e) {
+      const [x, y] = puntoEnRuta(e.pie.ruta, e.pie.s);
+      e.x = x - e.forma.w / 2;
+      e.y = y - e.forma.h / 2;
+    }
+
+    function andar(dt) {
+      for (const e of entidades) {
+        if (!e.pie) continue;
+        e.pie.s = Math.min(e.pie.tope, e.pie.s + (e.vel * dt) / 1000);
+        colocarPie(e);
+        if (e.pie.s < e.pie.tope) continue;
+        // Entrar es escaparse: desaparece sin dar puntos. Quedarse lo vuelve un estático más.
+        if (e.pie.alFinal === 'entrar') e.pie = null;
+        else { delete e.pie; e.vel = 0; }
+      }
+      entidades = entidades.filter((e) => e.pie !== null);
+    }
 
     // Intenta meter un convoy en un tramo y un punto al azar; `vale(miembros)` dice si el sitio sirve.
     // Una sola tentativa: si no sirve o no cabe, se prueba otra vez en el siguiente tick. Las
@@ -688,6 +758,7 @@ export default {
       zonaIdx++;
       estancia = 0;
       ponerHelicoptero();
+      proximoPie = sortearPie();
       if (!hayObjetivos()) {
         if (zonaIdx === ZONAS.length - 1) victoria(); else vuelo = 0;
         return;
@@ -743,6 +814,8 @@ export default {
       circular(vehiculos(), dt, aleatorio);
       moverHelicopteros(dt);
       trafico(dt);
+      andar(dt);
+      if (vuelo === null && (proximoPie -= dt) <= 0) { lanzarPie(); proximoPie = sortearPie(); }
     }
 
     function vaivenear(dt) {

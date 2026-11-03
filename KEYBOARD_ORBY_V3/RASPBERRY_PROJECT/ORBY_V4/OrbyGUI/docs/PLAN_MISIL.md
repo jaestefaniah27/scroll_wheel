@@ -113,7 +113,18 @@ Desviaciones:
 - `estadisticas.suma` lleva `helicoptero` y `max` lleva `zona` (la zona más lejana, de 1 a 6). `victoria` es un getter más.
 - Pantalla 10 en vuelo: `Z<n>` en lugar del marcador, y sin marco ni barra (las vidas siguen).
 
-**Pendiente:** fases 4, 5 y 6.
+
+**Hecha la 5.1 (Sonnet, rama `misil-pie`):** entidad a pie (`e.pie = { ruta, s, tope, alFinal }`), `proximoPie` y
+`lanzarPie`/`andar` en `misil.mjs`. Desviaciones:
+
+- `PIE_MS` es una constante provisional por zona (índice = zona); la fase 4 la mete en `NIVELES`. Va a `tipo.velocidad`
+  sin `nivel().vel`, que aún no existe. `tipoAPie()` siempre da soldado: ahí entran las RPG de 4.5.
+- `crear` admite `pieMs` y `zonaInicial`, solo para pruebas.
+- Los que acaban con `'quedarse'` se paran en fila contra el final de la senda (6 px entre sí), no todos en el mismo punto.
+- Los que caminan no cuentan en `hayObjetivosEn`. Se ignoran las sendas `de: 'aparcamiento'` y `fin: 'subir'` (5.2 y 5.3).
+- Test de `SENDAS` añadido: pasan todas tal como están, el mapa no se ha tocado.
+
+**Pendiente:** fases 4, 5.2, 5.3 y 6.
 
 ## Fase 0. Herramienta para ver el mapa
 
