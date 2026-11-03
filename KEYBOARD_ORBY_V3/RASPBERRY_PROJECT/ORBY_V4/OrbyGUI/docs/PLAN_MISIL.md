@@ -144,7 +144,24 @@ de `tirador`) y `crearEstatica` lo copia a `e.tirador`. Amenazas, `tiradores()`,
 
 **Juntadas (Opus):** las ramas de 2+3.1, 4 y 5.1. Al juntarlas, `HELI_PROB`, `VAIVEN_PX` y `PIE_MS` pasan a `nivel().heli/vaiven/pieMs`, `sacudir()` da el golpe de deriva (±10, ±6) y los grupos a pie de la zona 6 llevan un RPG de cada cuatro, que pasa a tirador al pararse.
 
-**Pendiente:** fases 5.2, 5.3 y 6.
+**Hechas la 5.2 y la 5.3 (Sonnet, rama `misil-bajar`):** `v.mision = { ap, luego, fase, t }` con `luego` en
+`'lanzar' | 'desembarcar' | 'arrancar'` (la clave es `ap`, no `aparcamiento`, como ya usaban el lanzador y sus tests).
+`candidatos`, `asignarMision`, `salirDeLaRed`, `incorporar` y `salir` son comunes; `lanzarPie` elige al azar entre
+edificio, desembarco y subida. Desviaciones:
+
+- El desembarco lo pueden hacer camiones y patrullas; al aparcar se gira ya (fase `baja`, `DESEMBARCO_MS`) y sale recto
+  hacia la carretera de cara a ella. Una explanada con misión (lanzador aparcado incluido) no se vuelve a usar.
+- Volver a la red o arrancar solo ocurre si hay hueco (`holgura` por pares con el resto); si no, espera en el eje.
+- `crearEstatica` copia el quinto campo a `e.arranque`. La senda `subir` solo se sortea si ese vehículo sigue vivo, quieto
+  y sin otro grupo yendo; el vehículo es el de `arranque` más cercano al último punto de la senda. Suben todos a la vez
+  cuando llega el último; si destruyen el vehículo antes, el grupo se queda en fila (`'quedarse'`).
+- Al arrancar se gira hacia el eje en que más le falta (el aparcamiento de ambos está de lado respecto a la carretera) y
+  sin cambios de eje: sale recto, se incorpora en `{ tramo, dist }` y gira de golpe al tramo.
+- Los vehículos que vuelven a la red no llevan convoy: `llegaALaVista` ya lo admite.
+- Tests existentes tocados: el del vaivén desactiva disparos y lanzadores (el impacto sacude más que la amplitud y
+  dependía de la semilla); el de «zonas sin disparo» ya no prohíbe `mision` a secas, solo la de lanzar.
+
+**Pendiente:** fase 6.
 
 ## Fase 0. Herramienta para ver el mapa
 

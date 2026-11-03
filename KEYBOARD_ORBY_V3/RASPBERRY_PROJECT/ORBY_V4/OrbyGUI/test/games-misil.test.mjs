@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
 import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
@@ -430,7 +430,7 @@ test('Misil: el VTOL no se mueve mientras hay un misil en el aire ni antes de cu
 });
 
 test('Misil: sin quieto, parado en una zona la cámara vaivenea, y nunca más de la amplitud', () => {
-  for (const [zonaInicial, amp] of [[0, 2], [5, 7]]) {
+  for (const [zonaInicial, amp] of [[0, 2], [5, 7]]) conNivel(zonaInicial, { disparoMs: 0, lanzadorMs: 0 }, () => {  // sin impactos: sacuden más que la amplitud
     const { partida, paso } = nueva(9, { quieto: false, inmortal: true, zonaInicial });
     const z = ZONAS[zonaInicial];
     const vistas = new Set();
@@ -441,7 +441,7 @@ test('Misil: sin quieto, parado en una zona la cámara vaivenea, y nunca más de
       assert.ok(Math.abs(c.x - z.x) <= amp + 1 && Math.abs(c.y - z.y) <= amp + 1, `zona ${zonaInicial}: ${c.x - z.x},${c.y - z.y}`);
     }
     assert.ok(vistas.size > 1, `zona ${zonaInicial}: la cámara no se ha movido`);
-  }
+  });
 });
 
 test('Misil: la sexta zona acaba con victoria y las vidas que quedan suman; antes, se vuela a la siguiente', () => {
@@ -628,7 +628,7 @@ test('Misil: la velocidad de los vehículos sale de la fila de la zona y se pued
   assert.equal(nueva(3, { zonaInicial: 5 }).partida.camara.x, ZONAS[5].x);
 });
 
-test('Misil: en las zonas sin disparo no hay amenazas, ni camiones fuera de la carretera, y los RPG fijos son de la zona 6', () => {
+test('Misil: en las zonas sin disparo no hay amenazas, ni lanzadores, y los RPG fijos son de la zona 6', () => {
   for (const zona of [0, 1]) {
     const { partida } = nueva(5, { inmortal: true, zonaInicial: zona });
     assert.equal(vigilar(partida, 40000).amenazas, 0, `zona ${zona + 1}`);
@@ -637,7 +637,7 @@ test('Misil: en las zonas sin disparo no hay amenazas, ni camiones fuera de la c
     const { partida } = nueva(9, { inmortal: true, zonaInicial: zona });
     for (let t = 0; t < 40000; t += DT) {
       partida.tick(DT);
-      assert.ok(!partida.entidades.some((e) => e.mision || e.tipo.nombre === 'lanzador'), `zona ${zona + 1}`);
+      assert.ok(!partida.entidades.some((e) => e.mision?.luego === 'lanzar' || e.tipo.nombre === 'lanzador'), `zona ${zona + 1}`);
     }
   }
   for (const [n, x, y, dir] of ESTATICOS.filter((e) => e[0] === 'rpg')) {
@@ -752,4 +752,125 @@ test('Misil: en el cuartel algún soldado a pie lleva RPG, y solo es tirador al 
   assert.ok(rpgs > 0, 'ningún RPG a pie');
   const { partida, paso } = nueva(1, { zonaInicial: 4, pieMs: 800, inmortal: true });
   for (let t = 0; t < 10000; t += DT) { paso(); assert.ok(!partida.entidades.some((e) => e.pie && e.tipo.nombre === 'rpg')); }
+});
+
+// --- Fase 5.2 y 5.3: bajar de un vehículo y subir a uno ---
+
+const SENTIDO = { der: [1, 0], izq: [-1, 0], arr: [0, -1], aba: [0, 1] };
+
+// Avanza hasta que `cond` se cumple (o se agota `ms`); devuelve si se cumplió.
+function hasta(partida, ms, cond) {
+  for (let t = 0; t < ms; t += DT) { partida.tick(DT); if (cond()) return true; }
+  return false;
+}
+
+test('Misil: un vehículo aparca, bajan 2-4 soldados, espera DESEMBARCO_MS y vuelve a la red de cara', () => {
+  let vistos = 0;
+  for (const semilla of [1, 2, 3, 4, 5, 6]) {
+    const { partida } = nueva(semilla, { zonaInicial: 1, pieMs: 800, inmortal: true });
+    const baja = () => partida.entidades.find((e) => e.mision?.luego === 'desembarcar' && e.mision.fase === 'baja');
+    if (!hasta(partida, 90000, baja)) continue;
+    const v = baja();
+    const m = v.mision;
+    const soldados = () => partida.entidades.filter((e) => e.pie?.ruta === SENDAS.find((d) => d.zona === 'puesto' && d.de === 'aparcamiento').puntos);
+    assert.ok(APARCAMIENTOS.includes(m.ap) && m.ap.zona === 'puesto');
+    assert.ok([2, 3, 4].includes(soldados().length), `${soldados().length} soldados`);
+    // De cara a la salida: mira hacia la carretera, no hacia la explanada.
+    assert.equal(v.forma.w > v.forma.h, true);
+    assert.ok(Math.sign(SENTIDO[v.dir][0]) === Math.sign(NODOS[m.ap.tramo[0]][0] - (m.ap.x + 10)), 'mira a la carretera');
+    const aparcado = m.t;
+    assert.ok(aparcado < DT * 3);
+    let previo = [v.cx, v.cy], atras = 0;
+    assert.ok(hasta(partida, DESEMBARCO_MS + 30000, () => {
+      const [dx, dy] = [v.cx - previo[0], v.cy - previo[1]];
+      if (v.mision && dx * SENTIDO[v.dir][0] + dy * SENTIDO[v.dir][1] < -1e-9) atras++;
+      previo = [v.cx, v.cy];
+      return !v.mision;
+    }), 'vuelve a la red');
+    assert.equal(atras, 0, 'nunca marcha atrás');
+    assert.ok(v.desde && v.hasta, 'circula otra vez');
+    assert.equal(v.desde + v.hasta, m.ap.tramo);
+    assert.ok(v.dist >= m.ap.dist);
+    vistos++;
+  }
+  assert.ok(vistos >= 3, `solo ${vistos} desembarcos`);
+});
+
+test('Misil: el desembarco espera DESEMBARCO_MS y una explanada ocupada no se usa para otra misión', () => {
+  const { partida } = nueva(2, { zonaInicial: 1, pieMs: 800, inmortal: true });
+  let inicio = null, fin = null;
+  for (let t = 0; t < 120000 && fin === null; t += DT) {
+    partida.tick(DT);
+    const usadas = partida.entidades.filter((e) => e.mision?.ap).map((e) => e.mision.ap);
+    assert.equal(new Set(usadas).size, usadas.length, 'dos misiones en la misma explanada');
+    const v = partida.entidades.find((e) => e.mision?.fase === 'baja');
+    if (v && inicio === null) inicio = t;
+    if (inicio !== null && !partida.entidades.some((e) => e.mision?.fase === 'baja')) fin = t;
+  }
+  assert.notEqual(fin, null, 'no hubo desembarco');
+  assert.ok(fin - inicio >= DESEMBARCO_MS - DT && fin - inicio <= DESEMBARCO_MS + 2 * DT, `${fin - inicio} ms`);
+});
+
+test('Misil: al volver a la red sin hueco, el vehículo espera y no pisa a nadie', () => {
+  for (const semilla of [1, 2, 3]) {
+    const { partida } = nueva(semilla, { zonaInicial: 1, pieMs: 800, inmortal: true });
+    for (let t = 0; t < 90000; t += DT) {
+      partida.tick(DT);
+      const vs = partida.entidades.filter((e) => e.desde);
+      for (const v of vs) assert.ok(espacioDelante(v, vs) >= 0);
+      for (let i = 0; i < vs.length; i++) for (let j = i + 1; j < vs.length; j++) {
+        const [a, b] = [vs[i], vs[j]];
+        const solapa = a.x < b.x + b.forma.w && b.x < a.x + a.forma.w && a.y < b.y + b.forma.h && b.y < a.y + a.forma.h;
+        assert.ok(!solapa, `semilla ${semilla}: ${a.tipo.nombre} y ${b.tipo.nombre} se pisan`);
+      }
+    }
+  }
+});
+
+test('Misil: un grupo sube al vehículo del final: desaparecen y el vehículo deja de ser estático y se incorpora a la red', () => {
+  let subidos = 0;
+  for (const semilla of [1, 2, 3, 4, 5, 6]) {
+    const { partida } = nueva(semilla, { zonaInicial: 4, pieMs: 800, inmortal: true });
+    const camion = partida.entidades.find((e) => e.arranque);
+    assert.ok(camion && !camion.desde);
+    const marcha = () => camion.mision?.luego === 'arrancar';
+    if (!hasta(partida, 120000, marcha)) continue;
+    assert.ok(!partida.entidades.some((e) => e.pie?.objetivo === camion), 'el grupo ha desaparecido');
+    let previo = [camion.cx, camion.cy], atras = 0;
+    assert.ok(hasta(partida, 30000, () => {
+      const [dx, dy] = [camion.cx - previo[0], camion.cy - previo[1]];
+      if (camion.mision && dx * SENTIDO[camion.dir][0] + dy * SENTIDO[camion.dir][1] < -1e-9) atras++;
+      previo = [camion.cx, camion.cy];
+      return !camion.mision;
+    }));
+    assert.equal(atras, 0, 'nunca marcha atrás');
+    assert.equal(camion.desde + camion.hasta, camion.arranque.tramo);
+    assert.ok(camion.dist >= camion.arranque.dist);
+    subidos++;
+  }
+  assert.ok(subidos >= 2, `solo ${subidos} subidas`);
+});
+
+test('Misil: si el vehículo del final está destruido no se sortea su senda, y si lo destruyen en camino el grupo se queda quieto', () => {
+  const quitar = (partida, v) => partida.entidades.splice(partida.entidades.indexOf(v), 1);
+  for (const [zonaInicial, zona, tramo] of [[4, 'aerodromo', 'qr'], [5, 'cuartel', 'su']]) {
+    const { partida } = nueva(7, { zonaInicial, pieMs: 500, inmortal: true });
+    quitar(partida, partida.entidades.find((e) => e.arranque?.tramo === tramo));
+    const subir = SENDAS.find((d) => d.zona === zona && d.fin === 'subir').puntos;
+    for (let t = 0; t < 60000; t += DT) { partida.tick(DT); assert.ok(!partida.entidades.some((e) => e.pie?.ruta === subir)); }
+  }
+  let quietos = 0;
+  for (const semilla of [1, 2, 3, 4, 5, 6]) {
+    const { partida } = nueva(semilla, { zonaInicial: 4, pieMs: 800, inmortal: true });
+    const camion = partida.entidades.find((e) => e.arranque);
+    const grupo = () => partida.entidades.filter((e) => e.pie?.objetivo === camion);
+    if (!hasta(partida, 120000, () => grupo().length && !camion.mision)) continue;
+    const miembros = grupo();
+    quitar(partida, camion);
+    assert.ok(hasta(partida, 30000, () => miembros.every((e) => !e.pie)));
+    for (const e of miembros) { assert.ok(partida.entidades.includes(e)); assert.equal(e.vel, 0); }
+    quietos++;
+    break;
+  }
+  assert.equal(quietos, 1);
 });
