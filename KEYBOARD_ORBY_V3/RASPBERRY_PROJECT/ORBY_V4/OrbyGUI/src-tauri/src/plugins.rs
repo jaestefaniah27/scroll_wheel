@@ -459,7 +459,15 @@ pub fn plugins_open_folder() -> bool {
 }
 
 #[tauri::command]
-pub fn plugins_test(app: AppHandle, id: String, values: Option<Value>) -> Value {
+pub async fn plugins_test(app: AppHandle, id: String, values: Option<Value>) -> Value {
+    // Hilo de bloqueo y no el principal: la petición HTTP espera a un dispositivo que puede
+    // estar apagado, y mientras tanto la ventana entera dejaba de responder.
+    tauri::async_runtime::spawn_blocking(move || probar(&app, id, values))
+        .await
+        .unwrap_or_else(|e| json!({ "ok": false, "error": e.to_string() }))
+}
+
+fn probar(app: &AppHandle, id: String, values: Option<Value>) -> Value {
     let Some(m) = manifiesto_de(&app, &id) else {
         return json!({ "ok": false, "error": "no está instalado" });
     };
@@ -495,10 +503,19 @@ pub fn plugins_test(app: AppHandle, id: String, values: Option<Value>) -> Value 
 /// conexión o desactivado se calla en vez de devolver un error que se acumularía en algún
 /// sitio.
 #[tauri::command]
-pub fn plugins_read(app: AppHandle, id: String, op: String) -> Value {
+pub async fn plugins_read(app: AppHandle, id: String, op: String) -> Value {
+    // Lo llama un temporizador cada par de segundos: con el dispositivo apagado, cada
+    // llamada esperaba su timeout (por reintentos) en el hilo principal y la ventana se
+    // quedaba en «no responde».
+    tauri::async_runtime::spawn_blocking(move || leer_valor(&app, id, op))
+        .await
+        .unwrap_or_else(|_| json!({ "ok": false }))
+}
+
+fn leer_valor(app: &AppHandle, id: String, op: String) -> Value {
     let no = json!({ "ok": false });
 
-    let Some(m) = manifiesto_de(&app, &id) else { return no };
+    let Some(m) = manifiesto_de(app, &id) else { return no };
     if m.tipo != Tipo::Http || !habilitado(&crate::config::leer(), &id) {
         return no;
     }

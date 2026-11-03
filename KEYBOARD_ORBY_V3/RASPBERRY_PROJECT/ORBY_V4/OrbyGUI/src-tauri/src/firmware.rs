@@ -203,8 +203,18 @@ pub fn firmware_get(app: AppHandle) -> Value {
 /// Qué firmware hay publicado que esta app sepa usar. `maxFw` sale de `fwRecomendado()` en
 /// src/compat.js: publicar un firmware más nuevo que la app no debe ofrecerse aquí, porque
 /// la app no sabría hablar con él.
+///
+/// Los comandos síncronos de Tauri corren en el hilo principal, que es el del bucle de la
+/// ventana: con la red caída esta consulta lo tenía parado hasta el plazo de reqwest y Windows
+/// marcaba la app como «no responde». Por eso el trabajo va a un hilo de bloqueo.
 #[tauri::command]
-pub fn firmware_check(app: AppHandle, opts: Option<Value>) -> Value {
+pub async fn firmware_check(app: AppHandle, opts: Option<Value>) -> Value {
+    tauri::async_runtime::spawn_blocking(move || consultar_versiones(app, opts))
+        .await
+        .unwrap_or_else(|e| json!({ "status": "error", "error": e.to_string() }))
+}
+
+fn consultar_versiones(app: AppHandle, opts: Option<Value>) -> Value {
     let opts = opts.unwrap_or(Value::Null);
     let max_fw = opts.get("maxFw").and_then(Value::as_str).map(str::to_string);
     let current_fw = opts.get("currentFw").and_then(Value::as_str).map(str::to_string);
@@ -259,8 +269,17 @@ pub fn firmware_check(app: AppHandle, opts: Option<Value>) -> Value {
 /// El proceso entero. `viaBootsel` dice si el teclado sabe reiniciarse solo (bandera
 /// BOOTSEL=1 del handshake); si no, se le pide al usuario que lo haga a mano y se espera
 /// igual.
+///
+/// Descarga, espera al cargador y copia el `.uf2`: tarda minutos y duerme en bucles, así que
+/// fuera del hilo principal (ver `firmware_check`).
 #[tauri::command]
-pub fn firmware_update(app: AppHandle, opts: Option<Value>) -> Value {
+pub async fn firmware_update(app: AppHandle, opts: Option<Value>) -> Value {
+    tauri::async_runtime::spawn_blocking(move || actualizar_firmware(app, opts))
+        .await
+        .unwrap_or_else(|e| json!({ "status": "error", "error": e.to_string(), "manual": false }))
+}
+
+fn actualizar_firmware(app: AppHandle, opts: Option<Value>) -> Value {
     {
         let estado = app.state::<Mutex<Compartido>>();
         let c = estado.lock().unwrap();

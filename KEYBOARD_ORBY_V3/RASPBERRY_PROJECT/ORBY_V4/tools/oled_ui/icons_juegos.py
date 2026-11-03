@@ -76,12 +76,12 @@ def _(c):
 
 @icon('missile')
 def _(c):
-    # Un misil cayendo, de punta hacia abajo. En diagonal, a 24x22, las aletas se fundían
-    # con el cuerpo y no se leía nada; en vertical la silueta es la de siempre: aletas
-    # abiertas arriba, cuerpo, ojiva en punta abajo. La franja hueca lo separa de una bala.
-    c.fill(9, 0, 15, 15)                                           # el cuerpo
-    c.poly((8.6, 14.5), (15.4, 14.5), (12, 21.5))                          # la ojiva
-    # Las aletas, despegadas un píxel del cuerpo: pegadas, todo se leía como un trapecio.
-    c.poly((7.6, 2), (7.6, 10), (3, 11))
-    c.poly((16.4, 2), (16.4, 10), (21, 11))
-    c.clear(9, 11, 15, 12)                                         # la franja
+    # Un misil de lado, de punta hacia la derecha. El de antes iba en vertical y ocupaba el
+    # lienzo entero, y en la pantalla del menú se veía solo la mitad: tumbado y más pequeño
+    # cabe con aire alrededor. Aletas despegadas un píxel del cuerpo (pegadas, todo se leía
+    # como un bloque) y una franja hueca que lo separa de una bala.
+    c.fill(5, 9, 17, 13)                                           # el cuerpo
+    c.poly((17, 8.6), (17, 13.4), (21.5, 11))                      # la ojiva
+    c.poly((4, 7.6), (10, 7.6), (3, 4))                            # las aletas
+    c.poly((4, 14.4), (10, 14.4), (3, 18))
+    c.clear(13, 9, 14, 13)                                         # la franja

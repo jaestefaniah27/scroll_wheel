@@ -121,8 +121,9 @@ export function leerEvento(linea) {
     const [n, us] = linea.slice('GAME:SHOWN:'.length).split(':');
     return { tipo: 'acuse', n: Number(n), us: microsegundos(us) };
   }
-  // El teclado sale del juego solo: porque la app calló (GAME:TIMEOUT) o porque el
-  // usuario abrió un menú con los dos mandos (MODE:MENU). Para el juego es lo mismo.
+  // El teclado sale del juego solo: porque la app calló (GAME:TIMEOUT) o porque algo lo
+  // sacó a un menú (MODE:MENU). El gesto de los dos mandos ya no lo hace en juego (los dos
+  // pulsados son una entrada más), pero un firmware anterior sí. Para el juego es lo mismo.
   if (linea === 'GAME:TIMEOUT') return { tipo: 'fin', motivo: 'timeout' };
   if (linea.startsWith('MODE:')) return { tipo: 'fin', motivo: 'menu' };
   return null;

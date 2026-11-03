@@ -625,9 +625,15 @@ pub fn apagar() {
 /// Es el mismo camino que la pulsación de la tecla, para poder empezar y parar una
 /// grabación desde el editor sin tener el teclado delante.
 #[tauri::command]
-pub fn recorder_toggle(app: AppHandle, id: u32) -> Value {
-    crate::macros::disparar(&app, id);
-    json!({ "recording": grabando(), "playing": id_reproduciendo() == Some(id) })
+pub async fn recorder_toggle(app: AppHandle, id: u32) -> Value {
+    // Parar una grabación espera (`join`) al hilo de los ganchos y `disparar` lee la
+    // configuración del disco: nada de eso en el hilo principal.
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::macros::disparar(&app, id);
+        json!({ "recording": grabando(), "playing": id_reproduciendo() == Some(id) })
+    })
+    .await
+    .unwrap_or_else(|_| json!({ "recording": false, "playing": false }))
 }
 
 /// Solo para la reproducción. Una grabación en marcha **no** se corta desde aquí: la

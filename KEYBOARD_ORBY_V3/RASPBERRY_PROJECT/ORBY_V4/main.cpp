@@ -4635,7 +4635,10 @@ int main() {
 
         // --- DETECTAR ENTRADA AL MENÚ (HOLD 2 SEGUNDOS EN AMBOS ENCODERS) ---
         static uint32_t hold_start_time = 0;
-        if (stable_enc1_sw_state && stable_enc2_sw_state) {
+        // En un juego los dos mandos pulsados a la vez son una entrada más (Misil acelera
+        // así el misil), y con el gesto activo mantenerlos 2 s sacaba del juego a media
+        // partida. De un juego se sale con la tecla 10, que lleva la app, o callando la app.
+        if (stable_enc1_sw_state && stable_enc2_sw_state && current_mode != MODE_GAME) {
             if (hold_start_time == 0) {
                 hold_start_time = now;
             } else if (now - hold_start_time >= 2000) {

@@ -177,12 +177,17 @@ fn escanear() -> Vec<Aplicacion> {
 }
 
 #[tauri::command]
-pub fn apps_list_installed() -> Vec<Aplicacion> {
-    // Recorrer los dos menús de Inicio y abrir cada `.lnk` por COM cuesta casi un segundo.
-    // Se hace una vez por sesión, igual que en Electron: la lista de programas instalados
-    // no cambia mientras la app está abierta.
-    let mut guarda = cache().lock().unwrap_or_else(|e| e.into_inner());
-    guarda.get_or_insert_with(escanear).clone()
+pub async fn apps_list_installed() -> Vec<Aplicacion> {
+    // Recorrer los dos menús de Inicio y abrir cada `.lnk` por COM cuesta casi un segundo
+    // (más con OneDrive o un antivirus mirando). Se hace una vez por sesión, igual que en
+    // Electron: la lista de programas instalados no cambia mientras la app está abierta.
+    // En un hilo de bloqueo y no en el principal, que es el que pinta la ventana.
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut guarda = cache().lock().unwrap_or_else(|e| e.into_inner());
+        guarda.get_or_insert_with(escanear).clone()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[cfg(test)]
