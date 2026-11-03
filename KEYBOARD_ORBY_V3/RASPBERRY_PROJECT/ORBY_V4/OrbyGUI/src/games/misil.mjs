@@ -62,9 +62,15 @@
 //   · el helicóptero no cuenta para saber si la zona está vacía: se va solo y no debe retener al VTOL
 //   · el tráfico no se acaba: entra un convoy nuevo cerca de la vista, fuera de ella (no aparece
 //     de la nada delante del jugador), y lo que queda lejos se borra para no gastar
+//   · todo lo que cambia de una zona a la siguiente sale de NIVELES, una fila por zona
+//   · el enemigo dispara al VTOL parado con un aviso (la amenaza): el tirador parpadea hasta el
+//     impacto. Con el misil tardando hasta 1,8 s en caer, hay que poder responder: una sola
+//     amenaza a la vez (dos en la última zona) y 3 s entre un impacto y el siguiente
+//   · un camión cualquiera puede salirse de la carretera, aparcar y desplegar el lanzador: hasta
+//     que se sale parece uno más, y esa es la gracia
 
 import { Malla, W, H, px, rect, destello, etiquetaValor, texto } from './dibujo.mjs';
-import { MAPA_W, MAPA_H, NODOS, SALIDAS, TRAMOS, ESTATICOS, ZONAS, SENDAS, construirMapa } from './misil-mapa.mjs';
+import { MAPA_W, MAPA_H, NODOS, SALIDAS, TRAMOS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, EXPLANADA, construirMapa } from './misil-mapa.mjs';
 
 export const FILAS = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
 export const HUECO_X = 16;
@@ -94,10 +100,24 @@ const MARCA_CADA = 8;             // las rayitas de la cruz
 const EXPLOSION_MS = 650;
 const AVISO_MS = 1200;
 
-// El tráfico. Provisional: la fase 4 lo sustituye por la tabla NIVELES, una fila por zona.
-const TRAFICO = { llegadaMs: 6000, maxVehiculos: 6, convoyMax: 3, patrulla: 0.3 };
-// Cada cuántos ms sale un grupo a pie, por zona (0: ninguno). Provisional: la fase 4 lo mete en NIVELES.
-const PIE_MS = [0, 20000, 15000, 12000, 10000, 8000];
+// Lo que cambia de una zona a la siguiente. Cada fila aprieta un poco más en todo a la vez:
+// subir una sola cosa (la velocidad, por ejemplo) se notaba como un salto, no como una escalada.
+// `vel` multiplica la velocidad de los vehículos; `puntos`, lo que vale cada acierto. 0 en
+// `disparoMs`, `lanzadorMs` o `pieMs` es «en esta zona no». `avisoMs` nunca baja de 3500: son
+// los 1,6-1,8 s de caída con los dos mandos más apuntar, y puede pillarte con otro misil en el aire.
+// `heli`, `vaiven` y `pieMs` son de las fases 2 y 5. `simultaneas` (1 si falta) son las amenazas a la vez.
+export const NIVELES = [
+  //  vel   llegadaMs maxVeh convoyMax patrulla heli vaiven puntos disparoMs avisoMs lanzadorMs rpg pieMs
+  { vel: 1.0, llegadaMs: 8000, maxVehiculos: 4, convoyMax: 1, patrulla: 0,   heli: 0.5, vaiven: 2, puntos: 1.0, disparoMs: 0,     avisoMs: 0,    lanzadorMs: 0,     rpg: false, pieMs: 0 },
+  { vel: 1.15, llegadaMs: 7000, maxVehiculos: 5, convoyMax: 2, patrulla: 0.2, heli: 0,   vaiven: 3, puntos: 1.2, disparoMs: 0,     avisoMs: 0,    lanzadorMs: 0,     rpg: false, pieMs: 20000 },
+  { vel: 1.3, llegadaMs: 6000, maxVehiculos: 6, convoyMax: 2, patrulla: 0.3, heli: 0,   vaiven: 4, puntos: 1.4, disparoMs: 12000, avisoMs: 5000, lanzadorMs: 0,     rpg: false, pieMs: 15000 },
+  { vel: 1.5, llegadaMs: 5000, maxVehiculos: 7, convoyMax: 3, patrulla: 0.4, heli: 0,   vaiven: 5, puntos: 1.6, disparoMs: 10000, avisoMs: 4500, lanzadorMs: 0,     rpg: false, pieMs: 12000 },
+  { vel: 1.7, llegadaMs: 4000, maxVehiculos: 8, convoyMax: 3, patrulla: 0.5, heli: 0.6, vaiven: 6, puntos: 1.8, disparoMs: 8000,  avisoMs: 4000, lanzadorMs: 15000, rpg: false, pieMs: 10000 },
+  { vel: 1.9, llegadaMs: 3500, maxVehiculos: 9, convoyMax: 4, patrulla: 0.6, heli: 0.7, vaiven: 7, puntos: 2.0, disparoMs: 6000,  avisoMs: 3500, lanzadorMs: 12000, rpg: true,  pieMs: 8000, simultaneas: 2 },
+];
+// Entre un impacto y el siguiente, para dar tiempo a apuntar y a que caiga el misil.
+export const ESPACIO_DISPAROS_MS = 3000;
+export const LANZADOR_DESPLIEGUE_MS = 2000;
 const SEPARACION_PIE = 6;         // px, a lo largo de la senda, entre dos soldados de un grupo
 const HOLGURA = 4;                // aire entre dos vehículos que van en fila
 const CERCA = 200;                // los vehículos a menos de esto de la vista son los que cuentan
@@ -118,9 +138,6 @@ export const ESTANCIA_MS = 40000;
 export const BONO_VIDA = 200;             // por cada vida que queda al acabar la última zona
 export const TRANSICION_MS = 3500;        // el vuelo más corto; los largos crecen con la distancia
 const MS_POR_PX = 12;
-// El helicóptero y el vaivén. Provisionales: la fase 4 mete la probabilidad y la amplitud en NIVELES.
-const HELI_PROB = 0.5;
-const VAIVEN_PX = [2, 3, 4, 5, 6, 7];     // por zona
 const VAIVEN_TAU = 450;
 const HELI_POSADO_MS = 1000;
 const HELI_ACEL = 45;
@@ -275,7 +292,7 @@ export const OBJETIVOS = [
   {
     // Parapeto cuadrado con los dos cañones hacia arriba: ni redondo como el depósito ni hueco
     // como la tienda. No se gira: los cañones apuntan al cielo, no a la carretera.
-    nombre: 'antiaereo', velocidad: 0,
+    nombre: 'antiaereo', velocidad: 0, dispara: true,
     ...sprite([
       '..#.#..',
       '..#.#..',
@@ -288,7 +305,7 @@ export const OBJETIVOS = [
   },
   {
     // El soldado con el tubo al hombro: una columna más que el soldado, hacia la derecha.
-    nombre: 'rpg', velocidad: 7,
+    nombre: 'rpg', velocidad: 7, dispara: true,
     ...sprite([
       '.#..',
       '####',
@@ -331,6 +348,18 @@ export const OBJETIVOS = [
       '.............',
     ]),
     valor: VALOR_HELI,
+  },
+  {
+    // El camión con la caja cambiada por la rampa: dos tubos y el hueco entre ellos. Es el único
+    // aviso de que viene algo. Mismo tamaño que el camión, para que quepa donde él aparcó.
+    nombre: 'lanzador', velocidad: 22,
+    ...sprite([
+      '##########....',
+      '#.........####',
+      '#.........#.##',
+      '#.........####',
+      '##########....',
+    ]),
   },
 ];
 
@@ -394,10 +423,8 @@ export function hayObjetivosEn(entidades, zona) {
 }
 
 const TIPO = Object.fromEntries(OBJETIVOS.map((o) => [o.nombre, o]));
-
-// Qué camina en un grupo. Hoy siempre soldados; la fase 4 (4.5) hace que en la zona 6 1 de cada 4
-// sea un RPG, que no dispara hasta pararse.
-const tipoAPie = () => TIPO.soldado;
+// Desplegado vale el doble que el camión; a mano, porque su tamaño es el mismo.
+TIPO.lanzador.valor = 2 * TIPO.camion.valor;
 
 // El punto de la senda a `s` px de su inicio. Antes del inicio sigue la prolongación del primer
 // tramo hacia atrás: así el grupo sale en fila de la puerta.
@@ -501,11 +528,11 @@ export const espacioDelante = (v, vehiculos) => Math.max(0, holgura(v, vehiculos
 
 // Mueve a todos `ms`, en el orden en que vienen (siempre el mismo). Cada convoy va a la
 // velocidad de su vehículo más lento.
-export function circular(vehiculos, ms, aleatorio) {
+export function circular(vehiculos, ms, aleatorio, factor = 1) {
   const lento = new Map();
   for (const v of vehiculos) if (v.convoy) lento.set(v.convoy, Math.min(lento.get(v.convoy) ?? Infinity, v.tipo.velocidad));
   for (const v of vehiculos) {
-    v.vel = v.convoy ? lento.get(v.convoy) : v.tipo.velocidad;
+    v.vel = (v.convoy ? lento.get(v.convoy) : v.tipo.velocidad) * factor;
     avanzarVehiculo(v, Math.min((v.vel * ms) / 1000, espacioDelante(v, vehiculos)), aleatorio);
   }
 }
@@ -558,9 +585,9 @@ export default {
     max: [['aLaVez', 'Más objetivos con un solo misil'], ['zona', 'Zona más lejana']],
   },
 
-  // Solo para pruebas: `inmortal` (los fallos no gastan vidas, para medir un minuto de tráfico),
-  // `quieto` (sin vaivén, para apuntar a un objetivo concreto), `zonaInicial` (empezar en otra zona)
-  // y `pieMs` (el ritmo de los grupos a pie).
+  // Solo para pruebas: `inmortal` (los fallos y los impactos no gastan vidas, para medir un minuto
+  // de tráfico), `quieto` (sin vaivén, para apuntar a un objetivo concreto), `zonaInicial` (empezar
+  // en otra zona) y `pieMs` (el ritmo de los grupos a pie).
   crear({ aleatorio, inmortal = false, quieto = false, zonaInicial = 0, pieMs }) {
     let malla = null;
     let tiempo = 0;
@@ -574,8 +601,9 @@ export default {
     // La esquina de arriba a la izquierda de lo que se ve, en el territorio. La mira, el
     // impacto y la malla van en coordenadas de la vista; las entidades y los cráteres, del
     // territorio.
-    const camara = { x: ZONAS[zonaInicial].x, y: ZONAS[zonaInicial].y };
     let zonaIdx = zonaInicial;    // la zona donde está el VTOL
+    const camara = { x: ZONAS[zonaIdx].x, y: ZONAS[zonaIdx].y };
+    const nivel = () => NIVELES[zonaIdx];
     let estancia = 0;             // ms parado sobre esta zona (no cuenta mientras vuela)
     let ganada = false;
     // El vaivén: la cámara persigue a `objetivo` (relativo a la zona) con un suavizado, y cada tanto
@@ -598,18 +626,27 @@ export default {
     const pulsados = new Set();
     const ultimoPaso = { 1: -Infinity, 2: -Infinity };
 
-    let llegada = TRAFICO.llegadaMs;   // ms que faltan para el próximo convoy
+    let llegada = nivel().llegadaMs;   // ms que faltan para el próximo convoy
+
+    // El fuego enemigo. `amenazas`: { e, desde, hasta } del tirador que ha apuntado al VTOL;
+    // `ultimoImpacto` es cuándo cayó el último, para guardar el espacio entre disparos.
+    let amenazas = [];
+    let ultimoImpacto = -Infinity;
+    let impactos = 0;
+    let proximoDisparo = nivel().disparoMs;
+    let proximoLanzador = 0;           // se sortea al llegar a una zona con lanzador
+    let cola = [];                     // lanzadores desplegados que esperan su primer disparo
 
     function crearEstatica([nombre, x, y, dir = 'der']) {
       const tipo = TIPO[nombre];
-      return { tipo, forma: orientar(tipo, dir), x, y, dir, vel: 0 };
+      return { tipo, forma: orientar(tipo, dir), x, y, dir, vel: 0, tirador: !!tipo.dispara };
     }
 
     const vehiculos = () => entidades.filter((e) => e.desde);
 
     // Grupos a pie (fase 5). `pie` en la entidad lleva { ruta, s, tope, alFinal }: `s` es lo andado por
     // la senda (negativo mientras está en fila detrás de la puerta) y `tope` dónde se para.
-    const pieMsZona = () => pieMs ?? PIE_MS[zonaIdx];
+    const pieMsZona = () => pieMs ?? nivel().pieMs;
     const sortearPie = () => { const ms = pieMsZona(); return ms ? ms / 2 + aleatorio(ms) : Infinity; };
     let proximoPie = sortearPie();
 
@@ -621,8 +658,9 @@ export default {
       const { puntos: ruta, fin } = posibles[aleatorio(posibles.length)];
       let total = 0;
       for (let i = 1; i < ruta.length; i++) total += Math.hypot(ruta[i][0] - ruta[i - 1][0], ruta[i][1] - ruta[i - 1][1]);
-      const tipo = tipoAPie();
       for (let k = 0, n = 2 + aleatorio(3); k < n; k++) {
+        // Donde hay RPG, uno de cada cuatro lo lleva. No dispara hasta pararse: andando se le caza.
+        const tipo = nivel().rpg && aleatorio(4) === 0 ? TIPO.rpg : TIPO.soldado;
         // Los que se quedan lo hacen en fila contra el final, no todos en el mismo píxel.
         const pie = { ruta, s: -k * SEPARACION_PIE, tope: fin === 'quedarse' ? total - k * SEPARACION_PIE : total, alFinal: fin };
         const e = { tipo, forma: tipo, x: 0, y: 0, dir: 'der', vel: tipo.velocidad, pie };
@@ -645,7 +683,7 @@ export default {
         if (e.pie.s < e.pie.tope) continue;
         // Entrar es escaparse: desaparece sin dar puntos. Quedarse lo vuelve un estático más.
         if (e.pie.alFinal === 'entrar') e.pie = null;
-        else { delete e.pie; e.vel = 0; }
+        else { delete e.pie; e.vel = 0; e.tirador = !!e.tipo.dispara; }
       }
       entidades = entidades.filter((e) => e.pie !== null);
     }
@@ -654,9 +692,9 @@ export default {
     // Una sola tentativa: si no sirve o no cabe, se prueba otra vez en el siguiente tick. Las
     // patrullas van solas, nunca en convoy: son las rápidas.
     function meterConvoy(vale) {
-      const sola = aleatorio(1000) / 1000 < TRAFICO.patrulla;
+      const sola = aleatorio(1000) / 1000 < nivel().patrulla;
       const tipos = sola ? [TIPO.patrulla]
-        : Array.from({ length: 1 + aleatorio(TRAFICO.convoyMax) }, () => TIPO[aleatorio(2) ? 'camion' : 'tanque']);
+        : Array.from({ length: 1 + aleatorio(nivel().convoyMax) }, () => TIPO[aleatorio(2) ? 'camion' : 'tanque']);
       const miembros = armarConvoy(tipos, TRAMOS[aleatorio(TRAMOS.length)], aleatorio(1000) / 1000, aleatorio);
       if (!miembros || !vale(miembros)) return false;
       const todos = [...vehiculos(), ...miembros];
@@ -668,7 +706,7 @@ export default {
     // Al llegar a una zona con helipuerto, a veces espera un helicóptero posado en la H.
     function ponerHelicoptero() {
       const hp = ZONAS[zonaIdx].helipuerto;
-      if (!hp || aleatorio(1000) / 1000 >= HELI_PROB) return;
+      if (!hp || aleatorio(1000) / 1000 >= nivel().heli) return;
       const tipo = TIPO.helicoptero;
       entidades.push({ tipo, forma: tipo, x: hp[0] - (tipo.w >> 1), y: hp[1] - (tipo.h >> 1), dir: 'der', vel: 0, vx: 0, vy: 0, volador: true, despegaEn: tiempo + HELI_POSADO_MS });
     }
@@ -721,12 +759,12 @@ export default {
       llegada -= dt;
       const hay = vehiculos();
       const vacia = !hay.some((e) => llegaALaVista(e, PRONTO));
-      if (!vacia && (llegada > 0 || hay.filter((e) => distanciaAVista(e, camara) < CERCA).length >= TRAFICO.maxVehiculos)) return;
+      if (!vacia && (llegada > 0 || hay.filter((e) => distanciaAVista(e, camara) < CERCA).length >= nivel().maxVehiculos)) return;
       const entra = (m) => m.every((e) => distanciaAVista(e, camara) > ENTRADA_MIN)
         && m.some((e) => distanciaAVista(e, camara) < ENTRADA_MAX) && llegaALaVista(m[0], vacia ? PRONTO : ACERCAMIENTO);
       // Con la vista vacía no hay un tick que perder: se prueban varios sitios de golpe.
       for (let i = 0; i < (vacia ? INTENTOS_URGENTES : 1); i++) {
-        if (meterConvoy(entra)) { llegada = TRAFICO.llegadaMs; break; }
+        if (meterConvoy(entra)) { llegada = nivel().llegadaMs; break; }
       }
     }
 
@@ -759,12 +797,121 @@ export default {
       estancia = 0;
       ponerHelicoptero();
       proximoPie = sortearPie();
+      proximoDisparo = nivel().disparoMs;
+      proximoLanzador = sortearLanzador();
       if (!hayObjetivos()) {
         if (zonaIdx === ZONAS.length - 1) victoria(); else vuelo = 0;
         return;
       }
       vuelo = null;
       soltarMisil();
+    }
+
+    // --- Fuego enemigo (fase 4) ---
+
+    // El impacto sacude al VTOL para que se note: un golpe de deriva que el vaivén luego recoge.
+    function sacudir() {
+      if (quieto) return;
+      deriva.x += aleatorio(2) ? 10 : -10;
+      deriva.y += aleatorio(2) ? 6 : -6;
+    }
+
+    const tiradores = () => entidades.filter((e) => e.tirador && hayObjetivosEn([e], ZONAS[zonaIdx]));
+
+    // El aviso dura `avisoMs`, o hasta 3 s después del último impacto previsto si eso es más:
+    // así dos disparos nunca caen juntos aunque haya dos amenazas a la vez.
+    function amenazar(e) {
+      const ultimo = amenazas.length ? Math.max(...amenazas.map((a) => a.hasta)) : ultimoImpacto;
+      amenazas.push({ e, desde: tiempo, hasta: Math.max(tiempo + nivel().avisoMs, ultimo + ESPACIO_DISPAROS_MS) });
+    }
+
+    function impactar(a) {
+      amenazas = amenazas.filter((o) => o !== a);
+      ultimoImpacto = a.hasta;
+      impactos++;
+      if (!inmortal) vidas--;
+      aviso = { texto: 'TOCADO', hasta: tiempo + AVISO_MS };
+      sacudir();
+      if (vidas <= 0) { fase = 'final'; hasta = tiempo; }
+    }
+
+    function disparar(dt) {
+      const libre = () => amenazas.length < (nivel().simultaneas ?? 1);
+      // Un lanzador recién desplegado dispara sin esperar al turno; si no cabe, espera: no se descarta.
+      cola = cola.filter((e) => entidades.includes(e));
+      while (cola.length && libre()) {
+        const e = cola.shift();
+        if (!amenazas.some((a) => a.e === e) && hayObjetivosEn([e], ZONAS[zonaIdx])) amenazar(e);
+      }
+      if (nivel().disparoMs) {
+        proximoDisparo -= dt;
+        if (proximoDisparo <= 0 && libre()) {
+          const quedan = tiradores().filter((e) => !amenazas.some((a) => a.e === e));
+          if (quedan.length) amenazar(quedan[aleatorio(quedan.length)]);
+          proximoDisparo = nivel().disparoMs;
+        }
+      }
+      for (const a of [...amenazas]) if (tiempo >= a.hasta && fase !== 'final') impactar(a);
+    }
+
+    // --- Camión lanzamisiles ---
+
+    const sortearLanzador = () => (nivel().lanzadorMs ? Math.round(nivel().lanzadorMs * (0.5 + aleatorio(1001) / 1000)) : 0);
+
+    // Un camión que circula y todavía no ha pasado por una explanada libre de esta zona recibe
+    // la misión de aparcar en ella.
+    function elegirLanzador() {
+      const libres = APARCAMIENTOS.filter((a) => a.zona === ZONAS[zonaIdx].nombre && !entidades.some((e) => e.mision?.ap === a));
+      const cands = [];
+      for (const v of vehiculos()) {
+        if (v.tipo !== TIPO.camion || v.mision) continue;
+        for (const ap of libres) {
+          const aqui = v.desde + v.hasta === ap.tramo ? v.dist < ap.dist : v.hasta === ap.tramo[0] && v.luego === ap.tramo[1];
+          if (aqui) cands.push([v, ap]);
+        }
+      }
+      if (!cands.length) return;
+      const [v, ap] = cands[aleatorio(cands.length)];
+      v.mision = { ap, fase: 'red', t: 0 };
+    }
+
+    // Deja la red: sale recto de la carretera por el acceso, de cara a la explanada.
+    function salirDeLaRed(v) {
+      const { ap } = v.mision;
+      const [p, q] = ap.tramo.split('').map((n) => NODOS[n]);
+      const ry = p[1] + Math.sign(q[1] - p[1]) * ap.dist;
+      v.desde = v.hasta = v.convoy = undefined;
+      v.dir = ap.x > p[0] ? 'der' : 'izq';
+      v.forma = orientar(v.tipo, v.dir);
+      v.cx = p[0];
+      v.y = ry - v.forma.h / 2;
+      v.mision.fase = 'entra';
+    }
+
+    function moverLanzadores(dt) {
+      for (const v of entidades) {
+        const m = v.mision;
+        if (!m) continue;
+        if (m.fase === 'red') {
+          if (v.desde + v.hasta === m.ap.tramo) { if (v.dist >= m.ap.dist) salirDeLaRed(v); }
+          else if (!(v.hasta === m.ap.tramo[0] && v.luego === m.ap.tramo[1])) delete v.mision;  // ya la pasó
+        } else if (m.fase === 'entra') {
+          const meta = m.ap.x + EXPLANADA / 2;
+          const sentido = v.dir === 'der' ? 1 : -1;
+          v.vel = v.tipo.velocidad * nivel().vel;
+          v.cx = sentido > 0 ? Math.min(meta, v.cx + (v.vel * dt) / 1000) : Math.max(meta, v.cx - (v.vel * dt) / 1000);
+          if (v.cx === meta) { m.fase = 'despliega'; v.vel = 0; }
+        } else if (m.fase === 'despliega') {
+          m.t += dt;
+          if (m.t >= LANZADOR_DESPLIEGUE_MS / 2 && v.tipo === TIPO.camion) { v.tipo = TIPO.lanzador; v.forma = orientar(v.tipo, v.dir); }
+          if (m.t >= LANZADOR_DESPLIEGUE_MS) { m.fase = 'listo'; v.tirador = true; cola.push(v); }
+        }
+        if (m.fase !== 'red') v.x = v.cx - v.forma.w / 2;
+      }
+      if (nivel().lanzadorMs && vuelo === null && (proximoLanzador -= dt) <= 0) {
+        elegirLanzador();
+        proximoLanzador = sortearLanzador();
+      }
     }
 
     // Lo que falta para irse, de 1 a 0: la barra de la pantalla 10. En vuelo no queda nada.
@@ -793,11 +940,12 @@ export default {
         masALaVez = Math.max(masALaVez, tocados.length);
         for (const e of tocados) {
           muertos[e.tipo.nombre] = (muertos[e.tipo.nombre] || 0) + 1;
-          ganados += Math.round(e.tipo.valor * prisa * (1 + e.vel / BONO_VELOCIDAD));
+          ganados += Math.round(e.tipo.valor * prisa * (1 + e.vel / BONO_VELOCIDAD) * nivel().puntos);
           // Un helicóptero en el aire no deja cráter en el suelo.
           if (!(e.volador && e.vel > 0)) crateres.push({ x: Math.round(e.x + e.forma.w / 2), y: Math.round(e.y + e.forma.h / 2) });
         }
         entidades = entidades.filter((e) => !tocados.includes(e));
+        amenazas = amenazas.filter((a) => entidades.includes(a.e));
         puntos += ganados;
         aciertos += tocados.length;
         aviso = { texto: `+${ganados}`, hasta: tiempo + AVISO_MS };
@@ -811,15 +959,16 @@ export default {
 
     // El mundo sigue en marcha mientras cae el misil y durante la explosión.
     function moverMundo(dt) {
-      circular(vehiculos(), dt, aleatorio);
+      circular(vehiculos(), dt, aleatorio, nivel().vel);
       moverHelicopteros(dt);
+      moverLanzadores(dt);
       trafico(dt);
       andar(dt);
       if (vuelo === null && (proximoPie -= dt) <= 0) { lanzarPie(); proximoPie = sortearPie(); }
     }
 
     function vaivenear(dt) {
-      const amplitud = quieto ? 0 : VAIVEN_PX[zonaIdx];
+      const amplitud = quieto ? 0 : nivel().vaiven;
       if (amplitud) {
         proximoVaiven -= dt;
         if (proximoVaiven <= 0) {
@@ -861,6 +1010,12 @@ export default {
       const x = Math.round(e.x) - camara.x;
       const y = Math.round(e.y) - camara.y;
       malla.rect(x - 1, y - 1, e.forma.w + 2, e.forma.h + 2, 0);
+      // El tirador avisado parpadea, cada vez más deprisa hasta el impacto.
+      const a = amenazas.find((o) => o.e === e);
+      if (a) {
+        const periodo = 300 - 220 * Math.min(1, (tiempo - a.desde) / (a.hasta - a.desde));
+        if (Math.floor(tiempo / periodo) % 2) return;
+      }
       const luces = e.forma.filas2 && Math.floor(tiempo / 200) % 2;
       pintarSprite(malla, luces ? { ...e.forma, filas: e.forma.filas2 } : e.forma, x, y);
     }
@@ -877,6 +1032,9 @@ export default {
       get volando() { return vuelo !== null; },
       get victoria() { return ganada; },
       get estancia() { return estancia; },
+      get amenazas() { return amenazas.map((a) => ({ ...a })); },
+      get impactos() { return impactos; },
+      get vidas() { return vidas; },
       get zona() { return vuelo !== null ? null : ZONAS[zonaIdx].nombre; },
       get estado() { return `${aciertos} objetivos · ${vidas} misiles de margen`; },
 
@@ -898,6 +1056,9 @@ export default {
           camara.y = Math.max(0, Math.min(MAPA_H - MUNDO_H, Math.round(c.y + deriva.y)));
           moverMundo(dt);
         }
+        // Se dispara solo al VTOL parado: en vuelo el aviso se pierde con la zona.
+        if (vuelo !== null) { amenazas = []; cola = []; }
+        else if (fase !== 'final') disparar(dt);
         if (fase === 'cayendo') {
           progreso += (dt / CAIDA_MS) * PRISA[Math.min(pulsados.size, 2)];
           if (progreso >= 1) estallar();
@@ -967,6 +1128,8 @@ export default {
         // Los misiles de margen, como cuadraditos en la esquina: se cuentan sin leer.
         // Van en las filas 1-4: los puntos empiezan en la 6 y una fila en blanco los separa.
         for (let i = 0; i < vidas; i++) rect(lienzo[9], 2 + i * 6, 1, 4, 4, 1);
+        // Con una amenaza en marcha, un «!» parpadeando junto a las vidas.
+        if (amenazas.length && Math.floor(tiempo / 150) % 2 === 0) { rect(lienzo[9], 20, 1, 2, 2, 1); rect(lienzo[9], 20, 4, 2, 1, 1); }
         // Lo que queda sobre esta zona: una barra que se vacía.
         if (!enVuelo) {
           rect(lienzo[9], 24, 1, 46, 1, 1); rect(lienzo[9], 24, 4, 46, 1, 1);

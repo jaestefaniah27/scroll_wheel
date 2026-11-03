@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
-import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
+import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
 
 const DT = 8;
@@ -56,7 +56,8 @@ test('Misil: el suelo del mapa mide lo mismo que las nueve pantallas con sus hue
 
 test('Misil: cada objetivo tiene un dibujo rectangular y vale más cuanto más pequeño', () => {
   for (const o of OBJETIVOS) for (const f of o.filas) assert.equal(f.length, o.w, o.nombre);
-  const porArea = OBJETIVOS.filter((o) => !o.valorFijo).sort((a, b) => b.w * b.h - a.w * a.h);
+  // El helicóptero y el lanzador valen lo que valen por decisión, no por tamaño.
+  const porArea = OBJETIVOS.filter((o) => !o.valorFijo && o.nombre !== 'lanzador').sort((a, b) => b.w * b.h - a.w * a.h);
   for (let i = 1; i < porArea.length; i++) assert.ok(porArea[i].valor >= porArea[i - 1].valor, porArea[i].nombre);
 });
 
@@ -566,4 +567,189 @@ test('Misil: sin pieMs en la zona no sale nadie a pie, y en la base tampoco hay 
   const { partida, paso } = nueva(3, { inmortal: true });
   for (let t = 0; t < 30000; t += DT) paso();
   assert.ok(!partida.entidades.some((e) => e.pie));
+});
+
+// --- Fase 4: dificultad por zona y fuego enemigo ---
+
+// Cambia la fila `i` de NIVELES mientras dura `f` (la tabla es la de verdad, no una copia).
+function conNivel(i, cambios, f) {
+  const original = NIVELES[i];
+  NIVELES[i] = { ...original, ...cambios };
+  try { return f(); } finally { NIVELES[i] = original; }
+}
+const indiceZona = (partida) => ZONAS.findIndex((z) => z.nombre === partida.zona);
+
+// Deja pasar `ms` sin tocar nada y vigila las reglas del disparo en cada tick.
+function vigilar(partida, ms) {
+  const visto = { maxSimultaneas: 0, impactos: [], tirados: new Set(), amenazas: 0 };
+  const conocidas = new Set();
+  let antes = partida.impactos;
+  for (let t = 0; t < ms; t += DT) {
+    partida.tick(DT);
+    const idx = indiceZona(partida);
+    const am = partida.amenazas;
+    if (idx >= 0) {
+      assert.ok(am.length <= (NIVELES[idx].simultaneas ?? 1), `zona ${idx + 1}: ${am.length} amenazas a la vez`);
+      visto.maxSimultaneas = Math.max(visto.maxSimultaneas, am.length);
+    }
+    for (const a of am) {
+      const clave = `${a.desde}:${a.hasta}`;
+      if (conocidas.has(clave)) continue;
+      conocidas.add(clave);
+      visto.amenazas++;
+      visto.tirados.add(a.e.tipo.nombre);
+      assert.ok(a.hasta - a.desde >= 3500, `aviso de ${a.hasta - a.desde} ms`);
+      for (const o of am) if (o !== a) assert.ok(Math.abs(o.hasta - a.hasta) >= ESPACIO_DISPAROS_MS, 'dos amenazas con impactos juntos');
+    }
+    if (partida.impactos > antes) { visto.impactos.push(t); antes = partida.impactos; }
+  }
+  for (let i = 1; i < visto.impactos.length; i++) {
+    assert.ok(visto.impactos[i] - visto.impactos[i - 1] >= ESPACIO_DISPAROS_MS - DT, 'impactos a menos de 3 s');
+  }
+  return visto;
+}
+
+test('Misil: NIVELES tiene una fila por zona, aprieta siempre más y el aviso nunca baja de 3500', () => {
+  assert.equal(NIVELES.length, ZONAS.length);
+  for (const col of ['vel', 'maxVehiculos', 'vaiven', 'puntos']) {
+    for (let i = 1; i < NIVELES.length; i++) assert.ok(NIVELES[i][col] >= NIVELES[i - 1][col], `${col} baja en la fila ${i + 1}`);
+  }
+  for (const n of NIVELES) assert.ok(n.avisoMs === 0 || n.avisoMs >= 3500, `avisoMs ${n.avisoMs}`);
+  assert.equal(NIVELES.filter((n) => n.simultaneas > 1).length, 1);
+  assert.equal(NIVELES.at(-1).simultaneas, 2);
+});
+
+test('Misil: la velocidad de los vehículos sale de la fila de la zona y se puede empezar en otra', () => {
+  const camion = OBJETIVOS.find((o) => o.nombre === 'camion');
+  const v = { tipo: camion, vel: 0, desde: 'a', hasta: 'f', dist: 0 };
+  circular([v], 1000, () => 0, 1.5);
+  assert.equal(v.vel, camion.velocidad * 1.5);
+  assert.equal(nueva(3, { zonaInicial: 0 }).partida.camara.x, ZONAS[0].x);
+  assert.equal(nueva(3, { zonaInicial: 5 }).partida.camara.x, ZONAS[5].x);
+});
+
+test('Misil: en las zonas sin disparo no hay amenazas, ni camiones fuera de la carretera, y los RPG fijos son de la zona 6', () => {
+  for (const zona of [0, 1]) {
+    const { partida } = nueva(5, { inmortal: true, zonaInicial: zona });
+    assert.equal(vigilar(partida, 40000).amenazas, 0, `zona ${zona + 1}`);
+  }
+  for (const zona of [0, 1, 2, 3]) {
+    const { partida } = nueva(9, { inmortal: true, zonaInicial: zona });
+    for (let t = 0; t < 40000; t += DT) {
+      partida.tick(DT);
+      assert.ok(!partida.entidades.some((e) => e.mision || e.tipo.nombre === 'lanzador'), `zona ${zona + 1}`);
+    }
+  }
+  for (const [n, x, y, dir] of ESTATICOS.filter((e) => e[0] === 'rpg')) {
+    assert.ok(hayObjetivosEn([{ x, y, forma: tamano(n, dir) }], ZONAS[5]), 'los RPG fijos son de la zona 6');
+  }
+});
+
+test('Misil: con un antiaéreo a la vista y sin tocar nada, a los disparoMs + avisoMs se pierde una vida', () => {
+  const { partida } = nueva(3, { zonaInicial: 2 });
+  const n = NIVELES[2];
+  assert.equal(partida.amenazas.length, 0);
+  let vidasAntes = partida.vidas, cuando = null;
+  for (let t = DT; t < 30000 && cuando === null; t += DT) {
+    vidasAntes = partida.vidas;
+    partida.tick(DT);
+    if (partida.impactos === 1) cuando = t;
+  }
+  assert.ok(cuando >= n.disparoMs + n.avisoMs && cuando <= n.disparoMs + n.avisoMs + 3 * DT, `impacto a los ${cuando} ms`);
+  assert.equal(partida.vidas, vidasAntes - 1);
+});
+
+test('Misil: destruir al tirador durante el aviso cancela la amenaza y suma puntos', () => {
+  const { partida, paso } = nueva(3, { zonaInicial: 2, inmortal: true });
+  while (!partida.amenazas.length) paso();
+  const tirador = partida.amenazas[0].e;
+  const antes = partida.puntos;
+  apuntar(partida, paso, enVista(partida, centro(tirador)));
+  partida.mandoBoton({ mando: 1, pulsado: true });
+  partida.mandoBoton({ mando: 2, pulsado: true });
+  for (let t = 0; t < 5000 && partida.entidades.includes(tirador); t += DT) paso();
+  assert.ok(!partida.entidades.includes(tirador), 'destruido');
+  assert.ok(partida.puntos > antes);
+  assert.ok(!partida.amenazas.some((a) => a.e === tirador), 'sin amenaza');
+  assert.equal(partida.impactos, 0);
+});
+
+test('Misil: las reglas del disparo valen en partidas largas, con varias semillas, en todas las zonas con fuego', () => {
+  let impactos = 0, dobles = 0;
+  const tirados = new Set();
+  for (const semilla of [1, 2, 3, 4]) {
+    for (const zona of [2, 3, 4, 5]) {
+      // Con lanzadores frecuentes, para que se pisen con los turnos normales.
+      conNivel(zona, zona >= 4 ? { lanzadorMs: 4000 } : {}, () => {
+        const { partida } = nueva(semilla, { inmortal: true, zonaInicial: zona });
+        const v = vigilar(partida, 100000);
+        impactos += v.impactos.length;
+        if (v.maxSimultaneas >= 2) dobles++;
+        v.tirados.forEach((t) => tirados.add(t));
+      });
+    }
+  }
+  assert.ok(impactos > 20, `solo ${impactos} impactos`);
+  assert.ok(tirados.has('antiaereo'));
+  assert.ok(tirados.has('lanzador'), 'algún lanzador dispara');
+  assert.ok(tirados.has('rpg'), 'algún RPG dispara');
+  assert.ok(dobles > 0, 'en la zona 6 llega a haber dos amenazas a la vez');
+});
+
+test('Misil: un camión aparca, despliega el lanzador y, sin tocar nada, dispara a los LANZADOR_DESPLIEGUE_MS + avisoMs', () => {
+  let atacados = 0;
+  for (const semilla of [1, 2, 3, 4, 5, 6]) {
+    conNivel(4, { lanzadorMs: 2000, disparoMs: 0 }, () => {
+      const { partida } = nueva(semilla, { inmortal: true, zonaInicial: 4 });
+      let aparcado = null;
+      for (let t = 0; t < 45000; t += DT) {
+        partida.tick(DT);
+        const l = aparcado === null && partida.entidades.find((e) => e.mision?.fase === 'despliega');
+        if (l) {
+          aparcado = t;
+          assert.ok(APARCAMIENTOS.some((a) => a === l.mision.ap && a.zona === 'aerodromo'));
+        }
+        if (aparcado !== null && partida.impactos) {
+          atacados++;
+          const espera = t - aparcado;
+          const esperado = LANZADOR_DESPLIEGUE_MS + NIVELES[4].avisoMs;
+          assert.ok(espera >= esperado && espera <= esperado + 4 * DT, `${espera} ms desde aparcar`);
+          break;
+        }
+      }
+    });
+  }
+  assert.ok(atacados >= 3, `solo ${atacados} de 6 partidas llegaron a ser atacadas por un lanzador`);
+});
+
+test('Misil: el lanzador desplegado vale el doble que un camión y cambia de dibujo a mitad del despliegue', () => {
+  assert.equal(OBJETIVOS.find((o) => o.nombre === 'lanzador').valor, 2 * OBJETIVOS.find((o) => o.nombre === 'camion').valor);
+  conNivel(4, { lanzadorMs: 2000, disparoMs: 0 }, () => {
+    const { partida } = nueva(2, { inmortal: true, zonaInicial: 4 });
+    let visto = false;
+    for (let t = 0; t < 45000 && !visto; t += DT) {
+      partida.tick(DT);
+      const l = partida.entidades.find((e) => e.mision?.fase === 'despliega');
+      if (l && l.mision.t < LANZADOR_DESPLIEGUE_MS / 2 - DT) assert.equal(l.tipo.nombre, 'camion');
+      if (l && l.mision.t >= LANZADOR_DESPLIEGUE_MS / 2 + DT) { assert.equal(l.tipo.nombre, 'lanzador'); visto = true; }
+    }
+    assert.ok(visto, 'se vio desplegado');
+  });
+});
+
+test('Misil: en el cuartel algún soldado a pie lleva RPG, y solo es tirador al pararse', () => {
+  let rpgs = 0;
+  for (const semilla of [1, 2, 3, 4, 5, 6]) {
+    const { partida, paso } = nueva(semilla, { zonaInicial: 5, pieMs: 800, inmortal: true });
+    for (let t = 0; t < 20000; t += DT) {
+      paso();
+      for (const e of partida.entidades) {
+        if (e.tipo.nombre !== 'rpg') continue;
+        if (e.pie) { rpgs++; assert.ok(!e.tirador, 'andando no dispara'); } else assert.ok(e.tirador);
+      }
+    }
+  }
+  assert.ok(rpgs > 0, 'ningún RPG a pie');
+  const { partida, paso } = nueva(1, { zonaInicial: 4, pieMs: 800, inmortal: true });
+  for (let t = 0; t < 10000; t += DT) { paso(); assert.ok(!partida.entidades.some((e) => e.pie && e.tipo.nombre === 'rpg')); }
 });

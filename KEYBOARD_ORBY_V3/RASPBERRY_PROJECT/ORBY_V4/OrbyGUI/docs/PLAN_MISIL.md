@@ -124,7 +124,27 @@ Desviaciones:
 - Los que caminan no cuentan en `hayObjetivosEn`. Se ignoran las sendas `de: 'aparcamiento'` y `fin: 'subir'` (5.2 y 5.3).
 - Test de `SENDAS` añadido: pasan todas tal como están, el mapa no se ha tocado.
 
-**Pendiente:** fases 4, 5.2, 5.3 y 6.
+
+**Hecha la fase 4 (Sonnet, rama `misil-fuego`):** `NIVELES` (con `simultaneas`) sustituye a `TRAFICO`; `vel` es el
+cuarto argumento de `circular` (factor), `puntos` multiplica cada acierto. Antiaéreo y RPG llevan `dispara: true` (en vez
+de `tirador`) y `crearEstatica` lo copia a `e.tirador`. Amenazas, `tiradores()`, camión lanzamisiles (`lanzador`, valor
+2 × camión puesto a mano tras `TIPO`) y las dos reglas de espacio van en `misil.mjs`. Desviaciones:
+
+- `crear` admite `zonaInicial` e `inmortal` también vale para los impactos (solo para pruebas). Getters nuevos para
+  probar: `amenazas`, `impactos`, `vidas`.
+- El impacto llama a `sacudir()`, vacía hasta que el vaivén (2.3) la llene. En vuelo se descartan las amenazas.
+- `ultimoImpacto` es el del último impacto **real**: una amenaza cancelada no cuenta para el espacio de 3 s.
+- Con el temporizador a punto y sin hueco (`simultaneas` llenas) el tirador espera su turno; sin candidatos, se
+  vuelve a sortear.
+- El camión asignado conserva la clave `mision` (`red`, `entra`, `despliega`, `listo`); al salir pierde `desde`/`hasta`
+  y su convoy, así que `vehiculos()` ya no lo cuenta. El RPG que camina (fase 5) y `nivel().rpg` quedan sin usar.
+- `heli`, `vaiven` y `pieMs` están en la tabla pero no se usan aún. El test de orden de valor por área excluye el
+  `lanzador`, que vale el doble por decisión.
+
+
+**Juntadas (Opus):** las ramas de 2+3.1, 4 y 5.1. Al juntarlas, `HELI_PROB`, `VAIVEN_PX` y `PIE_MS` pasan a `nivel().heli/vaiven/pieMs`, `sacudir()` da el golpe de deriva (±10, ±6) y los grupos a pie de la zona 6 llevan un RPG de cada cuatro, que pasa a tirador al pararse.
+
+**Pendiente:** fases 5.2, 5.3 y 6.
 
 ## Fase 0. Herramienta para ver el mapa
 
