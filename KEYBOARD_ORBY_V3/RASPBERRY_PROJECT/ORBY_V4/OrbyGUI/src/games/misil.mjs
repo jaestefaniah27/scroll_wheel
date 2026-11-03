@@ -189,6 +189,47 @@ export const OBJETIVOS = [
       '#.#',
     ]),
   },
+  {
+    // Ala delta con el morro a la derecha: lo grande que es el ala lo separa del tanque.
+    nombre: 'caza', velocidad: 0,
+    ...sprite([
+      '..##.......',
+      '..###......',
+      '...###.....',
+      '#..####....',
+      '##########.',
+      '###########',
+      '##########.',
+      '#..####....',
+      '...###.....',
+      '..###......',
+      '..##.......',
+    ]),
+  },
+  {
+    // Parapeto cuadrado con los dos cañones hacia arriba: ni redondo como el depósito ni hueco
+    // como la tienda. No se gira: los cañones apuntan al cielo, no a la carretera.
+    nombre: 'antiaereo', velocidad: 0,
+    ...sprite([
+      '..#.#..',
+      '..#.#..',
+      '..#.#..',
+      '#######',
+      '#.###.#',
+      '#.###.#',
+      '#######',
+    ]),
+  },
+  {
+    // El soldado con el tubo al hombro: una columna más que el soldado, hacia la derecha.
+    nombre: 'rpg', velocidad: 7,
+    ...sprite([
+      '.#..',
+      '####',
+      '.#..',
+      '#.#.',
+    ]),
+  },
 ];
 
 export function pintarSprite(malla, s, x, y) {

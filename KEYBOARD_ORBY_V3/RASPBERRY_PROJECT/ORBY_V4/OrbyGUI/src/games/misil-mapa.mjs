@@ -15,43 +15,57 @@
 //     es de trazo: así no se confunde una roca con un soldado
 //   · las carreteras son solo horizontales y verticales: un vehículo tiene cuatro orientaciones
 //     y siempre se le puede dibujar de cara a donde va
-//   · tres zonas (ZONAS), cada una con su carácter: la base con la pista, el puesto del desierto
-//     y el puente sobre el río, en ese orden (se empieza en la base). Están colocadas para que
-//     lo importante caiga dentro de las pantallas y no en los huecos entre ellas (las
-//     carreteras, en el centro de una fila)
-//   · la red de carreteras no tiene callejones sin salida: son dos circuitos que comparten
-//     un tramo. Con extremos muertos, el vehículo entraba en la vista, llegaba al final y daba
+//   · seis zonas (ZONAS), una ruta de ida que acaba en la última: la base con la pista, el
+//     puesto del desierto, el puente sobre el río, el oasis, el aeródromo y el cuartel. Las tres
+//     primeras al oeste y las otras tres al este, cada vez más defendidas. Están colocadas para
+//     que lo importante caiga dentro de las pantallas y no en los huecos entre ellas (las
+//     carreteras, en el centro de una fila o de una columna)
+//   · la red de carreteras no tiene callejones sin salida: son circuitos de sentido único que
+//     comparten tramos. Con extremos muertos, el vehículo entraba en la vista, llegaba al final y daba
 //     la vuelta antes de que diera tiempo a apuntarle; así recorre la zona de punta a punta y
 //     vuelve a pasar. Cada circuito pasa por una fila entera de pantallas, donde se le ve todo
 //     el camino
 //   · el mapa es siempre el mismo: la gracia está en lo que se mueve, y un mapa que cambia
 //     cada partida no deja aprender dónde están las cosas
 
-export const MAPA_W = 600;
+export const MAPA_W = 1200;
 export const MAPA_H = 440;
 export const SEMI = 4;            // la carretera mide 2·SEMI+1 de ancho, bordes incluidos
 const RIO_SEMI = 9;               // medio ancho del río, de orilla a orilla
 
 // Dónde mira la cámara en cada zona: la esquina de arriba a la izquierda de la vista (las
 // nueve pantallas con sus huecos, 248x148).
+// `helipuerto` es el centro de la H, donde puede esperar el helicóptero.
 export const ZONAS = [
-  { nombre: 'base', x: 60, y: 266 },
+  { nombre: 'base', x: 60, y: 266, helipuerto: [158, 292] },
   { nombre: 'puesto', x: 20, y: 20 },
   { nombre: 'puente', x: 300, y: 126 },
+  { nombre: 'oasis', x: 640, y: 20 },
+  { nombre: 'aerodromo', x: 660, y: 266, helipuerto: [850, 340] },
+  { nombre: 'cuartel', x: 930, y: 160, helipuerto: [1150, 290] },
 ];
 
-// La red de carreteras: [x, y] del centro. Todos los tramos están en algún circuito: el del
-// puesto (a-f-h-c-b) pasa por la fila de abajo de sus pantallas, y el de la base y el puente
-// (b-g-q-d-c) baja por la pista, cruza por debajo de la base y sube por el río.
+// La red de carreteras: [x, y] del centro. De sentido único: 'pq' va de p a q. Con 9 px de
+// calzada no caben dos carriles (el tanque girado ya mide 9), y en un solo sentido nunca hay
+// dos de frente. Tres circuitos: el del puesto (a-f-h-c-b) pasa por la fila de abajo de sus
+// pantallas; el de la base y el puente (b-g-q-d-c) baja por la pista, cruza por debajo de la
+// base y sube por el río; y el del este (q-r-s-u-w-x-y-d) cruza por debajo del aeródromo,
+// atraviesa el cuartel, vuelve por la fila de abajo del oasis y se une al del puente.
 export const NODOS = {
   a: [60, 200], b: [184, 200], c: [228, 200], d: [512, 200],
   f: [60, 140], h: [228, 140],    // las esquinas de arriba del circuito del puesto
   g: [184, 384], q: [512, 384],   // las de abajo del de la base
+  r: [872, 384], s: [872, 234],   // el aeródromo
+  u: [1142, 234], w: [1142, 148], // el cuartel
+  x: [764, 148], y: [764, 200],   // el oasis
 };
-export const TRAMOS = ['af', 'fh', 'hc', 'ab', 'bc', 'cd', 'bg', 'gq', 'qd'];
+export const TRAMOS = ['af', 'fh', 'hc', 'cb', 'ba', 'bg', 'gq', 'qd', 'dc', 'qr', 'rs', 'su', 'uw', 'wx', 'xy', 'yd'];
 // Carreteras que se dibujan pero no se recorren: la que llega a la puerta del puesto. Entrar
 // sería un callejón sin salida.
 const ACCESOS = [[[144, 140], [144, 105]]];
+
+export const SALIDAS = {};
+for (const [p, q] of TRAMOS) (SALIDAS[p] ??= []).push(q);
 
 export const ADYACENTES = {};
 for (const [p, q] of TRAMOS) {
@@ -79,7 +93,9 @@ export function enCarretera(x, y, margen = 0) {
 }
 
 // Lo que se puede destruir y está quieto: [tipo, x, y, dirección], con (x, y) la esquina de
-// arriba a la izquierda. Por zonas, y dentro de cada una por pantallas.
+// arriba a la izquierda. Por zonas, y dentro de cada una por pantallas. Un quinto campo,
+// { tramo, dist }, marca el vehículo aparcado que puede arrancar cuando suben soldados (ver
+// SENDAS): sale recto hasta ese punto de la carretera y se incorpora.
 export const ESTATICOS = [
   // --- El puesto del desierto: un recinto amurallado con la puerta al sur.
   ['tienda', 120, 33], ['tienda', 137, 33], ['tienda', 154, 33],
@@ -98,6 +114,7 @@ export const ESTATICOS = [
   ['tanque', 330, 150, 'der'],
   ['tienda', 316, 244], ['tienda', 334, 250], ['soldado', 352, 246], ['soldado', 339, 212],
   ['tanque', 395, 255, 'izq'],
+  ['antiaereo', 355, 132], ['antiaereo', 522, 184],
 
   // --- La base: depósitos de combustible, carros en fila, camiones y tiendas.
   ['deposito', 240, 281], ['deposito', 254, 281], ['deposito', 268, 281], ['deposito', 247, 294], ['deposito', 261, 294],
@@ -105,6 +122,62 @@ export const ESTATICOS = [
   ['camion', 156, 394, 'arr'], ['camion', 166, 394, 'arr'], ['camion', 176, 394, 'arr'],
   ['tienda', 244, 394], ['tienda', 262, 394], ['soldado', 282, 400], ['soldado', 286, 406],
   ['soldado', 200, 300], ['soldado', 112, 322],
+  ['caza', 78, 321, 'aba'], ['caza', 92, 321, 'aba'],
+
+  // --- El oasis: dos lagunas con palmeras, un campamento nómada, un puesto de vigilancia.
+  ['tienda', 650, 30], ['tienda', 668, 36], ['soldado', 690, 40], ['soldado', 695, 46],
+  ['camion', 740, 30, 'der'], ['antiaereo', 776, 86], ['soldado', 740, 135],
+  ['tienda', 826, 82], ['tienda', 844, 88], ['camion', 866, 80, 'aba'],
+  ['antiaereo', 826, 130], ['soldado', 868, 132],
+  ['soldado', 680, 134], ['soldado', 686, 139], ['camion', 742, 96, 'der'],
+
+  // --- El aeródromo: hangares con sus cazas delante, la pista, depósitos junto a la carretera.
+  ['caza', 668, 290, 'aba'], ['caza', 684, 290, 'aba'], ['caza', 700, 290, 'aba'], ['caza', 760, 290, 'aba'],
+  ['deposito', 842, 272], ['deposito', 854, 284], ['deposito', 882, 270], ['deposito', 894, 284],
+  ['antiaereo', 890, 322], ['antiaereo', 670, 398], ['antiaereo', 760, 398],
+  ['soldado', 700, 400], ['soldado', 706, 405], ['soldado', 800, 324], ['soldado', 816, 350],
+  ['camion', 800, 396, 'der', { tramo: 'qr', dist: 295 }], ['tienda', 722, 396], ['tanque', 850, 394, 'der'], ['soldado', 890, 400],
+
+  // --- El cuartel: el recinto con los carros en fila, barracones al sur, RPG en los nidos.
+  ['tanque', 944, 170, 'aba'], ['tanque', 958, 170, 'aba'], ['tanque', 972, 170, 'aba'],
+  ['antiaereo', 1040, 170], ['rpg', 1060, 188], ['rpg', 1120, 178], ['antiaereo', 1162, 222],
+  ['tienda', 946, 278], ['tienda', 964, 284], ['soldado', 984, 280], ['rpg', 990, 292],
+  ['deposito', 1030, 280], ['deposito', 1044, 290], ['soldado', 1066, 284],
+  ['antiaereo', 1112, 282], ['camion', 1030, 242, 'izq', { tramo: 'su', dist: 165 }],
+];
+
+// Explanadas junto a la carretera donde un vehículo se sale a aparcar: para lanzar (zonas 5 y
+// 6) o para que bajen soldados. Solo junto a tramos verticales: la pantalla mide 72 de ancho y
+// con la carretera en su centro quedan 32 px a cada lado; en vertical, 16, y no cabe. Por eso
+// el oasis no tiene. `tramo` y `dist` (desde su primer nodo) dicen dónde se sale; (x, y) es la
+// esquina de la explanada, de EXPLANADA px de lado, y el acceso va recto del tramo a ella.
+export const EXPLANADA = 20;
+export const APARCAMIENTOS = [
+  { zona: 'puesto', tramo: 'hc', dist: 16, x: 238, y: 146 },
+  { zona: 'puente', tramo: 'qd', dist: 134, x: 524, y: 240 },
+  { zona: 'aerodromo', tramo: 'rs', dist: 37, x: 884, y: 337 },
+  { zona: 'cuartel', tramo: 'uw', dist: 54, x: 1152, y: 170 },
+];
+
+// Caminos a pie. `de` es de dónde salen (una puerta, un aparcamiento o un vehículo quieto) y
+// `fin` qué hacen al llegar: 'quedarse' (se vuelven estáticos), 'entrar' (se escapan) o
+// 'subir' (al vehículo del final, que arranca: ver el quinto campo de ESTATICOS).
+export const SENDAS = [
+  { zona: 'puesto', de: 'puerta', fin: 'quedarse', puntos: [[154, 110], [190, 112], [204, 100]] },
+  { zona: 'puesto', de: 'aparcamiento', fin: 'quedarse', puntos: [[259, 156], [264, 146], [264, 132]] },
+  { zona: 'puesto', de: 'puerta', fin: 'entrar', puntos: [[60, 120], [100, 110], [132, 110]] },
+  { zona: 'puente', de: 'aparcamiento', fin: 'quedarse', puntos: [[534, 263], [540, 268], [545, 266]] },
+  { zona: 'puente', de: 'puerta', fin: 'quedarse', puntos: [[310, 268], [362, 270], [366, 244]] },
+  { zona: 'oasis', de: 'puerta', fin: 'quedarse', puntos: [[676, 52], [682, 52], [686, 30]] },
+  { zona: 'oasis', de: 'estatico', fin: 'quedarse', puntos: [[750, 104], [780, 118], [786, 126]] },
+  { zona: 'oasis', de: 'puerta', fin: 'quedarse', puntos: [[832, 100], [810, 110], [760, 110], [730, 108]] },
+  { zona: 'aerodromo', de: 'puerta', fin: 'quedarse', puntos: [[784, 290], [796, 300], [812, 312]] },
+  { zona: 'aerodromo', de: 'aparcamiento', fin: 'quedarse', puntos: [[905, 352], [902, 340], [900, 308]] },
+  { zona: 'aerodromo', de: 'puerta', fin: 'subir', puntos: [[736, 406], [760, 411], [796, 402]] },
+  { zona: 'cuartel', de: 'puerta', fin: 'quedarse', puntos: [[1004, 218], [1000, 202], [1028, 190]] },
+  { zona: 'cuartel', de: 'puerta', fin: 'subir', puntos: [[972, 266], [1000, 262], [1026, 248]] },
+  { zona: 'cuartel', de: 'aparcamiento', fin: 'quedarse', puntos: [[1172, 190], [1172, 200]] },
+  { zona: 'cuartel', de: 'puerta', fin: 'quedarse', puntos: [[1090, 300], [1070, 304]] },
 ];
 
 // --- Dibujo ---------------------------------------------------------------------------
@@ -146,10 +219,22 @@ function curva(puntos) {
   return out;
 }
 
+// Una laguna: solo marca el agua. Las orillas y las ondas las pone rio(), que las saca de todo
+// lo que sea agua, sea río o no.
+function laguna(agua, cx, cy, rx, ry, semilla) {
+  for (let j = -ry - 3; j <= ry + 3; j++) {
+    for (let i = -rx - 3; i <= rx + 3; i++) {
+      const a = Math.atan2(j / ry, i / rx);
+      const r = 1 + 0.12 * Math.sin(3 * a + semilla) + 0.06 * Math.sin(5 * a + 2 * semilla);
+      if ((i / rx) ** 2 + (j / ry) ** 2 <= r * r) agua.px(cx + i, cy + j);
+    }
+  }
+}
+
 // El río: dos orillas y, dentro, ondas sueltas de tres píxeles. `agua` marca lo que es río,
 // para las ondas y para tender los puentes.
 function rio(b, agua) {
-  const c = curva([[352, 0], [372, 50], [396, 110], [420, 200], [428, 236], [458, 258], [512, 264], [560, 278], [MAPA_W + 40, 300]]);
+  const c = curva([[352, 0], [372, 50], [396, 110], [420, 200], [428, 236], [458, 258], [512, 264], [560, 280], [594, 312], [610, 370], [618, 480]]);
   for (let i = 1; i < c.length; i++) {
     const [x0, y0] = c[i - 1], [x1, y1] = c[i];
     const l = Math.hypot(x1 - x0, y1 - y0) || 1;
@@ -292,6 +377,23 @@ function helipuerto(b, cx, cy) {
   b.linea(cx - 3, cy - 4, cx - 3, cy + 4); b.linea(cx + 3, cy - 4, cx + 3, cy + 4); b.linea(cx - 3, cy, cx + 3, cy);
 }
 
+// Una explanada: el acceso recto desde el borde de la carretera y el marco. Se dibuja después de
+// todo el decorado y lo borra por dentro: si no, un vehículo aparcaría encima de una duna.
+function explanada(b, a) {
+  const [p, q] = [NODOS[a.tramo[0]], NODOS[a.tramo[1]]];
+  const ry = p[1] + Math.sign(q[1] - p[1]) * a.dist;
+  const cy = a.y + EXPLANADA / 2;
+  b.rect(a.x, a.y, EXPLANADA, EXPLANADA, 0);
+  b.marco(a.x, a.y, EXPLANADA, EXPLANADA);
+  const borde = a.x > p[0] ? p[0] + SEMI : p[0] - SEMI;
+  const lado = a.x > p[0] ? a.x : a.x + EXPLANADA - 1;
+  b.rect(Math.min(borde, lado), cy - 4, Math.abs(lado - borde) + 1, 9, 0);
+  b.linea(borde, cy - 4, lado, cy - 4); b.linea(borde, cy + 4, lado, cy + 4);
+  // Las bocas del acceso, abiertas en el borde de la carretera y en el marco.
+  for (let j = -3; j <= 3; j++) { b.px(lado, cy + j, 0); b.px(borde, cy + j, 0); }
+  if (Math.abs(ry - cy) > 1) throw new Error(`explanada ${a.zona}: el acceso no sale del tramo`);
+}
+
 // Carreteras: se limpia la calzada (así cruzan el río y lo que haya) y se pintan los bordes y
 // la raya central. Donde pasan sobre agua, el puente: un pretil por fuera de cada borde.
 function carreteras(b, agua) {
@@ -338,7 +440,11 @@ export function construirMapa(cajas = []) {
   colina(b, 30, 270, 20, 12, 6);
   colina(b, 400, 360, 28, 14, 7);
   colina(b, 560, 390, 22, 12, 8);
-  
+  colina(b, 940, 60, 30, 16, 9);           // entre el oasis y el cuartel
+  colina(b, 1100, 80, 26, 14, 10);
+  colina(b, 1000, 380, 30, 16, 11);
+  colina(b, 1150, 400, 22, 12, 12);
+  colina(b, 700, 220, 20, 10, 13);
 
   // Dunas: campos en el oeste del puesto, al sur y al sureste.
   for (const [x, y, l, h] of [
@@ -346,6 +452,9 @@ export function construirMapa(cajas = []) {
     [24, 118, 28, 5], [62, 112, 22, 4], [40, 160, 26, 4], [200, 130, 26, 4], [230, 160, 22, 4],
     [300, 250, 24, 4], [250, 230, 26, 5], [100, 250, 28, 5], [140, 240, 22, 4],
     [330, 410, 26, 4], [440, 420, 28, 5], [580, 220, 18, 4], [302, 140, 20, 4], [320, 270, 22, 4], [10, 380, 24, 4], [20, 410, 22, 4],
+    [740, 62, 24, 4], [800, 46, 20, 4], [650, 150, 22, 4], [690, 126, 18, 4],
+    [960, 120, 26, 5], [1040, 120, 22, 4], [1160, 330, 24, 4], [920, 330, 22, 4], [1060, 330, 26, 5],
+    [680, 430, 24, 4], [860, 430, 22, 4],
   ]) duna(b, x, y, l, h);
 
   // Rocas, en grupitos.
@@ -353,8 +462,12 @@ export function construirMapa(cajas = []) {
     [96, 152, 1], [104, 158, 0], [186, 70, 1], [80, 84, 0], [270, 110, 1], [276, 116, 0],
     [372, 250, 1], [366, 256, 0], [540, 170, 1], [460, 300, 1], [466, 306, 0], [580, 330, 0],
     [8, 210, 1], [40, 146, 1], [48, 152, 0], [34, 154, 0],
+    [720, 100, 1], [726, 106, 0], [990, 250, 1], [1000, 246, 0], [912, 214, 1], [1170, 240, 0],
   ]) roca(b, x, y, g);
 
+  // Las lagunas del oasis, antes que el río: rio() les pone orillas y ondas a la vez.
+  laguna(agua, 678, 92, 24, 12, 1);
+  laguna(agua, 850, 42, 14, 7, 2);
   rio(b, agua);
 
   // Palmeras a lo largo de las orillas, junto al puente.
@@ -362,6 +475,8 @@ export function construirMapa(cajas = []) {
     [402, 160], [410, 172], [396, 182], [436, 222], [444, 232], [430, 186], [438, 174],
     [470, 256], [480, 264], [494, 244], [380, 120], [386, 134], [530, 248], [544, 254],
     [410, 228], [404, 240], [416, 250], [452, 240], [470, 248],
+    [648, 80], [652, 100], [660, 110], [700, 108], [708, 82], [690, 76], [660, 76], [706, 100],
+    [830, 40], [834, 52], [868, 36], [870, 50], [846, 54],
   ]) if (![-3, 0, 3].some((d) => agua.get(x + d, y) || agua.get(x, y + d))) palmera(b, x, y);
 
   // La valla de la base va antes: la carretera que sale por el este la cruza y deja su puerta.
@@ -386,6 +501,25 @@ export function construirMapa(cajas = []) {
   hangar(b, 74, 288, 24, 14); hangar(b, 104, 288, 24, 14);
   helipuerto(b, 158, 292);
   nido(b, 212, 296, 'aba');
+
+  // El oasis: un pozo junto al campamento y un nido que vigila la carretera.
+  b.circulo(700, 26, 3); b.px(700, 26);
+  nido(b, 790, 132, 'aba');
+
+  // El aeródromo: tres hangares, la pista entre ellos y la carretera, y una valla con la
+  // puerta hacia el sur.
+  valla(b, 662, 268, 200, 104, 800, 0);
+  hangar(b, 668, 274, 24, 13); hangar(b, 698, 274, 24, 13); hangar(b, 756, 274, 24, 13);
+  pista(b, 666, 332, 160, 16);
+  helipuerto(b, 850, 340);
+
+  // El cuartel: el recinto con la puerta hacia la carretera, nidos con los RPG y garitas.
+  recinto(b, 936, 164, 148, 60, 'aba', 1004, 6);
+  nido(b, 1061, 190, 'izq'); nido(b, 1121, 180, 'izq'); nido(b, 991, 294, 'izq');
+  valla(b, 940, 270, 64, 32, 972, 4);
+  helipuerto(b, 1150, 290);
+
+  for (const a of APARCAMIENTOS) explanada(b, a);
 
   // Debajo de lo destruible no queda dibujo: si no, al volarlo se quedaría ahí el borde de una
   // duna con forma de tienda.
