@@ -45,9 +45,19 @@
 //   · un objetivo que se mueve vale más, en proporción a su velocidad. La tienda nunca se
 //     mueve: es el objetivo fácil que sigue saliendo cuando lo demás ya corre
 //   · la pantalla 10 es el marcador: puntos y, encima, los misiles que quedan por fallar
+//   · las carreteras son de sentido único: con 9 px de calzada no caben dos carriles, y así
+//     nunca hay dos vehículos de frente
+//   · cada vehículo decide su siguiente tramo al entrar en el actual (`luego`), no al salir:
+//     para mirar qué hay delante pasado el cruce hay que saber por dónde va a seguir
+//   · los vehículos no se pisan: avanzan lo que les deja el de delante, medido por la carretera.
+//     En las incorporaciones pasa primero el que está más cerca del cruce, sin semáforos
+//   · un convoy comparte camino y velocidad (la del más lento): si el tanque frena al camión y
+//     no al revés, la fila se desordena
+//   · el tráfico no se acaba: entra un convoy nuevo cerca de la vista, fuera de ella (no aparece
+//     de la nada delante del jugador), y lo que queda lejos se borra para no gastar
 
 import { Malla, W, H, px, rect, destello, etiquetaValor, texto } from './dibujo.mjs';
-import { MAPA_W, NODOS, ADYACENTES, TRAMOS, ESTATICOS, ZONAS, construirMapa } from './misil-mapa.mjs';
+import { MAPA_W, NODOS, SALIDAS, TRAMOS, ESTATICOS, ZONAS, construirMapa } from './misil-mapa.mjs';
 
 export const FILAS = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
 export const HUECO_X = 16;
@@ -77,9 +87,18 @@ const MARCA_CADA = 8;             // las rayitas de la cruz
 const EXPLOSION_MS = 650;
 const AVISO_MS = 1200;
 
-// El mapa. Los vehículos que circulan ganan velocidad con los aciertos, hasta un tope.
-const VELOCIDAD_POR_ACIERTO = 0.06;   // +6 % de velocidad por acierto, sobre la del tipo
-const VELOCIDAD_MAX = 2.5;
+// El tráfico. Provisional: la fase 4 lo sustituye por la tabla NIVELES, una fila por zona.
+const TRAFICO = { llegadaMs: 6000, maxVehiculos: 6, convoyMax: 3, patrulla: 0.3 };
+const HOLGURA = 4;                // aire entre dos vehículos que van en fila
+const CERCA = 200;                // los vehículos a menos de esto de la vista son los que cuentan
+const LEJOS = 400;                // y a más de esto se borran
+const ENTRADA_MIN = 20;           // un convoy nuevo no entra a menos de esto de la vista...
+const ENTRADA_MAX = 80;           // ...pero sí a menos de esto
+const CRUCES_DE_ANTEMANO = 4;
+const INTENTOS_URGENTES = 30;
+const PRONTO = 40;               // y esto es lo que se considera «a punto de verse»
+const ACERCAMIENTO = 220;         // si el convoy no llega a la vista en esto de camino, no entra
+const CONVOYES_AL_EMPEZAR = 2;
 // Lo que vale de más moverse: a BONO_VELOCIDAD px/s, el doble.
 const BONO_VELOCIDAD = 20;
 const VALOR_MAX = 60;             // un soldado, tan pequeño, valdría una barbaridad
@@ -97,26 +116,37 @@ export const MUNDO_H = 3 * H + 2 * HUECO_Y;
 // tienda, hueca, salía más pequeña que el camión y se ve mucho más grande. Sin redondear,
 // para que dos objetivos de tamaño parecido no empaten.
 const PUNTOS_POR_AREA = 2000;
-export function sprite(filas) {
+// `filas2` es el segundo fotograma de un dibujo animado (las luces de la patrulla).
+export function sprite(filas, filas2) {
   const ancho = Math.max(...filas.map((f) => f.length));
   const valor = Math.min(VALOR_MAX, Math.round(PUNTOS_POR_AREA / (ancho * filas.length)));
-  return { w: ancho, h: filas.length, valor, filas: filas.map((f) => f.padEnd(ancho, '.')) };
+  const rellenar = (fs) => fs.map((f) => f.padEnd(ancho, '.'));
+  const s = { w: ancho, h: filas.length, valor, filas: rellenar(filas) };
+  if (filas2) s.filas2 = rellenar(filas2);
+  return s;
 }
 
 // El mismo dibujo mirando hacia `dir` ('der', 'izq', 'arr', 'aba'). Los dibujos están de
 // cara a la derecha; para ir en vertical se trasponen (el cañón del tanque o la cabina del
 // camión acaban abajo) y se voltean para ir hacia arriba.
+function girarFilas(filas, w, h, dir) {
+  if (dir === 'izq') return filas.map((f) => [...f].reverse().join(''));
+  const out = [];
+  for (let i = 0; i < w; i++) {
+    let f = '';
+    for (let j = 0; j < h; j++) f += filas[j][i];
+    out.push(f);
+  }
+  if (dir === 'arr') out.reverse();
+  return out;
+}
+
 export function orientar(s, dir) {
   if (dir === 'der') return s;
-  if (dir === 'izq') return { ...s, filas: s.filas.map((f) => [...f].reverse().join('')) };
-  const filas = [];
-  for (let i = 0; i < s.w; i++) {
-    let f = '';
-    for (let j = 0; j < s.h; j++) f += s.filas[j][i];
-    filas.push(f);
-  }
-  if (dir === 'arr') filas.reverse();
-  return { ...s, w: s.h, h: s.w, filas };
+  const g = { ...s, filas: girarFilas(s.filas, s.w, s.h, dir) };
+  if (s.filas2) g.filas2 = girarFilas(s.filas2, s.w, s.h, dir);
+  if (dir === 'arr' || dir === 'aba') { g.w = s.h; g.h = s.w; }
+  return g;
 }
 
 const DIRECCIONES = { der: [1, 0], izq: [-1, 0], aba: [0, 1], arr: [0, -1] };
@@ -207,6 +237,24 @@ export const OBJETIVOS = [
     ]),
   },
   {
+    // Más corto que el camión y con la barra de luces encima: lo que más corre del mapa. Las
+    // luces parpadean: el segundo fotograma cambia la barra.
+    nombre: 'patrulla', velocidad: 34,
+    ...sprite([
+      '.######..',
+      '#########',
+      '##.#.####',
+      '#########',
+      '.######..',
+    ], [
+      '.######..',
+      '#########',
+      '###.#.###',
+      '#########',
+      '.######..',
+    ]),
+  },
+  {
     // Parapeto cuadrado con los dos cañones hacia arriba: ni redondo como el depósito ni hueco
     // como la tienda. No se gira: los cañones apuntan al cielo, no a la carretera.
     nombre: 'antiaereo', velocidad: 0,
@@ -292,9 +340,14 @@ function direccion([x0, y0], [x1, y1]) {
   return y1 > y0 ? 'aba' : 'arr';
 }
 
-// Un vehículo que circula: va de `desde` a `hasta` (nodos de la red) y `dist` es lo que
-// lleva recorrido. En el cruce elige tramo al azar, salvo volver por donde vino (solo si
-// no hay otro: marcha atrás nunca, el vehículo da la vuelta como una calle sin salida).
+const largoTramo = (desde, hasta) => {
+  const [a, b] = [NODOS[desde], NODOS[hasta]];
+  return Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
+};
+const restante = (v) => largoTramo(v.desde, v.hasta) - v.dist;
+
+// Un vehículo que circula: va de `desde` a `hasta` (nodos de la red) y `dist` es lo que lleva
+// recorrido. `luego` es el nodo al que irá después de `hasta`, elegido al entrar en el tramo.
 function posicionar(v) {
   const a = NODOS[v.desde];
   const b = NODOS[v.hasta];
@@ -305,21 +358,102 @@ function posicionar(v) {
   v.y = a[1] + dy * v.dist - v.forma.h / 2;
 }
 
+// Un convoy sigue el `camino` que decide el primero que llega a cada cruce; los demás lo repiten.
+// Sin callejones en la red (lo comprueba un test) siempre hay salida.
+function elegirLuego(v, aleatorio) {
+  const c = v.convoy;
+  if (c && c.camino[v.paso + 2] !== undefined) { v.luego = c.camino[v.paso + 2]; return; }
+  const opciones = SALIDAS[v.hasta];
+  v.luego = opciones[aleatorio(opciones.length)];
+  if (c) c.camino[v.paso + 2] = v.luego;
+}
+
 export function avanzarVehiculo(v, px, aleatorio) {
+  if (v.luego === undefined) elegirLuego(v, aleatorio);
   v.dist += px;
   for (;;) {
-    const [a, b] = [NODOS[v.desde], NODOS[v.hasta]];
-    const largo = Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
+    const largo = largoTramo(v.desde, v.hasta);
     if (v.dist < largo) break;
     v.dist -= largo;
-    const opciones = ADYACENTES[v.hasta].filter((n) => n !== v.desde);
-    // Sin callejones en la red (lo comprueba un test) siempre hay por dónde seguir. Volver
-    // por donde vino solo existiría en uno: un vehículo no puede darse la vuelta en seco.
-    const siguiente = opciones.length ? opciones[aleatorio(opciones.length)] : v.desde;
     v.desde = v.hasta;
-    v.hasta = siguiente;
+    v.hasta = v.luego;
+    if (v.convoy) v.paso++;
+    elegirLuego(v, aleatorio);
   }
   posicionar(v);
+}
+
+// Lo que sobra (o falta, si es negativo) de aire entre `v` y lo que tiene delante, medido por la
+// carretera entre centros. Delante es: el de su tramo que va por delante, cualquiera que salga
+// del cruce al que llega, y el que llega a ese mismo cruce desde otro tramo y está más cerca
+// de él (empate: el creado antes), que es como se resuelven las incorporaciones.
+function holgura(v, vehiculos) {
+  const rv = restante(v);
+  let min = Infinity;
+  for (const o of vehiculos) {
+    if (o === v) continue;
+    // En línea recta basta con el largo de los dos. Si uno gira respecto al otro, las cajas
+    // pueden rozarse en la esquina con los centros más lejos: hace falta sumar también los anchos.
+    const recto = (v.tipo.w + o.tipo.w) / 2 + HOLGURA;
+    const esquina = (v.tipo.w + o.tipo.w + v.tipo.h + o.tipo.h) / 2 + 1;
+    let distancia, hueco;
+    if (o.desde === v.desde && o.hasta === v.hasta) {
+      if (o.dist < v.dist || (o.dist === v.dist && vehiculos.indexOf(o) > vehiculos.indexOf(v))) continue;
+      distancia = o.dist - v.dist; hueco = recto;
+    } else if (o.desde === v.hasta) {
+      distancia = rv + o.dist; hueco = o.dir === v.dir ? recto : esquina;
+    } else if (o.hasta === v.hasta) {
+      const ro = restante(o);
+      if (ro > rv || (ro === rv && vehiculos.indexOf(o) > vehiculos.indexOf(v))) continue;
+      distancia = rv - ro; hueco = esquina;
+    } else continue;
+    min = Math.min(min, distancia - hueco);
+  }
+  return min;
+}
+
+// Los px que puede avanzar `v` sin acercarse a otro más de lo permitido.
+export const espacioDelante = (v, vehiculos) => Math.max(0, holgura(v, vehiculos));
+
+// Mueve a todos `ms`, en el orden en que vienen (siempre el mismo). Cada convoy va a la
+// velocidad de su vehículo más lento.
+export function circular(vehiculos, ms, aleatorio) {
+  const lento = new Map();
+  for (const v of vehiculos) if (v.convoy) lento.set(v.convoy, Math.min(lento.get(v.convoy) ?? Infinity, v.tipo.velocidad));
+  for (const v of vehiculos) {
+    v.vel = v.convoy ? lento.get(v.convoy) : v.tipo.velocidad;
+    avanzarVehiculo(v, Math.min((v.vel * ms) / 1000, espacioDelante(v, vehiculos)), aleatorio);
+  }
+}
+
+// Un convoy en fila por el tramo `tramo` ('pq'): la cabeza a la fracción `k` (0-1) de lo que cabe
+// y los demás detrás. Es null si no cabe entero en el tramo.
+export function armarConvoy(tipos, tramo, k, aleatorio) {
+  const [p, q] = tramo;
+  const sitio = [0];
+  for (let i = 1; i < tipos.length; i++) sitio.push(sitio[i - 1] + (tipos[i - 1].w + tipos[i].w) / 2 + HOLGURA + 2);
+  const cola = sitio[sitio.length - 1] + tipos[tipos.length - 1].w / 2;
+  const cabeza = tipos[0].w / 2;
+  const largo = largoTramo(p, q);
+  if (largo - cabeza < cola) return null;
+  const base = cola + k * (largo - cabeza - cola);
+  // El camino se sortea de antemano unos cruces: así quien lo coloca puede saber si pasará por
+  // la vista. Más allá, lo decide el primero que llegue (elegirLuego).
+  const camino = [p, q];
+  for (let i = 0; i < CRUCES_DE_ANTEMANO; i++) { const salidas = SALIDAS[camino[camino.length - 1]]; camino.push(salidas[aleatorio(salidas.length)]); }
+  const convoy = { camino };
+  return tipos.map((tipo, i) => {
+    const v = { tipo, vel: 0, desde: p, hasta: q, luego: convoy.camino[2], dist: base - sitio[i], convoy, paso: 0 };
+    posicionar(v);
+    return v;
+  });
+}
+
+// Lo que dista la caja de `e` del rectángulo que ve la cámara (0 si se solapan).
+function distanciaAVista(e, cam) {
+  const dx = Math.max(cam.x - (e.x + e.forma.w), e.x - (cam.x + MUNDO_W), 0);
+  const dy = Math.max(cam.y - (e.y + e.forma.h), e.y - (cam.y + MUNDO_H), 0);
+  return Math.hypot(dx, dy);
 }
 
 export default {
@@ -334,12 +468,13 @@ export default {
   estadisticas: {
     suma: [
       ['total', 'Objetivos destruidos'], ['tienda', 'Tiendas'], ['soldado', 'Soldados'],
-      ['deposito', 'Depósitos'], ['camion', 'Camiones'], ['tanque', 'Tanques'],
+      ['deposito', 'Depósitos'], ['camion', 'Camiones'], ['tanque', 'Tanques'], ['patrulla', 'Patrullas'],
     ],
     max: [['aLaVez', 'Más objetivos con un solo misil']],
   },
 
-  crear({ aleatorio }) {
+  // `inmortal` es solo para pruebas: los fallos no gastan vidas, para poder medir un minuto de tráfico.
+  crear({ aleatorio, inmortal = false }) {
     let malla = null;
     let tiempo = 0;
     let mira = null;              // { x, y } en el suelo; se centra al empezar
@@ -371,35 +506,66 @@ export default {
     const pulsados = new Set();
     const ultimoPaso = { 1: -Infinity, 2: -Infinity };
 
-    const factorVelocidad = () => Math.min(VELOCIDAD_MAX, 1 + aciertos * VELOCIDAD_POR_ACIERTO);
+    let llegada = TRAFICO.llegadaMs;   // ms que faltan para el próximo convoy
 
-    function crearEstatica(plantilla) {
-      const [nombre, x, y, dir = 'der'] = plantilla.estatica;
+    function crearEstatica([nombre, x, y, dir = 'der']) {
       const tipo = TIPO[nombre];
       return { tipo, forma: orientar(tipo, dir), x, y, dir, vel: 0 };
     }
 
-    function crearVehiculo(plantilla) {
-      const tipo = TIPO[plantilla.vehiculo];
-      const [p, q] = TRAMOS[aleatorio(TRAMOS.length)];
-      const alReves = aleatorio(2) === 1;
-      const v = { tipo, vel: 0, desde: alReves ? q : p, hasta: alReves ? p : q, dist: 0 };
-      const [a, b] = [NODOS[v.desde], NODOS[v.hasta]];
-      v.dist = aleatorio(Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]));
-      posicionar(v);
-      return v;
+    const vehiculos = () => entidades.filter((e) => e.desde);
+
+    // Intenta meter un convoy en un tramo y un punto al azar; `vale(miembros)` dice si el sitio sirve.
+    // Una sola tentativa: si no sirve o no cabe, se prueba otra vez en el siguiente tick. Las
+    // patrullas van solas, nunca en convoy: son las rápidas.
+    function meterConvoy(vale) {
+      const sola = aleatorio(1000) / 1000 < TRAFICO.patrulla;
+      const tipos = sola ? [TIPO.patrulla]
+        : Array.from({ length: 1 + aleatorio(TRAFICO.convoyMax) }, () => TIPO[aleatorio(2) ? 'camion' : 'tanque']);
+      const miembros = armarConvoy(tipos, TRAMOS[aleatorio(TRAMOS.length)], aleatorio(1000) / 1000, aleatorio);
+      if (!miembros || !vale(miembros)) return false;
+      const todos = [...vehiculos(), ...miembros];
+      if (!todos.every((v) => holgura(v, todos) >= 0)) return false;
+      entidades.push(...miembros);
+      return true;
     }
 
-    const crearEntidad = (pl) => (pl.estatica ? crearEstatica(pl) : crearVehiculo(pl));
-
     function poblar() {
-      const plantillas = [
-        ...ESTATICOS.map((estatica) => ({ estatica })),
-        ...Array(4).fill({ vehiculo: 'camion' }),
-        ...Array(3).fill({ vehiculo: 'tanque' }),
-      ];
-      entidades = plantillas.map(crearEntidad);
-      mapa = construirMapa(entidades.filter((e) => !e.desde).map((e) => ({ x: e.x, y: e.y, w: e.forma.w, h: e.forma.h })));
+      entidades = ESTATICOS.map(crearEstatica);
+      mapa = construirMapa(entidades.map((e) => ({ x: e.x, y: e.y, w: e.forma.w, h: e.forma.h })));
+      // Con el tráfico llegando de fuera, la primera zona empezaría vacía unos segundos.
+      for (let i = 0; i < CONVOYES_AL_EMPEZAR; i++) {
+        for (let intento = 0; intento < 200 && !meterConvoy((m) => m.some((e) => distanciaAVista(e, camara) === 0)); intento++);
+      }
+    }
+
+    // ¿Está `v` en la vista o llegará a ella por su camino en `alcance` px? Se sondea con una copia.
+    function llegaALaVista(v, alcance = ACERCAMIENTO) {
+      const sonda = { ...v, convoy: { camino: [...v.convoy.camino] } };
+      for (let d = 0; ; d += 10) {
+        if (distanciaAVista(sonda, camara) === 0) return true;
+        if (d >= alcance) return false;
+        avanzarVehiculo(sonda, 10, () => 0);
+      }
+    }
+
+    // Entra un convoy cada `llegadaMs` si hay sitio, y lo que queda lejos de la vista se borra. Si
+    // no hay ni uno en la vista ni de camino, ni el temporizador ni el tope esperan: los circuitos
+    // son cortos y los vehículos lentos dan vueltas cerca durante minutos, así que con el tope
+    // lleno la vista se quedaba vacía. El que entra tiene que llegar a la vista por su camino:
+    // uno que entra alejándose no se verá en un buen rato y ocupa un hueco de los que cuentan.
+    function trafico(dt) {
+      entidades = entidades.filter((e) => !e.desde || distanciaAVista(e, camara) <= LEJOS);
+      llegada -= dt;
+      const hay = vehiculos();
+      const vacia = !hay.some((e) => llegaALaVista(e, PRONTO));
+      if (!vacia && (llegada > 0 || hay.filter((e) => distanciaAVista(e, camara) < CERCA).length >= TRAFICO.maxVehiculos)) return;
+      const entra = (m) => m.every((e) => distanciaAVista(e, camara) > ENTRADA_MIN)
+        && m.some((e) => distanciaAVista(e, camara) < ENTRADA_MAX) && llegaALaVista(m[0], vacia ? PRONTO : ACERCAMIENTO);
+      // Con la vista vacía no hay un tick que perder: se prueban varios sitios de golpe.
+      for (let i = 0; i < (vacia ? INTENTOS_URGENTES : 1); i++) {
+        if (meterConvoy(entra)) { llegada = TRAFICO.llegadaMs; break; }
+      }
     }
 
     function soltarMisil() {
@@ -460,7 +626,7 @@ export default {
         aciertos += tocados.length;
         aviso = { texto: `+${ganados}`, hasta: tiempo + AVISO_MS };
       } else {
-        vidas--;
+        if (!inmortal) vidas--;
         aviso = { texto: 'FALLO', hasta: tiempo + AVISO_MS };
       }
       fase = 'explosion';
@@ -469,11 +635,8 @@ export default {
 
     // El mundo sigue en marcha mientras cae el misil y durante la explosión.
     function moverMundo(dt) {
-      for (const e of entidades) {
-        if (!e.desde) continue;
-        e.vel = e.tipo.velocidad * factorVelocidad();
-        avanzarVehiculo(e, (e.vel * dt) / 1000, aleatorio);
-      }
+      circular(vehiculos(), dt, aleatorio);
+      trafico(dt);
     }
 
     function mover(mando, delta) {
@@ -504,7 +667,8 @@ export default {
       const x = Math.round(e.x) - camara.x;
       const y = Math.round(e.y) - camara.y;
       malla.rect(x - 1, y - 1, e.forma.w + 2, e.forma.h + 2, 0);
-      pintarSprite(malla, e.forma, x, y);
+      const luces = e.forma.filas2 && Math.floor(tiempo / 200) % 2;
+      pintarSprite(malla, luces ? { ...e.forma, filas: e.forma.filas2 } : e.forma, x, y);
     }
 
     return {

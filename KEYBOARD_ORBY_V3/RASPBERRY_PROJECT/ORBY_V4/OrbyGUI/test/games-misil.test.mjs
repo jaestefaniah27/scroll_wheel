@@ -1,20 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, ESTANCIA_MS, DISPAROS_PARA_VOLAR, TRANSICION_MS } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, ESTANCIA_MS, DISPAROS_PARA_VOLAR, TRANSICION_MS } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
-import { NODOS, TRAMOS, ADYACENTES, ESTATICOS, ZONAS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
+import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
 
 const DT = 8;
 
-function nueva(semilla = 3) {
+function nueva(semilla = 3, opciones = {}) {
   let s = semilla >>> 0;
   const aleatorio = (tope) => {
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
     return Math.floor((s / 0x100000000) * tope);
   };
   let reloj = 0;
-  const partida = misil.crear({ ahora: () => reloj, aleatorio });
+  const partida = misil.crear({ ahora: () => reloj, aleatorio, ...opciones });
   const l = lienzo();
   const paso = (ms = DT) => { for (let t = 0; t < ms; t += DT) { reloj += DT; partida.tick(DT); limpiarLienzo(l); partida.dibujar(l); } };
   paso();
@@ -95,10 +95,20 @@ test('Misil: las carreteras son rectas y paralelas a los ejes, y lo que hay quie
   }
 });
 
-test('Misil: las carreteras no tienen callejones sin salida: un vehículo nunca tiene que darse la vuelta', () => {
-  for (const nodo of Object.keys(NODOS)) assert.ok(ADYACENTES[nodo].length >= 2, `el nodo ${nodo} es un callejón sin salida`);
+test('Misil: la red es de sentido único, sin callejones: de cada nodo se sale, a cada nodo se llega y desde cualquiera se va a todos', () => {
+  const nodos = Object.keys(NODOS);
+  for (const nodo of nodos) {
+    assert.ok(SALIDAS[nodo]?.length >= 1, `el nodo ${nodo} es un callejón sin salida`);
+    assert.ok(TRAMOS.some((t) => t[1] === nodo), `al nodo ${nodo} no llega nadie`);
+  }
+  for (const [p, q] of TRAMOS) assert.ok(!TRAMOS.includes(q + p), `${p}${q} y ${q}${p}: dos sentidos en la misma carretera`);
+  for (const origen of nodos) {
+    const vistos = new Set([origen]);
+    for (const n of vistos) for (const m of SALIDAS[n]) vistos.add(m);
+    assert.equal(vistos.size, nodos.length, `desde ${origen} no se llega a todos`);
+  }
   // Y se empieza en la base, con el puesto y el puente después.
-  assert.deepEqual(ZONAS.map((z) => z.nombre), ['base', 'puesto', 'puente']);
+  assert.deepEqual(ZONAS.map((z) => z.nombre), ['base', 'puesto', 'puente', 'oasis', 'aerodromo', 'cuartel']);
 });
 
 test('Misil: ningún vehículo se da la vuelta en seco, salga de donde salga y vaya adonde vaya', () => {
@@ -108,7 +118,7 @@ test('Misil: ningún vehículo se da la vuelta en seco, salga de donde salga y v
   const azar = (tope) => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return Math.floor((s / 0x100000000) * tope); };
   let giros = 0;
   for (const [p, q] of TRAMOS) {
-    for (const [desde, hasta] of [[p, q], [q, p]]) {
+    for (const [desde, hasta] of [[p, q]]) {
       for (let intento = 0; intento < 4; intento++) {
         const v = { tipo: camion, vel: 0, desde, hasta, dist: 0 };
         avanzarVehiculo(v, 0, azar);
@@ -162,40 +172,129 @@ test('Misil: se pinta el mapa, con carreteras, en las nueve pantallas', () => {
 });
 
 test('Misil: los vehículos circulan por la carretera y siempre de cara a donde avanzan', () => {
-  const { partida, paso } = nueva(5);
+  const { partida, paso } = nueva(5, { inmortal: true });
   // La mira empieza en el centro de la base: se aparta a un claro para no destruir lo que se observa.
   apuntar(partida, paso, { x: 150, y: 95 });
   const moviles = () => partida.entidades.filter((e) => e.desde);
-  assert.equal(moviles().length, 7);
+  assert.ok(moviles().length >= 2, 'la partida empieza con tráfico');
   const dirDe = { der: [1, 0], izq: [-1, 0], aba: [0, 1], arr: [0, -1] };
   let giros = 0;
-  const previas = moviles().map((e) => ({ ...centro(e), dir: e.dir }));
+  const previas = new Map();
   for (let t = 0; t < 60_000; t += 200) {
     paso(200);
-    moviles().forEach((e, i) => {
+    for (const e of moviles()) {
       const c = centro(e);
-      const ant = previas[i];
+      const ant = previas.get(e);
       // Dentro de la calzada, y el movimiento neto va en el sentido del dibujo (salvo un giro).
       assert.ok(enCarretera(c.x, c.y), `${e.tipo.nombre} fuera de la carretera en ${c.x},${c.y}`);
       const [dx, dy] = dirDe[e.dir];
-      if (e.dir === ant.dir) {
+      if (ant && e.dir === ant.dir) {
         assert.ok((c.x - ant.x) * dx + (c.y - ant.y) * dy >= -1, `${e.tipo.nombre} va marcha atrás`);
-      } else giros++;
+      } else if (ant) giros++;
       assert.equal(e.forma.filas.join(), orientar(e.tipo, e.dir).filas.join(), 'el dibujo mira hacia donde va');
-      previas[i] = { ...c, dir: e.dir };
-    });
+      previas.set(e, { ...c, dir: e.dir });
+    }
   }
   assert.ok(giros > 0, 'en un minuto algún vehículo toma una curva');
+});
+
+// Dos cajas se solapan si comparten algún píxel (rozarse no cuenta).
+const solapan = (a, b) => a.x < b.x + b.forma.w && b.x < a.x + a.forma.w && a.y < b.y + b.forma.h && b.y < a.y + a.forma.h;
+const tipoDe = (n) => OBJETIVOS.find((o) => o.nombre === n);
+const azarDe = (semilla) => {
+  let s = semilla;
+  return (tope) => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return Math.floor((s / 0x100000000) * tope); };
+};
+
+test('Misil: nueve vehículos con convoyes dan vueltas 2000 ticks sin pisarse nunca y sin atascarse', () => {
+  const azar = azarDe(11);
+  const vehiculos = [];
+  // Tres convoyes de tres, en tramos distintos y con los tipos mezclados (el tanque tiene que frenar al camión).
+  for (const [tramo, tipos] of [['af', ['camion', 'tanque', 'camion']], ['gq', ['tanque', 'camion', 'patrulla']], ['yd', ['camion', 'camion', 'tanque']]]) {
+    vehiculos.push(...armarConvoy(tipos.map(tipoDe), tramo, 0.5, azar));
+  }
+  assert.equal(vehiculos.length, 9);
+  for (const a of vehiculos) for (const b of vehiculos) if (a !== b) assert.ok(!solapan(a, b), 'ya salen pisándose');
+  const recorrido = new Map(vehiculos.map((v) => [v, 0]));
+  for (let t = 0; t < 2000; t++) {
+    const antes = vehiculos.map((v) => [v.x, v.y]);
+    circular(vehiculos, 50, azar);
+    vehiculos.forEach((v, i) => recorrido.set(v, recorrido.get(v) + Math.hypot(v.x - antes[i][0], v.y - antes[i][1])));
+    for (const a of vehiculos) for (const b of vehiculos) if (a !== b) assert.ok(!solapan(a, b), `tick ${t}: ${a.tipo.nombre} y ${b.tipo.nombre} se pisan`);
+  }
+  // 100 s de reloj: el tanque, el más lento, va a 12 px/s. Ninguno se queda parado para siempre.
+  for (const [v, d] of recorrido) assert.ok(d > 300, `${v.tipo.nombre} solo ha recorrido ${Math.round(d)} px`);
+});
+
+test('Misil: espacioDelante frena al de atrás en su tramo y también pasado el cruce', () => {
+  const camion = tipoDe('camion');
+  const v = (desde, hasta, luego, dist) => { const x = { tipo: camion, vel: 0, desde, hasta, luego, dist }; avanzarVehiculo(x, 0, () => 0); return x; };
+  // 'ba' mide 124. Dos camiones de 14 de largo: el hueco es 14 + 4 = 18.
+  const atras = v('b', 'a', 'f', 10);
+  const delante = v('b', 'a', 'f', 40);
+  assert.equal(espacioDelante(atras, [atras, delante]), 30 - 18);
+  assert.equal(espacioDelante(delante, [atras, delante]), Infinity);
+  // El de delante ya está en el tramo siguiente: se cuenta por la carretera, no por tramo. Y como ahí hay una curva,
+  // las cajas pueden rozarse en la esquina: el hueco suma también los anchos.
+  const casi = v('b', 'a', 'f', 120);
+  const lejos = v('a', 'f', 'h', 30);
+  assert.equal(espacioDelante(casi, [casi, lejos]), 4 + 30 - 20);
+  const pegado = v('a', 'f', 'h', 5);
+  assert.equal(espacioDelante(casi, [casi, pegado]), 0);
+});
+
+test('Misil: un convoy sigue el camino de su cabeza y va a la velocidad del más lento', () => {
+  const azar = azarDe(5);
+  const convoy = armarConvoy([tipoDe('camion'), tipoDe('tanque'), tipoDe('camion')], 'gq', 0.5, azar);
+  assert.equal(convoy.length, 3);
+  const rutas = convoy.map(() => []);
+  for (let t = 0; t < 4000; t++) {
+    circular(convoy, 50, azar);
+    convoy.forEach((v, i) => { if (rutas[i].at(-1) !== v.hasta) rutas[i].push(v.hasta); });
+    assert.ok(convoy.every((v) => v.vel === 12), 'todos a la velocidad del tanque');
+  }
+  assert.ok(rutas[0].length > 3);
+  assert.deepEqual(rutas[1], rutas[0].slice(0, rutas[1].length));
+  assert.deepEqual(rutas[2], rutas[0].slice(0, rutas[2].length));
+});
+
+test('Misil: en un minuto con la cámara en la primera zona casi siempre hay vehículos a la vista', () => {
+  const { partida, paso } = nueva(7, { inmortal: true });
+  apuntar(partida, paso, { x: 150, y: 95 });
+  let muestras = 0, con = 0;
+  for (let t = 0; t < 60_000 && !partida.volando; t += 250) {
+    paso(250);
+    if (partida.volando) break;
+    muestras++;
+    if (partida.entidades.some((e) => e.desde && hayObjetivosEn([e], ZONAS[0]))) con++;
+    assert.ok(partida.entidades.filter((e) => e.desde).length <= 12, 'no se acumulan vehículos');
+  }
+  assert.ok(muestras > 100, `solo ${muestras} muestras`);
+  assert.ok(con / muestras >= 0.9, `solo hay vehículos a la vista el ${Math.round((100 * con) / muestras)} % del tiempo`);
+});
+
+test('Misil: la patrulla corre más que nadie, lleva luces que parpadean y se gira entera', () => {
+  const patrulla = tipoDe('patrulla');
+  assert.ok(patrulla.velocidad > Math.max(...OBJETIVOS.filter((o) => o.nombre !== 'patrulla').map((o) => o.velocidad)));
+  assert.equal(patrulla.filas2.length, patrulla.h);
+  for (const f of patrulla.filas2) assert.equal(f.length, patrulla.w);
+  assert.notDeepEqual(patrulla.filas, patrulla.filas2);
+  for (const dir of ['izq', 'arr', 'aba']) {
+    const g = orientar(patrulla, dir);
+    assert.equal(g.filas2.length, g.h, dir);
+    for (const f of g.filas2) assert.equal(f.length, g.w, dir);
+  }
 });
 
 test('Misil: un misil sobre un campamento destruye lo que hay dentro y suma puntos', () => {
   const { partida, paso } = nueva(3);
   const blanco = tiendaALaVista(partida);
-  const antes = partida.entidades.length;
+  const quietos = () => partida.entidades.filter((e) => !e.desde).length;
+  const antes = quietos();
   apuntar(partida, paso, enVista(partida, centro(blanco)));
   for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
   assert.ok(partida.puntos > 0, 'debería haber acertado');
-  assert.ok(partida.entidades.length < antes);
+  assert.ok(quietos() < antes);
   assert.ok(!partida.entidades.includes(blanco));
 });
 
@@ -222,7 +321,7 @@ test('Misil: se cuentan los objetivos destruidos por tipo y el máximo con un so
   for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
   const d = partida.detalle;
   assert.equal(d.suma.tienda, 1);
-  assert.equal(d.suma.total, d.suma.tienda + (d.suma.soldado || 0) + (d.suma.camion || 0) + (d.suma.tanque || 0) + (d.suma.deposito || 0));
+  assert.equal(d.suma.total, Object.entries(d.suma).reduce((n, [k, v]) => n + (k === 'total' ? 0 : v), 0));
   assert.ok(d.max.aLaVez >= 1);
   assert.equal(d.max.aLaVez, d.suma.total, 'con un solo misil, el máximo a la vez es todo lo destruido');
   // Y lo que la vista enseña tiene una etiqueta para cada clave.

@@ -78,7 +78,29 @@ Diferencias con lo que dice el plan más abajo, porque manda el código:
 - Los vehículos que arrancan son dos: el camión del cuartel y el del aeródromo. Su senda es la que
   tiene `fin: 'subir'` en su zona, y acaba junto a ellos.
 
-**Pendiente:** fases 1, 2, 3.1, 4, 5 y 6.
+**Hecha la fase 1 (Sonnet):** sentido único (`ADYACENTES` fuera, `SALIDAS`), `luego`, `espacioDelante`,
+convoyes (`armarConvoy`, `circular`), aparición continua y la patrulla (`sprite(filas, filas2)`). Desviaciones:
+
+- `TRAFICO` es una constante provisional que la fase 4 sustituye por `NIVELES`; no hay multiplicador de
+  velocidad (`factorVelocidad` fuera, cada tipo va a la suya).
+- Los convoyes entran **cerca de la vista**, no en cualquier tramo: a más de 20 px y a menos de 80 del
+  rectángulo de la cámara, y con un camino que llega a la vista en menos de 220 px (`armarConvoy` sortea
+  4 cruces de antemano para poder saberlo). `maxVehiculos` cuenta solo los de menos de 200 px; los de más
+  de 400 se borran.
+- **El tope y el temporizador no esperan si la vista se queda vacía** (ni hay nadie a punto de entrar en
+  ella, a menos de 40 px de camino): los circuitos son cortos y los vehículos lentos (el tanque, 12 px/s) dan
+  vueltas cerca durante minutos, así que con el tope lleno la zona 1 pasaba 15-20 s sin nadie. Por eso
+  puede haber hasta `maxVehiculos + convoyMax` vehículos cerca. Con esto, en 40 s sobre la base hay
+  vehículos a la vista el 95 % del tiempo o más (varias semillas).
+- Huecos en las esquinas: cuando un vehículo gira respecto al de delante el hueco suma también los
+  anchos (`(w + w' + h + h') / 2 + 1`), no solo `HOLGURA`: con solo el largo las cajas se rozaban en la curva.
+- `crear` admite `inmortal` (solo para pruebas: los fallos no gastan vidas), para medir un minuto de tráfico.
+- `estadisticas.suma` ya lleva `patrulla`; el resto de etiquetas sigue siendo de la fase 6.
+- Los tests `macro-prune` y `macro-store-sync` fallan con Node 20 (`Unexpected token 'export'`); piden Node 22
+  y no tienen que ver con Misil.
+
+**Pendiente:** fases 2, 3.1, 4, 5 y 6. El test «el vuelo es suave» falla desde que los vuelos son largos: es
+de la fase 3.1 (`TRANSICION_MS` por distancia).
 
 ## Fase 0. Herramienta para ver el mapa
 

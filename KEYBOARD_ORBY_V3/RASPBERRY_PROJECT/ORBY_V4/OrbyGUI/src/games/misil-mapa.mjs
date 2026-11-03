@@ -67,12 +67,6 @@ const ACCESOS = [[[144, 140], [144, 105]]];
 export const SALIDAS = {};
 for (const [p, q] of TRAMOS) (SALIDAS[p] ??= []).push(q);
 
-export const ADYACENTES = {};
-for (const [p, q] of TRAMOS) {
-  (ADYACENTES[p] ??= []).push(q);
-  (ADYACENTES[q] ??= []).push(p);
-}
-
 const segmento = ([x0, y0], [x1, y1]) =>
   ({ x0: Math.min(x0, x1), x1: Math.max(x0, x1), y0: Math.min(y0, y1), y1: Math.max(y0, y1), horizontal: y0 === y1 });
 
