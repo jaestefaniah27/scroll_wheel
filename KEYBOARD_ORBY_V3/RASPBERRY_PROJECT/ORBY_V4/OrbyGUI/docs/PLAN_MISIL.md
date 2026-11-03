@@ -162,7 +162,7 @@ edificio, desembarco y subida. Desviaciones:
   dependía de la semilla); el de «zonas sin disparo» ya no prohíbe `mision` a secas, solo la de lanzar.
 
 
-**Pendiente:** nada del plan. Falta probarlo jugando con el teclado y ajustar NIVELES.
+**Pendiente:** nada del plan. Falta probarlo jugando con el teclado y ajustar NIVELES. Mejoras posteriores (nombre Air Strike, derrota, explosiones, aviso y misil enemigo, pantalla 9): `PLAN_AIRSTRIKE.md`.
 
 ## Fase 0. Herramienta para ver el mapa
 
