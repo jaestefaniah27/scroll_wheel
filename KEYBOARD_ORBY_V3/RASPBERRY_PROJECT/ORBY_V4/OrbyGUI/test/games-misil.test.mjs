@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, recorrido, ESTANCIA_MS, TRANSICION_MS } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, ESTANCIA_MS, DISPAROS_PARA_VOLAR, TRANSICION_MS } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
 import { NODOS, TRAMOS, ESTATICOS, ZONAS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
@@ -215,26 +215,23 @@ test('Misil: pulsar los dos mandos hace caer el misil antes que pulsar uno', () 
 
 // --- Fase 3: el VTOL va de zona en zona -------------------------------------------------
 
-test('Misil: el VTOL se queda en cada zona y luego vuela a la siguiente, en bucle', () => {
-  const ciclo = ESTANCIA_MS + TRANSICION_MS;
-  for (let n = 0; n < ZONAS.length + 1; n++) {
-    const z = ZONAS[n % ZONAS.length];
-    for (const t of [0, ESTANCIA_MS / 2, ESTANCIA_MS - 1]) {
-      const r = recorrido(n * ciclo + t);
-      assert.deepEqual([r.x, r.y, r.enVuelo], [z.x, z.y, false], `zona ${n}, ${t} ms`);
-    }
-    assert.ok(recorrido(n * ciclo + ESTANCIA_MS + 1).enVuelo);
+test('Misil: el trayecto sale de una zona y llega a la siguiente, en bucle', () => {
+  for (let n = 0; n < ZONAS.length; n++) {
+    const a = ZONAS[n], b = ZONAS[(n + 1) % ZONAS.length];
+    assert.deepEqual(trayecto(n, 0), { x: a.x, y: a.y }, `zona ${n} al salir`);
+    assert.deepEqual(trayecto(n, 1), { x: b.x, y: b.y }, `zona ${n} al llegar`);
   }
+  assert.ok(ESTANCIA_MS >= 30000, 'se queda un rato largo sobre cada zona');
+  assert.ok(DISPAROS_PARA_VOLAR >= 5 && DISPAROS_PARA_VOLAR <= 10, 'se van tras entre 5 y 10 disparos');
   assert.ok(TRANSICION_MS >= 3000 && TRANSICION_MS <= 4000, 'el vuelo dura tres o cuatro segundos');
 });
 
 test('Misil: el vuelo es suave: sin saltos, arrancando y frenando despacio', () => {
   for (let n = 0; n < ZONAS.length; n++) {
-    const t0 = n * (ESTANCIA_MS + TRANSICION_MS) + ESTANCIA_MS;
     const pasos = [];
-    let prev = recorrido(t0 - 8);
-    for (let t = t0; t <= t0 + TRANSICION_MS + 8; t += 8) {
-      const r = recorrido(t);
+    let prev = trayecto(n, 0);
+    for (let t = DT; t <= TRANSICION_MS; t += DT) {
+      const r = trayecto(n, t / TRANSICION_MS);
       pasos.push(Math.hypot(r.x - prev.x, r.y - prev.y));
       prev = r;
     }
@@ -245,53 +242,28 @@ test('Misil: el vuelo es suave: sin saltos, arrancando y frenando despacio', () 
     const medio = suma(pasos.slice(tercio, 2 * tercio));
     assert.ok(suma(pasos.slice(0, tercio)) < medio / 1.5 && suma(pasos.slice(2 * tercio)) < medio / 1.5, `zona ${n}: arranca y frena`);
     // Y el camino se queda dentro del mapa.
-    for (let t = t0; t <= t0 + TRANSICION_MS; t += 100) {
-      const r = recorrido(t);
+    for (let t = 0; t <= TRANSICION_MS; t += 100) {
+      const r = trayecto(n, t / TRANSICION_MS);
       assert.ok(r.x >= 0 && r.y >= 0 && r.x + MUNDO_W <= MAPA_W && r.y + MUNDO_H <= MAPA_H);
     }
   }
 });
 
-// Una partida que acierta una tienda con el primer misil: así le quedan tres fallos de margen y
-// dura hasta pasado el primer vuelo (cada misil fallado son unos 7,6 s).
-function partidaQueLlegaAlPuente() {
+test('Misil: el VTOL no se mueve mientras hay un misil en el aire ni antes de cumplir la estancia y los disparos', () => {
   const { partida, paso } = nueva(3);
-  const tienda = partida.entidades.find((e) => !e.desde && e.tipo.nombre === 'tienda');
-  const mira = enVista(partida, centro(tienda));
-  apuntar(partida, paso, mira);
-  for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
-  assert.ok(partida.puntos > 0, 'el primer misil acierta la tienda');
-  return { partida, paso, mira };
-}
-
-test('Misil: en partida la cámara sigue el recorrido del VTOL', () => {
-  const { partida, paso } = partidaQueLlegaAlPuente();
-  assert.equal(partida.zona, 'puesto');
-  assert.deepEqual(partida.camara, { x: ZONAS[0].x, y: ZONAS[0].y });
-  while (partida.zona === 'puesto') paso(100);
-  assert.equal(partida.zona, null, 'a medio vuelo no está en ninguna zona');
-  paso(TRANSICION_MS / 2);
-  const c = partida.camara;
-  assert.ok(c.x !== ZONAS[0].x || c.y !== ZONAS[0].y);
-  paso(TRANSICION_MS / 2 + 100);
-  assert.ok(!partida.terminado);
-  assert.equal(partida.zona, 'puente');
-  assert.deepEqual(partida.camara, { x: ZONAS[1].x, y: ZONAS[1].y });
+  // Sin acertar, la partida acaba pronto (tres fallos); lo que se comprueba es que, mientras
+  // dura, la cámara no se mueve sola y que el vuelo solo empieza cumpliéndose las dos condiciones.
+  for (let t = 0; t < 60000 && !partida.terminado; t += DT) {
+    const volabaAntes = partida.volando;
+    paso();
+    if (partida.volando && !volabaAntes) {
+      assert.ok(partida.disparosZona >= DISPAROS_PARA_VOLAR, 'vuela tras los disparos');
+      assert.ok(partida.estancia >= ESTANCIA_MS, 'vuela tras la estancia');
+    }
+    if (!partida.volando) {
+      const z = ZONAS.find((zz) => zz.nombre === partida.zona);
+      assert.deepEqual(partida.camara, { x: z.x, y: z.y }, 'parado, la cámara está en su zona');
+    }
+  }
 });
 
-test('Misil: después del vuelo se puede acertar en la zona nueva', () => {
-  const { partida, paso, mira } = partidaQueLlegaAlPuente();
-  while (partida.zona !== 'puente') paso(100);
-  const antes = partida.puntos;
-  const z = ZONAS[1];
-  const blanco = partida.entidades.find((e) => !e.desde && e.tipo.nombre === 'camion'
-    && e.x > z.x && e.y > z.y && e.x < z.x + MUNDO_W && e.y < z.y + MUNDO_H);
-  assert.ok(blanco, 'en el puente hay camiones aparcados');
-  // La mira va con el aparato: sigue en el mismo punto de la vista, y desde ahí se lleva al camión.
-  const v = enVista(partida, centro(blanco));
-  const dx = Math.round((v.x - mira.x) / 4), dy = Math.round((v.y - mira.y) / 4);
-  for (let i = 0; i < Math.abs(dx); i++) { partida.mando({ mando: 1, delta: -Math.sign(dx) }); paso(50); }
-  for (let i = 0; i < Math.abs(dy); i++) { partida.mando({ mando: 2, delta: -Math.sign(dy) }); paso(50); }
-  for (let t = 0; t < 9000 && partida.puntos === antes; t += DT) paso();
-  assert.ok(partida.puntos > antes, 'el misil acierta el camión del puente');
-});

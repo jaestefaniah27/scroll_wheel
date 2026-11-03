@@ -16,10 +16,11 @@
 // dentro del círculo; lo destruido deja un cráter y vuelve a aparecer pasado un rato. Fallo
 // es que no haya nada dentro.
 //
-// Fase 3: el VTOL. Las pantallas son lo que ve el artillero desde el aparato, que se queda un
-// rato sobre cada zona (ESTANCIA_MS) y luego vuela a la siguiente en unos segundos, con
-// arranque y frenada suaves (recorrido). La mira va con el aparato: el suelo se desliza por
-// debajo. La pantalla 10 enseña, con una barra, cuánto queda para irse.
+// Fase 3: el VTOL. Las pantallas son lo que ve el artillero desde el aparato, que se queda
+// sobre cada zona hasta llevar ESTANCIA_MS y haber soltado DISPAROS_PARA_VOLAR misiles, y luego
+// vuela a la siguiente en unos segundos, con arranque y frenada suaves (trayecto). Nunca se mueve
+// con un misil en el aire: se va cuando el último ha estallado. La mira va con el aparato: el
+// suelo se desliza por debajo. La pantalla 10 enseña, con una barra, cuánto queda para irse.
 //
 // Decisiones:
 //   · las nueve pantallas son un solo suelo (Malla) con huecos cortos entre ellas. Con el
@@ -81,10 +82,11 @@ const VELOCIDAD_MAX = 2.5;
 // Lo que vale de más moverse: a BONO_VELOCIDAD px/s, el doble.
 const BONO_VELOCIDAD = 20;
 const VALOR_MAX = 60;             // un soldado, tan pequeño, valdría una barbaridad
-// El VTOL: cuánto se queda sobre cada zona y cuánto tarda en ir a la siguiente. La estancia da
-// para tres o cuatro misiles sin prisas, más si se acelera la caída; el vuelo, para que se vea
-// el terreno pasar sin que sea una espera.
-export const ESTANCIA_MS = 24000;
+// El VTOL: cuánto se queda sobre cada zona y cuánto tarda en ir a la siguiente. Para irse tienen
+// que cumplirse las dos cosas: llevar ESTANCIA_MS parado y haber soltado DISPAROS_PARA_VOLAR
+// misiles desde que llegó. El vuelo, para que se vea el terreno pasar sin que sea una espera.
+export const ESTANCIA_MS = 40000;
+export const DISPAROS_PARA_VOLAR = 8;
 export const TRANSICION_MS = 3500;
 const CRATER_MS = 6000;
 const REAPARECE_MS = 14000;       // lo destruido vuelve a su sitio (o a una carretera)
@@ -224,19 +226,14 @@ export function cruz(malla, cx, cy) {
   malla.px(cx, cy);
 }
 
-// Dónde está la cámara a los `t` ms de vuelo: quieta en una zona, o de camino a la siguiente
-// (en bucle). El paso de una a otra sigue medio coseno: arranca y frena sin tirones, que a un
-// píxel por paso un arranque en seco se nota como un salto. Aparte para probarlo sin jugar.
-export function recorrido(t) {
-  const ciclo = ESTANCIA_MS + TRANSICION_MS;
-  const n = Math.floor(t / ciclo);
-  const r = t - n * ciclo;
-  const zona = n % ZONAS.length;
+// Dónde está la cámara a `k` del vuelo desde la zona `zona` (0 al salir, 1 al llegar a la
+// siguiente). El paso sigue medio coseno: arranca y frena sin tirones, que a un píxel por paso un
+// arranque en seco se nota como un salto. Aparte para probarlo sin jugar.
+export function trayecto(zona, k) {
   const a = ZONAS[zona];
-  if (r < ESTANCIA_MS) return { x: a.x, y: a.y, zona, enVuelo: false, queda: (ESTANCIA_MS - r) / ESTANCIA_MS };
   const b = ZONAS[(zona + 1) % ZONAS.length];
-  const k = (1 - Math.cos(Math.PI * ((r - ESTANCIA_MS) / TRANSICION_MS))) / 2;
-  return { x: Math.round(a.x + (b.x - a.x) * k), y: Math.round(a.y + (b.y - a.y) * k), zona, enVuelo: true, queda: 0 };
+  const s = (1 - Math.cos(Math.PI * k)) / 2;
+  return { x: Math.round(a.x + (b.x - a.x) * s), y: Math.round(a.y + (b.y - a.y) * s) };
 }
 
 const TIPO = Object.fromEntries(OBJETIVOS.map((o) => [o.nombre, o]));
@@ -299,8 +296,10 @@ export default {
     // impacto y la malla van en coordenadas de la vista; las entidades y los cráteres, del
     // territorio.
     const camara = { x: ZONAS[0].x, y: ZONAS[0].y };
-    let vuelo = 0;                // ms de recorrido del VTOL (se para con la partida)
-    let ruta = recorrido(0);
+    let zonaIdx = 0;              // la zona donde está el VTOL
+    let estancia = 0;             // ms parado sobre esta zona (no cuenta mientras vuela)
+    let disparosZona = 0;         // misiles soltados desde que llegó a esta zona
+    let vuelo = null;             // ms de vuelo hacia la siguiente zona; null si está parado
     let progreso = 0;             // 0 al soltarse, 1 al llegar
     let empezado = 0;             // cuándo se soltó este misil
     let fase = 'cayendo';         // 'cayendo' | 'explosion' | 'final'
@@ -348,6 +347,27 @@ export default {
       progreso = 0;
       empezado = tiempo;
       fase = 'cayendo';
+      disparosZona++;
+    }
+
+    // Se mira al acabar cada explosión, nunca a mitad de un misil: así el VTOL no se mueve
+    // mientras se dispara, y el temporizador del disparo queda parado durante el vuelo.
+    function debeVolar() {
+      return estancia >= ESTANCIA_MS && disparosZona >= DISPAROS_PARA_VOLAR;
+    }
+
+    function llegar() {
+      zonaIdx = (zonaIdx + 1) % ZONAS.length;
+      vuelo = null;
+      estancia = 0;
+      disparosZona = 0;
+      soltarMisil();
+    }
+
+    // Lo que falta para irse, de 1 a 0: la barra de la pantalla 10. En vuelo no queda nada.
+    function quedaParaVolar() {
+      if (vuelo !== null) return 0;
+      return 1 - Math.min(1, estancia / ESTANCIA_MS, disparosZona / DISPAROS_PARA_VOLAR);
     }
 
     // ¿Toca la explosión el dibujo? El punto de la caja más cercano al impacto está dentro
@@ -436,7 +456,10 @@ export default {
       // Solo lectura, para las pruebas: lo que hay ahora en el mapa.
       get entidades() { return entidades; },
       get camara() { return { ...camara }; },
-      get zona() { return ruta.enVuelo ? null : ZONAS[ruta.zona].nombre; },
+      get volando() { return vuelo !== null; },
+      get disparosZona() { return disparosZona; },
+      get estancia() { return estancia; },
+      get zona() { return vuelo !== null ? null : ZONAS[zonaIdx].nombre; },
       get estado() { return `${aciertos} objetivos · ${vidas} misiles de margen`; },
 
       tick(dt) {
@@ -444,17 +467,24 @@ export default {
         if (aviso && tiempo >= aviso.hasta) aviso = null;
         if (!mira) return;
         if (fase !== 'final') {
-          vuelo += dt;
-          ruta = recorrido(vuelo);
-          camara.x = ruta.x;
-          camara.y = ruta.y;
+          if (vuelo !== null) {
+            vuelo += dt;
+            if (vuelo >= TRANSICION_MS) llegar();
+          } else {
+            estancia += dt;
+          }
+          const c = vuelo === null ? ZONAS[zonaIdx] : trayecto(zonaIdx, vuelo / TRANSICION_MS);
+          camara.x = c.x;
+          camara.y = c.y;
           moverMundo(dt);
         }
         if (fase === 'cayendo') {
           progreso += (dt / CAIDA_MS) * PRISA[Math.min(pulsados.size, 2)];
           if (progreso >= 1) estallar();
         } else if (fase === 'explosion' && tiempo >= hasta) {
-          if (vidas <= 0) { fase = 'final'; hasta = tiempo; } else soltarMisil();
+          if (vidas <= 0) { fase = 'final'; hasta = tiempo; }
+          else if (debeVolar()) { vuelo = 0; fase = 'volando'; }
+          else soltarMisil();
         }
       },
 
@@ -496,7 +526,7 @@ export default {
           cruz(malla, cx, cy);
           const r = Math.round(RADIO_INICIAL + (RADIO_FINAL - RADIO_INICIAL) * Math.min(1, progreso));
           anillo(malla, cx, cy, r);
-        } else {
+        } else if (fase === 'explosion') {
           // La explosión: un fogonazo macizo al principio y luego una onda que se abre.
           const t = 1 - (hasta - tiempo) / EXPLOSION_MS;
           if (t < 0.2) malla.disco(impacto.x, impacto.y, RADIO_EXPLOSION);
@@ -513,12 +543,13 @@ export default {
         // Van en las filas 1-4: los puntos empiezan en la 6 y una fila en blanco los separa.
         for (let i = 0; i < vidas; i++) rect(lienzo[9], 2 + i * 6, 1, 4, 4, 1);
         // Lo que queda sobre esta zona: una barra que se vacía. En vuelo, el marco parpadea.
-        const enMarcha = ruta.enVuelo && Math.floor(tiempo / 250) % 2 === 0;
-        if (!ruta.enVuelo || enMarcha) {
+        const enVuelo = vuelo !== null;
+        const enMarcha = enVuelo && Math.floor(tiempo / 250) % 2 === 0;
+        if (!enVuelo || enMarcha) {
           rect(lienzo[9], 24, 1, 46, 1, 1); rect(lienzo[9], 24, 4, 46, 1, 1);
           rect(lienzo[9], 24, 1, 1, 4, 1); rect(lienzo[9], 69, 1, 1, 4, 1);
         }
-        rect(lienzo[9], 25, 2, Math.round(44 * ruta.queda), 2, 1);
+        rect(lienzo[9], 25, 2, Math.round(44 * quedaParaVolar()), 2, 1);
         if (fase === 'explosion' && aviso && aviso.texto !== 'FALLO') destello(lienzo[9], W - 8, H - 7, 4);
       },
     };

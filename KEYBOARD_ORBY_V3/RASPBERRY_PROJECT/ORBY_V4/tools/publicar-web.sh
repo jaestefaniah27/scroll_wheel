@@ -9,7 +9,8 @@
 # Uso: tools/publicar-web.sh [mensaje del commit]
 set -euo pipefail
 
-PROYECTO="$(cd "$(dirname "$0")/.." && pwd)"
+# pwd -W da la ruta de Windows: node no entiende /c/... en Git Bash.
+PROYECTO="$(cd "$(dirname "$0")/.." && pwd -W 2>/dev/null || pwd)"
 REPO="jaestefaniah27/scroll_wheel"
 : "${GH_TOKEN:?falta GH_TOKEN}"
 
