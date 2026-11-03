@@ -27,8 +27,8 @@
 // se mece (deriva) un poco al azar. Desde la zona 3 el enemigo dispara al VTOL parado:
 // antiaéreos, camiones lanzadores en las zonas 5 y 6 y soldados con RPG en la 6. Hay una amenaza
 // a la vez (dos en la 6) y el tirador avisado parpadea hasta el impacto; destruirlo antes lo
-// quita. Los grupos a pie salen de los edificios y caminan por las sendas. Bajar de un vehículo
-// y subir a uno (fases 5.2 y 5.3) aún no está hecho.
+// quita. Los grupos a pie salen de los edificios, bajan de un camión o una patrulla que aparca
+// en una explanada, o suben a un vehículo aparcado, que entonces arranca y se pone a circular.
 // La pantalla 10 enseña, con una barra, cuánto queda para irse y, en vuelo, la zona a la que va.
 //
 // Decisiones:
@@ -127,6 +127,7 @@ export const NIVELES = [
 // Entre un impacto y el siguiente, para dar tiempo a apuntar y a que caiga el misil.
 export const ESPACIO_DISPAROS_MS = 3000;
 export const LANZADOR_DESPLIEGUE_MS = 2000;
+export const DESEMBARCO_MS = 3000;   // lo que espera aparcado un vehículo mientras bajan sus soldados
 const SEPARACION_PIE = 6;         // px, a lo largo de la senda, entre dos soldados de un grupo
 const HOLGURA = 4;                // aire entre dos vehículos que van en fila
 const CERCA = 200;                // los vehículos a menos de esto de la vista son los que cuentan
@@ -646,9 +647,9 @@ export default {
     let proximoLanzador = 0;           // se sortea al llegar a una zona con lanzador
     let cola = [];                     // lanzadores desplegados que esperan su primer disparo
 
-    function crearEstatica([nombre, x, y, dir = 'der']) {
+    function crearEstatica([nombre, x, y, dir = 'der', arranque]) {
       const tipo = TIPO[nombre];
-      return { tipo, forma: orientar(tipo, dir), x, y, dir, vel: 0, tirador: !!tipo.dispara };
+      return { tipo, forma: orientar(tipo, dir), x, y, dir, vel: 0, tirador: !!tipo.dispara, ...(arranque && { arranque }) };
     }
 
     const vehiculos = () => entidades.filter((e) => e.desde);
@@ -659,20 +660,46 @@ export default {
     const sortearPie = () => { const ms = pieMsZona(); return ms ? ms / 2 + aleatorio(ms) : Infinity; };
     let proximoPie = sortearPie();
 
-    // 5.1: sale un grupo por la puerta de un edificio (o del estático de una senda) de esta zona. Las
-    // sendas desde aparcamientos y las de subir a un vehículo son de 5.2 y 5.3.
+    // Al saltar el temporizador se elige al azar entre las situaciones posibles en esta zona: salir de un
+    // edificio (5.1), bajar de un vehículo que va a pasar por una explanada libre (5.2) o subir al
+    // vehículo aparcado del final de una senda (5.3), si sigue vivo y nadie va ya hacia él.
     function lanzarPie() {
-      const posibles = SENDAS.filter((d) => d.zona === ZONAS[zonaIdx].nombre && d.de !== 'aparcamiento' && d.fin !== 'subir');
-      if (!posibles.length) return;
-      const { puntos: ruta, fin } = posibles[aleatorio(posibles.length)];
+      const zona = ZONAS[zonaIdx].nombre;
+      const sendas = SENDAS.filter((d) => d.zona === zona);
+      const situaciones = [];
+      const edificios = sendas.filter((d) => d.de !== 'aparcamiento' && d.fin !== 'subir');
+      if (edificios.length) situaciones.push(() => soltarGrupo(edificios[aleatorio(edificios.length)]));
+      const bajan = candidatos([TIPO.camion, TIPO.patrulla]);
+      if (bajan.length) situaciones.push(() => asignarMision(bajan, 'desembarcar'));
+      const suben = sendas.filter((d) => d.fin === 'subir').map((d) => [d, vehiculoDelFinal(d)])
+        .filter(([, v]) => v && !entidades.some((e) => e.pie?.objetivo === v));
+      if (suben.length) situaciones.push(() => { const [d, v] = suben[aleatorio(suben.length)]; soltarGrupo(d, v); });
+      if (situaciones.length) situaciones[situaciones.length > 1 ? aleatorio(situaciones.length) : 0]();
+    }
+
+    // El vehículo aparcado que espera al final de una senda 'subir': el que tiene `arranque` más cerca de su último punto.
+    function vehiculoDelFinal({ puntos }) {
+      const [fx, fy] = puntos[puntos.length - 1];
+      let mejor = null, dmin = 25;
+      for (const e of entidades) {
+        if (!e.arranque || e.desde || e.mision) continue;
+        const d = Math.hypot(e.x + e.forma.w / 2 - fx, e.y + e.forma.h / 2 - fy);
+        if (d < dmin) { mejor = e; dmin = d; }
+      }
+      return mejor;
+    }
+
+    function soltarGrupo({ puntos: ruta, fin }, objetivo) {
       let total = 0;
       for (let i = 1; i < ruta.length; i++) total += Math.hypot(ruta[i][0] - ruta[i - 1][0], ruta[i][1] - ruta[i - 1][1]);
+      const grupo = [];
       for (let k = 0, n = 2 + aleatorio(3); k < n; k++) {
         // Donde hay RPG, uno de cada cuatro lo lleva. No dispara hasta pararse: andando se le caza.
         const tipo = nivel().rpg && aleatorio(4) === 0 ? TIPO.rpg : TIPO.soldado;
-        // Los que se quedan lo hacen en fila contra el final, no todos en el mismo píxel.
-        const pie = { ruta, s: -k * SEPARACION_PIE, tope: fin === 'quedarse' ? total - k * SEPARACION_PIE : total, alFinal: fin };
+        // Los que se quedan lo hacen en fila contra el final, no todos en el mismo píxel; los que suben, todos hasta el vehículo.
+        const pie = { ruta, s: -k * SEPARACION_PIE, tope: fin === 'quedarse' ? total - k * SEPARACION_PIE : total, alFinal: fin, k, total, grupo, objetivo };
         const e = { tipo, forma: tipo, x: 0, y: 0, dir: 'der', vel: tipo.velocidad, pie };
+        grupo.push(e);
         colocarPie(e);
         entidades.push(e);
       }
@@ -686,13 +713,21 @@ export default {
 
     function andar(dt) {
       for (const e of entidades) {
-        if (!e.pie) continue;
-        e.pie.s = Math.min(e.pie.tope, e.pie.s + (e.vel * dt) / 1000);
+        const p = e.pie;
+        if (!p) continue;
+        // Si destruyen el vehículo al que iban, acaban como un grupo cualquiera que se queda.
+        if (p.alFinal === 'subir' && !entidades.includes(p.objetivo)) { p.alFinal = 'quedarse'; p.tope = p.total - p.k * SEPARACION_PIE; }
+        p.s = Math.min(p.tope, p.s + (e.vel * dt) / 1000);
         colocarPie(e);
-        if (e.pie.s < e.pie.tope) continue;
+        if (p.s < p.tope) continue;
         // Entrar es escaparse: desaparece sin dar puntos. Quedarse lo vuelve un estático más.
-        if (e.pie.alFinal === 'entrar') e.pie = null;
-        else { delete e.pie; e.vel = 0; e.tirador = !!e.tipo.dispara; }
+        if (p.alFinal === 'entrar') e.pie = null;
+        else if (p.alFinal === 'subir') {
+          e.vel = 0;
+          // Suben todos a la vez, cuando llega el último.
+          const vivos = p.grupo.filter((m) => entidades.includes(m));
+          if (vivos.every((m) => m.pie.s >= m.pie.tope)) { for (const m of vivos) m.pie = null; arrancar(p.objetivo); }
+        } else { delete e.pie; e.vel = 0; e.tirador = !!e.tipo.dispara; }
       }
       entidades = entidades.filter((e) => e.pie !== null);
     }
@@ -750,7 +785,7 @@ export default {
 
     // ¿Está `v` en la vista o llegará a ella por su camino en `alcance` px? Se sondea con una copia.
     function llegaALaVista(v, alcance = ACERCAMIENTO) {
-      const sonda = { ...v, convoy: { camino: [...v.convoy.camino] } };
+      const sonda = { ...v, convoy: v.convoy && { camino: [...v.convoy.camino] } };
       for (let d = 0; ; d += 10) {
         if (distanciaAVista(sonda, camara) === 0) return true;
         if (d >= alcance) return false;
@@ -867,35 +902,84 @@ export default {
 
     const sortearLanzador = () => (nivel().lanzadorMs ? Math.round(nivel().lanzadorMs * (0.5 + aleatorio(1001) / 1000)) : 0);
 
-    // Un camión que circula y todavía no ha pasado por una explanada libre de esta zona recibe
-    // la misión de aparcar en ella.
-    function elegirLanzador() {
+    // Los vehículos de `tipos` que circulan, sin misión, y todavía no han pasado por una explanada
+    // libre de esta zona (libre: sin lanzador ni desembarco): [[v, ap], ...].
+    function candidatos(tipos) {
       const libres = APARCAMIENTOS.filter((a) => a.zona === ZONAS[zonaIdx].nombre && !entidades.some((e) => e.mision?.ap === a));
       const cands = [];
       for (const v of vehiculos()) {
-        if (v.tipo !== TIPO.camion || v.mision) continue;
+        if (!tipos.includes(v.tipo) || v.mision) continue;
         for (const ap of libres) {
           const aqui = v.desde + v.hasta === ap.tramo ? v.dist < ap.dist : v.hasta === ap.tramo[0] && v.luego === ap.tramo[1];
           if (aqui) cands.push([v, ap]);
         }
       }
-      if (!cands.length) return;
+      return cands;
+    }
+
+    // `luego` es lo que hace al aparcar: 'lanzar' despliega el lanzador; 'desembarcar' suelta soldados y vuelve.
+    function asignarMision(cands, luego) {
       const [v, ap] = cands[aleatorio(cands.length)];
-      v.mision = { ap, fase: 'red', t: 0 };
+      v.mision = { ap, luego, fase: 'red', t: 0 };
+    }
+
+    function elegirLanzador() {
+      const cands = candidatos([TIPO.camion]);
+      if (cands.length) asignarMision(cands, 'lanzar');
     }
 
     // Deja la red: sale recto de la carretera por el acceso, de cara a la explanada.
     function salirDeLaRed(v) {
       const { ap } = v.mision;
       const [p, q] = ap.tramo.split('').map((n) => NODOS[n]);
-      const ry = p[1] + Math.sign(q[1] - p[1]) * ap.dist;
       v.desde = v.hasta = v.convoy = undefined;
       v.dir = ap.x > p[0] ? 'der' : 'izq';
       v.forma = orientar(v.tipo, v.dir);
       v.cx = p[0];
-      v.y = ry - v.forma.h / 2;
+      v.cy = p[1] + Math.sign(q[1] - p[1]) * ap.dist;
       v.mision.fase = 'entra';
     }
+
+    // 5.3: ya han subido; el vehículo sale recto hasta su punto de la carretera, de cara a donde va. El
+    // aparcamiento puede quedar de lado, así que se gira hacia el eje en que más le falta.
+    function arrancar(v) {
+      const { tramo, dist } = v.arranque;
+      const [p, q] = tramo.split('').map((n) => NODOS[n]);
+      const meta = [p[0] + Math.sign(q[0] - p[0]) * dist, p[1] + Math.sign(q[1] - p[1]) * dist];
+      v.cx = v.x + v.forma.w / 2;
+      v.cy = v.y + v.forma.h / 2;
+      const [dx, dy] = [meta[0] - v.cx, meta[1] - v.cy];
+      v.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'der' : 'izq') : (dy > 0 ? 'aba' : 'arr');
+      v.forma = orientar(v.tipo, v.dir);
+      v.mision = { luego: 'arrancar', fase: 'sale', meta, tramo, dist };
+    }
+
+    // Vuelve a la red en (tramo, dist) si hay hueco con los de alrededor; si no, se queda como estaba.
+    function incorporar(v, tramo, dist) {
+      const antes = { x: v.x, y: v.y, dir: v.dir, forma: v.forma };
+      Object.assign(v, { desde: tramo[0], hasta: tramo[1], luego: undefined, dist });
+      posicionar(v);
+      const todos = vehiculos();
+      if (todos.every((o) => o === v || (holgura(o, [o, v]) >= 0 && holgura(v, [v, o]) >= 0))) return true;
+      Object.assign(v, antes, { desde: undefined, hasta: undefined });
+      return false;
+    }
+
+    // Recto hacia `meta` por el eje al que mira; al llegar intenta incorporarse y, sin hueco, espera.
+    function salir(v, dt) {
+      const m = v.mision;
+      const horizontal = v.dir === 'der' || v.dir === 'izq';
+      const eje = horizontal ? 'cx' : 'cy';
+      const fin = m.meta[horizontal ? 0 : 1];
+      const paso = (v.tipo.velocidad * nivel().vel * dt) / 1000;
+      v[eje] += Math.max(-paso, Math.min(paso, fin - v[eje]));
+      v.vel = v[eje] === fin ? 0 : v.tipo.velocidad * nivel().vel;
+      if (v[eje] !== fin) return;
+      [v.cx, v.cy] = m.meta;
+      if (incorporar(v, m.tramo, m.dist)) { delete v.mision; delete v.cx; delete v.cy; }
+    }
+
+    const OPUESTA = { der: 'izq', izq: 'der', arr: 'aba', aba: 'arr' };
 
     function moverLanzadores(dt) {
       for (const v of entidades) {
@@ -909,13 +993,27 @@ export default {
           const sentido = v.dir === 'der' ? 1 : -1;
           v.vel = v.tipo.velocidad * nivel().vel;
           v.cx = sentido > 0 ? Math.min(meta, v.cx + (v.vel * dt) / 1000) : Math.max(meta, v.cx - (v.vel * dt) / 1000);
-          if (v.cx === meta) { m.fase = 'despliega'; v.vel = 0; }
+          if (v.cx === meta) {
+            v.vel = 0;
+            m.t = 0;
+            if (m.luego === 'lanzar') m.fase = 'despliega';
+            else {
+              // Se gira al aparcar para quedar de cara a la salida: así vuelve a la carretera marcha adelante.
+              m.fase = 'baja';
+              v.dir = OPUESTA[v.dir];
+              v.forma = orientar(v.tipo, v.dir);
+              soltarGrupo(SENDAS.find((d) => d.zona === m.ap.zona && d.de === 'aparcamiento'));
+            }
+          }
         } else if (m.fase === 'despliega') {
           m.t += dt;
           if (m.t >= LANZADOR_DESPLIEGUE_MS / 2 && v.tipo === TIPO.camion) { v.tipo = TIPO.lanzador; v.forma = orientar(v.tipo, v.dir); }
           if (m.t >= LANZADOR_DESPLIEGUE_MS) { m.fase = 'listo'; v.tirador = true; cola.push(v); }
-        }
-        if (m.fase !== 'red') v.x = v.cx - v.forma.w / 2;
+        } else if (m.fase === 'baja') {
+          m.t += dt;
+          if (m.t >= DESEMBARCO_MS) Object.assign(m, { fase: 'sale', meta: [NODOS[m.ap.tramo[0]][0], v.cy], tramo: m.ap.tramo, dist: m.ap.dist });
+        } else if (m.fase === 'sale') salir(v, dt);
+        if (v.mision && m.fase !== 'red') { v.x = v.cx - v.forma.w / 2; v.y = v.cy - v.forma.h / 2; }
       }
       if (nivel().lanzadorMs && vuelo === null && (proximoLanzador -= dt) <= 0) {
         elegirLanzador();
