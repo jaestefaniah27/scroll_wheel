@@ -99,8 +99,21 @@ convoyes (`armarConvoy`, `circular`), aparición continua y la patrulla (`sprite
 - Los tests `macro-prune` y `macro-store-sync` fallan con Node 20 (`Unexpected token 'export'`); piden Node 22
   y no tienen que ver con Misil.
 
-**Pendiente:** fases 2, 3.1, 4, 5 y 6. El test «el vuelo es suave» falla desde que los vuelos son largos: es
-de la fase 3.1 (`TRANSICION_MS` por distancia).
+**Hechas las fases 2 y 3.1 (Sonnet):** cazas (ya estaban), helicóptero, vaivén, ruta lineal con final.
+Desviaciones:
+
+- `HELI_PROB = 0.5` y `VAIVEN_PX = [2, 3, 4, 5, 6, 7]` (por zona) son constantes provisionales; la fase 4 las mete en `NIVELES`.
+- `crear` admite además `quieto` y `zonaInicial` (solo pruebas). En el test, `nueva()` pasa `quieto: true` por defecto;
+  las pruebas del vaivén lo desactivan.
+- El helicóptero lleva `valorFijo: true` en `OBJETIVOS` (el test de «vale más cuanto más pequeño» lo salta) y `volador: true`
+  en la entidad. Se borra al salir de la vista; un posado que queda lejos se borra con el tráfico (`LEJOS`). No cuenta para
+  `hayObjetivos`. Su aspa gira con el mismo `filas2` de la patrulla (cada 200 ms).
+- `TRANSICION_MS = 3500` es ahora el mínimo; la duración real es `duracionVuelo(zona)` = `max(3500, distancia · 12)`.
+  El test del vuelo suave recorre de la zona n a la n+1.
+- `estadisticas.suma` lleva `helicoptero` y `max` lleva `zona` (la zona más lejana, de 1 a 6). `victoria` es un getter más.
+- Pantalla 10 en vuelo: `Z<n>` en lugar del marcador, y sin marco ni barra (las vidas siguen).
+
+**Pendiente:** fases 4, 5 y 6.
 
 ## Fase 0. Herramienta para ver el mapa
 
