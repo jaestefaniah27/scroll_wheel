@@ -99,7 +99,23 @@ convoyes (`armarConvoy`, `circular`), aparición continua y la patrulla (`sprite
 - Los tests `macro-prune` y `macro-store-sync` fallan con Node 20 (`Unexpected token 'export'`); piden Node 22
   y no tienen que ver con Misil.
 
-**Pendiente:** fases 2, 3.1, 4, 5 y 6. El test «el vuelo es suave» falla desde que los vuelos son largos: es
+**Hecha la fase 4 (Sonnet, rama `misil-fuego`):** `NIVELES` (con `simultaneas`) sustituye a `TRAFICO`; `vel` es el
+cuarto argumento de `circular` (factor), `puntos` multiplica cada acierto. Antiaéreo y RPG llevan `dispara: true` (en vez
+de `tirador`) y `crearEstatica` lo copia a `e.tirador`. Amenazas, `tiradores()`, camión lanzamisiles (`lanzador`, valor
+2 × camión puesto a mano tras `TIPO`) y las dos reglas de espacio van en `misil.mjs`. Desviaciones:
+
+- `crear` admite `zonaInicial` e `inmortal` también vale para los impactos (solo para pruebas). Getters nuevos para
+  probar: `amenazas`, `impactos`, `vidas`.
+- El impacto llama a `sacudir()`, vacía hasta que el vaivén (2.3) la llene. En vuelo se descartan las amenazas.
+- `ultimoImpacto` es el del último impacto **real**: una amenaza cancelada no cuenta para el espacio de 3 s.
+- Con el temporizador a punto y sin hueco (`simultaneas` llenas) el tirador espera su turno; sin candidatos, se
+  vuelve a sortear.
+- El camión asignado conserva la clave `mision` (`red`, `entra`, `despliega`, `listo`); al salir pierde `desde`/`hasta`
+  y su convoy, así que `vehiculos()` ya no lo cuenta. El RPG que camina (fase 5) y `nivel().rpg` quedan sin usar.
+- `heli`, `vaiven` y `pieMs` están en la tabla pero no se usan aún. El test de orden de valor por área excluye el
+  `lanzador`, que vale el doble por decisión.
+
+**Pendiente:** fases 2, 3.1, 5 y 6. El test «el vuelo es suave» falla desde que los vuelos son largos: es
 de la fase 3.1 (`TRANSICION_MS` por distancia).
 
 ## Fase 0. Herramienta para ver el mapa
