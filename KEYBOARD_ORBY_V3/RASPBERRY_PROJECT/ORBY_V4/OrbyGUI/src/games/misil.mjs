@@ -2,29 +2,33 @@
 // ya viene cayendo. La mira se mueve con los dos mandos (el izquierdo en horizontal, el
 // derecho en vertical) y el círculo que se cierra sobre ella es el misil: cuando llega al
 // centro, explota donde esté la mira. Si el objetivo estaba debajo, puntos; si no, fallo.
-// Tres fallos y se acaba. Un objetivo fallado sigue ahí: el siguiente misil va a por él.
+// Tres fallos o impactos y se acaba. Un objetivo fallado sigue ahí: el siguiente misil va a por él.
 //
-// Fases 1 y 2 de un juego más grande (la 3 es el VTOL, con el terreno pasando y defensas
-// que disparan): lo que se decide aquí —mira, sprites, puntuación por dificultad— es lo
-// que reutilizará la otra.
+// Lo que decide la mira, los sprites y la puntuación por dificultad está aquí; el VTOL, el
+// fuego enemigo y los soldados se montan encima, en este mismo fichero.
 //
 // Fase 2: el suelo es un territorio grande (misil-mapa.mjs) y las pantallas ven una zona de
-// él: la base con la pista, el puesto del desierto o el puente sobre el río, y más al este el
-// oasis, el aeródromo y el cuartel. Hay tiendas,
-// soldados, depósitos de combustible, camiones y tanques aparcados, y otros vehículos que
-// circulan por las carreteras, siempre de cara a donde avanzan (el dibujo se gira en cada
-// curva), nunca de lado ni marcha atrás. Un misil se lleva por delante todo lo que quede
-// dentro del círculo; lo destruido deja un cráter y no vuelve: el mapa se va vaciando. Fallo
-// es que no haya nada dentro. Una zona sin nada que disparar se deja atrás sin gastar misiles.
-// En el helipuerto de algunas zonas puede esperar un helicóptero que despega al poco de llegar:
-// si se acierta, vale muchísimo.
+// él, en ruta de ida: la base con la pista, el puesto del desierto, el puente sobre el río, el
+// oasis, el aeródromo y el cuartel. Hay tiendas, soldados, depósitos de combustible, cazas,
+// camiones y tanques aparcados, y el tráfico no para: convoyes de camiones y tanques y patrullas
+// rápidas por carreteras de sentido único, siempre de cara a donde avanzan (el dibujo se gira en
+// cada curva), nunca de lado ni marcha atrás. Un misil se lleva por delante todo lo que quede
+// dentro del círculo; lo destruido deja un cráter y no vuelve: el mapa se va vaciando. Fallo es
+// que no haya nada dentro. Una zona sin nada que disparar se deja atrás sin gastar misiles. En el
+// helipuerto de la base, el aeródromo y el cuartel puede esperar un helicóptero que despega al
+// segundo de llegar: si se acierta, vale muchísimo.
 //
-// Fase 3: el VTOL. Las pantallas son lo que ve el artillero desde el aparato, que se queda
-// ESTANCIA_MS sobre cada zona y luego vuela a la siguiente, con arranque y frenada suaves
-// (trayecto) y más tiempo cuanto más lejos esté. Las zonas van en ruta lineal: al acabar la
-// sexta la partida termina con victoria y las vidas que quedan dan puntos (BONO_VIDA). Nunca
-// se mueve con un misil en el aire: se va cuando el último ha estallado. La mira va con el
-// aparato: el suelo se desliza por debajo, y además el aparato vaivenea (deriva) un poco al azar.
+// Fase 3: el VTOL. Las pantallas son lo que ve el artillero desde el aparato. Se queda 40 s
+// (ESTANCIA_MS, fijos) sobre cada zona y luego vuela a la siguiente, con arranque y frenada
+// suaves (trayecto) y más tiempo cuanto más lejos esté. Si la zona se queda vacía, se va antes.
+// Las zonas van en ruta lineal: al acabar la sexta la partida termina con victoria y las vidas
+// que quedan dan puntos (BONO_VIDA). Nunca se mueve con un misil en el aire: se va cuando el
+// último ha estallado. La mira va con el aparato: el suelo se desliza por debajo, y el aparato
+// se mece (deriva) un poco al azar. Desde la zona 3 el enemigo dispara al VTOL parado:
+// antiaéreos, camiones lanzadores en las zonas 5 y 6 y soldados con RPG en la 6. Hay una amenaza
+// a la vez (dos en la 6) y el tirador avisado parpadea hasta el impacto; destruirlo antes lo
+// quita. Los grupos a pie salen de los edificios y caminan por las sendas. Bajar de un vehículo
+// y subir a uno (fases 5.2 y 5.3) aún no está hecho.
 // La pantalla 10 enseña, con una barra, cuánto queda para irse y, en vuelo, la zona a la que va.
 //
 // Decisiones:
@@ -33,7 +37,7 @@
 //     cruzarlo; aquí el hueco solo tiene que hacer que la mira desaparezca un instante
 //   · el objetivo nunca cae en un hueco ni cerca del borde de su pantalla (MARGEN): pegado
 //     al marco no se distinguía bien dónde estaba, y un objetivo que no se ve no es un reto
-//   · el misil tarda siempre lo mismo en caer. Acortarlo con cada acierto dejaba tan poco
+//   · sin pulsar los mandos, el misil tarda siempre lo mismo en caer. Acortarlo con cada acierto dejaba tan poco
 //     tiempo para apuntar que dejaba de ser divertido; la dificultad la suben los objetivos
 //     que se mueven, no las prisas
 //   · la cruz se corta alrededor del centro, como la de un visor: si llegara hasta el
@@ -59,13 +63,18 @@
 //     no al revés, la fila se desordena
 //   · la estancia es solo de tiempo: exigir un mínimo de misiles obligaba a malgastarlos en
 //     zonas vacías, y la gracia es apuntar rápido para aprovechar los 40 s
-//   · el helicóptero no cuenta para saber si la zona está vacía: se va solo y no debe retener al VTOL
+//   · el helicóptero y los que caminan no cuentan para saber si la zona está vacía: se van solos
+//     o se quedan quietos, y no deben retener al VTOL
 //   · el tráfico no se acaba: entra un convoy nuevo cerca de la vista, fuera de ella (no aparece
 //     de la nada delante del jugador), y lo que queda lejos se borra para no gastar
-//   · todo lo que cambia de una zona a la siguiente sale de NIVELES, una fila por zona
+//   · todo lo que cambia de una zona a la siguiente sale de NIVELES, una fila por zona. Sube todo
+//     a la vez: subir una sola cosa (la velocidad, por ejemplo) se notaba como un salto, no como
+//     una escalada
 //   · el enemigo dispara al VTOL parado con un aviso (la amenaza): el tirador parpadea hasta el
 //     impacto. Con el misil tardando hasta 1,8 s en caer, hay que poder responder: una sola
 //     amenaza a la vez (dos en la última zona) y 3 s entre un impacto y el siguiente
+//   · fallos e impactos gastan la misma vida: un solo contador en la pantalla 10, que se lee de
+//     un vistazo, y el juego no tiene que explicar dos
 //   · un camión cualquiera puede salirse de la carretera, aparcar y desplegar el lanzador: hasta
 //     que se sale parece uno más, y esa es la gracia
 
@@ -415,7 +424,7 @@ export function trayecto(zona, k) {
 }
 
 // ¿Hay algo de `entidades` dentro de lo que ve la cámara puesta en `zona`? Para saber si
-// merece la pena quedarse: sin nada que disparar, los seis misiles obligatorios serían fallos.
+// merece la pena quedarse: sin nada dentro, el VTOL se va sin soltar ningún misil.
 export function hayObjetivosEn(entidades, zona) {
   // Los que caminan no retienen al VTOL: se van o se quedan quietos en un rato.
   return entidades.some((e) => !e.pie && e.x + e.forma.w > zona.x && e.x < zona.x + MUNDO_W
@@ -570,7 +579,7 @@ function distanciaAVista(e, cam) {
 export default {
   id: 'misil',
   nombre: 'Misil',
-  descripcion: 'Mueve la mira con los dos mandos (izquierdo: horizontal, derecho: vertical) y pon objetivos dentro del círculo antes de que se cierre y caiga el misil: tiendas, soldados, depósitos, camiones y tanques. Cuanto más pequeño el objetivo, más puntos, y los vehículos en marcha valen más. Pulsa un mando para que caiga antes, o los dos para que caiga aún más rápido: vale más puntos. Lo destruido no vuelve. Tres fallos y se acaba.',
+  descripcion: 'Mueve la mira con los dos mandos (izquierdo: horizontal, derecho: vertical) y pon objetivos dentro del círculo antes de que se cierre y caiga el misil: tiendas, soldados, depósitos, camiones y tanques. Cuanto más pequeño el objetivo, más puntos, y los vehículos en marcha valen más. Pulsa un mando para que caiga antes, o los dos para que caiga aún más rápido: vale más puntos. Lo destruido no vuelve. Son seis zonas en ruta de ida: se acaba en la última, y las vidas que quedan dan puntos. Hay cazas, un helicóptero que despega en algunos helipuertos y patrullas que cruzan las carreteras. Desde la tercera zona te disparan: destruye a quien te apunta antes de que impacte. El VTOL se mece. Tres fallos o impactos y se acaba.',
   icono: '#MISIL',
   unidad: 'puntos',
   mejorSiMenor: false,
