@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, ESTANCIA_MS, DISPAROS_PARA_VOLAR, TRANSICION_MS } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
-import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
+import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
 
 const DT = 8;
@@ -425,3 +425,57 @@ test('Misil: el VTOL no se mueve mientras hay un misil en el aire ni antes de cu
   }
 });
 
+
+test('Misil: las sendas están a la vista de su zona, fuera de la carretera y sin pisar un estático', () => {
+  const cajas = ESTATICOS.map(([n, x, y, d]) => { const f = tamano(n, d); return { x: x - 1, y: y - 1, x1: x + f.w, y1: y + f.h }; });
+  for (const { zona, puntos } of SENDAS) {
+    const z = ZONAS.find((zz) => zz.nombre === zona);
+    for (const [x, y] of puntos) {
+      assert.ok(x >= z.x && x < z.x + MUNDO_W && y >= z.y && y < z.y + MUNDO_H, `${zona} ${x},${y} a la vista`);
+      assert.ok(!enCarretera(x, y, 2), `${zona} ${x},${y} en carretera`);
+    }
+    // Se muestrea cada píxel del recorrido menos el primer y el último punto, que son la puerta o el vehículo.
+    for (let i = 0; i + 1 < puntos.length; i++) {
+      const [a, b] = [puntos[i], puntos[i + 1]];
+      const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]));
+      for (let k = 0; k <= n; k++) {
+        if ((i === 0 && k === 0) || (i === puntos.length - 2 && k === n)) continue;
+        const x = a[0] + ((b[0] - a[0]) * k) / n, y = a[1] + ((b[1] - a[1]) * k) / n;
+        assert.ok(!enCarretera(x, y, 2), `${zona} tramo ${i} en carretera`);
+        assert.ok(!cajas.some((c) => x >= c.x && x <= c.x1 && y >= c.y && y <= c.y1), `${zona} tramo ${i} pisa un estático en ${x.toFixed(0)},${y.toFixed(0)}`);
+      }
+    }
+  }
+});
+
+test('Misil: sale un grupo de 2 a 4 soldados por una puerta, camina, y al acabar se queda quieto o se va', () => {
+  let vistos = 0, quietos = 0, idos = 0;
+  for (const semilla of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    // Zona del puesto (1), con un grupo cada ~1 s para no esperar.
+    const { partida, paso } = nueva(semilla, { zonaInicial: 1, pieMs: 1000, inmortal: true });
+    const andando = () => partida.entidades.filter((e) => e.pie);
+    for (let t = 0; t < 4000 && !andando().length; t += DT) paso();
+    const grupo = andando();
+    assert.ok(grupo.length >= 2 && grupo.length <= 4, `semilla ${semilla}: ${grupo.length} soldados`);
+    assert.ok(grupo.every((e) => e.tipo.nombre === 'soldado' && e.pie.ruta === grupo[0].pie.ruta));
+    assert.ok(!hayObjetivosEn(grupo, ZONAS[1]), 'los que caminan no retienen al VTOL');
+    const antes = grupo.map((e) => [e.x, e.y]);
+    paso(1000);
+    assert.ok(grupo.some((e, i) => e.x !== antes[i][0] || e.y !== antes[i][1]), 'se mueven');
+    // Hasta que el grupo acabe (la senda más larga son ~100 px a 7 px/s): lanza otros, así que se sigue al primero.
+    for (let t = 0; t < 30000 && grupo.some((e) => e.pie); t += DT) paso();
+    vistos++;
+    for (const e of grupo) {
+      if (partida.entidades.includes(e)) { assert.equal(e.vel, 0); quietos++; } else idos++;
+    }
+    for (const e of partida.entidades) if (e.pie) assert.ok(e.vel > 0);
+  }
+  assert.equal(vistos, 8);
+  assert.ok(quietos > 0 && idos > 0, `quietos ${quietos}, idos ${idos}`);
+});
+
+test('Misil: sin pieMs en la zona no sale nadie a pie, y en la base tampoco hay sendas', () => {
+  const { partida, paso } = nueva(3, { inmortal: true });
+  for (let t = 0; t < 30000; t += DT) paso();
+  assert.ok(!partida.entidades.some((e) => e.pie));
+});

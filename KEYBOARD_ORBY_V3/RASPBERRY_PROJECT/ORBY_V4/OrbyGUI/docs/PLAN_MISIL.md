@@ -99,7 +99,17 @@ convoyes (`armarConvoy`, `circular`), aparición continua y la patrulla (`sprite
 - Los tests `macro-prune` y `macro-store-sync` fallan con Node 20 (`Unexpected token 'export'`); piden Node 22
   y no tienen que ver con Misil.
 
-**Pendiente:** fases 2, 3.1, 4, 5 y 6. El test «el vuelo es suave» falla desde que los vuelos son largos: es
+**Hecha la 5.1 (Sonnet, rama `misil-pie`):** entidad a pie (`e.pie = { ruta, s, tope, alFinal }`), `proximoPie` y
+`lanzarPie`/`andar` en `misil.mjs`. Desviaciones:
+
+- `PIE_MS` es una constante provisional por zona (índice = zona); la fase 4 la mete en `NIVELES`. Va a `tipo.velocidad`
+  sin `nivel().vel`, que aún no existe. `tipoAPie()` siempre da soldado: ahí entran las RPG de 4.5.
+- `crear` admite `pieMs` y `zonaInicial`, solo para pruebas.
+- Los que acaban con `'quedarse'` se paran en fila contra el final de la senda (6 px entre sí), no todos en el mismo punto.
+- Los que caminan no cuentan en `hayObjetivosEn`. Se ignoran las sendas `de: 'aparcamiento'` y `fin: 'subir'` (5.2 y 5.3).
+- Test de `SENDAS` añadido: pasan todas tal como están, el mapa no se ha tocado.
+
+**Pendiente:** fases 2, 3.1, 4, 5 (5.2 y 5.3) y 6. El test «el vuelo es suave» falla desde que los vuelos son largos: es
 de la fase 3.1 (`TRANSICION_MS` por distancia).
 
 ## Fase 0. Herramienta para ver el mapa
