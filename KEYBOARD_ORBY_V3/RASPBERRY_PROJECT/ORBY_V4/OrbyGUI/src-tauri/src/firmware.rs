@@ -69,16 +69,19 @@ pub fn iniciar(app: &AppHandle) {
 /// Fusiona `patch` sobre el estado (superficial, como el `Object.assign` de
 /// electron/firmware.js) y avisa al renderer. Devuelve el estado ya fusionado.
 fn set(app: &AppHandle, patch: Value) -> Value {
-    let estado = app.state::<Mutex<Compartido>>();
-    let mut c = estado.lock().unwrap();
+    let clon = {
+        let estado = app.state::<Mutex<Compartido>>();
+        let mut c = estado.lock().unwrap();
 
-    if let (Value::Object(actual), Value::Object(nuevo)) = (&mut c.estado, patch) {
-        for (k, v) in nuevo {
-            actual.insert(k, v);
+        if let (Value::Object(actual), Value::Object(nuevo)) = (&mut c.estado, patch) {
+            for (k, v) in nuevo {
+                actual.insert(k, v);
+            }
         }
-    }
-
-    let clon = c.estado.clone();
+        c.estado.clone()
+    };
+    // Fuera del cerrojo: `emit` puede esperar al hilo principal, y si este está pidiendo el
+    // mismo cerrojo desde un comando síncrono (`firmware_get`) se esperan el uno al otro.
     let _ = app.emit("firmware:state", clon.clone());
     clon
 }
