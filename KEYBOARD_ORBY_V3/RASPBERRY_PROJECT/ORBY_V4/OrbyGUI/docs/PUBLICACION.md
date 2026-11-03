@@ -236,11 +236,13 @@ Antes de ejecutarlo, comprueba que el fichero es el que publicamos:
 Vive en `web/index.html`, en la raíz del proyecto ORBY_V4. Es un único fichero
 estático, sin build ni dependencias.
 
-Para que se publique:
+Se publica a mano, solo cuando se pide: GitHub Actions no corre en esta cuenta y
+Pages sirve la rama `gh-pages` (Settings → Pages → *Deploy from a branch*). Empujar a
+`main` **no** publica nada. Para subir landing y WebGUI:
 
-1. En GitHub → Settings → Pages → **Source: GitHub Actions**.
-2. Empujar a `main`. El workflow `.github/workflows/pages.yml` sube la carpeta
-   `web/` tal cual.
+```bash
+tools/publicar-web.sh        # necesita GH_TOKEN
+```
 
 Queda en `https://jaestefaniah27.github.io/scroll_wheel/`.
 

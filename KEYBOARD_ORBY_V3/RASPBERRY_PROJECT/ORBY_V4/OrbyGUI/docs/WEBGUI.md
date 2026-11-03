@@ -58,8 +58,9 @@ navegador en vez de esconder el control.
 
 ## Dónde se publica
 
-`.github/workflows/pages.yml`, junto con la landing. La landing sale en la raíz del
-sitio y la WebGUI compilada en `/app/`.
+En la rama `gh-pages`, con `tools/publicar-web.sh` y solo cuando se pide (no hay
+publicación automática: Actions no corre en esta cuenta). La landing sale en la raíz
+del sitio y la WebGUI compilada en `/app/`.
 
 ## Chrome corporativo
 
