@@ -15,9 +15,15 @@
 //     es de trazo: así no se confunde una roca con un soldado
 //   · las carreteras son solo horizontales y verticales: un vehículo tiene cuatro orientaciones
 //     y siempre se le puede dibujar de cara a donde va
-//   · tres zonas (ZONAS), cada una con su carácter: el puesto del desierto, el puente sobre el
-//     río y la base con la pista. Están colocadas para que lo importante caiga dentro de las
-//     pantallas y no en los huecos entre ellas (las carreteras, en el centro de una fila)
+//   · tres zonas (ZONAS), cada una con su carácter: la base con la pista, el puesto del desierto
+//     y el puente sobre el río, en ese orden (se empieza en la base). Están colocadas para que
+//     lo importante caiga dentro de las pantallas y no en los huecos entre ellas (las
+//     carreteras, en el centro de una fila)
+//   · la red de carreteras no tiene callejones sin salida: son dos circuitos que comparten
+//     un tramo. Con extremos muertos, el vehículo entraba en la vista, llegaba al final y daba
+//     la vuelta antes de que diera tiempo a apuntarle; así recorre la zona de punta a punta y
+//     vuelve a pasar. Cada circuito pasa por una fila entera de pantallas, donde se le ve todo
+//     el camino
 //   · el mapa es siempre el mismo: la gracia está en lo que se mueve, y un mapa que cambia
 //     cada partida no deja aprender dónde están las cosas
 
@@ -29,20 +35,23 @@ const RIO_SEMI = 9;               // medio ancho del río, de orilla a orilla
 // Dónde mira la cámara en cada zona: la esquina de arriba a la izquierda de la vista (las
 // nueve pantallas con sus huecos, 248x148).
 export const ZONAS = [
+  { nombre: 'base', x: 60, y: 266 },
   { nombre: 'puesto', x: 20, y: 20 },
   { nombre: 'puente', x: 300, y: 126 },
-  { nombre: 'base', x: 60, y: 266 },
 ];
 
-// La red de carreteras: [x, y] del centro. Los extremos son callejones sin salida (o el borde
-// del mapa), donde el vehículo da la vuelta.
+// La red de carreteras: [x, y] del centro. Todos los tramos están en algún circuito: el del
+// puesto (a-f-h-c-b) pasa por la fila de abajo de sus pantallas, y el de la base y el puente
+// (b-g-q-d-c) baja por la pista, cruza por debajo de la base y sube por el río.
 export const NODOS = {
-  a: [0, 200], b: [144, 200], c: [184, 200], d: [512, 200], e: [MAPA_W - 1, 200],
-  f: [144, 104],                  // la puerta del puesto
-  g: [184, 324],                  // dentro de la base, hasta la pista
-  h: [512, MAPA_H - 1],
+  a: [60, 200], b: [184, 200], c: [228, 200], d: [512, 200],
+  f: [60, 140], h: [228, 140],    // las esquinas de arriba del circuito del puesto
+  g: [184, 384], q: [512, 384],   // las de abajo del de la base
 };
-export const TRAMOS = ['ab', 'bc', 'cd', 'de', 'bf', 'cg', 'dh'];
+export const TRAMOS = ['af', 'fh', 'hc', 'ab', 'bc', 'cd', 'bg', 'gq', 'qd'];
+// Carreteras que se dibujan pero no se recorren: la que llega a la puerta del puesto. Entrar
+// sería un callejón sin salida.
+const ACCESOS = [[[144, 140], [144, 105]]];
 
 export const ADYACENTES = {};
 for (const [p, q] of TRAMOS) {
@@ -50,11 +59,13 @@ for (const [p, q] of TRAMOS) {
   (ADYACENTES[q] ??= []).push(p);
 }
 
-const SEGMENTOS = TRAMOS.map(([p, q]) => {
-  const [x0, y0] = NODOS[p];
-  const [x1, y1] = NODOS[q];
-  return { x0: Math.min(x0, x1), x1: Math.max(x0, x1), y0: Math.min(y0, y1), y1: Math.max(y0, y1), horizontal: y0 === y1 };
-});
+const segmento = ([x0, y0], [x1, y1]) =>
+  ({ x0: Math.min(x0, x1), x1: Math.max(x0, x1), y0: Math.min(y0, y1), y1: Math.max(y0, y1), horizontal: y0 === y1 });
+
+const SEGMENTOS = [
+  ...TRAMOS.map(([p, q]) => segmento(NODOS[p], NODOS[q])),
+  ...ACCESOS.map(([a, b]) => segmento(a, b)),
+];
 
 function dentro(s, x, y, semi, ext) {
   return s.horizontal
@@ -76,9 +87,9 @@ export const ESTATICOS = [
   ['soldado', 128, 88], ['soldado', 133, 92],
   // fuera: una patrulla en las dunas, un nido junto a la carretera y un campamento al este
   ['soldado', 50, 90], ['soldado', 56, 94],
-  ['soldado', 160, 140],
+  ['soldado', 160, 152],
   ['tienda', 210, 82], ['tienda', 230, 92], ['camion', 214, 104, 'der'],
-  ['soldado', 60, 140],
+  ['soldado', 72, 152],
 
   // --- El puente: un control en la orilla este y un aparcamiento de camiones.
   ['soldado', 446, 186], ['soldado', 446, 211],
@@ -339,7 +350,7 @@ export function construirMapa(cajas = []) {
 
   // Rocas, en grupitos.
   for (const [x, y, g] of [
-    [96, 140, 1], [102, 146, 0], [186, 70, 1], [80, 84, 0], [270, 110, 1], [276, 116, 0],
+    [96, 152, 1], [104, 158, 0], [186, 70, 1], [80, 84, 0], [270, 110, 1], [276, 116, 0],
     [372, 250, 1], [366, 256, 0], [540, 170, 1], [460, 300, 1], [466, 306, 0], [580, 330, 0],
     [8, 210, 1], [40, 146, 1], [48, 152, 0], [34, 154, 0],
   ]) roca(b, x, y, g);
@@ -353,6 +364,8 @@ export function construirMapa(cajas = []) {
     [410, 228], [404, 240], [416, 250], [452, 240], [470, 248],
   ]) if (![-3, 0, 3].some((d) => agua.get(x + d, y) || agua.get(x, y + d))) palmera(b, x, y);
 
+  // La valla de la base va antes: la carretera que sale por el este la cruza y deja su puerta.
+  valla(b, 66, 276, 238, 137, 184, 7);
   carreteras(b, agua);
 
   // El puesto del desierto: recinto amurallado con la puerta al sur, por donde entra la
@@ -368,7 +381,6 @@ export function construirMapa(cajas = []) {
   valla(b, 480, 130, 60, 26, 512, 40);
 
   // La base: valla con la puerta al norte, la pista, hangares, helipuerto y los depósitos.
-  valla(b, 66, 276, 238, 137, 184, 7);
   torre(b, 175, 276); torre(b, 193, 276);
   pista(b, 72, 334, 226, 16);
   hangar(b, 74, 288, 24, 14); hangar(b, 104, 288, 24, 14);

@@ -24,9 +24,9 @@ import * as almacen from './almacen.js';
 
 const oyentes = new Set();
 
-// Lo que la vista necesita para pintarse. `ultimo` es el lienzo vivo del motor: se muta en
-// cada fotograma, así que no se copia.
-const estado = { activo: false, titulo: '', juego: null, partida: null, ultimo: null };
+// Lo que la vista necesita para pintarse. Los fotogramas no: la vista no replica las
+// pantallas del teclado, enseña el estado de la partida y las estadísticas.
+const estado = { activo: false, titulo: '', juego: null, partida: null };
 
 let sesionActual = null;
 
@@ -62,7 +62,6 @@ function correr(juego, titulo, juegoId = null) {
   const s = jugar(juego, {
     cerrar: false,
     alEntrar: (partida) => { estado.partida = partida; avisar('estado'); },
-    alFotograma: (lienzo) => { estado.ultimo = lienzo; avisar('fotograma'); },
   });
   sesionActual = s;
   return s.resultado;
@@ -73,6 +72,7 @@ async function registrarPartida(juego, puntos, detalle = null) {
   const nuevo = registrar(almacen.leer(juego.id), puntos, {
     mejorSiMenor: juego.mejorSiMenor,
     detalle: Array.isArray(detalle?.niveles) ? detalle.niveles : null,
+    stats: detalle?.suma || detalle?.max ? { suma: detalle.suma, max: detalle.max } : null,
   });
   const guardado = paraGuardar(nuevo);
   try {
@@ -82,7 +82,7 @@ async function registrarPartida(juego, puntos, detalle = null) {
   }
   // El primer resultado de un juego es récord de oficio: no tiene gracia celebrarlo.
   const record = nuevo.record && nuevo.partidas > 1;
-  avisar('partida', { juego, puntos, record, partidas: nuevo.partidas });
+  avisar('partida', { juego, puntos, record, partidas: nuevo.partidas, stats: nuevo.totales ? detalle : null });
   return { record, partidas: nuevo.partidas, mejor: nuevo.mejor };
 }
 
@@ -108,7 +108,6 @@ const OPS = {
 export async function iniciar({ juegoId = null } = {}) {
   if (estado.activo) return;
   estado.activo = true;
-  estado.ultimo = null;
   try {
     await recorrer(OPS, juegoId ? juegoPorId(juegoId) : null);
   } finally {

@@ -32,7 +32,6 @@ const PASO_RUEDA = 1 / 22;        // píxeles de barra por unidad de giro de la 
 // para este juego, sin tocar el sentido que cada perfil da a la rueda.
 const SENTIDO = -1;
 const DURACION_MS = 600;          // cuánto hay que mantener el cursor dentro para conquistar
-const FINAL_MS = 3500;
 const MARGEN_ZONA = 14;           // la zona nunca sale tan pegada a un borde
 const MHZ_MIN = 88;
 const MHZ_MAX = 108;              // banda FM, de puro adorno: no significa nada para el juego
@@ -82,7 +81,8 @@ export default {
     const dentro = () => cursor >= zona && cursor <= zona + anchoZona;
 
     return {
-      get terminado() { return fase === 'final' && tiempo - hasta >= FINAL_MS; },
+      // Al acabar se pasa directo a la pantalla de resultados y botones (final.mjs): sin un «FIN» propio.
+      get terminado() { return fase === 'final'; },
       get puntos() { return Math.round(total); },
       get estado() { return `Emisora ${Math.min(numero + 1, EMISORAS)} de ${EMISORAS}`; },
 

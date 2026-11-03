@@ -6,7 +6,6 @@
 import { rect, disco, elipse, linea, destello, px, texto } from './dibujo.mjs';
 
 const DURACION_MS = 30_000;
-const FINAL_MS = 3_000;
 const SUBIDA_MS = 110;       // lo que tarda el topo en asomar del todo
 const VIDA_INICIAL_MS = 1100;
 const VIDA_MINIMA_MS = 420;
@@ -46,7 +45,8 @@ export default {
     }
 
     return {
-      get terminado() { return fase === 'final' && tiempo - faseDesde >= FINAL_MS; },
+      // Al acabar se pasa directo a la pantalla de resultados y botones (final.mjs): sin un «FIN» propio.
+      get terminado() { return fase === 'final'; },
       get puntos() { return Math.max(0, aciertos - fallos); },
       get estado() { return `${Math.max(0, aciertos - fallos)} puntos · ${Math.max(0, Math.ceil((DURACION_MS - tiempo) / 1000))} s`; },
 

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, ESTANCIA_MS, DISPAROS_PARA_VOLAR, TRANSICION_MS } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, ESTANCIA_MS, DISPAROS_PARA_VOLAR, TRANSICION_MS } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
-import { NODOS, TRAMOS, ESTATICOS, ZONAS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
+import { NODOS, TRAMOS, ADYACENTES, ESTATICOS, ZONAS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
 
 const DT = 8;
@@ -32,6 +32,8 @@ function apuntar(partida, paso, destino) {
   for (let i = 0; i < Math.abs(dy); i++) { partida.mando({ mando: 2, delta: -Math.sign(dy) }); paso(50); }
 }
 
+// Una tienda de las que se ven desde la zona en la que empieza la partida.
+const tiendaALaVista = (partida) => partida.entidades.find((e) => !e.desde && e.tipo.nombre === 'tienda' && hayObjetivosEn([e], ZONAS[0]));
 const centro = (e) => ({ x: Math.round(e.x + e.forma.w / 2), y: Math.round(e.y + e.forma.h / 2) });
 // Lo mismo, en coordenadas de la vista (lo que mueve la mira).
 const enVista = (partida, p) => ({ x: p.x - partida.camara.x, y: p.y - partida.camara.y });
@@ -93,6 +95,37 @@ test('Misil: las carreteras son rectas y paralelas a los ejes, y lo que hay quie
   }
 });
 
+test('Misil: las carreteras no tienen callejones sin salida: un vehículo nunca tiene que darse la vuelta', () => {
+  for (const nodo of Object.keys(NODOS)) assert.ok(ADYACENTES[nodo].length >= 2, `el nodo ${nodo} es un callejón sin salida`);
+  // Y se empieza en la base, con el puesto y el puente después.
+  assert.deepEqual(ZONAS.map((z) => z.nombre), ['base', 'puesto', 'puente']);
+});
+
+test('Misil: ningún vehículo se da la vuelta en seco, salga de donde salga y vaya adonde vaya', () => {
+  const opuesto = { der: 'izq', izq: 'der', arr: 'aba', aba: 'arr' };
+  const camion = OBJETIVOS.find((o) => o.nombre === 'camion');
+  let s = 7;
+  const azar = (tope) => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return Math.floor((s / 0x100000000) * tope); };
+  let giros = 0;
+  for (const [p, q] of TRAMOS) {
+    for (const [desde, hasta] of [[p, q], [q, p]]) {
+      for (let intento = 0; intento < 4; intento++) {
+        const v = { tipo: camion, vel: 0, desde, hasta, dist: 0 };
+        avanzarVehiculo(v, 0, azar);
+        let dir = v.dir;
+        // 30.000 px a trozos de un píxel: pasa por todos los cruces muchas veces.
+        for (let px = 0; px < 30_000; px++) {
+          avanzarVehiculo(v, 1, azar);
+          assert.notEqual(v.dir, opuesto[dir], `se da la vuelta en seco en ${v.desde}→${v.hasta}`);
+          if (v.dir !== dir) giros++;
+          dir = v.dir;
+        }
+      }
+    }
+  }
+  assert.ok(giros > 100, 'sí que giran, solo que en las esquinas');
+});
+
 test('Misil: cada zona cabe en el mapa y enseña bastantes objetivos enteros, sin amontonarlos', () => {
   for (const z of ZONAS) {
     assert.ok(z.x >= 0 && z.y >= 0 && z.x + MUNDO_W <= MAPA_W && z.y + MUNDO_H <= MAPA_H, z.nombre);
@@ -130,10 +163,10 @@ test('Misil: se pinta el mapa, con carreteras, en las nueve pantallas', () => {
 
 test('Misil: los vehículos circulan por la carretera y siempre de cara a donde avanzan', () => {
   const { partida, paso } = nueva(5);
-  // La mira empieza junto a la puerta del puesto: se aparta a las dunas para no destruir lo que se observa.
-  apuntar(partida, paso, { x: 60, y: 100 });
+  // La mira empieza en el centro de la base: se aparta a un claro para no destruir lo que se observa.
+  apuntar(partida, paso, { x: 150, y: 95 });
   const moviles = () => partida.entidades.filter((e) => e.desde);
-  assert.equal(moviles().length, 5);
+  assert.equal(moviles().length, 7);
   const dirDe = { der: [1, 0], izq: [-1, 0], aba: [0, 1], arr: [0, -1] };
   let giros = 0;
   const previas = moviles().map((e) => ({ ...centro(e), dir: e.dir }));
@@ -157,7 +190,7 @@ test('Misil: los vehículos circulan por la carretera y siempre de cara a donde 
 
 test('Misil: un misil sobre un campamento destruye lo que hay dentro y suma puntos', () => {
   const { partida, paso } = nueva(3);
-  const blanco = partida.entidades.find((e) => !e.desde && e.tipo.nombre === 'tienda');
+  const blanco = tiendaALaVista(partida);
   const antes = partida.entidades.length;
   apuntar(partida, paso, enVista(partida, centro(blanco)));
   for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
@@ -166,24 +199,50 @@ test('Misil: un misil sobre un campamento destruye lo que hay dentro y suma punt
   assert.ok(!partida.entidades.includes(blanco));
 });
 
-test('Misil: lo destruido vuelve a aparecer pasado un rato', () => {
+test('Misil: lo destruido no vuelve, y deja un cráter que se queda', () => {
   const { partida, paso } = nueva(3);
-  const blanco = partida.entidades.find((e) => !e.desde && e.tipo.nombre === 'tienda');
+  const blanco = tiendaALaVista(partida);
   apuntar(partida, paso, enVista(partida, centro(blanco)));
   for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
   assert.ok(!partida.entidades.includes(blanco));
-  // Los misiles siguientes vuelven a caer en el mismo sitio: basta verla de vuelta un instante.
-  let vuelve = false;
-  for (let t = 0; t < 20_000 && !vuelve; t += 100) {
+  assert.equal(partida.crateres, 1);
+  // Mucho más de lo que tardaba en volver antes (14 s): ni la tienda ni un clon en su sitio.
+  for (let t = 0; t < 30_000 && !partida.terminado; t += 100) {
     paso(100);
-    vuelve = partida.entidades.some((e) => e !== blanco && e.tipo === blanco.tipo && e.x === blanco.x && e.y === blanco.y);
+    assert.ok(!partida.entidades.some((e) => e.tipo === blanco.tipo && e.x === blanco.x && e.y === blanco.y), 'ha vuelto');
   }
-  assert.ok(vuelve);
+  assert.ok(partida.crateres >= 1);
+});
+
+test('Misil: se cuentan los objetivos destruidos por tipo y el máximo con un solo misil', () => {
+  const { partida, paso } = nueva(3);
+  assert.deepEqual(partida.detalle, { suma: { total: 0 }, max: { aLaVez: 0 } });
+  const blanco = tiendaALaVista(partida);
+  apuntar(partida, paso, enVista(partida, centro(blanco)));
+  for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
+  const d = partida.detalle;
+  assert.equal(d.suma.tienda, 1);
+  assert.equal(d.suma.total, d.suma.tienda + (d.suma.soldado || 0) + (d.suma.camion || 0) + (d.suma.tanque || 0) + (d.suma.deposito || 0));
+  assert.ok(d.max.aLaVez >= 1);
+  assert.equal(d.max.aLaVez, d.suma.total, 'con un solo misil, el máximo a la vez es todo lo destruido');
+  // Y lo que la vista enseña tiene una etiqueta para cada clave.
+  const claves = new Set(misil.estadisticas.suma.map(([k]) => k));
+  for (const k of Object.keys(d.suma)) assert.ok(claves.has(k), `falta etiqueta para ${k}`);
+  assert.ok(misil.estadisticas.max.some(([k]) => k === 'aLaVez'));
+});
+
+test('Misil: una zona sin objetivos a la vista se detecta, y con uno solo ya no', () => {
+  const zona = ZONAS[1];
+  const dentro = { x: zona.x + 20, y: zona.y + 20, forma: { w: 5, h: 5 } };
+  const fuera = { x: zona.x + MUNDO_W + 10, y: zona.y, forma: { w: 5, h: 5 } };
+  assert.equal(hayObjetivosEn([], zona), false);
+  assert.equal(hayObjetivosEn([fuera], zona), false);
+  assert.equal(hayObjetivosEn([fuera, dentro], zona), true);
 });
 
 test('Misil: no hace falta dar en el píxel, basta con que la explosión alcance el objetivo', () => {
   const { partida, paso } = nueva(4);
-  const blanco = partida.entidades.find((e) => !e.desde && e.tipo.nombre === 'tienda');
+  const blanco = tiendaALaVista(partida);
   apuntar(partida, paso, enVista(partida, { x: blanco.x + blanco.forma.w - 1 + 4, y: blanco.y + 5 }));
   for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
   assert.ok(partida.puntos > 0);

@@ -4,7 +4,7 @@
 // lo guarda (views/games.js, en la configuración local del PC) lo trata como un valor.
 // Así se puede probar entero.
 //
-// Por cada juego:  { mejor, partidas, historial: [{ t, p, d? }], mejorDetalle? }
+// Por cada juego:  { mejor, partidas, historial: [{ t, p, d?, s? }], mejorDetalle?, totales? }
 //   mejor      la mejor puntuación de siempre (la mayor o la menor, según el juego)
 //   partidas   cuántas se han jugado, aunque el historial ya no las guarde todas
 //   historial  las últimas MAX_HISTORIAL, la más reciente al final; `t` es la fecha en
@@ -12,6 +12,13 @@
 //              esa partida (Reflejos: la media de cada nivel, en el orden de juego.detalle)
 //   mejorDetalle  lo mejor de siempre de cada parte del desglose, por separado: el
 //              historial se recorta y un récord de un nivel no se debe perder con él
+//   totales    lo que el juego cuenta además de los puntos —en Misil, objetivos destruidos
+//              de cada tipo y el máximo con un solo misil—: { suma: { clave: n }, max: { clave: n } }.
+//              La suma se acumula entre partidas y el máximo se queda con el mayor; `s`, en
+//              cada entrada del historial, es lo mismo de esa partida sola
+//
+// No se guardan medias de varias partidas: cada partida vale por sí misma (su resultado y su
+// desglose por nivel), y de ellas solo se conserva el mejor.
 
 export const MAX_HISTORIAL = 30;
 
@@ -23,9 +30,20 @@ export function vacio() {
 }
 
 // `mejorSiMenor`: en un juego de tiempos (reflejos) gana quien tarda menos.
-export function registrar(estado, puntos, { mejorSiMenor = false, ahora = Date.now(), detalle = null } = {}) {
+// Junta lo que cuenta una partida (`stats`: { suma, max }) con lo de siempre.
+function juntarTotales(previo, stats) {
+  const suma = { ...(previo?.suma || {}) };
+  const max = { ...(previo?.max || {}) };
+  for (const [k, v] of Object.entries(stats.suma || {})) suma[k] = (suma[k] || 0) + v;
+  for (const [k, v] of Object.entries(stats.max || {})) max[k] = Math.max(max[k] || 0, v);
+  return { suma, max };
+}
+
+export function registrar(estado, puntos, { mejorSiMenor = false, ahora = Date.now(), detalle = null, stats = null } = {}) {
   const previo = estado && typeof estado === 'object' ? estado : vacio();
-  const entrada = Array.isArray(detalle) ? { t: ahora, p: puntos, d: detalle } : { t: ahora, p: puntos };
+  const entrada = { t: ahora, p: puntos };
+  if (Array.isArray(detalle)) entrada.d = detalle;
+  if (stats) entrada.s = { suma: stats.suma || {}, max: stats.max || {} };
   const historial = [...(previo.historial || []), entrada].slice(-MAX_HISTORIAL);
   const elegir = (a, b) => (a == null ? b : b == null ? a : mejorSiMenor ? Math.min(a, b) : Math.max(a, b));
   const mejor = elegir(previo.mejor, puntos);
@@ -36,6 +54,8 @@ export function registrar(estado, puntos, { mejorSiMenor = false, ahora = Date.n
   } else if (previo.mejorDetalle) {
     extra.mejorDetalle = previo.mejorDetalle;
   }
+  if (stats) extra.totales = juntarTotales(previo.totales, stats);
+  else if (previo.totales) extra.totales = previo.totales;
   return {
     mejor,
     partidas: (previo.partidas || 0) + 1,
@@ -48,36 +68,34 @@ export function registrar(estado, puntos, { mejorSiMenor = false, ahora = Date.n
 }
 
 // El estado que se guarda no lleva `record`: es un dato de esa partida, no del juego.
-export function paraGuardar({ mejor, partidas, historial, mejorDetalle }) {
-  return mejorDetalle ? { mejor, partidas, historial, mejorDetalle } : { mejor, partidas, historial };
+export function paraGuardar({ mejor, partidas, historial, mejorDetalle, totales }) {
+  const base = { mejor, partidas, historial };
+  if (mejorDetalle) base.mejorDetalle = mejorDetalle;
+  if (totales) base.totales = totales;
+  return base;
 }
 
 export function resumen(estado) {
   const e = estado && typeof estado === 'object' ? estado : vacio();
   const historial = e.historial || [];
   const recientes = historial.slice(-RECIENTES).reverse();
-  const media = historial.length
-    ? historial.reduce((s, x) => s + x.p, 0) / historial.length
-    : null;
-  // El desglose: por cada parte, la media de las partidas que la traen, la última y la
-  // mejor. Es lo que deja ver en qué parte se es mejor (en Reflejos, con cuántas teclas).
+  // El desglose: por cada parte, lo de la última partida y lo mejor de siempre. Es lo que
+  // deja ver en qué parte se es mejor (en Reflejos, con cuántas teclas).
   const conD = historial.filter((x) => Array.isArray(x.d));
   const partes = Math.max(0, ...conD.map((x) => x.d.length), (e.mejorDetalle || []).length);
-  const detalle = Array.from({ length: partes }, (_, i) => {
-    const vals = conD.map((x) => x.d[i]).filter((v) => typeof v === 'number');
-    return {
-      media: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null,
-      ultima: conD.length ? conD[conD.length - 1].d[i] ?? null : null,
-      mejor: e.mejorDetalle?.[i] ?? null,
-    };
-  });
+  const detalle = Array.from({ length: partes }, (_, i) => ({
+    ultima: conD.length ? conD[conD.length - 1].d[i] ?? null : null,
+    mejor: e.mejorDetalle?.[i] ?? null,
+  }));
+  const ultimas = historial.length ? historial[historial.length - 1] : null;
   return {
     mejor: e.mejor ?? null,
     partidas: e.partidas || 0,
-    ultima: historial.length ? historial[historial.length - 1].p : null,
-    media,
+    ultima: ultimas ? ultimas.p : null,
     recientes,
     detalle,
+    totales: e.totales || null,
+    ultimaStats: ultimas?.s || null,
   };
 }
 

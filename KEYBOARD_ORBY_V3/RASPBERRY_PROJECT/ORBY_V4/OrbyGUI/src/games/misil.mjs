@@ -9,12 +9,13 @@
 // que reutilizará la otra.
 //
 // Fase 2: el suelo es un territorio grande (misil-mapa.mjs) y las pantallas ven una zona de
-// él: el puesto del desierto, el puente sobre el río o la base con la pista. Hay tiendas,
+// él: la base con la pista, el puesto del desierto o el puente sobre el río. Hay tiendas,
 // soldados, depósitos de combustible, camiones y tanques aparcados, y otros vehículos que
 // circulan por las carreteras, siempre de cara a donde avanzan (el dibujo se gira en cada
 // curva), nunca de lado ni marcha atrás. Un misil se lleva por delante todo lo que quede
-// dentro del círculo; lo destruido deja un cráter y vuelve a aparecer pasado un rato. Fallo
-// es que no haya nada dentro.
+// dentro del círculo; lo destruido deja un cráter y no vuelve: el mapa se va vaciando. Fallo
+// es que no haya nada dentro. Una zona sin nada que disparar se deja atrás sin gastar misiles,
+// y cuando no queda nada en todo el mapa la partida acaba.
 //
 // Fase 3: el VTOL. Las pantallas son lo que ve el artillero desde el aparato, que se queda
 // sobre cada zona hasta llevar ESTANCIA_MS y haber soltado DISPAROS_PARA_VOLAR misiles, y luego
@@ -55,8 +56,9 @@ export const HUECO_Y = 14;
 const VIDAS = 3;
 const CAIDA_MS = 7000;
 const MARGEN = 8;                 // distancia mínima del objetivo al borde de su pantalla
-// Cuánto corre el misil con los mandos pulsados: ninguno, uno, los dos.
-const PRISA = [1, 1.8, 3];
+// Cuánto corre el misil con los mandos pulsados: ninguno, uno, los dos. Con 1,8 y 3 apenas se
+// notaba la diferencia: a 2,5 y 4,5 el misil cae en 2,8 s y 1,6 s en lugar de 7.
+const PRISA = [1, 2.5, 4.5];
 export const PASO = 4;                   // píxeles de mira por paso del mando
 export const PASO_RAPIDO = 9;            // si se gira deprisa: cruzar el suelo no puede costar 60 pasos
 export const RAPIDO_MS = 45;             // dos pasos más juntos que esto son girar deprisa
@@ -74,7 +76,6 @@ const HUECO_CRUZ = 3;             // la cruz no se dibuja a menos de esto del ce
 const MARCA_CADA = 8;             // las rayitas de la cruz
 const EXPLOSION_MS = 650;
 const AVISO_MS = 1200;
-const FINAL_MS = 3500;
 
 // El mapa. Los vehículos que circulan ganan velocidad con los aciertos, hasta un tope.
 const VELOCIDAD_POR_ACIERTO = 0.06;   // +6 % de velocidad por acierto, sobre la del tipo
@@ -86,10 +87,8 @@ const VALOR_MAX = 60;             // un soldado, tan pequeño, valdría una barb
 // que cumplirse las dos cosas: llevar ESTANCIA_MS parado y haber soltado DISPAROS_PARA_VOLAR
 // misiles desde que llegó. El vuelo, para que se vea el terreno pasar sin que sea una espera.
 export const ESTANCIA_MS = 40000;
-export const DISPAROS_PARA_VOLAR = 8;
+export const DISPAROS_PARA_VOLAR = 6;
 export const TRANSICION_MS = 3500;
-const CRATER_MS = 6000;
-const REAPARECE_MS = 14000;       // lo destruido vuelve a su sitio (o a una carretera)
 export const MUNDO_W = 3 * W + 2 * HUECO_X;
 export const MUNDO_H = 3 * H + 2 * HUECO_Y;
 
@@ -236,6 +235,13 @@ export function trayecto(zona, k) {
   return { x: Math.round(a.x + (b.x - a.x) * s), y: Math.round(a.y + (b.y - a.y) * s) };
 }
 
+// ¿Hay algo de `entidades` dentro de lo que ve la cámara puesta en `zona`? Para saber si
+// merece la pena quedarse: sin nada que disparar, los seis misiles obligatorios serían fallos.
+export function hayObjetivosEn(entidades, zona) {
+  return entidades.some((e) => e.x + e.forma.w > zona.x && e.x < zona.x + MUNDO_W
+    && e.y + e.forma.h > zona.y && e.y < zona.y + MUNDO_H);
+}
+
 const TIPO = Object.fromEntries(OBJETIVOS.map((o) => [o.nombre, o]));
 
 // Hacia dónde va un tramo de (x0, y0) a (x1, y1): siempre uno de los cuatro, porque las
@@ -258,7 +264,7 @@ function posicionar(v) {
   v.y = a[1] + dy * v.dist - v.forma.h / 2;
 }
 
-function avanzarVehiculo(v, px, aleatorio) {
+export function avanzarVehiculo(v, px, aleatorio) {
   v.dist += px;
   for (;;) {
     const [a, b] = [NODOS[v.desde], NODOS[v.hasta]];
@@ -266,6 +272,8 @@ function avanzarVehiculo(v, px, aleatorio) {
     if (v.dist < largo) break;
     v.dist -= largo;
     const opciones = ADYACENTES[v.hasta].filter((n) => n !== v.desde);
+    // Sin callejones en la red (lo comprueba un test) siempre hay por dónde seguir. Volver
+    // por donde vino solo existiría en uno: un vehículo no puede darse la vuelta en seco.
     const siguiente = opciones.length ? opciones[aleatorio(opciones.length)] : v.desde;
     v.desde = v.hasta;
     v.hasta = siguiente;
@@ -276,21 +284,29 @@ function avanzarVehiculo(v, px, aleatorio) {
 export default {
   id: 'misil',
   nombre: 'Misil',
-  descripcion: 'Mueve la mira con los dos mandos (izquierdo: horizontal, derecho: vertical) y pon objetivos dentro del círculo antes de que se cierre y caiga el misil: tiendas, soldados, depósitos, camiones y tanques. Cuanto más pequeño el objetivo, más puntos, y los vehículos en marcha valen más. Pulsa un mando para que caiga antes, o los dos para que caiga aún más rápido: vale más puntos. Tres fallos y se acaba.',
+  descripcion: 'Mueve la mira con los dos mandos (izquierdo: horizontal, derecho: vertical) y pon objetivos dentro del círculo antes de que se cierre y caiga el misil: tiendas, soldados, depósitos, camiones y tanques. Cuanto más pequeño el objetivo, más puntos, y los vehículos en marcha valen más. Pulsa un mando para que caiga antes, o los dos para que caiga aún más rápido: vale más puntos. Lo destruido no vuelve. Tres fallos y se acaba.',
   icono: '#MISIL',
   unidad: 'puntos',
   mejorSiMenor: false,
+  // Lo que se guarda además de los puntos (ver scores.mjs): objetivos destruidos de cada tipo,
+  // y el máximo con un solo misil. La vista lo enseña con estas etiquetas.
+  estadisticas: {
+    suma: [
+      ['total', 'Objetivos destruidos'], ['tienda', 'Tiendas'], ['soldado', 'Soldados'],
+      ['deposito', 'Depósitos'], ['camion', 'Camiones'], ['tanque', 'Tanques'],
+    ],
+    max: [['aLaVez', 'Más objetivos con un solo misil']],
+  },
 
   crear({ aleatorio }) {
     let malla = null;
     let tiempo = 0;
     let mira = null;              // { x, y } en el suelo; se centra al empezar
-    // Todo lo que hay en el mapa: { tipo, forma, x, y, dir, vel, plantilla } con (x, y) la
+    // Todo lo que hay en el mapa: { tipo, forma, x, y, dir, vel } con (x, y) la
     // esquina de arriba a la izquierda en el suelo y `vel` en px/s. Los vehículos que
     // circulan llevan además { desde, hasta, dist } (ver posicionar).
     let entidades = [];
-    let crateres = [];            // { x, y, hasta }
-    let pendientes = [];          // lo destruido que volverá: { plantilla, en }
+    let crateres = [];            // { x, y }: lo destruido no vuelve, el cráter se queda
     let mapa = null;              // el dibujo fijo del territorio, ver construirMapa
     // La esquina de arriba a la izquierda de lo que se ve, en el territorio. La mira, el
     // impacto y la malla van en coordenadas de la vista; las entidades y los cráteres, del
@@ -309,6 +325,8 @@ export default {
     let vidas = VIDAS;
     let puntos = 0;
     let aciertos = 0;
+    const muertos = {};           // objetivos destruidos por tipo
+    let masALaVez = 0;            // el máximo alcanzado por un solo misil
     const pulsados = new Set();
     const ultimoPaso = { 1: -Infinity, 2: -Infinity };
 
@@ -317,14 +335,14 @@ export default {
     function crearEstatica(plantilla) {
       const [nombre, x, y, dir = 'der'] = plantilla.estatica;
       const tipo = TIPO[nombre];
-      return { tipo, forma: orientar(tipo, dir), x, y, dir, vel: 0, plantilla };
+      return { tipo, forma: orientar(tipo, dir), x, y, dir, vel: 0 };
     }
 
     function crearVehiculo(plantilla) {
       const tipo = TIPO[plantilla.vehiculo];
       const [p, q] = TRAMOS[aleatorio(TRAMOS.length)];
       const alReves = aleatorio(2) === 1;
-      const v = { tipo, vel: 0, plantilla, desde: alReves ? q : p, hasta: alReves ? p : q, dist: 0 };
+      const v = { tipo, vel: 0, desde: alReves ? q : p, hasta: alReves ? p : q, dist: 0 };
       const [a, b] = [NODOS[v.desde], NODOS[v.hasta]];
       v.dist = aleatorio(Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]));
       posicionar(v);
@@ -336,8 +354,8 @@ export default {
     function poblar() {
       const plantillas = [
         ...ESTATICOS.map((estatica) => ({ estatica })),
-        { vehiculo: 'camion' }, { vehiculo: 'camion' }, { vehiculo: 'camion' },
-        { vehiculo: 'tanque' }, { vehiculo: 'tanque' },
+        ...Array(4).fill({ vehiculo: 'camion' }),
+        ...Array(3).fill({ vehiculo: 'tanque' }),
       ];
       entidades = plantillas.map(crearEntidad);
       mapa = construirMapa(entidades.filter((e) => !e.desde).map((e) => ({ x: e.x, y: e.y, w: e.forma.w, h: e.forma.h })));
@@ -353,14 +371,17 @@ export default {
     // Se mira al acabar cada explosión, nunca a mitad de un misil: así el VTOL no se mueve
     // mientras se dispara, y el temporizador del disparo queda parado durante el vuelo.
     function debeVolar() {
-      return estancia >= ESTANCIA_MS && disparosZona >= DISPAROS_PARA_VOLAR;
+      return (estancia >= ESTANCIA_MS && disparosZona >= DISPAROS_PARA_VOLAR) || !hayObjetivosEn(entidades, ZONAS[zonaIdx]);
     }
 
+    // Si la zona nueva está vacía el VTOL sigue de largo sin soltar nada: un misil sobre un
+    // suelo sin objetivos sería un fallo regalado.
     function llegar() {
       zonaIdx = (zonaIdx + 1) % ZONAS.length;
-      vuelo = null;
       estancia = 0;
       disparosZona = 0;
+      if (!hayObjetivosEn(entidades, ZONAS[zonaIdx])) { vuelo = 0; return; }
+      vuelo = null;
       soltarMisil();
     }
 
@@ -387,10 +408,11 @@ export default {
         // Lo que se adelantó pulsando: un misil que cayó en un tercio del tiempo vale el triple.
         const prisa = Math.max(1, CAIDA_MS / Math.max(1, tiempo - empezado));
         let ganados = 0;
+        masALaVez = Math.max(masALaVez, tocados.length);
         for (const e of tocados) {
+          muertos[e.tipo.nombre] = (muertos[e.tipo.nombre] || 0) + 1;
           ganados += Math.round(e.tipo.valor * prisa * (1 + e.vel / BONO_VELOCIDAD));
-          crateres.push({ x: Math.round(e.x + e.forma.w / 2), y: Math.round(e.y + e.forma.h / 2), hasta: tiempo + CRATER_MS });
-          pendientes.push({ plantilla: e.plantilla, en: tiempo + REAPARECE_MS });
+          crateres.push({ x: Math.round(e.x + e.forma.w / 2), y: Math.round(e.y + e.forma.h / 2) });
         }
         entidades = entidades.filter((e) => !tocados.includes(e));
         puntos += ganados;
@@ -410,12 +432,6 @@ export default {
         if (!e.desde) continue;
         e.vel = e.tipo.velocidad * factorVelocidad();
         avanzarVehiculo(e, (e.vel * dt) / 1000, aleatorio);
-      }
-      crateres = crateres.filter((c) => c.hasta > tiempo);
-      const listos = pendientes.filter((p) => p.en <= tiempo);
-      if (listos.length) {
-        pendientes = pendientes.filter((p) => p.en > tiempo);
-        for (const p of listos) entidades.push(crearEntidad(p.plantilla));
       }
     }
 
@@ -451,11 +467,14 @@ export default {
     }
 
     return {
-      get terminado() { return fase === 'final' && tiempo - hasta >= FINAL_MS; },
+      // Al acabar se pasa directo a la pantalla de resultados y botones (final.mjs): sin un «FIN» propio.
+      get terminado() { return fase === 'final'; },
       get puntos() { return puntos; },
+      get detalle() { return { suma: { ...muertos, total: aciertos }, max: { aLaVez: masALaVez } }; },
       // Solo lectura, para las pruebas: lo que hay ahora en el mapa.
       get entidades() { return entidades; },
       get camara() { return { ...camara }; },
+      get crateres() { return crateres.length; },
       get volando() { return vuelo !== null; },
       get disparosZona() { return disparosZona; },
       get estancia() { return estancia; },
@@ -482,7 +501,7 @@ export default {
           progreso += (dt / CAIDA_MS) * PRISA[Math.min(pulsados.size, 2)];
           if (progreso >= 1) estallar();
         } else if (fase === 'explosion' && tiempo >= hasta) {
-          if (vidas <= 0) { fase = 'final'; hasta = tiempo; }
+          if (vidas <= 0 || entidades.length === 0) { fase = 'final'; hasta = tiempo; }
           else if (debeVolar()) { vuelo = 0; fase = 'volando'; }
           else soltarMisil();
         }

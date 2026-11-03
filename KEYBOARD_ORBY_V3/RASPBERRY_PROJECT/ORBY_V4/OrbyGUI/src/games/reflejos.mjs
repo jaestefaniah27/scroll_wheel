@@ -29,7 +29,6 @@ export const CASTIGO_MS = 100;   // cada tecla equivocada suma esto a la reacciÃ
 const ESPERA_MIN_MS = 900;
 const ESPERA_VARIABLE_MS = 1700;
 const PRESENTA_MS = 1300;        // lo que se enseÃ±an las teclas nuevas al cambiar de nivel
-const RESULTADOS_MS = 6000;
 const PARPADEO_MS = 160;
 
 export default {
@@ -109,7 +108,9 @@ export default {
     }
 
     return {
-      get terminado() { return fase === 'resultados' && tiempo - desde >= RESULTADOS_MS; },
+      // Al acabar se pasa directo a la pantalla de resultados y botones (final.mjs): los tiempos
+      // por nivel se ven en la app, en Juegos.
+      get terminado() { return fase === 'resultados'; },
       // La media de todas, en ms enteros. Antes de acabar no hay resultado.
       get puntos() { const m = media(todas()); return m == null ? 0 : Math.round(m); },
       get detalle() {

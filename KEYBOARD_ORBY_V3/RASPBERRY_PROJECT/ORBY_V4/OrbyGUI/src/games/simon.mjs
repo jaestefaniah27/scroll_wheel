@@ -27,7 +27,6 @@ const PRIMERA_PAUSA_MS = 700;
 const ENTRE_RONDAS_MS = 650;
 const PULSACION_MS = 160;      // cuánto se queda encendida una tecla al pulsarla
 const ERROR_MS = 1400;
-const FINAL_MS = 2600;
 
 export default {
   id: 'simon',
@@ -61,7 +60,8 @@ export default {
     empezarMostrar();
 
     return {
-      get terminado() { return fase === 'final' && tiempo - desde >= FINAL_MS; },
+      // Al acabar se pasa directo a la pantalla de resultados y botones (final.mjs): sin un «FIN» propio.
+      get terminado() { return fase === 'final'; },
       get puntos() { return rondas; },
       get estado() { return `${rondas} ${rondas === 1 ? 'ronda' : 'rondas'}`; },
 

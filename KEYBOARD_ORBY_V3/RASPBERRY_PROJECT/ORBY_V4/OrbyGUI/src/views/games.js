@@ -1,11 +1,15 @@
-// Juegos: los que trae la app, con tu récord, tu última partida y las recientes.
+// Juegos: los que trae la app y tus estadísticas de cada uno.
 //
 // Los juegos corren aquí, en el PC; el teclado es solo las pantallas y los mandos (modo
 // GAME del firmware 4.29, ver src/games/). Se juega desde el propio teclado —«Juegos» en
 // su selector de perfiles abre el menú— o desde aquí; la vista no lleva la partida, solo
 // la enseña: quien manda es games/gestor.js, que también atiende al teclado cuando esta
 // vista ni está abierta. Hace falta el teclado delante para jugar, y la vista lo dice en
-// vez de esconderse: sin él, los récords se siguen viendo.
+// vez de esconderse: sin él, las estadísticas se siguen viendo.
+//
+// No replica las pantallas del teclado: se juega mirándolas, y el espacio que ocupaba el
+// dibujo es mejor para las estadísticas, que son lo que solo se puede ver aquí. Una lista
+// de juegos a la izquierda y, del elegido, un panel grande con todo lo que se guarda.
 
 import { state, subscribe as suscribirStore } from '../store.js';
 import { icon } from '../icons.js';
@@ -14,23 +18,25 @@ import * as compat from '../compat.js';
 import { JUEGOS } from '../games/catalogo.mjs';
 import * as gestor from '../games/gestor.js';
 import * as almacen from '../games/almacen.js';
-import { resumen, serieGrafica, formatearPuntos } from '../games/scores.mjs';
+import { resumen, serieGrafica, formatearPuntos, RECIENTES } from '../games/scores.mjs';
 
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+const CLAVE_SELECCION = 'orby.juegos.seleccion';
+
 let host = null;
 let relojEstado = null;
-let pintando = false;
+let seleccion = null;
 
-// El teclado dibujado con sus diez pantallas: la rejilla de 3x3 y la décima debajo de la
-// del medio, que es donde está en el aparato.
-const POSICION = {
-  1: [0, 0], 2: [1, 0], 3: [2, 0],
-  4: [0, 1], 5: [1, 1], 6: [2, 1],
-  7: [0, 2], 8: [1, 2], 9: [2, 2],
-  10: [1, 3],
-};
-const W = 72, H = 40, SEP = 8;
+function leerSeleccion() {
+  try { return localStorage.getItem(CLAVE_SELECCION); } catch { return null; }
+}
+
+function guardarSeleccion(id) {
+  try { localStorage.setItem(CLAVE_SELECCION, id); } catch { /* sin almacenamiento, no se recuerda */ }
+}
+
+const juegoElegido = () => JUEGOS.find((j) => j.id === seleccion) || JUEGOS[0];
 
 // ¿Se puede jugar con lo que hay conectado? Devuelve el motivo si no.
 function motivoNo() {
@@ -41,89 +47,187 @@ function motivoNo() {
   return null;
 }
 
+const fecha = (t) => new Date(t).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+const entero = (n) => Math.round(n || 0).toLocaleString('es-ES');
+
 function grafica(juego, datos) {
-  const pts = serieGrafica(datos?.historial, 120, 34, { mejorSiMenor: juego.mejorSiMenor });
-  if (pts.length < 2) return '';
+  const ancho = 600, alto = 120;
+  const historial = datos?.historial || [];
+  const pts = serieGrafica(historial, ancho, alto, { mejorSiMenor: juego.mejorSiMenor, margen: 8 });
+  if (pts.length < 2) return '<p class="game-none">La gráfica aparece a partir de la segunda partida.</p>';
   const linea = pts.map(([x, y]) => `${x},${y}`).join(' ');
   const [ux, uy] = pts[pts.length - 1];
+  const valores = historial.map((x) => x.p);
+  const f = (v) => formatearPuntos(juego.unidad, v);
   return `
-    <svg class="game-chart" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true">
-      <polyline points="${linea}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-      <circle cx="${ux}" cy="${uy}" r="2.4" fill="currentColor"/>
-    </svg>`;
+    <div class="game-chart-wrap">
+      <svg class="game-chart" viewBox="0 0 ${ancho} ${alto}" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points="${linea}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+        <circle cx="${ux}" cy="${uy}" r="3.2" fill="currentColor"/>
+      </svg>
+      <div class="game-chart-axis"><span>${escape(f(juego.mejorSiMenor ? Math.min(...valores) : Math.max(...valores)))}</span><span>${escape(f(juego.mejorSiMenor ? Math.max(...valores) : Math.min(...valores)))}</span></div>
+    </div>`;
 }
 
-// El desglose de los juegos que lo tienen (Reflejos: cada nivel por separado). Sin
-// partidas que lo traigan no se enseña: una tabla de rayas no dice nada.
+function baldosa(titulo, valor, nota = '') {
+  return `<div class="game-tile"><dt>${escape(titulo)}</dt><dd>${escape(valor)}</dd>${nota ? `<small>${escape(nota)}</small>` : ''}</div>`;
+}
+
+// Por cada parte del juego (Reflejos: cada nivel): lo de la última partida y lo mejor. No hay
+// medias de varias partidas: cada una vale por sí misma.
 function desglose(juego, r, f) {
-  if (!juego.detalle || !r.detalle.some((d) => d.media != null)) return '';
+  if (!juego.detalle || !r.detalle.some((d) => d.ultima != null || d.mejor != null)) return '';
   const filas = juego.detalle.map((nombre, i) => {
     const d = r.detalle[i] || {};
-    return `<tr><th scope="row">${escape(nombre)}</th><td>${escape(f(d.media))}</td><td>${escape(f(d.mejor))}</td><td>${escape(f(d.ultima))}</td></tr>`;
+    return `<tr><th scope="row">${escape(nombre)}</th><td>${escape(f(d.ultima))}</td><td>${escape(f(d.mejor))}</td></tr>`;
   }).join('');
   return `
+    <section class="game-block">
+      <h4>Por nivel</h4>
       <table class="game-detail">
-        <thead><tr><th></th><th>Media</th><th>Mejor</th><th>Última</th></tr></thead>
-        <tbody>${filas}</tbody>
-      </table>`;
+        <thead><tr><th></th><th>Última partida</th><th>Mejor</th></tr></thead>
+        <tbody>${filas}
+          <tr class="game-total"><th scope="row">Media de la partida</th><td>${escape(f(r.ultima))}</td><td>${escape(f(r.mejor))}</td></tr>
+        </tbody>
+      </table>
+    </section>`;
 }
 
-function tarjeta(juego, motivo) {
+// Lo que el juego cuenta además de los puntos (juego.estadisticas, ver scores.mjs): sumas de
+// siempre como barras proporcionales, y máximos como cifras. Con la última partida al lado.
+function estadisticas(juego, r) {
+  const def = juego.estadisticas;
+  if (!def || !r.totales) return '';
+  const suma = r.totales.suma || {};
+  const ultima = r.ultimaStats?.suma || {};
+  const tipos = def.suma.filter(([k]) => k !== 'total');
+  const tope = Math.max(1, ...tipos.map(([k]) => suma[k] || 0));
+  const barras = tipos.map(([k, etiqueta]) => {
+    const n = suma[k] || 0;
+    const ult = ultima[k] || 0;
+    return `
+      <li>
+        <span class="game-bar-name">${escape(etiqueta)}</span>
+        <span class="game-bar"><i style="width:${Math.round((n / tope) * 100)}%"></i></span>
+        <span class="game-bar-num">${entero(n)}</span>
+        <span class="game-bar-last" title="En la última partida">${ult ? `+${entero(ult)}` : ''}</span>
+      </li>`;
+  }).join('');
+  const totalDef = def.suma.find(([k]) => k === 'total');
+  const maximos = (def.max || []).map(([k, etiqueta]) =>
+    baldosa(etiqueta, entero(r.totales.max?.[k]), r.ultimaStats ? `Última partida: ${entero(r.ultimaStats.max?.[k])}` : ''));
+  return `
+    <section class="game-block">
+      <h4>Objetivos · totales de todas las partidas</h4>
+      <dl class="game-tiles">
+        ${totalDef ? baldosa(totalDef[1], entero(suma.total), r.ultimaStats ? `Última partida: ${entero(ultima.total)}` : '') : ''}
+        ${maximos.join('')}
+      </dl>
+      <ul class="game-bars" aria-label="Objetivos destruidos por tipo">${barras}</ul>
+    </section>`;
+}
+
+// Las últimas partidas una a una. En un juego con estadísticas cada una se abre y enseña lo suyo
+// (objetivos de cada tipo y el máximo con un solo misil), aparte de los totales de arriba.
+function partidasDetalladas(juego, r, f) {
+  const def = juego.estadisticas;
+  const filas = r.recientes.map((x) => {
+    const suma = x.s?.suma || {};
+    const max = x.s?.max || {};
+    const tipos = def.suma.filter(([k]) => k !== 'total' && suma[k]).map(([k, et]) => `<li><span>${escape(et)}</span><b>${entero(suma[k])}</b></li>`).join('');
+    const maximos = def.max.map(([k, et]) => `<li><span>${escape(et)}</span><b>${entero(max[k])}</b></li>`).join('');
+    const cuerpo = x.s ? `<ul class="game-run-detail">${tipos || '<li><span>Ningún objetivo</span><b>0</b></li>'}${maximos}</ul>` : '<p class="game-none">Sin desglose: es anterior a las estadísticas.</p>';
+    return `
+      <details class="game-run">
+        <summary><span>${escape(fecha(x.t))}</span><span>${entero(suma.total)} objetivos</span><b>${escape(f(x.p))}</b></summary>
+        ${cuerpo}
+      </details>`;
+  }).join('');
+  return `<div class="game-runs" aria-label="Últimas ${RECIENTES} partidas">${filas}</div>`;
+}
+
+function recientes(juego, r, f) {
+  if (!r.recientes.length) return '<p class="game-none">Sin partidas todavía.</p>';
+  if (juego.estadisticas) return partidasDetalladas(juego, r, f);
+  const filas = r.recientes.map((x) => `<li><span>${escape(fecha(x.t))}</span><b>${escape(f(x.p))}</b></li>`).join('');
+  return `<ul class="game-recent" aria-label="Últimas ${RECIENTES} partidas">${filas}</ul>`;
+}
+
+function panelEnVivo(juego) {
+  const e = gestor.leerEstado();
+  if (!e.activo) return '';
+  return `
+    <section class="game-live" id="game-live">
+      <div class="game-live-info">
+        <span class="game-live-tag">${escape(e.titulo || 'Juegos')}</span>
+        <p id="game-live-estado">${escape(e.partida?.estado ?? 'Preparando…')}</p>
+        <small>Se juega en el teclado. La tecla 10 (la de menú) vuelve atrás o sale.</small>
+      </div>
+      <button class="secondary-btn danger" data-act="parar">${icon('close', 15)} Cerrar juegos</button>
+    </section>`;
+}
+
+function lista(motivo) {
+  const e = gestor.leerEstado();
+  return JUEGOS.map((j) => {
+    const r = resumen(almacen.leer(j.id));
+    const f = (v) => formatearPuntos(j.unidad, v);
+    const jugando = e.activo && e.juego === j.id;
+    return `
+      <button class="game-item ${j.id === juegoElegido().id ? 'is-selected' : ''} ${jugando ? 'is-playing' : ''}" data-act="elegir" data-id="${j.id}">
+        <span class="game-item-name">${escape(j.nombre)}${jugando ? ' <em>jugando</em>' : ''}</span>
+        <span class="game-item-meta">${r.partidas ? `Récord ${escape(f(r.mejor))} · ${r.partidas} ${r.partidas === 1 ? 'partida' : 'partidas'}` : 'Sin partidas'}</span>
+      </button>`;
+  }).join('');
+}
+
+function detalle(juego, motivo) {
   const datos = almacen.leer(juego.id);
   const r = resumen(datos);
   const f = (v) => formatearPuntos(juego.unidad, v);
   const e = gestor.leerEstado();
   const jugando = e.activo && e.juego === juego.id;
-  const recientes = r.recientes.length
-    ? r.recientes.map((x) => `<li>${escape(f(x.p))}</li>`).join('')
-    : '<li class="game-none">Sin partidas todavía</li>';
   return `
-    <article class="game-card glass-panel ${jugando ? 'is-playing' : ''}" data-juego="${juego.id}">
-      <header class="game-head">
-        <h3>${escape(juego.nombre)}</h3>
-        <p>${escape(juego.descripcion)}</p>
+    <article class="game-pane glass-panel" data-juego="${juego.id}">
+      <header class="game-pane-head">
+        <div>
+          <h3>${escape(juego.nombre)}</h3>
+          <p>${escape(juego.descripcion)}</p>
+        </div>
+        <button class="primary-btn game-play" data-act="jugar" data-id="${juego.id}" ${motivo || e.activo ? 'disabled' : ''}>
+          ${icon('gamepad', 16)} ${jugando ? 'Jugando…' : 'Jugar'}
+        </button>
       </header>
-      <dl class="game-stats">
-        <div><dt>Récord</dt><dd>${escape(f(r.mejor))}</dd></div>
-        <div><dt>Última</dt><dd>${escape(f(r.ultima))}</dd></div>
-        <div><dt>Media</dt><dd>${escape(f(r.media))}</dd></div>
-        <div><dt>Partidas</dt><dd>${r.partidas}</dd></div>
+      ${panelEnVivo(juego)}
+      <dl class="game-tiles game-tiles-main">
+        ${baldosa('Récord', f(r.mejor))}
+        ${baldosa('Última', f(r.ultima))}
+        ${baldosa('Partidas', String(r.partidas))}
       </dl>
       ${desglose(juego, r, f)}
-      ${grafica(juego, datos)}
-      <ul class="game-recent" aria-label="Partidas recientes">${recientes}</ul>
-      <button class="primary-btn game-play" data-act="jugar" data-id="${juego.id}"
-              ${motivo || e.activo ? 'disabled' : ''}>
-        ${icon('gamepad', 16)} ${jugando ? 'Jugando…' : 'Jugar'}
-      </button>
+      ${estadisticas(juego, r)}
+      <section class="game-block">
+        <h4>Evolución</h4>
+        ${grafica(juego, datos)}
+      </section>
+      <section class="game-block">
+        <h4>Últimas partidas${juego.estadisticas ? ' · pulsa una para ver su desglose' : ''}</h4>
+        ${recientes(juego, r, f)}
+      </section>
     </article>`;
-}
-
-function panelEnVivo() {
-  const e = gestor.leerEstado();
-  if (!e.activo) return '';
-  return `
-    <section class="game-live glass-panel" id="game-live">
-      <div class="game-live-info">
-        <h2>${escape(e.titulo || 'Juegos')}</h2>
-        <p id="game-live-estado">${escape(e.partida?.estado ?? 'Preparando…')}</p>
-        <p class="game-live-hint">Se juega en el teclado. La tecla 10 (la de menú) vuelve atrás o sale.</p>
-        <button class="secondary-btn danger" data-act="parar">${icon('close', 15)} Cerrar juegos</button>
-      </div>
-      <canvas class="game-live-canvas" id="game-live-canvas"
-              width="${3 * W + 2 * SEP}" height="${4 * H + 3 * SEP}"></canvas>
-    </section>`;
 }
 
 export function init() {
   host = document.getElementById('view-games');
   if (!host) return;
+  seleccion = leerSeleccion();
 
   host.addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     if (b.dataset.act === 'jugar') empezar(b.dataset.id);
     else if (b.dataset.act === 'parar') gestor.parar();
+    else if (b.dataset.act === 'elegir') { seleccion = b.dataset.id; guardarSeleccion(seleccion); render(); }
   });
 
   // El teclado se conecta o se va: la vista tiene que reflejarlo (los botones de Jugar).
@@ -138,11 +242,12 @@ export function init() {
 const visible = () => host?.classList.contains('active');
 
 function alGestor(tipo, datos) {
-  if (tipo === 'fotograma') { pedirPintado(); return; }
   if (tipo === 'error') { toast(String(datos), 'error'); return; }
   if (tipo === 'partida') {
     const f = (v) => formatearPuntos(datos.juego.unidad, v);
     toast(datos.record ? `¡Récord! ${f(datos.puntos)}` : `${datos.juego.nombre}: ${f(datos.puntos)}`, 'success', 3600);
+    // Las estadísticas se acaban de guardar: si la vista está abierta, se ven al momento.
+    if (visible()) render();
     return;
   }
   // 'estado': empieza o acaba una sesión, o cambia de pantalla del teclado.
@@ -156,6 +261,9 @@ function alGestor(tipo, datos) {
     clearInterval(relojEstado);
     relojEstado = null;
   }
+  // Si se juega desde el teclado, se enseña el juego que se está jugando.
+  const jugando = gestor.leerEstado().juego;
+  if (gestor.activo() && jugando && jugando !== seleccion) seleccion = jugando;
   if (visible()) render();
 }
 
@@ -172,10 +280,11 @@ export async function render() {
            Para jugar sin la app delante, elige «Juegos» en el selector de perfiles del teclado.</p>
       </header>
       ${motivo && !jugando ? `<p class="games-need glass-panel">${icon('info', 16)} ${escape(motivo)}</p>` : ''}
-      ${panelEnVivo()}
-      <div class="games-grid">${JUEGOS.map((j) => tarjeta(j, motivo)).join('')}</div>
+      <div class="games-split">
+        <nav class="games-list" aria-label="Juegos">${lista(motivo)}</nav>
+        ${detalle(juegoElegido(), motivo)}
+      </div>
     </div>`;
-  pedirPintado();
 }
 
 async function empezar(id) {
@@ -186,40 +295,5 @@ async function empezar(id) {
     // El teclado no ha dejado entrar: sin conexión, o con un menú abierto.
     const msg = String(err?.message || err);
     toast(msg.includes('GAME_BUSY') ? 'Cierra el menú del teclado antes de jugar' : msg, 'error');
-  }
-}
-
-// --- Vista en vivo de las diez pantallas ---------------------------------------------
-// Un repintado por cuadro de animación como mucho: el motor puede mandar cien fotogramas
-// por segundo y el canvas no necesita más de los que muestra el monitor.
-function pedirPintado() {
-  if (pintando) return;
-  pintando = true;
-  requestAnimationFrame(pintar);
-}
-
-function pintar() {
-  pintando = false;
-  const canvas = document.getElementById('game-live-canvas');
-  const lienzo = gestor.leerEstado().ultimo;
-  if (!canvas || !lienzo) return;
-  const ctx = canvas.getContext('2d');
-  const color = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || '#6fe3ff';
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = color;
-  for (let p = 1; p <= 10; p++) {
-    const [cx, cy] = POSICION[p];
-    const ox = cx * (W + SEP), oy = cy * (H + SEP);
-    const fb = lienzo[p - 1];
-    for (let x = 0; x < W; x++) {
-      for (let pagina = 0; pagina < 5; pagina++) {
-        const byte = fb[pagina * W + x];
-        if (!byte) continue;
-        for (let bit = 0; bit < 8; bit++) {
-          if ((byte >> bit) & 1) ctx.fillRect(ox + x, oy + pagina * 8 + bit, 1, 1);
-        }
-      }
-    }
   }
 }

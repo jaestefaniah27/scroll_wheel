@@ -57,7 +57,7 @@ test('lo que se guarda no lleva la marca de récord', () => {
 
 test('el resumen de un juego sin partidas', () => {
   const r = resumen(undefined);
-  assert.deepEqual(r, { mejor: null, partidas: 0, ultima: null, media: null, recientes: [], detalle: [] });
+  assert.deepEqual(r, { mejor: null, partidas: 0, ultima: null, recientes: [], detalle: [], totales: null, ultimaStats: null });
 });
 
 test('el desglose por partes se guarda y se resume aparte, y su récord no se pierde', () => {
@@ -67,7 +67,6 @@ test('el desglose por partes se guarda y se resume aparte, y su récord no se pi
   assert.deepEqual(g.mejorDetalle, [250, 280, 350]);
   assert.deepEqual(g.historial[1].d, [270, 280, 410]);
   const r = resumen(g);
-  assert.deepEqual(r.detalle.map((d) => d.media), [260, 290, 380]);
   assert.deepEqual(r.detalle.map((d) => d.ultima), [270, 280, 410]);
   assert.deepEqual(r.detalle.map((d) => d.mejor), [250, 280, 350]);
 });
@@ -87,10 +86,15 @@ test('el resumen enseña las más recientes primero', () => {
   assert.equal(r.mejor, (RECIENTES + 3) * 10);
 });
 
-test('la media sale del historial guardado', () => {
-  let e = registrar(vacio(), 10);
-  e = registrar(paraGuardar(e), 20);
-  assert.equal(resumen(paraGuardar(e)).media, 15);
+test('no se guardan ni se calculan medias de varias partidas', () => {
+  let e = registrar(vacio(), 10, { detalle: [10, 10] });
+  e = registrar(paraGuardar(e), 20, { detalle: [20, 20] });
+  const g = paraGuardar(e);
+  assert.deepEqual(Object.keys(g).sort(), ['historial', 'mejor', 'mejorDetalle', 'partidas']);
+  const r = resumen(g);
+  assert.equal(r.media, undefined);
+  assert.equal(r.mediaSiempre, undefined);
+  assert.equal(r.detalle[0].media, undefined);
 });
 
 test('la gráfica: sin partidas no hay puntos y con una queda centrada', () => {
@@ -111,4 +115,22 @@ test('la gráfica pone arriba lo mejor, según el juego', () => {
 test('la gráfica con todas las partidas iguales no divide entre cero', () => {
   const pts = serieGrafica([{ t: 1, p: 7 }, { t: 2, p: 7 }, { t: 3, p: 7 }], 100, 30);
   for (const [, y] of pts) assert.equal(y, 15);
+});
+
+test('las estadísticas de una partida suman entre partidas y el máximo se queda con el mayor', () => {
+  let e = registrar(vacio(), 40, { ahora: 1, stats: { suma: { tienda: 2, tanque: 1, total: 3 }, max: { aLaVez: 2 } } });
+  e = registrar(paraGuardar(e), 90, { ahora: 2, stats: { suma: { tienda: 1, camion: 4, total: 5 }, max: { aLaVez: 1 } } });
+  const g = paraGuardar(e);
+  assert.deepEqual(g.totales, { suma: { tienda: 3, tanque: 1, camion: 4, total: 8 }, max: { aLaVez: 2 } });
+  // La de cada partida, aparte, para enseñar la última.
+  assert.deepEqual(g.historial[1].s, { suma: { tienda: 1, camion: 4, total: 5 }, max: { aLaVez: 1 } });
+  const r = resumen(g);
+  assert.deepEqual(r.totales, g.totales);
+  assert.deepEqual(r.ultimaStats.max, { aLaVez: 1 });
+});
+
+test('un juego sin estadísticas no guarda totales', () => {
+  const g = paraGuardar(registrar(vacio(), 5));
+  assert.equal(g.totales, undefined);
+  assert.equal(resumen(g).totales, null);
 });
