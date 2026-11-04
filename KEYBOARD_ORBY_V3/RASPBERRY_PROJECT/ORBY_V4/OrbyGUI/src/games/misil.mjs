@@ -1,4 +1,4 @@
-// Misil: vista de satélite sobre las nueve teclas, un objetivo en el suelo y un misil que
+// Air Strike (id interno `misil`): vista de satélite sobre las nueve teclas, un objetivo en el suelo y un misil que
 // ya viene cayendo. La mira se mueve con los dos mandos (el izquierdo en horizontal, el
 // derecho en vertical) y el círculo que se cierra sobre ella es el misil: cuando llega al
 // centro, explota donde esté la mira. Si el objetivo estaba debajo, puntos; si no, fallo.
@@ -578,9 +578,10 @@ function distanciaAVista(e, cam) {
 }
 
 export default {
+  // El id no cambia con el nombre: es la clave de las puntuaciones guardadas (scores.mjs) y borraría los récords.
   id: 'misil',
-  nombre: 'Misil',
-  descripcion: 'Mueve la mira con los dos mandos (izquierdo: horizontal, derecho: vertical) y pon objetivos dentro del círculo antes de que se cierre y caiga el misil: tiendas, soldados, depósitos, camiones y tanques. Cuanto más pequeño el objetivo, más puntos, y los vehículos en marcha valen más. Pulsa un mando para que caiga antes, o los dos para que caiga aún más rápido: vale más puntos. Lo destruido no vuelve. Son seis zonas en ruta de ida: se acaba en la última, y las vidas que quedan dan puntos. Hay cazas, un helicóptero que despega en algunos helipuertos y patrullas que cruzan las carreteras. Desde la tercera zona te disparan: destruye a quien te apunta antes de que impacte. El VTOL se mece. Tres fallos o impactos y se acaba.',
+  nombre: 'Air Strike',
+  descripcion: 'Eres el artillero de un VTOL. Mueve la mira con los dos mandos (izquierdo: horizontal, derecho: vertical) y pon objetivos dentro del círculo antes de que se cierre y caiga el misil: tiendas, soldados, depósitos, camiones y tanques. Cuanto más pequeño el objetivo, más puntos, y los vehículos en marcha valen más. Pulsa un mando para que caiga antes, o los dos para que caiga aún más rápido: vale más puntos. Lo destruido no vuelve. Son seis zonas en ruta de ida: se acaba en la última, y las vidas que quedan dan puntos. Hay cazas, un helicóptero que despega en algunos helipuertos y patrullas que cruzan las carreteras. Desde la tercera zona te disparan: destruye a quien te apunta antes de que impacte. El VTOL se mece. Tres fallos o impactos y se acaba.',
   icono: '#MISIL',
   unidad: 'puntos',
   mejorSiMenor: false,

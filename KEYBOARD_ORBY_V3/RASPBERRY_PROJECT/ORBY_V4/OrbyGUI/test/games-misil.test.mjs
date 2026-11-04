@@ -47,6 +47,12 @@ function visible(z, x, y, w, h) {
     && vx - col * 88 + w <= 72 && vy - fila * 54 + h <= 40 && vx >= col * 88 && vy >= fila * 54;
 }
 
+test('Air Strike: el juego conserva el id de las puntuaciones y se llama Air Strike', () => {
+  assert.equal(misil.id, 'misil');
+  assert.equal(misil.nombre, 'Air Strike');
+  assert.ok(!misil.descripcion.includes('Misil'));
+});
+
 test('Misil: el suelo del mapa mide lo mismo que las nueve pantallas con sus huecos', () => {
   assert.equal(MUNDO_W, 248);
   assert.equal(MUNDO_H, 148);
