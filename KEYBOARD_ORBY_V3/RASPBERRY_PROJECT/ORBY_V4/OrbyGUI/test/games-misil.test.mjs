@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS, crearExplosion } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
 import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
@@ -946,4 +946,50 @@ test('Air Strike: la derrota sigue enseñando el mapa, atenuado a trama de ajedr
   let vivos = 0;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if ((x + y) % 2 === 0) assert.equal(bit(l[0], x, y), 0); else vivos += bit(l[0], x, y); }
   assert.ok(vivos > 0, 'el mapa sigue ahí');
+});
+
+// --- Air Strike, fase 2: explosiones ---
+
+test('Air Strike: cada objetivo destruido crea su explosión, desfasadas, y ninguna sigue viva pasado su tiempo', () => {
+  const { partida, paso } = nueva(3);
+  const blanco = tiendaALaVista(partida);
+  apuntar(partida, paso, enVista(partida, centro(blanco)));
+  for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
+  const n = partida.detalle.suma.total;
+  assert.ok(n >= 1);
+  const ex = partida.explosiones;
+  assert.equal(ex.length, n);
+  ex.forEach((e, i) => assert.equal(e.t0, ex[0].t0 + 40 * i, 'desfase de 40 ms por orden'));
+  for (const e of ex) assert.ok(e.fin - e.t0 <= 4000, 'dura lo que dura, no más');
+  paso(5000);
+  assert.equal(partida.explosiones.length, 0, 'se han ido todas');
+});
+
+test('Air Strike: la explosión de un depósito es grande y con chispas, la de un soldado pequeña, la de un vehículo a golpes escalonados', () => {
+  const azar = azarDe(5);
+  const dep = crearExplosion(10, 10, 'grande', 0, azar);
+  const sol = crearExplosion(10, 10, 'pequena', 0, azar);
+  const tan = crearExplosion(10, 10, 'media', 0, azar);
+  assert.ok(dep.estallidos[0].r >= 12 && dep.chispas === 8);
+  assert.equal(sol.estallidos.length, 1);
+  assert.ok(tan.estallidos.length >= 3 && tan.estallidos.length <= 4, 'dos o tres y uno final');
+  for (const e of [dep, sol, tan]) {
+    assert.ok(e.fin > e.humoDesde && e.humoDesde >= Math.max(...e.estallidos.map((b) => b.t + b.dur)));
+    assert.ok(e.humo.length >= 3 && e.humo.length <= 4);
+  }
+  assert.ok(tan.estallidos.every((b, i, l) => !i || b.t > l[i - 1].t), 'escalonados');
+  // Misma semilla, misma explosión: el azar no sale al dibujar.
+  assert.deepEqual(crearExplosion(1, 2, 'media', 0, azarDe(9)), crearExplosion(1, 2, 'media', 0, azarDe(9)));
+});
+
+test('Air Strike: la explosión se ve mientras dura y desaparece del dibujo cuando acaba', () => {
+  const { partida, paso, l } = nueva(3);
+  const blanco = tiendaALaVista(partida);
+  apuntar(partida, paso, enVista(partida, centro(blanco)));
+  for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
+  paso(100);
+  const durante = l.map((fb) => fb.join());
+  paso(5000);
+  assert.ok(partida.explosiones.length === 0);
+  assert.notDeepEqual(l.slice(0, 9).map((fb) => fb.join()), durante.slice(0, 9));
 });

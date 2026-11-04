@@ -387,6 +387,28 @@ function textoSobreMapa(fb, s) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (leer(t, x, y)) px(fb, x, y, 1);
 }
 
+// Explosiones al destruir. El depósito (combustible) es una bola de fuego con chispas; un vehículo o un
+// tirador revienta a golpes escalonados; una tienda o un soldado, un fogonazo corto. Todo el azar se
+// sortea aquí, al crearla, y no al dibujar: así la misma semilla da las mismas explosiones.
+const HUMO_MS = 1500;
+const CLASE_EXPLOSION = { deposito: 'grande', tienda: 'pequena', soldado: 'pequena', rpg: 'pequena' };
+export function crearExplosion(x, y, clase, t0, aleatorio) {
+  let estallidos, chispas = 0;
+  if (clase === 'grande') { estallidos = [{ dx: 0, dy: 0, t: 0, r: 12, dur: 900 }]; chispas = 8; }
+  else if (clase === 'pequena') estallidos = [{ dx: 0, dy: 0, t: 0, r: 4, dur: 300 }];
+  else {
+    estallidos = [];
+    let t = 0;
+    for (let i = 0, n = 2 + aleatorio(2); i < n; i++, t += 60 + aleatorio(61)) {
+      estallidos.push({ dx: aleatorio(7) - 3, dy: aleatorio(7) - 3, t, r: 4 + aleatorio(2), dur: 300 });
+    }
+    estallidos.push({ dx: 0, dy: 0, t, r: 7, dur: 450 });
+  }
+  const humo = Array.from({ length: 3 + aleatorio(2) }, () => aleatorio(5) - 2);
+  const humoDesde = t0 + Math.max(...estallidos.map((b) => b.t + b.dur));
+  return { x, y, tipo: clase, t0, estallidos, chispas, humo, humoDesde, fin: humoDesde + HUMO_MS };
+}
+
 export function pintarSprite(malla, s, x, y) {
   for (let j = 0; j < s.h; j++) {
     for (let i = 0; i < s.w; i++) if (s.filas[j][i] === '#') malla.px(x + i, y + j);
@@ -621,6 +643,7 @@ export default {
     // esquina de arriba a la izquierda en el suelo y `vel` en px/s. Los vehículos que
     // circulan llevan además { desde, hasta, dist } (ver posicionar).
     let entidades = [];
+    let explosiones = [];         // { x, y, t0, ... } en el territorio, como los cráteres: la cámara se mueve y siguen en su sitio
     let crateres = [];            // { x, y }: lo destruido no vuelve, el cráter se queda
     let mapa = null;              // el dibujo fijo del territorio, ver construirMapa
     // La esquina de arriba a la izquierda de lo que se ve, en el territorio. La mira, el
@@ -1075,11 +1098,14 @@ export default {
         const prisa = Math.max(1, CAIDA_MS / Math.max(1, tiempo - empezado));
         let ganados = 0;
         masALaVez = Math.max(masALaVez, tocados.length);
-        for (const e of tocados) {
+        for (const [orden, e] of tocados.entries()) {
           muertos[e.tipo.nombre] = (muertos[e.tipo.nombre] || 0) + 1;
           ganados += Math.round(e.tipo.valor * prisa * (1 + e.vel / BONO_VELOCIDAD) * nivel().puntos);
           // Un helicóptero en el aire no deja cráter en el suelo.
-          if (!(e.volador && e.vel > 0)) crateres.push({ x: Math.round(e.x + e.forma.w / 2), y: Math.round(e.y + e.forma.h / 2) });
+          const ex = Math.round(e.x + e.forma.w / 2), ey = Math.round(e.y + e.forma.h / 2);
+          if (!(e.volador && e.vel > 0)) crateres.push({ x: ex, y: ey });
+          // Desfasadas 40 ms por orden: los destruidos de un mismo misil no estallan todos a la vez.
+          explosiones.push(crearExplosion(ex, ey, CLASE_EXPLOSION[e.tipo.nombre] ?? 'media', tiempo + 40 * orden, aleatorio));
         }
         entidades = entidades.filter((e) => !tocados.includes(e));
         amenazas = amenazas.filter((a) => entidades.includes(a.e));
@@ -1157,6 +1183,31 @@ export default {
       pintarSprite(malla, luces ? { ...e.forma, filas: e.forma.filas2 } : e.forma, x, y);
     }
 
+    // Un solo bit: el fogonazo alterna disco blanco y anillo con halo negro, que es lo que se ve sobre el terreno.
+    function pintarExplosion(ex) {
+      const x0 = ex.x - camara.x, y0 = ex.y - camara.y;
+      for (const b of ex.estallidos) {
+        const tau = tiempo - ex.t0 - b.t;
+        if (tau < 0 || tau >= b.dur) continue;
+        const k = tau / b.dur;
+        const r = Math.max(1, Math.round(b.r * (k < 0.6 ? 0.5 + (0.5 * k) / 0.6 : 1 - ((k - 0.6) / 0.4) * 0.5)));
+        malla.disco(x0 + b.dx, y0 + b.dy, r + 1, 0);
+        if (Math.floor(tau / 80) % 2 === 0) malla.disco(x0 + b.dx, y0 + b.dy, r); else anillo(malla, x0 + b.dx, y0 + b.dy, r);
+      }
+      const tc = tiempo - ex.t0;
+      if (ex.chispas && tc >= 0 && tc < 700) {
+        for (let i = 0; i < ex.chispas; i++) {
+          const a = (i * Math.PI * 2) / ex.chispas, d = 5 + (i % 2) * 3 + (tc / 700) * 12;
+          const cx = Math.round(x0 + Math.cos(a) * d), cy = Math.round(y0 + Math.sin(a) * d);
+          malla.rect(cx - 1, cy - 1, 3, 3, 0); malla.px(cx, cy);
+        }
+      }
+      const th = tiempo - ex.humoDesde;
+      if (th >= 0 && th < HUMO_MS) {
+        ex.humo.forEach((dx, i) => malla.px(x0 + dx + ((Math.floor(th / 250) + i) % 2), y0 - 2 - Math.round((th / HUMO_MS) * 10) - i));
+      }
+    }
+
     // El mapa sigue ahí, atenuado con una trama de ajedrez (un bit por píxel: no hay grises), y el texto
     // encima. El culpable se vuelve a pintar en claro y lo rodean dos círculos que se alternan.
     function pintarDerrota(lienzo) {
@@ -1182,6 +1233,7 @@ export default {
       get entidades() { return entidades; },
       get camara() { return { ...camara }; },
       get crateres() { return crateres.length; },
+      get explosiones() { return explosiones.map(({ x, y, t0, tipo, fin }) => ({ x, y, t0, tipo, fin })); },
       get volando() { return vuelo !== null; },
       get victoria() { return ganada; },
       get estancia() { return estancia; },
@@ -1196,6 +1248,7 @@ export default {
 
       tick(dt) {
         tiempo += dt;
+        explosiones = explosiones.filter((e) => tiempo < e.fin);   // también en la derrota y mientras cae el misil
         if (aviso && tiempo >= aviso.hasta) aviso = null;
         if (!mira) return;
         if (fase === 'derrota') {
@@ -1262,6 +1315,7 @@ export default {
           anillo(malla, x, y, 4); malla.px(x, y);
         }
         for (const e of entidades) pintarEntidad(e);
+        for (const ex of explosiones) pintarExplosion(ex);
 
         if (fase === 'derrota') { pintarDerrota(lienzo); return; }
 
