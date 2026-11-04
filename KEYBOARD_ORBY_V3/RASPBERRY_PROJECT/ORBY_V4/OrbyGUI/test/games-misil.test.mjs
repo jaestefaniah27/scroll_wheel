@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS, crearExplosion } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS, crearExplosion, dibujoCrater } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
 import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
@@ -992,4 +992,42 @@ test('Air Strike: la explosión se ve mientras dura y desaparece del dibujo cuan
   paso(5000);
   assert.ok(partida.explosiones.length === 0);
   assert.notDeepEqual(l.slice(0, 9).map((fb) => fb.join()), durante.slice(0, 9));
+});
+
+// --- Air Strike, fase 3: cráteres que no se confunden con tanques ---
+
+test('Air Strike: un cráter no se parece a ningún objetivo: sin líneas rectas, medio vacío y más pequeño que el 60 % de tinta', () => {
+  const tinta = (filas) => filas.join('').split('#').length - 1;
+  const largoMax = (filas) => {
+    const cols = filas[0].split('').map((_, i) => filas.map((f) => f[i]).join(''));
+    return Math.max(...[...filas, ...cols].flatMap((l) => l.split(/[^#]+/).map((r) => r.length)));
+  };
+  for (const o of OBJETIVOS) {
+    for (const [x, y] of [[100, 100], [333, 47], [7, 911]]) {
+      const c = dibujoCrater({ x, y, w: o.w, h: o.h, tipo: o.nombre });
+      assert.ok(tinta(c.filas) / (c.w * c.h) < 0.6, `${o.nombre}: demasiada tinta`);
+      assert.ok(largoMax(c.filas) <= 4, `${o.nombre}: una línea recta de ${largoMax(c.filas)} px en un cráter`);
+      assert.notDeepEqual(c.filas, o.filas, o.nombre);
+    }
+    // Y al revés: los vehículos y el depósito sí tienen líneas rectas largas (orugas, caja, correa).
+  }
+  for (const n of ['tanque', 'camion', 'deposito']) assert.ok(largoMax(tipoDe(n).filas) >= 5, n);
+  // El del depósito es el mayor, y todos están topados entre 7 y 15 de mancha (más 6 de margen para la chamusquina).
+  const tam = (n) => dibujoCrater({ x: 5, y: 5, w: tipoDe(n).w, h: tipoDe(n).h, tipo: n }).w;
+  for (const n of ['tienda', 'camion', 'tanque', 'soldado', 'caza', 'antiaereo']) assert.ok(tam(n) < tam('deposito'), n);
+  assert.ok(tam('soldado') >= 13 && tam('deposito') <= 21);
+  // Misma posición, mismo dibujo; otra posición, otra mancha.
+  const a = dibujoCrater({ x: 40, y: 50, w: 11, h: 11, tipo: 'tienda' }), b = dibujoCrater({ x: 40, y: 50, w: 11, h: 11, tipo: 'tienda' });
+  assert.deepEqual(a, b);
+  assert.notDeepEqual(a.filas, dibujoCrater({ x: 41, y: 50, w: 11, h: 11, tipo: 'tienda' }).filas);
+});
+
+test('Air Strike: destruir algo deja un cráter pintado en el mapa', () => {
+  const { partida, paso, l } = nueva(3);
+  const blanco = tiendaALaVista(partida);
+  apuntar(partida, paso, enVista(partida, centro(blanco)));
+  for (let t = 0; t < 8000 && partida.puntos === 0; t += DT) paso();
+  paso(5000);
+  assert.equal(partida.crateres, 1);
+  assert.ok(l.slice(0, 9).some((fb) => fb.some((b) => b)));
 });

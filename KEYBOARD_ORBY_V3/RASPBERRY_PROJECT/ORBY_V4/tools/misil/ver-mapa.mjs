@@ -4,14 +4,34 @@
 import { deflateSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
 import { construirMapa, ESTATICOS, ZONAS, MAPA_W, MAPA_H } from '../../OrbyGUI/src/games/misil-mapa.mjs';
-import { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, HUECO_X, HUECO_Y } from '../../OrbyGUI/src/games/misil.mjs';
+import { OBJETIVOS, orientar, dibujoCrater, MUNDO_W, MUNDO_H, HUECO_X, HUECO_Y } from '../../OrbyGUI/src/games/misil.mjs';
 import { W, H } from '../../OrbyGUI/src/games/dibujo.mjs';
 import { crc32 } from '../../OrbyGUI/src/web/macro-blob.mjs';
 
 const [salida, zonaArg] = process.argv.slice(2);
 if (!salida) {
-  console.error('uso: node tools/misil/ver-mapa.mjs <salida.png> [zona]');
+  console.error('uso: node tools/misil/ver-mapa.mjs <salida.png> [zona | hoja]');
   process.exit(1);
+}
+
+// `hoja`: todos los dibujos de objetivos (con su fotograma 2) y, debajo, cada uno junto al cráter que deja,
+// para comprobar a ojo que un cráter no se confunde con un tanque ni con un depósito.
+function hoja() {
+  const HW = 190, celdas = [];
+  let x = 2, y = 2, alto = 0;
+  const poner = (d, fondo) => {
+    if (x + d.w + 4 > HW) { x = 2; y += alto + 4; alto = 0; }
+    celdas.push({ d, x, y, fondo }); x += d.w + 4; alto = Math.max(alto, d.h);
+  };
+  for (const o of OBJETIVOS) { poner(o); if (o.filas2) poner({ ...o, filas: o.filas2 }); }
+  x = 2; y += alto + 8; alto = 0;
+  for (const n of ['tanque', 'deposito', 'camion', 'tienda', 'soldado', 'caza']) {
+    const o = OBJETIVOS.find((q) => q.nombre === n);
+    poner(o); poner(dibujoCrater({ x: 100, y: 100, w: o.w, h: o.h, tipo: n }), true);
+  }
+  const HH = y + alto + 4, im = new Uint8Array(HW * HH);
+  for (const { d, x: ox, y: oy } of celdas) d.filas.forEach((f, j) => [...f].forEach((c, i) => { if (c === '#') im[(oy + j) * HW + ox + i] = 255; }));
+  escribirPng(salida, HW, HH, 5, (px, py) => im[py * HW + px]);
 }
 
 // Un estático sin dibujo no tumba el volcado: se pinta un cuadrado para que se vea igual.
@@ -69,7 +89,9 @@ function escribirPng(ruta, w, h, k, gris) {
   ]));
 }
 
-if (zonaArg === undefined) {
+if (zonaArg === 'hoja') {
+  hoja();
+} else if (zonaArg === undefined) {
   escribirPng(salida, MAPA_W, MAPA_H, 2, (x, y) => img[y * MAPA_W + x]);
 } else {
   const idx = /^\d+$/.test(zonaArg) ? Number(zonaArg) : ZONAS.findIndex((z) => z.nombre === zonaArg);

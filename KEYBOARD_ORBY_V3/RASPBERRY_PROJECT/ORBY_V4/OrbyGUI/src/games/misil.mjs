@@ -244,18 +244,18 @@ export const OBJETIVOS = [
     ]),
   },
   {
-    // Un tanque de combustible redondo, visto desde arriba: el anillo de la tapa lo distingue
-    // de la tienda, que es cuadrada.
+    // Un tanque de combustible visto desde arriba: dos tapas y la correa que lo ciñe por el medio. Esa barra
+    // recta es lo que lo separa del cráter (mancha irregular y sin una sola línea) y de la tienda (cuadrada y hueca).
     nombre: 'deposito', velocidad: 0,
     ...sprite([
       '..#####..',
-      '.#######.',
-      '###...###',
+      '.#.....#.',
       '##.###.##',
-      '##.#.#.##',
+      '#..#.#..#',
+      '#########',
+      '#..#.#..#',
       '##.###.##',
-      '###...###',
-      '.#######.',
+      '.#.....#.',
       '..#####..',
     ]),
   },
@@ -407,6 +407,52 @@ export function crearExplosion(x, y, clase, t0, aleatorio) {
   const humo = Array.from({ length: 3 + aleatorio(2) }, () => aleatorio(5) - 2);
   const humoDesde = t0 + Math.max(...estallidos.map((b) => b.t + b.dur));
   return { x, y, tipo: clase, t0, estallidos, chispas, humo, humoDesde, fin: humoDesde + HUMO_MS };
+}
+
+// El cráter que deja lo destruido: una mancha irregular rellena a puntos (un píxel sí, otro no), con el
+// contorno a trozos y unas motas de chamusquina alrededor. Regla: nada recto en un cráter y nada redondo
+// y hueco en un vehículo, para no confundir un cráter con un tanque o un depósito. La semilla sale de la
+// posición, sin azar nuevo: el mismo cráter se dibuja igual en cada fotograma.
+// `filas` lleva '#' (tinta), ',' (se limpia, sin tinta) y '.' (no se toca).
+const mezcla = (n) => { n = Math.imul(n ^ (n >>> 15), 2246822519); n = Math.imul(n ^ (n >>> 13), 3266489917); return (n ^ (n >>> 16)) >>> 0; };
+const LARGO_MAX_RECTO = 4;
+export function dibujoCrater({ x, y, w, h, tipo }) {
+  const semilla = x * 31 + y;
+  const tam = tipo === 'deposito' ? 15 : Math.max(7, Math.min(13, Math.max(w, h)));
+  const R = tam / 2, S = tam + 6, c = S >> 1;
+  // El radio varía con el ángulo, interpolando entre ocho valores sorteados por la semilla.
+  const radioA = (ang) => {
+    const u = ((ang + Math.PI) / (2 * Math.PI)) * 8, k = Math.floor(u) % 8, f = u - Math.floor(u);
+    const v = (n) => 0.72 + 0.28 * ((mezcla(semilla * 8 + n) % 100) / 100);
+    return R * (v(k) * (1 - f) + v((k + 1) % 8) * f);
+  };
+  const g = Array.from({ length: S }, () => Array(S).fill('.'));
+  for (let j = 0; j < S; j++) {
+    for (let i = 0; i < S; i++) {
+      const d = Math.hypot(i - c, j - c), r = radioA(Math.atan2(j - c, i - c));
+      if (d > r + 1) continue;
+      g[j][i] = ',';
+      if (d <= r - 1) { if ((i + j) % 2 === 0) g[j][i] = '#'; }
+      else if (d <= r && mezcla(semilla + i * 7 + j * 13) % 3 !== 0) g[j][i] = '#';
+    }
+  }
+  for (let k = 0, n = 3 + (semilla & 1); k < n; k++) {
+    const a = ((mezcla(semilla + 101 * k) % 360) * Math.PI) / 180, d = R + 2 + (mezcla(semilla + 7 * k) % 2);
+    const i = c + Math.round(Math.cos(a) * d), j = c + Math.round(Math.sin(a) * d);
+    if (g[j]?.[i] === '.') g[j][i] = '#';
+  }
+  // Ninguna línea de más de LARGO_MAX_RECTO píxeles seguidos, en horizontal ni en vertical.
+  const cortar = (get, set) => {
+    for (let a = 0; a < S; a++) {
+      let run = 0;
+      for (let b = 0; b < S; b++) {
+        if (get(a, b) === '#') { if (++run > LARGO_MAX_RECTO) { set(a, b, ','); run = 0; } } else run = 0;
+      }
+    }
+  };
+  cortar((a, b) => g[a][b], (a, b, v) => { g[a][b] = v; });
+  cortar((a, b) => g[b][a], (a, b, v) => { g[b][a] = v; });
+  return { w: S, h: S, filas: g.map((f) => f.join('')) };
 }
 
 export function pintarSprite(malla, s, x, y) {
@@ -644,7 +690,7 @@ export default {
     // circulan llevan además { desde, hasta, dist } (ver posicionar).
     let entidades = [];
     let explosiones = [];         // { x, y, t0, ... } en el territorio, como los cráteres: la cámara se mueve y siguen en su sitio
-    let crateres = [];            // { x, y }: lo destruido no vuelve, el cráter se queda
+    let crateres = [];            // { x, y, w, h, tipo }: lo destruido no vuelve, el cráter se queda (w, h: la caja del destruido)
     let mapa = null;              // el dibujo fijo del territorio, ver construirMapa
     // La esquina de arriba a la izquierda de lo que se ve, en el territorio. La mira, el
     // impacto y la malla van en coordenadas de la vista; las entidades y los cráteres, del
@@ -1103,7 +1149,7 @@ export default {
           ganados += Math.round(e.tipo.valor * prisa * (1 + e.vel / BONO_VELOCIDAD) * nivel().puntos);
           // Un helicóptero en el aire no deja cráter en el suelo.
           const ex = Math.round(e.x + e.forma.w / 2), ey = Math.round(e.y + e.forma.h / 2);
-          if (!(e.volador && e.vel > 0)) crateres.push({ x: ex, y: ey });
+          if (!(e.volador && e.vel > 0)) crateres.push({ x: ex, y: ey, w: e.forma.w, h: e.forma.h, tipo: e.tipo.nombre });
           // Desfasadas 40 ms por orden: los destruidos de un mismo misil no estallan todos a la vez.
           explosiones.push(crearExplosion(ex, ey, CLASE_EXPLOSION[e.tipo.nombre] ?? 'media', tiempo + 40 * orden, aleatorio));
         }
@@ -1181,6 +1227,15 @@ export default {
       }
       const luces = e.forma.filas2 && Math.floor(tiempo / 200) % 2;
       pintarSprite(malla, luces ? { ...e.forma, filas: e.forma.filas2 } : e.forma, x, y);
+    }
+
+    // Se limpia solo la mancha, no una caja entera: lo que hay junto al cráter se queda.
+    function pintarCrater(c) {
+      const d = dibujoCrater(c);
+      const x0 = c.x - (d.w >> 1) - camara.x, y0 = c.y - (d.h >> 1) - camara.y;
+      d.filas.forEach((f, j) => [...f].forEach((ch, i) => {
+        if (ch !== '.') malla.px(x0 + i, y0 + j, ch === '#' ? 1 : 0);
+      }));
     }
 
     // Un solo bit: el fogonazo alterna disco blanco y anillo con halo negro, que es lo que se ve sobre el terreno.
@@ -1309,11 +1364,7 @@ export default {
         }
 
         pintarMapa(lienzo);
-        for (const c of crateres) {
-          const x = c.x - camara.x, y = c.y - camara.y;
-          malla.rect(x - 4, y - 4, 9, 9, 0);
-          anillo(malla, x, y, 4); malla.px(x, y);
-        }
+        for (const c of crateres) pintarCrater(c);
         for (const e of entidades) pintarEntidad(e);
         for (const ex of explosiones) pintarExplosion(ex);
 
