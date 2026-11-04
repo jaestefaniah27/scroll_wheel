@@ -6,8 +6,9 @@ import simon from './simon.mjs';
 import sintoniza from './sintoniza.mjs';
 import reflejos from './reflejos.mjs';
 import misil from './misil.mjs';
+import blackjack from './blackjack.mjs';
 
-export const JUEGOS = [topos, simon, sintoniza, reflejos, misil];
+export const JUEGOS = [topos, simon, sintoniza, reflejos, misil, blackjack];
 
 export function juegoPorId(id) {
   return JUEGOS.find((j) => j.id === id) || null;

@@ -130,20 +130,19 @@ static void test_compuerta_zoom_no_se_atasca() {
 }
 
 // El signo con el que sale el paneo. Va aparte porque es una decision de
-// producto, no un detalle: si alguien toca ORBY_PAN_INVERT sin querer, esta
-// prueba lo canta.
-#define PAN_SIGN (ORBY_PAN_INVERT ? -1 : 1)
+// producto, no un detalle: add_pan sigue el AC Pan del HID (positivo = derecha),
+// que es lo que hace que un encoder girado en sentido horario vaya a la derecha.
+// La rueda magnetica, que lo prefiere al reves, se invierte ella sola en
+// wheel_accumulate (main.cpp) antes de llegar aqui.
+#define PAN_SIGN 1
 
 static void test_sentido_del_paneo() {
     printf("\nSentido del paneo horizontal\n");
     reset();
 
-    WheelOut::add_pan(120);   // un detent en el sentido crudo de la rueda
+    WheelOut::add_pan(120);   // un detent en sentido horario de un encoder
     for (int i = 0; i < 10; i++) loop_iteration();
-    check(pan_recibido == 120 * PAN_SIGN,
-          ORBY_PAN_INVERT ? "va invertido respecto al AC Pan del HID"
-                          : "va en el sentido del AC Pan del HID");
-    check(ORBY_PAN_INVERT == 1, "y el sentido por defecto es el invertido");
+    check(pan_recibido == 120, "va en el sentido del AC Pan del HID (horario = derecha)");
 }
 
 // El paneo horizontal tiene que ser tan fino como el vertical.

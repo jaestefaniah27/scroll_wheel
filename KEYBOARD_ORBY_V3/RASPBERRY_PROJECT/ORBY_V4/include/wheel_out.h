@@ -23,26 +23,16 @@ static int32_t pending_pan   = 0;  // unidades horizontales pendientes
 // lo pendiente se guarda en vez de salir.
 static bool zoom_gate = false;
 
-// Sentido por defecto del paneo horizontal. El AC Pan del HID cuenta positivo
-// hacia la derecha, pero en la rueda de ORBY el sentido natural es el
-// contrario, así que se invierte aquí. Es el único punto por el que pasa todo
-// el movimiento horizontal —la rueda magnética y los encoders configurados como
-// paneo—, de modo que con esto quedan los dos igual. A 0 se vuelve al sentido
-// de la especificación.
+// Paneo horizontal en el sentido del HID: positivo = hacia la derecha. Así un
+// encoder girado en sentido horario desplaza a la derecha. La rueda magnética
+// prefiere el sentido contrario, y lo invierte ella misma en wheel_accumulate
+// (main.cpp) antes de llegar aquí: antes se invertía en este punto para todos y
+// los encoders iban al revés de lo que se giraban.
 //
-// Ojo: esto es el sentido POR DEFECTO. El interruptor de invertir de cada perfil
-// sigue funcionando encima, partiendo de aquí.
-#define ORBY_PAN_INVERT 1
-
+// El interruptor de invertir de cada perfil sigue funcionando encima.
 static inline void add_wheel(int32_t units) { pending_wheel += units; }
 
-static inline void add_pan(int32_t units) {
-#if ORBY_PAN_INVERT
-    pending_pan -= units;
-#else
-    pending_pan += units;
-#endif
-}
+static inline void add_pan(int32_t units) { pending_pan += units; }
 
 static inline void zoom_arm()  { zoom_gate = true; }
 

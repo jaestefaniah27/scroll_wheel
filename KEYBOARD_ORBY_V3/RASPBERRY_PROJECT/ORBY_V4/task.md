@@ -330,6 +330,10 @@ teclado; lo que lo hacía visible es que un macropad manda atajos, no teclas.
       todo el movimiento horizontal, así que la rueda magnética y los encoders
       configurados como paneo quedan igual. El vertical no se toca y el
       interruptor de invertir de cada perfil sigue funcionando encima.
+- [x] (2026-11-04) Los encoders iban al revés: girar a la derecha desplazaba a la
+      izquierda. `ORBY_PAN_INVERT` desaparece: `add_pan()` sigue el AC Pan del HID
+      (horario = derecha) y la inversión pasa a `wheel_accumulate()`, solo para
+      la rueda magnética, que queda como estaba.
 
 ## SUPER y menú intercambiados (hecho)
 

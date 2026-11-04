@@ -14,6 +14,7 @@ ENTRIES = {
     '#SINT':   ('radio', 'Sintoniza'),
     '#REFLEJO': ('reflejos', 'Reflejos'),
     '#MISIL':  ('missile', 'Misil'),
+    '#BLACKJ': ('cards', 'Blackjack'),
     '#OTRA':   ('reset', 'Otra vez'),
     '#MENU':   ('list', 'Menú'),
     '#SALIR':  ('exit', 'Salir'),

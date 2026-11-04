@@ -2298,6 +2298,11 @@ void wheel_accumulate(int32_t delta_counts) {
     scroll_frac  -= units * AS5600_COUNTS_PER_REV;
     if (units == 0) return;
 
+    // En la rueda el paneo natural va al revés que el AC Pan del HID (que es el
+    // que siguen los encoders, ver WheelOut::add_pan). Se invierte solo aquí,
+    // para que valga tanto en alta resolución como en detents.
+    if (cw.type == ROT_SCROLL_H) units = -units;
+
     // Los dos desplazamientos aprovechan la alta resolución; el resto de
     // acciones son discretas y necesitan detents completos.
     if (cw.type == ROT_SCROLL_V && g_hires_multiplier != 0) {

@@ -85,3 +85,17 @@ def _(c):
     c.poly((4, 7.6), (10, 7.6), (3, 4))                            # las aletas
     c.poly((4, 14.4), (10, 14.4), (3, 18))
     c.clear(13, 9, 14, 13)                                         # la franja
+
+
+@icon('cards')
+def _(c):
+    # Dos naipes abiertos en abanico: el de detrás asoma por la izquierda y el de delante,
+    # macizo, lleva una pica en hueco. Un naipe solo se confundía con un documento.
+    c.poly((1, 5), (9.5, 1.5), (13.5, 13), (5, 16.5))              # el de detrás
+    c.poly((3, 6), (9, 3.5), (12, 12), (6, 14.5), v=0)
+    c.fill(9, 3, 23, 22, r=2)                                      # el de delante
+    c.clear(7.5, 1.5, 9, 22)                                       # aire entre los dos
+    c.dot(13.8, 12.4, 2.6, v=0)                                    # la pica
+    c.dot(18.2, 12.4, 2.6, v=0)
+    c.poly((11.4, 11.4), (16, 6), (20.6, 11.4), v=0)
+    c.poly((16, 13), (14, 18), (18, 18), v=0)
