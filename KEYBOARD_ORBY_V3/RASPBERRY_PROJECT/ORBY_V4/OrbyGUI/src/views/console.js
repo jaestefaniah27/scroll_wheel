@@ -6,6 +6,9 @@
 // y un único repintado por frame de animación.
 
 import * as device from '../device.js';
+import * as compat from '../compat.js';
+import { state } from '../store.js';
+import { toast } from '../ui.js';
 
 const MAX_LINES = 500;
 const lines = [];
@@ -19,6 +22,18 @@ export function init() {
   document.getElementById('btn-clear-console').addEventListener('click', () => {
     lines.length = 0;
     schedule();
+  });
+
+  // Para la pantalla que se queda apagada (fase 6 de PLAN_AIRSTRIKE): manda la
+  // secuencia de arranque a las diez sin reiniciar el teclado.
+  document.getElementById('btn-reinit-oleds').addEventListener('click', () => {
+    if (!compat.supports(state.deviceInfo, 'oledReinit')) {
+      toast('Este firmware no sabe reiniciar las pantallas: actualízalo', 'error');
+      return;
+    }
+    device.reinitScreens()
+      .then((cuenta) => push(`Pantallas reiniciadas. Veces por pantalla: ${cuenta.join(' ')}`, 'system'))
+      .catch((e) => push(`ERROR: ${e?.message ?? e}`, 'error'));
   });
 
   const pauseBtn = document.getElementById('btn-pause-console');
