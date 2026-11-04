@@ -4951,7 +4951,7 @@ static const Entry entries[] = {
     {"#SIMON", SPR_SIMON, "Simon"},
     {"#SINT", SPR_RADIO, "Sintoniza"},
     {"#REFLEJO", SPR_REFLEJOS, "Reflejos"},
-    {"#MISIL", SPR_MISSILE, "Misil"},
+    {"#MISIL", SPR_MISSILE, "Air Strike"},
     {"#BLACKJ", SPR_CARDS, "Blackjack"},
     {"#OTRA", SPR_RESET, "Otra vez"},
     {"#MENU", SPR_LIST, "Menú"},

@@ -13,7 +13,7 @@ ENTRIES = {
     '#SIMON':  ('simon', 'Simon'),
     '#SINT':   ('radio', 'Sintoniza'),
     '#REFLEJO': ('reflejos', 'Reflejos'),
-    '#MISIL':  ('missile', 'Misil'),
+    '#MISIL':  ('missile', 'Air Strike'),
     '#BLACKJ': ('cards', 'Blackjack'),
     '#OTRA':   ('reset', 'Otra vez'),
     '#MENU':   ('list', 'Menú'),
