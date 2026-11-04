@@ -134,6 +134,7 @@ export const FEATURES = {
   intro:      { since: '4.25', label: 'elegir la intro de arranque (o que salga una al azar) y verla desde la app', flag: 'intro' },
   games:      { since: '4.29', label: 'jugar desde la app, con el teclado de pantalla y mandos', flag: 'games' },
   helpMode:   { since: '4.28', label: 'iconos grandes en las teclas y modo ayuda con sus nombres', flag: 'help' },
+  oledReinit: { since: '4.31', label: 'reiniciar una pantalla que se ha quedado apagada sin reiniciar el teclado', flag: 'oledreinit' },
 };
 
 // Quien manda el HOST_APP:1 es electron/serial.js, en el proceso principal, y

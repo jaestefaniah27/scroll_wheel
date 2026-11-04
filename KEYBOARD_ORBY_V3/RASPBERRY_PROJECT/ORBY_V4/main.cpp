@@ -576,6 +576,11 @@ static int help_exit_from_secs(int s) {
 volatile bool displays_on = true;
 volatile bool display_power_req = false;
 
+// OLED_REINIT: reinits pedidos por pantalla. Es a la vez el pedido y el
+// contador que se devuelve (para ver si siempre es la 9). Solo lo escribe Core 0;
+// Core 1 apunta aparte cuántos ha servido, así nadie pisa lo del otro.
+volatile uint16_t oled_reinit_count[10] = {0};
+
 // La intro de arranque la reproduce Core 1 y no se puede cortar: mientras dura,
 // incluida la apertura de los iconos que la cierra, Core 0 no atiende teclas,
 // mandos ni rueda. Empieza a true para que no quede un hueco entre que arranca
@@ -2730,6 +2735,7 @@ void core1_entry() {
     OledAnim::Press pulsada[10];
     uint16_t current_inversions = 0;
     uint32_t game_seq_pend = 0;   // fotograma de juego cuyo acuse sale al pintarlo
+    uint16_t oled_reinit_served[10] = {0};
     uint64_t antes = time_us_64();
 
     while (true) {
@@ -2762,6 +2768,19 @@ void core1_entry() {
         if (display_power_req) {
             display_power_req = false;
             oleds.set_all_displays_on(displays_on);
+        }
+
+        // Reinit de una pantalla que se ha quedado colgada (fase 6 de
+        // PLAN_AIRSTRIKE). El SPI es de solo escritura: no se sabe si hacía
+        // falta, se cura a ciegas y se repinta lo que ya tenía, porque Core 1
+        // solo manda diferencias y una pantalla quieta no se repintaría nunca.
+        for (int i = 0; i < 10; i++) {
+            const uint16_t pedidos = oled_reinit_count[i];
+            if (pedidos == oled_reinit_served[i]) continue;
+            oled_reinit_served[i] = pedidos;
+            oleds.reinit_screen((uint8_t)(i + 1), displays_on);
+            oleds.paint_screen((uint8_t)(i + 1), oled_shown[i]);
+            current_inversions &= (uint16_t)~(1u << i); // el init la deja sin invertir
         }
 
         if (system_refresh_req) {
@@ -3226,7 +3245,8 @@ void process_command(const char* cmd) {
         // (0) y PLAY_INTRO la enseña ya.
         // HELP=1: modo ayuda (los nombres en vez de los iconos, que desde aquí
         // van en grande y sin nombre); SET_HELP elige cómo se sale.
-        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:PSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:HELP=1:GAMES=1:MODE=%s\n",
+        // OLEDREINIT=1: OLED_REINIT[:n] reinicia pantallas colgadas sin el reset común.
+        cdc_printf("ORBY_V4:FW=" ORBY_FW_VERSION ":KEYS=12:OLEDS=10:ENCODERS=2:PROFILES=%d:MAXPROFILES=%d:MAXPAGES=%d:MACROS=1:MAXMACROS=%d:HASH=1:BOOTSEL=1:PICON=1:HOSTAPP=1:MSTORE=1:PSTORE=1:ANIMSPEED=2:MIRROR=1:MENUKEY=1:ROTINV=1:MENUENC=1:MACROTEXT=1:INTRO=%d:HELP=1:GAMES=1:OLEDREINIT=1:MODE=%s\n",
                    (int)profile_count, MAX_ACTIVE_PROFILES, MAX_PAGES, MACRO_MAX_COUNT, (int)INTRO_COUNT,
                    (current_mode == MODE_NORMAL) ? "NORMAL" : (current_mode == MODE_GAME) ? "GAME" : "MENU");
         return;
@@ -3514,6 +3534,22 @@ void process_command(const char* cmd) {
         mirror_inv_sent  = -1;
         if (mirror_on) system_refresh_req = true;
         cdc_printf("MIRROR:OK:%d\n", mirror_on ? 1 : 0);
+        return;
+    }
+
+    // OLED_REINIT[:n] — secuencia de arranque a la pantalla n (1-10), o a las
+    // diez sin argumento, sin el reset común; la ejecuta Core 1, dueño del SPI.
+    // Contesta con cuántas veces se ha pedido cada una desde que arrancó.
+    if (strncmp(cmd, "OLED_REINIT", 11) == 0 && (cmd[11] == '\0' || cmd[11] == ':')) {
+        const int n = cmd[11] ? atoi(cmd + 12) : 0;
+        if (cmd[11] && (n < 1 || n > 10)) { cdc_printf("ERR:OLED_REINIT\n"); return; }
+        for (int i = 0; i < 10; i++)
+            if (n == 0 || n == i + 1) oled_reinit_count[i] = (uint16_t)(oled_reinit_count[i] + 1);
+        char cuenta[80];
+        int len = 0;
+        for (int i = 0; i < 10; i++)
+            len += snprintf(cuenta + len, sizeof(cuenta) - len, i ? ",%u" : "%u", (unsigned)oled_reinit_count[i]);
+        cdc_printf("OLED_REINIT:OK:%s\n", cuenta);
         return;
     }
 

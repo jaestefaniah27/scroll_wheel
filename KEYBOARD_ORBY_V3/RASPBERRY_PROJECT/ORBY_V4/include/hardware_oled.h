@@ -105,6 +105,9 @@ public:
         apply_cs(screen_num);
         sleep_us(5); // Esperar propagación CS (crítico para U4: pantallas 9-10)
 
+        // Modo horizontal en cada volcado: si un glitch del bus lo cambió, 0x21/0x22
+        // no bastan y la imagen sale revuelta hasta reiniciar (fase 6 de PLAN_AIRSTRIKE).
+        send_command(0x20); send_command(0x00);
         // Posicionar el cursor de la pantalla (Offset 28 y 99 para centrar en RAM 128x64)
         send_command(0x21); send_command(28); send_command(99);
         send_command(0x22); send_command(0); send_command(4);
@@ -116,6 +119,17 @@ public:
         spi_write_blocking(spi0, framebuffer, size);
 
         apply_cs(0); // Volver a cerrar el canal
+    }
+
+    // La secuencia de arranque entera a UNA pantalla, sin tocar RST: el reset es
+    // común a las diez y las otras nueve se apagarían. Deja la pantalla sin
+    // invertir y con la GDDRAM como estuviera: quien llama la repinta.
+    void reinit_screen(uint8_t screen_num, bool on) {
+        apply_cs(screen_num);
+        sleep_us(5); // Esperar propagación CS
+        for (uint8_t cmd : init_seq) send_command(cmd);
+        if (!on) send_command(0xAE); // en reposo: el init acaba encendiéndola
+        apply_cs(0);
     }
 
     void invert_screen(uint8_t screen_num, bool invert) {
