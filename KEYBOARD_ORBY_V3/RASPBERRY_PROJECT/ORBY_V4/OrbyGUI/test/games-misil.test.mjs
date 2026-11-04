@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
 import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
@@ -879,4 +879,71 @@ test('Misil: si el vehículo del final está destruido no se sortea su senda, y 
     break;
   }
   assert.equal(quietos, 1);
+});
+
+// --- Air Strike, fase 1: la derrota ---
+
+// Pierde las tres vidas por fallos y devuelve la partida justo al entrar en la derrota.
+function hastaDerrota(semilla = 3) {
+  const j = nueva(semilla);
+  apuntar(j.partida, j.paso, { x: 150, y: 95 });
+  for (let t = 0; t < 60_000 && j.partida.fase !== 'derrota'; t += DT) j.paso();
+  assert.equal(j.partida.fase, 'derrota');
+  return j;
+}
+
+test('Air Strike: al perder por fallos primero sale «HAS PERDIDO» y a los DERROTA_MS se pasa a los resultados', () => {
+  const { partida, paso } = hastaDerrota();
+  assert.equal(partida.vidas, 0);
+  assert.equal(partida.terminado, false);
+  paso(DERROTA_MS - 4 * DT);
+  assert.equal(partida.terminado, false);
+  paso(6 * DT);
+  assert.equal(partida.terminado, true);
+});
+
+test('Air Strike: en la derrota el mundo está congelado y la mira no responde', () => {
+  const { partida, paso } = hastaDerrota();
+  const antes = partida.entidades.map((e) => [e.x, e.y]);
+  const mira = partida.mira;
+  const camara = partida.camara;
+  partida.mando({ mando: 1, delta: 5 });
+  partida.mando({ mando: 2, delta: -5 });
+  paso(1000);
+  assert.deepEqual(partida.entidades.map((e) => [e.x, e.y]), antes);
+  assert.deepEqual(partida.mira, mira);
+  assert.deepEqual(partida.camara, camara);
+  assert.equal(partida.amenazas.length, 0);
+});
+
+test('Air Strike: perdiste por fallos, sin culpable; por un impacto, el culpable es el tirador que disparó', () => {
+  assert.equal(hastaDerrota().partida.culpable, null);
+  let porImpacto = 0;
+  for (const semilla of [1, 2, 3, 4, 5, 6]) {
+    conNivel(2, { disparoMs: 500 }, () => {
+      const { partida, paso } = nueva(semilla, { zonaInicial: 2 });
+      apuntar(partida, paso, { x: 150, y: 95 });
+      let tirador = null, impactos = partida.impactos;
+      for (let t = 0; t < 60_000 && partida.fase !== 'derrota'; t += DT) {
+        if (partida.amenazas.length) tirador = partida.amenazas[0].e;
+        paso();
+        if (partida.fase === 'derrota' && partida.impactos > impactos) {
+          porImpacto++;
+          assert.deepEqual(partida.culpable, { x: Math.round(tirador.x), y: Math.round(tirador.y), w: tirador.forma.w, h: tirador.forma.h });
+        } else if (partida.fase === 'derrota') assert.equal(partida.culpable, null);
+        impactos = partida.impactos;
+      }
+    });
+  }
+  assert.ok(porImpacto > 0, 'ninguna semilla acabó por un impacto');
+});
+
+test('Air Strike: la derrota sigue enseñando el mapa, atenuado a trama de ajedrez, con el texto y los puntos', () => {
+  const { l } = hastaDerrota();
+  const bit = (fb, x, y) => (fb[(y >> 3) * W + x] >> (y & 7)) & 1;
+  for (let i = 0; i < 10; i++) assert.ok(l[i].some((b) => b), `pantalla ${i + 1} vacía en la derrota`);
+  // En una pantalla sin texto (la 1) ningún píxel de la mitad atenuada queda encendido, y la otra mitad conserva el mapa.
+  let vivos = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if ((x + y) % 2 === 0) assert.equal(bit(l[0], x, y), 0); else vivos += bit(l[0], x, y); }
+  assert.ok(vivos > 0, 'el mapa sigue ahí');
 });
