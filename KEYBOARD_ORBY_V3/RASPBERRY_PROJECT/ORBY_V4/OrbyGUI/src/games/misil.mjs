@@ -78,7 +78,7 @@
 //   · un camión cualquiera puede salirse de la carretera, aparcar y desplegar el lanzador: hasta
 //     que se sale parece uno más, y esa es la gracia
 
-import { Malla, W, H, px, rect, destello, etiquetaValor, texto } from './dibujo.mjs';
+import { Malla, W, H, px, leer, rect, destello, etiquetaValor, texto, invertir } from './dibujo.mjs';
 import { MAPA_W, MAPA_H, NODOS, SALIDAS, TRAMOS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, EXPLANADA, construirMapa } from './misil-mapa.mjs';
 
 export const FILAS = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
@@ -108,6 +108,10 @@ const HUECO_CRUZ = 3;             // la cruz no se dibuja a menos de esto del ce
 const MARCA_CADA = 8;             // las rayitas de la cruz
 const EXPLOSION_MS = 650;
 const AVISO_MS = 1200;
+// Lo que se enseña «HAS PERDIDO» antes de pasar a los resultados. final.mjs ignora las pulsaciones
+// 900 ms (ARMA_MS): con estos 2 s el jugador ve qué le ha matado sin pulsar nada por error.
+export const DERROTA_MS = 2000;
+const DESTELLO_MS = 150;
 
 // Lo que cambia de una zona a la siguiente. Cada fila aprieta un poco más en todo a la vez:
 // subir una sola cosa (la velocidad, por ejemplo) se notaba como un salto, no como una escalada.
@@ -373,6 +377,16 @@ export const OBJETIVOS = [
   },
 ];
 
+// Texto grande sobre lo que ya hay dibujado: se le abre un halo de un píxel para que se lea sobre el mapa.
+function textoSobreMapa(fb, s) {
+  const t = new Uint8Array(fb.length);
+  texto(t, s);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (leer(t, x, y)) for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) px(fb, x + i, y + j, 0);
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (leer(t, x, y)) px(fb, x, y, 1);
+}
+
 export function pintarSprite(malla, s, x, y) {
   for (let j = 0; j < s.h; j++) {
     for (let i = 0; i < s.w; i++) if (s.filas[j][i] === '#') malla.px(x + i, y + j);
@@ -625,10 +639,13 @@ export default {
     let vuelo = null;             // ms de vuelo hacia la siguiente zona; null si está parado
     let progreso = 0;             // 0 al soltarse, 1 al llegar
     let empezado = 0;             // cuándo se soltó este misil
-    let fase = 'cayendo';         // 'cayendo' | 'explosion' | 'final'
+    let fase = 'cayendo';         // 'cayendo' | 'explosion' | 'derrota' | 'final'
     let hasta = 0;
     let impacto = null;           // { x, y }: dónde estalló el último
     let aviso = null;             // { texto, hasta }
+    let culpable = null;          // { x, y, w, h } (territorio) del tirador que dio el golpe final, o null
+    let derrotaDesde = 0;
+    let porImpacto = false;       // si la derrota fue por un impacto (destello) o por fallos
     let vidas = VIDAS;
     let puntos = 0;
     let aciertos = 0;
@@ -877,7 +894,19 @@ export default {
       if (!inmortal) vidas--;
       aviso = { texto: 'TOCADO', hasta: tiempo + AVISO_MS };
       sacudir();
-      if (vidas <= 0) { fase = 'final'; hasta = tiempo; }
+      if (vidas <= 0) perder(a.e);
+    }
+
+    // Congelar el mundo en vez de saltar a los resultados: el jugador ve el mapa donde ha perdido y, si
+    // fue un tirador, cuál. `culpable` se guarda como caja del territorio porque la cámara ya no se mueve.
+    function perder(tirador) {
+      fase = 'derrota';
+      derrotaDesde = tiempo;
+      hasta = tiempo + DERROTA_MS;
+      porImpacto = !!tirador;
+      culpable = tirador ? { x: Math.round(tirador.x), y: Math.round(tirador.y), w: tirador.forma.w, h: tirador.forma.h } : null;
+      amenazas = [];
+      cola = [];
     }
 
     function disparar(dt) {
@@ -896,7 +925,7 @@ export default {
           proximoDisparo = nivel().disparoMs;
         }
       }
-      for (const a of [...amenazas]) if (tiempo >= a.hasta && fase !== 'final') impactar(a);
+      for (const a of [...amenazas]) if (tiempo >= a.hasta && fase !== 'final' && fase !== 'derrota') impactar(a);
     }
 
     // --- Camión lanzamisiles ---
@@ -1091,7 +1120,7 @@ export default {
     }
 
     function mover(mando, delta) {
-      if (fase === 'final' || !mira || !delta) return;
+      if (fase === 'final' || fase === 'derrota' || !mira || !delta) return;
       const rapido = tiempo - ultimoPaso[mando] < RAPIDO_MS;
       ultimoPaso[mando] = tiempo;
       const paso = delta * (rapido ? PASO_RAPIDO : PASO);
@@ -1128,6 +1157,22 @@ export default {
       pintarSprite(malla, luces ? { ...e.forma, filas: e.forma.filas2 } : e.forma, x, y);
     }
 
+    // El mapa sigue ahí, atenuado con una trama de ajedrez (un bit por píxel: no hay grises), y el texto
+    // encima. El culpable se vuelve a pintar en claro y lo rodean dos círculos que se alternan.
+    function pintarDerrota(lienzo) {
+      for (let p = 0; p < 9; p++) for (let y = 0; y < H; y++) for (let x = (y & 1); x < W; x += 2) px(lienzo[p], x, y, 0);
+      textoSobreMapa(lienzo[3], 'HAS');
+      textoSobreMapa(lienzo[4], 'PERDIDO');
+      if (culpable) {
+        const e = entidades.find((o) => Math.round(o.x) === culpable.x && Math.round(o.y) === culpable.y);
+        if (e) pintarEntidad(e);
+        const x = culpable.x + (culpable.w >> 1) - camara.x, y = culpable.y + (culpable.h >> 1) - camara.y;
+        anillo(malla, x, y, Math.floor(tiempo / 250) % 2 ? 9 : 13);
+      }
+      etiquetaValor(lienzo[9], 'PUNTOS', puntos);
+      if (porImpacto && tiempo - derrotaDesde < DESTELLO_MS) for (let p = 0; p < 9; p++) invertir(lienzo[p]);
+    }
+
     return {
       // Al acabar se pasa directo a la pantalla de resultados y botones (final.mjs): sin un «FIN» propio.
       get terminado() { return fase === 'final'; },
@@ -1143,6 +1188,9 @@ export default {
       get amenazas() { return amenazas.map((a) => ({ ...a })); },
       get impactos() { return impactos; },
       get vidas() { return vidas; },
+      get fase() { return fase; },
+      get culpable() { return culpable && { ...culpable }; },
+      get mira() { return mira && { ...mira }; },
       get zona() { return vuelo !== null ? null : ZONAS[zonaIdx].nombre; },
       get estado() { return `${aciertos} objetivos · ${vidas} misiles de margen`; },
 
@@ -1150,6 +1198,10 @@ export default {
         tiempo += dt;
         if (aviso && tiempo >= aviso.hasta) aviso = null;
         if (!mira) return;
+        if (fase === 'derrota') {
+          if (tiempo >= hasta) fase = 'final';
+          return;
+        }
         if (fase !== 'final') {
           if (vuelo !== null) {
             vuelo += dt;
@@ -1171,7 +1223,7 @@ export default {
           progreso += (dt / CAIDA_MS) * PRISA[Math.min(pulsados.size, 2)];
           if (progreso >= 1) estallar();
         } else if (fase === 'explosion' && tiempo >= hasta) {
-          if (vidas <= 0) { fase = 'final'; hasta = tiempo; }
+          if (vidas <= 0) perder(null);
           else if (debeVolar()) {
             if (zonaIdx === ZONAS.length - 1) victoria(); else { vuelo = 0; fase = 'volando'; }
           }
@@ -1210,6 +1262,8 @@ export default {
           anillo(malla, x, y, 4); malla.px(x, y);
         }
         for (const e of entidades) pintarEntidad(e);
+
+        if (fase === 'derrota') { pintarDerrota(lienzo); return; }
 
         const cx = Math.round(mira.x);
         const cy = Math.round(mira.y);
