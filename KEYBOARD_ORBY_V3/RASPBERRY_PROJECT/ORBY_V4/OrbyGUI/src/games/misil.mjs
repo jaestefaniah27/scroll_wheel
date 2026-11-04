@@ -304,18 +304,35 @@ export const OBJETIVOS = [
     ]),
   },
   {
-    // Parapeto cuadrado con los dos cañones hacia arriba: ni redondo como el depósito ni hueco
-    // como la tienda. No se gira: los cañones apuntan al cielo, no a la carretera.
-    nombre: 'antiaereo', velocidad: 0, dispara: true,
+    // Lanzador antiaéreo de lado (10x10: más ancho pisa la senda del aeródromo): base ancha con ruedas, dos tubos de misil inclinados hacia arriba y un plato de
+    // radar sobre un mástil, a la izquierda. El plato gira en el segundo fotograma: es lo que lo separa de la tienda
+    // (hueca y cuadrada) y del depósito (redondo). No se gira: los tubos apuntan al cielo, no a la carretera.
+    // Su valor es el de cuando medía 7x7: más grande saldría más barato y no es más fácil de acertar.
+    nombre: 'antiaereo', velocidad: 0, dispara: true, valorFijo: true,
     ...sprite([
-      '..#.#..',
-      '..#.#..',
-      '..#.#..',
-      '#######',
-      '#.###.#',
-      '#.###.#',
-      '#######',
+      '........#.',
+      '###....#.#',
+      '#.#...#.#.',
+      '.#...#.#..',
+      '.#..#.#...',
+      '.#.#.#....',
+      '##########',
+      '##########',
+      '.##.##.##.',
+      '.##.##.##.',
+    ], [
+      '#.......#.',
+      '.#.....#.#',
+      '..#...#.#.',
+      '.#...#.#..',
+      '.#..#.#...',
+      '.#.#.#....',
+      '##########',
+      '##########',
+      '.##.##.##.',
+      '.##.##.##.',
     ]),
+    valor: 41,
   },
   {
     // El soldado con el tubo al hombro: una columna más que el soldado, hacia la derecha.
@@ -455,10 +472,28 @@ export function dibujoCrater({ x, y, w, h, tipo }) {
   return { w: S, h: S, filas: g.map((f) => f.join('')) };
 }
 
-export function pintarSprite(malla, s, x, y) {
+export function pintarSprite(malla, s, x, y, valor = 1) {
   for (let j = 0; j < s.h; j++) {
-    for (let i = 0; i < s.w; i++) if (s.filas[j][i] === '#') malla.px(x + i, y + j);
+    for (let i = 0; i < s.w; i++) if (s.filas[j][i] === '#') malla.px(x + i, y + j, valor);
   }
+}
+
+// El tirador avisado parpadea, cada vez más deprisa hasta el impacto (de 300 a 80 ms). Aparte, porque lo
+// usan el tirador, la señal de la mira y el marcador, y los tres tienen que ir al mismo compás.
+export function periodoAviso(a, tiempo) {
+  return 300 - 220 * Math.min(1, (tiempo - a.desde) / (a.hasta - a.desde));
+}
+
+// Triángulo de peligro con «!» (el palo y el punto salen en negro): 7x6 sobre la mira, 8x7 en el marcador.
+const PELIGRO_MIRA = ['...#...', '..###..', '..#.#..', '.##.##.', '.#####.', '###.###'];
+const PELIGRO_MARCADOR = ['...##...', '..####..', '..#..#..', '.##..##.', '.######.', '########', '###..###'];
+// Con un halo negro de un píxel, para que se lea sobre el terreno. `pon(x, y, valor)` pinta donde toque.
+function pintarFilas(pon, filas, x0, y0) {
+  const hay = (i, j) => filas[j]?.[i] === '#';
+  for (let j = -1; j <= filas.length; j++) for (let i = -1; i <= filas[0].length; i++) {
+    if ([-1, 0, 1].some((dj) => [-1, 0, 1].some((di) => hay(i + di, j + dj)))) pon(x0 + i, y0 + j, 0);
+  }
+  filas.forEach((f, j) => [...f].forEach((c, i) => { if (c === '#') pon(x0 + i, y0 + j, 1); }));
 }
 
 export function anillo(malla, cx, cy, r) {
@@ -1219,14 +1254,51 @@ export default {
       const x = Math.round(e.x) - camara.x;
       const y = Math.round(e.y) - camara.y;
       malla.rect(x - 1, y - 1, e.forma.w + 2, e.forma.h + 2, 0);
-      // El tirador avisado parpadea, cada vez más deprisa hasta el impacto.
-      const a = amenazas.find((o) => o.e === e);
-      if (a) {
-        const periodo = 300 - 220 * Math.min(1, (tiempo - a.desde) / (a.hasta - a.desde));
-        if (Math.floor(tiempo / periodo) % 2) return;
-      }
       const luces = e.forma.filas2 && Math.floor(tiempo / 200) % 2;
-      pintarSprite(malla, luces ? { ...e.forma, filas: e.forma.filas2 } : e.forma, x, y);
+      const forma = luces ? { ...e.forma, filas: e.forma.filas2 } : e.forma;
+      // El tirador avisado no desaparece (así no se pierde de vista): alterna su dibujo y su negativo.
+      const a = amenazas.find((o) => o.e === e);
+      if (a && Math.floor(tiempo / periodoAviso(a, tiempo)) % 2) {
+        malla.rect(x, y, e.forma.w, e.forma.h, 1);
+        pintarSprite(malla, forma, x, y, 0);
+        return;
+      }
+      pintarSprite(malla, forma, x, y);
+    }
+
+    // Quién te apunta: una línea de puntos (uno de cada tres píxeles) del tirador al VTOL, que es el centro de la
+    // vista, donde empieza la mira. Va debajo de las entidades: no tapa nada.
+    function pintarLineaDeApunte(a) {
+      const x0 = a.e.x + a.e.forma.w / 2 - camara.x, y0 = a.e.y + a.e.forma.h / 2 - camara.y;
+      const x1 = Math.round(malla.ancho / 2), y1 = Math.round(malla.alto / 2);
+      const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0)));
+      for (let k = 0; k <= n; k += 3) malla.px(Math.round(x0 + ((x1 - x0) * k) / n), Math.round(y0 + ((y1 - y0) * k) / n));
+    }
+
+    // El marco de blanco fijado: cuatro esquinas de 3 px a 2 px de la caja, parpadeando a la vez.
+    function pintarMarco(a) {
+      if (Math.floor(tiempo / periodoAviso(a, tiempo)) % 2) return;
+      const { x: ex, y: ey } = a.e, { w, h } = a.e.forma;
+      const x = Math.round(ex) - camara.x - 3, y = Math.round(ey) - camara.y - 3, W2 = w + 6, H2 = h + 6;
+      for (const [cx, cy, sx, sy] of [[x, y, 1, 1], [x + W2 - 1, y, -1, 1], [x, y + H2 - 1, 1, -1], [x + W2 - 1, y + H2 - 1, -1, -1]]) {
+        for (let k = 0; k < 3; k++) { malla.px(cx + sx * k, cy); malla.px(cx, cy + sy * k); }
+      }
+    }
+
+    // La señal de peligro en la mira: cuatro esquinas de 4 px a 12 px del centro y el triángulo con «!» encima,
+    // al compás de la amenaza más urgente. Así se nota sin apartar la vista de lo que se apunta.
+    function pintarPeligroEnMira(cx, cy) {
+      if (!amenazas.length) return;
+      const periodo = Math.min(...amenazas.map((a) => periodoAviso(a, tiempo)));
+      if (Math.floor(tiempo / periodo) % 2) return;
+      const pon = (x, y, v) => malla.px(x, y, v);
+      const esquinas = [];
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        for (let k = 0; k < 4; k++) esquinas.push([cx + sx * 12 - sx * k, cy + sy * 12], [cx + sx * 12, cy + sy * 12 - sy * k]);
+      }
+      esquinas.forEach(([x, y]) => { for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) pon(x + i, y + j, 0); });
+      esquinas.forEach(([x, y]) => pon(x, y, 1));
+      pintarFilas(pon, PELIGRO_MIRA, cx - 3, cy - 21);
     }
 
     // Se limpia solo la mancha, no una caja entera: lo que hay junto al cráter se queda.
@@ -1365,7 +1437,9 @@ export default {
 
         pintarMapa(lienzo);
         for (const c of crateres) pintarCrater(c);
+        for (const a of amenazas) pintarLineaDeApunte(a);
         for (const e of entidades) pintarEntidad(e);
+        for (const a of amenazas) pintarMarco(a);
         for (const ex of explosiones) pintarExplosion(ex);
 
         if (fase === 'derrota') { pintarDerrota(lienzo); return; }
@@ -1375,9 +1449,11 @@ export default {
 
         if (fase === 'cayendo') {
           cruz(malla, cx, cy);
+          pintarPeligroEnMira(cx, cy);
           const r = Math.round(RADIO_INICIAL + (RADIO_FINAL - RADIO_INICIAL) * Math.min(1, progreso));
           anillo(malla, cx, cy, r);
         } else if (fase === 'explosion') {
+          pintarPeligroEnMira(cx, cy);
           // La explosión: un fogonazo macizo al principio y luego una onda que se abre.
           const t = 1 - (hasta - tiempo) / EXPLOSION_MS;
           if (t < 0.2) malla.disco(impacto.x, impacto.y, RADIO_EXPLOSION);
@@ -1395,13 +1471,15 @@ export default {
         // Los misiles de margen, como cuadraditos en la esquina: se cuentan sin leer.
         // Van en las filas 1-4: los puntos empiezan en la 6 y una fila en blanco los separa.
         for (let i = 0; i < vidas; i++) rect(lienzo[9], 2 + i * 6, 1, 4, 4, 1);
-        // Con una amenaza en marcha, un «!» parpadeando junto a las vidas.
-        if (amenazas.length && Math.floor(tiempo / 150) % 2 === 0) { rect(lienzo[9], 20, 1, 2, 2, 1); rect(lienzo[9], 20, 4, 2, 1, 1); }
-        // Lo que queda sobre esta zona: una barra que se vacía.
+        // Con una amenaza en marcha, el triángulo de peligro junto a las vidas, al mismo compás que la mira.
+        if (amenazas.length && Math.floor(tiempo / Math.min(...amenazas.map((a) => periodoAviso(a, tiempo)))) % 2 === 0) {
+          PELIGRO_MARCADOR.forEach((f, j) => [...f].forEach((c, i) => { if (c === '#') px(lienzo[9], 21 + i, j, 1); }));
+        }
+        // Lo que queda sobre esta zona: una barra que se vacía. Empieza después del triángulo.
         if (!enVuelo) {
-          rect(lienzo[9], 24, 1, 46, 1, 1); rect(lienzo[9], 24, 4, 46, 1, 1);
-          rect(lienzo[9], 24, 1, 1, 4, 1); rect(lienzo[9], 69, 1, 1, 4, 1);
-          rect(lienzo[9], 25, 2, Math.round(44 * quedaParaVolar()), 2, 1);
+          rect(lienzo[9], 31, 1, 39, 1, 1); rect(lienzo[9], 31, 4, 39, 1, 1);
+          rect(lienzo[9], 31, 1, 1, 4, 1); rect(lienzo[9], 69, 1, 1, 4, 1);
+          rect(lienzo[9], 32, 2, Math.round(37 * quedaParaVolar()), 2, 1);
         }
         if (fase === 'explosion' && aviso && aviso.texto !== 'FALLO') destello(lienzo[9], W - 8, H - 7, 4);
       },

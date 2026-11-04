@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS, crearExplosion, dibujoCrater } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS, crearExplosion, dibujoCrater, periodoAviso } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
 import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
@@ -1030,4 +1030,84 @@ test('Air Strike: destruir algo deja un cráter pintado en el mapa', () => {
   paso(5000);
   assert.equal(partida.crateres, 1);
   assert.ok(l.slice(0, 9).some((fb) => fb.some((b) => b)));
+});
+
+// --- Air Strike, fase 4: defensas aéreas visibles y aviso de peligro ---
+
+// El bit del punto (x, y) de la vista (las nueve pantallas con sus huecos), o null si cae en un hueco.
+const FILAS_VISTA = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+function bitVista(l, x, y) {
+  const col = Math.floor(x / 88), fila = Math.floor(y / 54), ox = x - col * 88, oy = y - fila * 54;
+  if (col < 0 || col > 2 || fila < 0 || fila > 2 || ox >= 72 || oy >= 40) return null;
+  return (l[FILAS_VISTA[fila][col] - 1][(oy >> 3) * W + ox] >> (oy & 7)) & 1;
+}
+
+test('Air Strike: el antiaéreo es un lanzador de 10x10 con dos tubos, plato de radar que gira y el valor de siempre', () => {
+  const aa = tipoDe('antiaereo');
+  assert.ok(aa.w === 10 && aa.h === 10);
+  assert.ok(aa.filas2 && aa.filas2.length === aa.h);
+  for (const f of aa.filas2) assert.equal(f.length, aa.w);
+  assert.notDeepEqual(aa.filas, aa.filas2);
+  assert.equal(aa.valor, 41);
+  assert.ok(aa.valorFijo && aa.dispara);
+  assert.deepEqual(orientar(aa, 'der'), aa);
+});
+
+test('Air Strike: el parpadeo del aviso va de 300 a 80 ms, y los tres sitios que lo usan comparten la cuenta', () => {
+  const a = { desde: 1000, hasta: 6000 };
+  assert.equal(periodoAviso(a, 1000), 300);
+  assert.equal(periodoAviso(a, 6000), 80);
+  assert.ok(periodoAviso(a, 3500) < 300 && periodoAviso(a, 3500) > 80);
+  assert.equal(periodoAviso(a, 9000), 80, 'no baja de 80');
+});
+
+// Busca una amenaza antiaérea cuyo tirador se vea entero (no a caballo de un hueco entre pantallas).
+function conAmenazaVisible() {
+  for (const semilla of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    const j = nueva(semilla, { inmortal: true, zonaInicial: 2 });
+    for (let t = 0; t < 30_000 && !j.partida.amenazas.length; t += DT) j.paso();
+    const a = j.partida.amenazas[0];
+    if (a && visible(j.partida.camara, a.e.x, a.e.y, a.e.forma.w, a.e.forma.h)) return { ...j, a };
+  }
+  throw new Error('ninguna semilla da un tirador a la vista');
+}
+
+test('Air Strike: mientras te apunta, el tirador no desaparece: alterna su dibujo y su negativo', () => {
+  const { partida, paso, l, a } = conAmenazaVisible();
+  const e = a.e, cam = partida.camara;
+  const x0 = Math.round(e.x) - cam.x, y0 = Math.round(e.y) - cam.y;
+  const estados = new Set();
+  for (let t = 0; t < 1200 && partida.amenazas.length; t += DT) {
+    paso();
+    let lit = 0, hueco = 0;
+    for (let j = 0; j < e.forma.h; j++) for (let i = 0; i < e.forma.w; i++) lit += bitVista(l, x0 + i, y0 + j);
+    for (let j = 0; j < e.forma.h; j++) for (let i = 0; i < e.forma.w; i++) hueco += e.forma.filas[j][i] === '#' ? 0 : 1;
+    assert.ok(lit > 0, 'el tirador no puede quedarse en blanco');
+    estados.add(lit);
+  }
+  assert.ok(estados.size >= 2, 'alterna positivo y negativo');
+});
+
+test('Air Strike: con una amenaza activa la mira lleva las esquinas de peligro, parpadeando; sin ella no', () => {
+  const { partida, paso, l } = conAmenazaVisible();
+  // Las cuatro esquinas de 4 px a 12 px del centro de la vista (donde empieza la mira, que aquí no se mueve).
+  const [cx, cy] = [124, 74];
+  const brazo = [[cx - 12, cy - 12], [cx - 11, cy - 12], [cx - 10, cy - 12], [cx - 9, cy - 12], [cx - 12, cy - 11], [cx - 12, cy - 10], [cx - 12, cy - 9]];
+  const encendido = () => brazo.every(([x, y]) => bitVista(l, x, y) === 1);
+  let on = 0, off = 0;
+  for (let t = 0; t < 1500 && partida.amenazas.length; t += DT) { paso(); if (encendido()) on++; else off++; }
+  assert.ok(on > 0 && off > 0, `${on} encendidos, ${off} apagados`);
+  // Fuera de la amenaza (pasado el impacto) no se pinta.
+  while (partida.amenazas.length) paso();
+  paso(40);
+  assert.ok(!encendido());
+});
+
+test('Air Strike: la pantalla 10 enseña el triángulo de peligro mientras te apuntan, y no antes', () => {
+  const j = nueva(3, { inmortal: true, zonaInicial: 2 });
+  const lit = () => { let n = 0; for (let y = 0; y < 6; y++) for (let x = 21; x < 29; x++) n += (j.l[9][(y >> 3) * W + x] >> (y & 7)) & 1; return n; };
+  while (!j.partida.amenazas.length) { assert.equal(lit(), 0, 'sin amenaza no hay triángulo'); j.paso(); }
+  let on = 0, off = 0;
+  for (let t = 0; t < 1500 && j.partida.amenazas.length; t += DT) { j.paso(); if (lit() > 0) on++; else off++; }
+  assert.ok(on > 0 && off > 0, `${on} / ${off}`);
 });
