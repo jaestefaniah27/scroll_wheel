@@ -29,6 +29,10 @@
 // a la vez (dos en la 6) y el tirador avisado parpadea hasta el impacto; destruirlo antes lo
 // quita. Los grupos a pie salen de los edificios, bajan de un camión o una patrulla que aparca
 // en una explanada, o suben a un vehículo aparcado, que entonces arranca y se pone a circular.
+// Air Strike: a quien te apunta se le ve (alterna su dibujo y su negativo, con un marco de blanco y una línea de
+// puntos hasta el VTOL) y la mira lleva una señal de peligro; pasado el apunte sale su misil y, al llegar, «TE HAN
+// DADO». Lo destruido estalla y deja un cráter punteado, distinto de cualquier vehículo. Al perder, el mapa no
+// desaparece: «HAS PERDIDO» y, si te mató un tirador, un círculo parpadea sobre él; 2 s después, los resultados.
 // La pantalla 10 enseña, con una barra, cuánto queda para irse y, en vuelo, la zona a la que va.
 //
 // Decisiones:
@@ -70,9 +74,13 @@
 //   · todo lo que cambia de una zona a la siguiente sale de NIVELES, una fila por zona. Sube todo
 //     a la vez: subir una sola cosa (la velocidad, por ejemplo) se notaba como un salto, no como
 //     una escalada
-//   · el enemigo dispara al VTOL parado con un aviso (la amenaza): el tirador parpadea hasta el
+//   · el enemigo dispara al VTOL parado con un aviso (la amenaza): el tirador alterna su dibujo hasta el
 //     impacto. Con el misil tardando hasta 1,8 s en caer, hay que poder responder: una sola
 //     amenaza a la vez (dos en la última zona) y 3 s entre un impacto y el siguiente
+//   · el misil enemigo siempre va al centro de la vista, que es el VTOL, y no a donde apunta la mira: no hay
+//     forma de esquivarlo, solo de destruir al tirador antes (decisión abierta; esquivar sería otra fase)
+//   · el mundo se congela en la derrota en vez de saltar a los resultados: ver qué te ha matado es lo que
+//     hace que perder se entienda
 //   · fallos e impactos gastan la misma vida: un solo contador en la pantalla 10, que se lee de
 //     un vistazo, y el juego no tiene que explicar dos
 //   · un camión cualquiera puede salirse de la carretera, aparcar y desplegar el lanzador: hasta
@@ -112,6 +120,9 @@ const AVISO_MS = 1200;
 // 900 ms (ARMA_MS): con estos 2 s el jugador ve qué le ha matado sin pulsar nada por error.
 export const DERROTA_MS = 2000;
 const DESTELLO_MS = 150;
+// Lo que tarda en llegar el misil enemigo desde que sale. Como `avisoMs` nunca baja de 3500, siempre hay al menos
+// 1,7 s de apunte (el marco y la mira) antes de que salga nada: primero se ve que te apuntan y luego sale el misil.
+export const VUELO_ENEMIGO_MS = 1800;
 
 // Lo que cambia de una zona a la siguiente. Cada fila aprieta un poco más en todo a la vez:
 // subir una sola cosa (la velocidad, por ejemplo) se notaba como un salto, no como una escalada.
@@ -749,6 +760,7 @@ export default {
     let aviso = null;             // { texto, hasta }
     let culpable = null;          // { x, y, w, h } (territorio) del tirador que dio el golpe final, o null
     let derrotaDesde = 0;
+    let golpe = null;             // { desde, hasta, vida }: el último impacto que no mató, para el «TE HAN DADO» y la vida que parpadea
     let porImpacto = false;       // si la derrota fue por un impacto (destello) o por fallos
     let vidas = VIDAS;
     let puntos = 0;
@@ -988,7 +1000,8 @@ export default {
     // así dos disparos nunca caen juntos aunque haya dos amenazas a la vez.
     function amenazar(e) {
       const ultimo = amenazas.length ? Math.max(...amenazas.map((a) => a.hasta)) : ultimoImpacto;
-      amenazas.push({ e, desde: tiempo, hasta: Math.max(tiempo + nivel().avisoMs, ultimo + ESPACIO_DISPAROS_MS) });
+      const hasta = Math.max(tiempo + nivel().avisoMs, ultimo + ESPACIO_DISPAROS_MS);
+      amenazas.push({ e, desde: tiempo, lanzaEn: hasta - VUELO_ENEMIGO_MS, hasta });
     }
 
     function impactar(a) {
@@ -999,7 +1012,20 @@ export default {
       aviso = { texto: 'TOCADO', hasta: tiempo + AVISO_MS };
       sacudir();
       if (vidas <= 0) perder(a.e);
+      else golpe = { desde: tiempo, hasta: tiempo + AVISO_MS, vida: inmortal ? -1 : vidas };
     }
+
+    // Dónde está el misil enemigo de `a` (en la vista) cuando va por `k` del vuelo, de 0 a 1. Sale del centro del
+    // tirador y acelera hasta el VTOL (el centro de la vista): k² en vez de k, como un misil de verdad. Se calcula
+    // con la cámara de ahora, no con la de cuando salió: el vaivén mueve la vista y el misil no puede quedarse atrás.
+    function posMisilEnemigo(a, k) {
+      const x0 = a.e.x + a.e.forma.w / 2 - camara.x, y0 = a.e.y + a.e.forma.h / 2 - camara.y;
+      const x1 = Math.round(malla.ancho / 2), y1 = Math.round(malla.alto / 2);
+      const q = Math.max(0, Math.min(1, k)) ** 2;
+      return { x: x0 + (x1 - x0) * q, y: y0 + (y1 - y0) * q };
+    }
+    const kMisilEnemigo = (a) => (tiempo - a.lanzaEn) / (a.hasta - a.lanzaEn);
+    const enElAire = (a) => tiempo >= a.lanzaEn && tiempo < a.hasta;
 
     // Congelar el mundo en vez de saltar a los resultados: el jugador ve el mapa donde ha perdido y, si
     // fue un tirador, cuál. `culpable` se guarda como caja del territorio porque la cámara ya no se mueve.
@@ -1008,6 +1034,7 @@ export default {
       derrotaDesde = tiempo;
       hasta = tiempo + DERROTA_MS;
       porImpacto = !!tirador;
+      golpe = null;
       culpable = tirador ? { x: Math.round(tirador.x), y: Math.round(tirador.y), w: tirador.forma.w, h: tirador.forma.h } : null;
       amenazas = [];
       cola = [];
@@ -1189,6 +1216,13 @@ export default {
           explosiones.push(crearExplosion(ex, ey, CLASE_EXPLOSION[e.tipo.nombre] ?? 'media', tiempo + 40 * orden, aleatorio));
         }
         entidades = entidades.filter((e) => !tocados.includes(e));
+        // Destruir al tirador con su misil ya en el aire lo cancela (el premio por reaccionar) y el misil se
+        // deshace con una explosión pequeña donde esté, en lugar de desaparecer sin más.
+        for (const a of amenazas) {
+          if (!tocados.includes(a.e) || !enElAire(a)) continue;
+          const m = posMisilEnemigo(a, kMisilEnemigo(a));
+          explosiones.push(crearExplosion(Math.round(m.x + camara.x), Math.round(m.y + camara.y), 'pequena', tiempo + 40 * tocados.length, aleatorio));
+        }
         amenazas = amenazas.filter((a) => entidades.includes(a.e));
         puntos += ganados;
         aciertos += tocados.length;
@@ -1285,6 +1319,18 @@ export default {
       }
     }
 
+    // Cabeza de 2x2 con halo negro, una estela de cuatro píxeles separados por la trayectoria y una chispa en la
+    // cola que parpadea. Pasa por los huecos entre pantallas sin dibujarse, como la mira: no es un fallo.
+    function pintarMisilEnemigo(a) {
+      const k = kMisilEnemigo(a);
+      const en = (dk) => { const m = posMisilEnemigo(a, k - dk); return [Math.round(m.x), Math.round(m.y)]; };
+      for (let j = 1; j <= 4; j++) { const [x, y] = en(0.035 * j); malla.px(x, y); }
+      if (Math.floor(tiempo / 50) % 2) { const [x, y] = en(0.035 * 5); malla.px(x, y); }
+      const [x, y] = en(0);
+      malla.rect(x - 1, y - 1, 4, 4, 0);
+      malla.rect(x, y, 2, 2, 1);
+    }
+
     // La señal de peligro en la mira: cuatro esquinas de 4 px a 12 px del centro y el triángulo con «!» encima,
     // al compás de la amenaza más urgente. Así se nota sin apartar la vista de lo que se apunta.
     function pintarPeligroEnMira(cx, cy) {
@@ -1365,6 +1411,9 @@ export default {
       get victoria() { return ganada; },
       get estancia() { return estancia; },
       get amenazas() { return amenazas.map((a) => ({ ...a })); },
+      // Los misiles enemigos en el aire, en coordenadas de la vista.
+      get misilesEnemigos() { return amenazas.filter(enElAire).map((a) => posMisilEnemigo(a, kMisilEnemigo(a))); },
+      get golpe() { return golpe && { ...golpe }; },
       get impactos() { return impactos; },
       get vidas() { return vidas; },
       get fase() { return fase; },
@@ -1377,6 +1426,7 @@ export default {
         tiempo += dt;
         explosiones = explosiones.filter((e) => tiempo < e.fin);   // también en la derrota y mientras cae el misil
         if (aviso && tiempo >= aviso.hasta) aviso = null;
+        if (golpe && tiempo >= golpe.hasta) golpe = null;
         if (!mira) return;
         if (fase === 'derrota') {
           if (tiempo >= hasta) fase = 'final';
@@ -1440,6 +1490,7 @@ export default {
         for (const a of amenazas) pintarLineaDeApunte(a);
         for (const e of entidades) pintarEntidad(e);
         for (const a of amenazas) pintarMarco(a);
+        for (const a of amenazas) if (enElAire(a)) pintarMisilEnemigo(a);
         for (const ex of explosiones) pintarExplosion(ex);
 
         if (fase === 'derrota') { pintarDerrota(lienzo); return; }
@@ -1482,6 +1533,16 @@ export default {
           rect(lienzo[9], 32, 2, Math.round(37 * quedaParaVolar()), 2, 1);
         }
         if (fase === 'explosion' && aviso && aviso.texto !== 'FALLO') destello(lienzo[9], W - 8, H - 7, 4);
+        // La vida que acaba de costar un impacto parpadea tres veces antes de irse, en lugar de quitarse de golpe.
+        if (golpe && golpe.vida >= 0) {
+          const t = tiempo - golpe.desde;
+          if (t < 900 && Math.floor(t / 150) % 2 === 0) rect(lienzo[9], 2 + golpe.vida * 6, 1, 4, 4, 1);
+        }
+        if (golpe) {
+          textoSobreMapa(lienzo[3], 'TE HAN');
+          textoSobreMapa(lienzo[4], 'DADO');
+          if (tiempo - golpe.desde < DESTELLO_MS) for (let p = 0; p < 9; p++) invertir(lienzo[p]);
+        }
       },
     };
   },

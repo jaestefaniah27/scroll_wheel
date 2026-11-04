@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS, crearExplosion, dibujoCrater, periodoAviso } from '../src/games/misil.mjs';
+import misil, { OBJETIVOS, orientar, MUNDO_W, MUNDO_H, trayecto, hayObjetivosEn, avanzarVehiculo, espacioDelante, circular, armarConvoy, duracionVuelo, ESTANCIA_MS, BONO_VIDA, TRANSICION_MS, NIVELES, ESPACIO_DISPAROS_MS, LANZADOR_DESPLIEGUE_MS, DESEMBARCO_MS, DERROTA_MS, crearExplosion, dibujoCrater, periodoAviso, VUELO_ENEMIGO_MS } from '../src/games/misil.mjs';
 import { W, H } from '../src/games/dibujo.mjs';
 import { NODOS, TRAMOS, SALIDAS, ESTATICOS, ZONAS, SENDAS, APARCAMIENTOS, MAPA_W, MAPA_H, enCarretera, construirMapa } from '../src/games/misil-mapa.mjs';
 import { lienzo, limpiarLienzo } from '../src/games/proto.mjs';
@@ -605,6 +605,8 @@ function vigilar(partida, ms) {
       visto.amenazas++;
       visto.tirados.add(a.e.tipo.nombre);
       assert.ok(a.hasta - a.desde >= 3500, `aviso de ${a.hasta - a.desde} ms`);
+      assert.equal(a.hasta - a.lanzaEn, VUELO_ENEMIGO_MS);
+      assert.ok(a.lanzaEn - a.desde >= 1700, 'al menos 1,7 s de apunte antes de que salga el misil');
       for (const o of am) if (o !== a) assert.ok(Math.abs(o.hasta - a.hasta) >= ESPACIO_DISPAROS_MS, 'dos amenazas con impactos juntos');
     }
     if (partida.impactos > antes) { visto.impactos.push(t); antes = partida.impactos; }
@@ -1099,7 +1101,7 @@ test('Air Strike: con una amenaza activa la mira lleva las esquinas de peligro, 
   assert.ok(on > 0 && off > 0, `${on} encendidos, ${off} apagados`);
   // Fuera de la amenaza (pasado el impacto) no se pinta.
   while (partida.amenazas.length) paso();
-  paso(40);
+  paso(300);   // pasado el destello del impacto, que invierte las pantallas
   assert.ok(!encendido());
 });
 
@@ -1110,4 +1112,124 @@ test('Air Strike: la pantalla 10 enseña el triángulo de peligro mientras te ap
   let on = 0, off = 0;
   for (let t = 0; t < 1500 && j.partida.amenazas.length; t += DT) { j.paso(); if (lit() > 0) on++; else off++; }
   assert.ok(on > 0 && off > 0, `${on} / ${off}`);
+});
+
+// --- Air Strike, fase 5: el misil enemigo ---
+
+test('Air Strike: el misil enemigo sale a lanzaEn, no antes, llega al VTOL a hasta y solo entonces hay impacto', () => {
+  const { partida, paso } = nueva(3, { inmortal: true, zonaInicial: 2 });
+  let ahora = DT, a = null, salio = null, ultima = null;
+  while (!(a = partida.amenazas[0])) { paso(); ahora += DT; assert.equal(partida.misilesEnemigos.length, 0); }
+  assert.equal(a.hasta - a.lanzaEn, VUELO_ENEMIGO_MS);
+  while (partida.amenazas.length) {
+    paso(); ahora += DT;
+    const m = partida.misilesEnemigos;
+    if (partida.amenazas.length) {
+      if (ahora < a.lanzaEn) assert.equal(m.length, 0, `a ${ahora} ya hay misil (sale a ${a.lanzaEn})`);
+      else { assert.equal(m.length, 1); salio ??= ahora; ultima = m[0]; }
+      assert.equal(partida.impactos, 0, 'impacto antes de hasta');
+    }
+  }
+  assert.ok(salio >= a.lanzaEn && salio <= a.lanzaEn + 2 * DT, `salió a ${salio}, lanzaEn ${a.lanzaEn}`);
+  assert.equal(partida.impactos, 1);
+  assert.ok(ahora >= a.hasta && ahora <= a.hasta + 2 * DT);
+  // En el último fotograma antes del impacto está encima del centro de la vista.
+  assert.ok(Math.hypot(ultima.x - CENTRO.x, ultima.y - CENTRO.y) < 3, `a ${Math.hypot(ultima.x - CENTRO.x, ultima.y - CENTRO.y)} px del VTOL`);
+  assert.equal(partida.misilesEnemigos.length, 0);
+});
+
+test('Air Strike: el misil enemigo acelera (k²) y se dibuja, con cabeza y estela, sin salirse de la vista', () => {
+  const { partida, paso, l } = nueva(3, { inmortal: true, zonaInicial: 2 });
+  while (!partida.amenazas.length) paso();
+  const a = partida.amenazas[0];
+  while (!partida.misilesEnemigos.length) paso();
+  // La cabeza (2x2) está encendida donde dice el misil, en cuanto no cae en un hueco entre pantallas (lejos de la mira, que le haría un halo).
+  let vista = 0;
+  for (let i = 0; i < 40 && partida.amenazas.length; i++) {
+    paso();
+    const m = partida.misilesEnemigos[0];
+    if (!m) break;
+    const [x, y] = [Math.round(m.x), Math.round(m.y)];
+    if ([[0, 0], [1, 0], [0, 1], [1, 1]].every(([i2, j2]) => bitVista(l, x + i2, y + j2) !== null)) {
+      vista++;
+      for (const [i2, j2] of [[0, 0], [1, 0], [0, 1], [1, 1]]) assert.equal(bitVista(l, x + i2, y + j2), 1);
+    }
+  }
+  assert.ok(vista > 0 && a.e);
+  const dist = () => { const m = partida.misilesEnemigos[0]; return m && Math.hypot(m.x - CENTRO.x, m.y - CENTRO.y); };
+  const d0 = dist();
+  paso(VUELO_ENEMIGO_MS / 2);
+  const d1 = dist();
+  paso(VUELO_ENEMIGO_MS / 4);
+  const d2 = dist();
+  assert.ok(d0 > d1 && d1 > d2, `${d0} ${d1} ${d2}`);
+  // Acelera: el trozo recorrido en el último cuarto es mayor que el del primer medio... (k² crece más deprisa al final).
+  assert.ok((d1 - d2) / (VUELO_ENEMIGO_MS / 4) > (d0 - d1) / (VUELO_ENEMIGO_MS / 2), 'acelera');
+});
+
+test('Air Strike: destruir al tirador con el misil ya en el aire lo quita, lo deshace en una explosión y no resta vida', () => {
+  let probadas = 0;
+  for (const semilla of [1, 2, 3, 4, 5, 6]) {
+    conNivel(2, { disparoMs: 500, avisoMs: 3500 }, () => {
+      // Primera pasada: quién dispara. Segunda: la misma partida, con la mira ya puesta sobre él.
+      const previa = nueva(semilla, { zonaInicial: 2 });
+      while (!previa.partida.amenazas.length) previa.paso();
+      const t = previa.partida.amenazas[0].e;
+      const objetivo = { x: Math.round(t.x + t.forma.w / 2), y: Math.round(t.y + t.forma.h / 2) };
+      const { partida, paso } = nueva(semilla, { zonaInicial: 2 });
+      apuntar(partida, paso, enVista(partida, objetivo));
+      let tirador = null;
+      for (let i = 0; i < 400 && !partida.misilesEnemigos.length; i++) paso();
+      if (!partida.misilesEnemigos.length || !(tirador = partida.amenazas[0]?.e)) return;
+      partida.mandoBoton({ mando: 1, pulsado: true });
+      partida.mandoBoton({ mando: 2, pulsado: true });
+      for (let i = 0; i < 600 && partida.puntos === 0 && partida.amenazas.length; i++) paso();
+      if (partida.puntos === 0) return;   // el misil propio no llegó a tiempo: esta semilla no sirve
+      probadas++;
+      assert.ok(!partida.entidades.includes(tirador));
+      assert.equal(partida.amenazas.length, 0);
+      assert.equal(partida.misilesEnemigos.length, 0, 'el misil enemigo se ha ido');
+      assert.equal(partida.impactos, 0);
+      assert.equal(partida.vidas, 3, 'no resta vida');
+      assert.equal(partida.explosiones.length, partida.detalle.suma.total + 1, 'una explosión por destruido y otra del misil enemigo');
+    });
+  }
+  assert.ok(probadas >= 1, 'ninguna semilla llegó a destruir al tirador en vuelo');
+});
+
+test('Air Strike: un impacto que no mata enseña «TE HAN DADO», quita una vida y su cuadradito parpadea tres veces antes de irse', () => {
+  conNivel(2, { disparoMs: 500, avisoMs: 3500 }, () => {
+    const { partida, paso, l } = nueva(3, { zonaInicial: 2 });
+    apuntar(partida, paso, { x: 150, y: 95 });
+    while (partida.impactos === 0) paso();
+    assert.equal(partida.vidas, 2);
+    const g = partida.golpe;
+    assert.ok(g && g.vida === 2);
+    const luz = () => (l[9][0 * W + 15] >> 2) & 1;   // un píxel del cuadradito de la vida 3 (x 14-17, y 1-4)
+    const antes = l.slice(3, 5).map((fb) => fb.join());
+    let on = 0, off = 0, flancos = 0, previo = 0;
+    for (let t = 0; t < 1000; t += DT) {
+      paso();
+      if (partida.golpe && t < 880) { const v = (l[9][15] >> 2) & 1; if (v) on++; else off++; if (v && !previo) flancos++; previo = v; }
+    }
+    assert.ok(on > 0 && off > 0, 'parpadea');
+    assert.ok(flancos >= 2 && flancos <= 3, `${flancos} encendidos`);
+    assert.equal(luz(), 0, 'pasados 900 ms ya no está');
+    assert.notDeepEqual(antes, l.slice(3, 5).map((fb) => fb.join()), 'el texto se ha ido de las pantallas 4 y 5');
+  });
+});
+
+test('Air Strike: el golpe se anuncia en las pantallas 4 y 5 durante AVISO y desaparece', () => {
+  conNivel(2, { disparoMs: 500, avisoMs: 3500 }, () => {
+    const { partida, paso, l } = nueva(3, { zonaInicial: 2 });
+    apuntar(partida, paso, { x: 150, y: 95 });
+    while (partida.impactos === 0) paso();
+    paso(300);
+    const durante = [l[3].join(), l[4].join()];
+    assert.ok(partida.golpe);
+    paso(1500);
+    assert.equal(partida.golpe, null);
+    assert.notEqual(l[3].join(), durante[0]);
+    assert.notEqual(l[4].join(), durante[1]);
+  });
 });
