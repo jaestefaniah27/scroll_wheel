@@ -581,6 +581,12 @@ volatile bool display_power_req = false;
 // Core 1 apunta aparte cuántos ha servido, así nadie pisa lo del otro.
 volatile uint16_t oled_reinit_count[10] = {0};
 
+// L4 de la fase 6: reset completo de las diez (RST común y secuencia de
+// arranque), que Core 1 hace y luego repinta. Lo pide Core 0 al entrar en un
+// juego y cuando la app aparece; oled_full_resets cuenta las veces.
+volatile bool oled_full_reset_req = false;
+volatile uint16_t oled_full_resets = 0;
+
 // La intro de arranque la reproduce Core 1 y no se puede cortar: mientras dura,
 // incluida la apertura de los iconos que la cierra, Core 0 no atiende teclas,
 // mandos ni rueda. Empieza a true para que no quede un hueco entre que arranca
@@ -2742,6 +2748,11 @@ void core1_entry() {
     uint32_t game_seq_pend = 0;   // fotograma de juego cuyo acuse sale al pintarlo
     uint16_t oled_reinit_served[10] = {0};
     uint64_t antes = time_us_64();
+    // Vigilante a ciegas (L2 de la fase 6): una pantalla cada VIGIA_US, en
+    // rueda, recibe otra vez su configuración y su imagen. Cada una, cada 2,5 s.
+    constexpr uint64_t VIGIA_US = 250000;
+    uint64_t vigia_t = antes;
+    uint8_t vigia_n = 0;
 
     while (true) {
         core1_heartbeat++; // Core 0 no alimenta el watchdog si esto se para
@@ -2773,6 +2784,18 @@ void core1_entry() {
         if (display_power_req) {
             display_power_req = false;
             oleds.set_all_displays_on(displays_on);
+        }
+
+        // Reset completo (L4): el RST es común, así que caen las diez y se
+        // repintan todas con lo que tenían. init_all_screens las deja encendidas
+        // y sin invertir.
+        if (oled_full_reset_req) {
+            oled_full_reset_req = false;
+            oleds.init_all_screens();
+            if (!displays_on) oleds.set_all_displays_on(false);
+            for (int i = 0; i < 10; i++) oleds.paint_screen((uint8_t)(i + 1), oled_shown[i]);
+            current_inversions = 0;
+            oled_full_resets = (uint16_t)(oled_full_resets + 1);
         }
 
         // Reinit de una pantalla que se ha quedado colgada (fase 6 de
@@ -2858,6 +2881,17 @@ void core1_entry() {
         }
         if (animando && t >= OledAnim::duration(kind)) animando = false;
         if (!animando) intro_running = false;
+
+        // Vigilante (L2). Solo con todo quieto, para no colarse en medio de una
+        // animación o de una pulsación; en un juego sí, que entre fotograma y
+        // fotograma no hay nada a medias. Respeta el negativo que tenga.
+        if (!animando && !muelles && !intro_running && !display_power_req
+            && (uint64_t)(ahora - vigia_t) >= VIGIA_US) {
+            vigia_t = ahora;
+            oleds.refresh_config((uint8_t)(vigia_n + 1), displays_on, (current_inversions >> vigia_n) & 1);
+            oleds.paint_screen((uint8_t)(vigia_n + 1), oled_shown[vigia_n]);
+            vigia_n = (uint8_t)((vigia_n + 1) % 10);
+        }
 
         // El negativo de la tecla pulsada va por hardware: es instantáneo, que
         // es lo que tiene que ser la respuesta a un dedo. El muelle de arriba
@@ -3315,6 +3349,9 @@ void process_command(const char* cmd) {
         // El repintado no se pide aquí: lo dispara el repaso de host_app_alive()
         // del bucle de Core 0, que es el mismo camino que cubre irse sin avisar.
         const bool on = (cmd[9] == '1');
+        // La app acaba de aparecer: reset completo de las pantallas (L4 de la
+        // fase 6). Solo al llegar; el HOST_APP:1 de cada 8 s no lo repite.
+        if (on && !host_app_alive()) oled_full_reset_req = true;
         host_app_announced = on;
         host_app_last_ms = to_ms_since_boot(get_absolute_time());
         cdc_printf("HOST_APP:OK:%d\n", on ? 1 : 0);
@@ -3462,6 +3499,7 @@ void process_command(const char* cmd) {
                 // modo juego nadie lo quitaría.
                 HidOut::release_all();
                 current_mode = MODE_GAME;
+                oled_full_reset_req = true;   // L4 de la fase 6: cada partida empieza con las diez sanas
                 push_system_refresh();
                 cdc_printf("GAME:OK:1\n");
             } else if (current_mode == MODE_GAME) {
@@ -3554,7 +3592,7 @@ void process_command(const char* cmd) {
         int len = 0;
         for (int i = 0; i < 10; i++)
             len += snprintf(cuenta + len, sizeof(cuenta) - len, i ? ",%u" : "%u", (unsigned)oled_reinit_count[i]);
-        cdc_printf("OLED_REINIT:OK:%s\n", cuenta);
+        cdc_printf("OLED_REINIT:OK:%s:%u\n", cuenta, (unsigned)oled_full_resets);
         return;
     }
 

@@ -12,25 +12,38 @@ private:
         0x81, 0xCF, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF
     };
 
+    // Margen entre flancos del 74HC595. A 3,3 V pide unos 25 ns de preparación
+    // del dato y de ancho de pulso de reloj; con un solo nop (~8 ns) se iba por
+    // debajo, y un flanco perdido corre la máscara un bit: el CS baja en otra
+    // pantalla y le llegan comandos ajenos (un 0xAE suelto la apaga). Seis nop
+    // son ~48 ns a 125 MHz; los 16 bits cuestan ~2,5 µs por volcado (fase 6 de
+    // PLAN_AIRSTRIKE).
+    static inline void shift_wait() {
+        __asm volatile ("nop\nnop\nnop\nnop\nnop\nnop\n");
+    }
+
+    // Saca 16 bits al 74HC595 (MSB primero) y los pasa a la salida con el latch.
+    void shift_mask(uint16_t mask) {
+        gpio_put(Pins::SHIFT_LATCH, 0);
+        for (int i = 15; i >= 0; i--) {
+            gpio_put(Pins::SHIFT_DATA, (mask >> i) & 1);
+            shift_wait();                       // preparación del dato
+            gpio_put(Pins::SHIFT_CLK, 1);
+            shift_wait();                       // ancho del pulso alto
+            gpio_put(Pins::SHIFT_CLK, 0);
+            shift_wait();                       // ancho del pulso bajo
+        }
+        gpio_put(Pins::SHIFT_LATCH, 1);
+        shift_wait();
+    }
+
     void apply_cs(uint8_t screen_num) {
         uint16_t mask = 0xFFFF; // Todo HIGH (aislado)
         if (screen_num >= 1 && screen_num <= 10) {
             uint8_t target_bit = OledMap::CS_BITS[screen_num - 1];
             mask &= ~(1 << target_bit); // Ponemos a LOW solo el bit de esa pantalla
         }
-        
-        // Bit-bang 16 bits to 74HC595 (MSB first)
-        gpio_put(Pins::SHIFT_LATCH, 0); // Prepare to shift data
-        
-        for (int i = 15; i >= 0; i--) {
-            gpio_put(Pins::SHIFT_DATA, (mask >> i) & 1); // Set data
-            // Pulse clock HIGH then LOW
-            gpio_put(Pins::SHIFT_CLK, 1);
-            __asm volatile ("nop\n"); // Small delay to latch bit
-            gpio_put(Pins::SHIFT_CLK, 0);
-        }
-        
-        gpio_put(Pins::SHIFT_LATCH, 1); // Update output registers 
+        shift_mask(mask);
     }
 
     void send_command(uint8_t cmd) {
@@ -72,14 +85,7 @@ public:
         gpio_put(Pins::OLED_RST, 1); sleep_ms(10);
 
         // Abrir TODAS las pantallas a la vez (Máscara 0x0000 = todos los CS a LOW)
-        gpio_put(Pins::SHIFT_LATCH, 0);
-        for (int i = 0; i < 16; i++) {
-            gpio_put(Pins::SHIFT_DATA, 0);
-            gpio_put(Pins::SHIFT_CLK, 1);
-            __asm volatile ("nop\n");
-            gpio_put(Pins::SHIFT_CLK, 0);
-        }
-        gpio_put(Pins::SHIFT_LATCH, 1);
+        shift_mask(0x0000); // todos los CS a LOW: broadcast
         sleep_us(5); // Esperar propagación CS a través de U3+U4
 
         // Mandar la secuencia de arranque 
@@ -132,6 +138,21 @@ public:
         apply_cs(0);
     }
 
+    // Vigilante a ciegas (L2 de la fase 6): vuelve a mandar la configuración
+    // a una pantalla sin pasar por 0xAE, para que no parpadee. Con los mismos
+    // valores no cambia nada en una pantalla sana; a una que un glitch dejó
+    // apagada, sin bomba de carga, girada o con otro modo, la devuelve a su
+    // sitio. Quien llama la repinta después.
+    void refresh_config(uint8_t screen_num, bool on, bool invert) {
+        apply_cs(screen_num);
+        sleep_us(5); // Esperar propagación CS
+        for (size_t i = 1; i + 3 < sizeof(init_seq); i++) send_command(init_seq[i]); // sin 0xAE ni A4/A6/AF
+        send_command(0xA4);
+        send_command(invert ? 0xA7 : 0xA6);
+        send_command(on ? 0xAF : 0xAE);
+        apply_cs(0);
+    }
+
     void invert_screen(uint8_t screen_num, bool invert) {
         apply_cs(screen_num);
         sleep_us(5); // Esperar propagación CS
@@ -141,14 +162,7 @@ public:
 
     void set_all_displays_on(bool on) {
         // Broadcast a todas las pantallas (todos los CS a LOW)
-        gpio_put(Pins::SHIFT_LATCH, 0);
-        for (int i = 0; i < 16; i++) {
-            gpio_put(Pins::SHIFT_DATA, 0);
-            gpio_put(Pins::SHIFT_CLK, 1);
-            __asm volatile ("nop\n");
-            gpio_put(Pins::SHIFT_CLK, 0);
-        }
-        gpio_put(Pins::SHIFT_LATCH, 1);
+        shift_mask(0x0000); // todos los CS a LOW: broadcast
         sleep_us(5);
 
         send_command(on ? 0xAF : 0xAE); // Display ON / OFF

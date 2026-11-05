@@ -32,7 +32,7 @@ export function init() {
       return;
     }
     device.reinitScreens()
-      .then((cuenta) => push(`Pantallas reiniciadas. Veces por pantalla: ${cuenta.join(' ')}`, 'system'))
+      .then((r) => push(`Pantallas reiniciadas. Veces por pantalla: ${r.porPantalla.join(' ')}; resets completos: ${r.completos}`, 'system'))
       .catch((e) => push(`ERROR: ${e?.message ?? e}`, 'error'));
   });
 

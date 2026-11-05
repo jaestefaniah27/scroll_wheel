@@ -1,5 +1,7 @@
 # Plan: Air Strike (antes «Misil»), mejoras
 
+**Estado (2026-11-05): plan terminado.** Fases 0-5 hechas en la rama `airstrike` (04-nov) y fase 6 completa: L1 y L3 (`OLED_REINIT`), L2 (vigilante), L4 (reset completo al `GAME:1` y al llegar la app) y más margen en el bit-bang del 74HC595 (sospecha 1). Todo en firmware 4.32. Falta probarlo en el teclado: si la 9 se sigue apagando con esto, es hardware (alimentación o la línea CS9) y toca el analizador lógico.
+
 Plan del 2026-11-03, sobre `main` en 8dd4480 (Orvy 1.1.19). Sigue a `PLAN_MISIL.md`, que está
 cerrado: las reglas de la casa son las mismas (castellano de España, comentarios que explican
 **por qué**, nada de `Math.random()` en `misil.mjs` —todo el azar sale de `aleatorio(tope)`—,

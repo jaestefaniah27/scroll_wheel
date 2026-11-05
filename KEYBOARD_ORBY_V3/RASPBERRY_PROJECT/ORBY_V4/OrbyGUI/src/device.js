@@ -150,11 +150,15 @@ export const setIntro = (n) => request(`SET_INTRO:${n}`, {
 });
 export const playIntro = () => request('PLAY_INTRO', { match: (l) => l === 'INTRO:PLAY:OK' });
 // Reinicia una pantalla colgada (1-10) o las diez sin argumento (firmware 4.32,
-// bandera OLEDREINIT). Resuelve con cuántas veces se ha pedido cada una.
+// bandera OLEDREINIT). Resuelve con cuántas veces se ha pedido cada una y
+// cuántos resets completos ha hecho el teclado solo (al jugar o al llegar la app).
 export const reinitScreens = (n) => request(n ? `OLED_REINIT:${n}` : 'OLED_REINIT', {
   match: (l) => l.startsWith('OLED_REINIT:OK:'),
   fail: (l) => l === 'ERR:OLED_REINIT',
-}).then((l) => l.slice('OLED_REINIT:OK:'.length).split(',').map(Number));
+}).then((l) => {
+  const [cuentas, completos] = l.slice('OLED_REINIT:OK:'.length).split(':');
+  return { porPantalla: cuentas.split(',').map(Number), completos: Number(completos ?? 0) };
+});
 // Modo ayuda (firmware 4.28, bandera HELP): cómo se sale, en segundos. 0 al
 // pulsar una tecla, 5, 10 o 30 s, 255 solo a mano.
 export const setHelp = (s) => request(`SET_HELP:${s}`, {
