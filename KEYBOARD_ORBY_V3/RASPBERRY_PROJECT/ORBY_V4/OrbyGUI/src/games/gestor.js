@@ -19,7 +19,7 @@ import { JUEGOS, juegoPorId } from './catalogo.mjs';
 import { crearMenu } from './menu.mjs';
 import { crearFinal } from './final.mjs';
 import { recorrer } from './flujo.mjs';
-import { registrar, paraGuardar, formatearPuntos } from './scores.mjs';
+import { registrar, paraGuardar, conSaldo, formatearPuntos } from './scores.mjs';
 import * as almacen from './almacen.js';
 
 const oyentes = new Set();
@@ -54,13 +54,14 @@ export function activo() {
 }
 
 // Una sesión del motor con los ganchos que la vista necesita para enseñarse.
-function correr(juego, titulo, juegoId = null) {
+function correr(juego, titulo, juegoId = null, contexto = {}) {
   estado.titulo = titulo;
   estado.juego = juegoId;
   estado.partida = null;
   avisar('estado');
   const s = jugar(juego, {
     cerrar: false,
+    contexto,
     alEntrar: (partida) => { estado.partida = partida; avisar('estado'); },
   });
   sesionActual = s;
@@ -86,10 +87,29 @@ async function registrarPartida(juego, puntos, detalle = null) {
   return { record, partidas: nuevo.partidas, mejor: nuevo.mejor };
 }
 
+// Un juego con saldo (Blackjack) no acaba solo: se sale con la tecla 10 o se cae la conexión.
+// Por eso el saldo y el récord se guardan en cada mano (`progreso`) y la partida se anota
+// aquí, al salir, sin pantalla final. Si no llegó a jugarse ninguna mano no cuenta.
+async function partidaConSaldo(juego) {
+  await almacen.cargar();
+  const guardar = (estadoNuevo) => almacen.guardar(juego.id, paraGuardar(estadoNuevo))
+    .catch(() => avisar('error', 'No se pudo guardar el saldo'));
+  const r = await correr(juego, juego.nombre, juego.id, {
+    saldo: almacen.leer(juego.id)?.saldo ?? null,
+    progreso: ({ saldo, pico }) => guardar(conSaldo(almacen.leer(juego.id), saldo, pico)),
+  });
+  if (estado.partida?.manos > 0) {
+    const nuevo = registrar(almacen.leer(juego.id), r.puntos);
+    await guardar(nuevo);
+    avisar('partida', { juego, puntos: r.puntos, record: false, partidas: nuevo.partidas, stats: null });
+  }
+  return r;
+}
+
 const OPS = {
   juegoPorId,
   menu: () => correr(crearMenu(JUEGOS), 'Menú de juegos'),
-  partida: (juego) => correr(juego, juego.nombre, juego.id),
+  partida: (juego) => (juego.persistente ? partidaConSaldo(juego) : correr(juego, juego.nombre, juego.id)),
   async final(juego, puntos, detalle) {
     const r = await registrarPartida(juego, puntos, detalle);
     return correr(crearFinal({

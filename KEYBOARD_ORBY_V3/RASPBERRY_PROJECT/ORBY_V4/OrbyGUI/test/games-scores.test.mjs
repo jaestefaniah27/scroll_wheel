@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { vacio, registrar, paraGuardar, resumen, serieGrafica, MAX_HISTORIAL, RECIENTES, formatearPuntos } from '../src/games/scores.mjs';
+import { vacio, registrar, paraGuardar, conSaldo, resumen, serieGrafica, MAX_HISTORIAL, RECIENTES, formatearPuntos } from '../src/games/scores.mjs';
 
 test('la primera partida es récord', () => {
   const e = registrar(undefined, 12, { ahora: 1000 });
@@ -133,4 +133,24 @@ test('un juego sin estadísticas no guarda totales', () => {
   const g = paraGuardar(registrar(vacio(), 5));
   assert.equal(g.totales, undefined);
   assert.equal(resumen(g).totales, null);
+});
+
+test('conSaldo guarda el saldo y sube el récord sin contar partida ni tocar el historial', () => {
+  let e = conSaldo(undefined, 80, 120);
+  assert.equal(e.saldo, 80);
+  assert.equal(e.mejor, 120);
+  assert.equal(e.partidas ?? 0, 0);
+  assert.deepEqual(e.historial, []);
+  e = conSaldo(paraGuardar(e), 40, 90);   // un pico menor no baja el récord
+  assert.equal(e.mejor, 120);
+  assert.equal(e.saldo, 40);
+});
+
+test('el saldo sobrevive a registrar una partida y a paraGuardar', () => {
+  const previo = conSaldo(undefined, 250, 300);
+  const e = registrar(paraGuardar(previo), 300);
+  assert.equal(e.saldo, 250);
+  assert.equal(e.partidas, 1);
+  assert.equal(paraGuardar(e).saldo, 250);
+  assert.ok(!('saldo' in paraGuardar(registrar(undefined, 5))), 'un juego sin saldo no lo gana');
 });

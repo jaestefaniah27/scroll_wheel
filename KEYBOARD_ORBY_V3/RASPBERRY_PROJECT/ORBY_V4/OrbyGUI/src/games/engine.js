@@ -74,7 +74,10 @@ let secuencia = 0;
 // Por defecto, al acabar devuelve las pantallas al teclado (GAME:0). El menú del teclado
 // encadena varias sesiones seguidas —menú, partida, pantalla final— y entre una y otra
 // no debe salir del modo juego: quien las encadena pasa `cerrar: false` y cierra al final.
-export function jugar(juego, { alFotograma = null, alEntrar = null, cerrar = true } = {}) {
+//
+// `contexto` se pasa tal cual a `juego.crear`, junto al reloj y el azar: es por donde un juego
+// con datos guardados (el saldo del Blackjack) recibe lo suyo y avisa de los cambios.
+export function jugar(juego, { alFotograma = null, alEntrar = null, cerrar = true, contexto = {} } = {}) {
   let terminar = () => {};
   const fin = new Promise((resolver) => { terminar = resolver; });
 
@@ -93,6 +96,7 @@ export function jugar(juego, { alFotograma = null, alEntrar = null, cerrar = tru
     const partida = juego.crear({
       ahora,
       aleatorio: (tope) => Math.floor(Math.random() * tope),
+      ...contexto,
     });
 
     function tic() {

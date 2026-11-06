@@ -32,22 +32,86 @@ test('Blackjack: el zapato tiene seis barajas completas', () => {
   for (let r = 1; r <= 13; r++) assert.equal(z.filter((c) => c.r === r).length, 24);
 });
 
-test('Blackjack: apostar, repartir y plantarse mueve las fichas', () => {
+// Una partida con el reloj y el azar controlados. `guardados` recoge cada aviso de progreso.
+function montar(semilla, saldo = null) {
   let reloj = 0;
-  let s = 3;
-  const partida = blackjack.crear({ ahora: () => reloj, aleatorio: (tope) => { s = (s * 48271) % 2147483647; return s % tope; } });
+  let s = semilla;
+  const guardados = [];
+  const partida = blackjack.crear({
+    ahora: () => reloj,
+    aleatorio: (tope) => { s = (s * 48271) % 2147483647; return s % tope; },
+    saldo,
+    progreso: (p) => guardados.push(p),
+  });
   const l = lienzo();
   const avanzar = (ms) => { for (let t = 0; t < ms; t += 8) { reloj += 8; partida.tick(8); limpiarLienzo(l); partida.dibujar(l); } };
   const pulsar = (p) => partida.tecla({ tipo: 'tecla', tecla: p, pantalla: p, pulsada: true });
+  // Una mano entera apostando lo mínimo: reparte, se planta si hace falta y deja ver el resultado.
+  const jugarMano = () => {
+    const antes = partida.manos;
+    pulsar(8);
+    avanzar(2000);
+    if (partida.manos === antes) { pulsar(8); avanzar(8000); } else avanzar(2400);
+  };
+  return { partida, guardados, avanzar, pulsar, jugarMano, l };
+}
+
+test('Blackjack: apostar, repartir y plantarse mueve las fichas y se guarda al momento', () => {
+  const { partida, guardados, avanzar, pulsar } = montar(3);
 
   assert.equal(partida.puntos, 100);
   pulsar(9); pulsar(9);                 // apuesta 10 → 30
   partida.rueda({ delta: -40 });        // y la rueda la baja a 20
   pulsar(8);
-  assert.equal(partida.puntos, 100, 'lo apostado sigue contando como tuyo hasta que se resuelve');
+  assert.deepEqual(guardados.at(-1), { saldo: 80, pico: 100 }, 'al repartir ya se descuenta lo apostado');
   avanzar(2000);
-  pulsar(8);                            // plantarse (si no hubo blackjack, no hace nada)
-  avanzar(8000);
-  const fichas = partida.puntos;
-  assert.ok([80, 100, 120, 130].includes(fichas), `con 20 apostados se pierde 20, se empata o se gana 20/30: ${fichas}`);
+  if (partida.manos === 0) { pulsar(8); avanzar(8000); }   // plantarse (si no hubo blackjack)
+  assert.equal(partida.manos, 1);
+  const { saldo, pico } = guardados.at(-1);
+  assert.ok([80, 100, 120, 130].includes(saldo), `con 20 apostados se pierde 20, se empata o se gana 20/30: ${saldo}`);
+  assert.equal(pico, Math.max(100, saldo));
+  assert.equal(partida.puntos, pico, 'los puntos son el máximo alcanzado, no las fichas del final');
+});
+
+test('Blackjack: no tiene tope de manos', () => {
+  const { partida, jugarMano } = montar(11, 100000);
+  for (let i = 0; i < 25; i++) jugarMano();
+  assert.equal(partida.terminado, false);
+  assert.ok(partida.manos >= 25);
+});
+
+test('Blackjack: arranca con el saldo guardado y con 100 si no hay o es menor que la apuesta mínima', () => {
+  assert.equal(montar(5, 340).partida.puntos, 340);
+  assert.equal(montar(5).partida.puntos, 100);
+  assert.equal(montar(5, 0).partida.puntos, 100);
+  assert.equal(montar(5, 5).partida.puntos, 100);
+  assert.equal(montar(5, null).partida.puntos, 100);
+});
+
+test('Blackjack: quedarse a cero da 100 más y la recarga no cuenta como récord', () => {
+  let perdidas = 0;
+  for (let semilla = 1; semilla <= 60; semilla++) {
+    const { partida, guardados, jugarMano } = montar(semilla, 10);
+    jugarMano();
+    const { saldo, pico } = guardados.at(-1);
+    assert.ok(saldo >= 10, `nunca se queda por debajo de la apuesta mínima (semilla ${semilla}): ${saldo}`);
+    if (pico === 10 && saldo === 100) perdidas++;   // perdió la mano: sin fichas, recibe 100
+    assert.equal(partida.puntos, pico);
+    if (saldo === 100 && pico === 10) assert.ok(true);
+    else assert.ok(pico >= 10 && pico <= 25, `ganó o empató: pico ${pico}`);
+  }
+  assert.ok(perdidas > 0, 'alguna de las 60 partidas tiene que perder la mano');
+});
+
+test('Blackjack: tras perder todo se ve el regalo y la siguiente apuesta ya descuenta del saldo nuevo', () => {
+  for (let semilla = 1; semilla <= 60; semilla++) {
+    const { partida, guardados, jugarMano, pulsar } = montar(semilla, 10);
+    jugarMano();
+    if (guardados.at(-1).saldo !== 100 || guardados.at(-1).pico !== 10) continue;
+    pulsar(8);
+    assert.deepEqual(guardados.at(-1), { saldo: 90, pico: 10 });
+    assert.equal(partida.puntos, 10);
+    return;
+  }
+  assert.fail('no hubo ninguna partida perdida para comprobar');
 });

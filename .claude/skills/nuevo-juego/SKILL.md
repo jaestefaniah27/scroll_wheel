@@ -93,7 +93,9 @@ Ejemplos reales:
    - un flujo con teclas concretas.
    `games-juegos.test.mjs` ya simula partidas al azar de **todos** los juegos del catálogo y
    exige que terminen en un número razonable de tics. Si el tuyo puede no acabar nunca con
-   teclas al azar, añade un límite (rondas, tiempo, manos), como hace el Blackjack con 10 manos.
+   teclas al azar, añade un límite (rondas, tiempo, manos), o márcalo con `sinFin: true` si
+   está pensado para no acabar (el Blackjack: se sale con la tecla 10 y guarda su saldo con
+   `persistente: true`, ver `gestor.js`); entonces el test solo exige que aguante sin romperse.
 5. **Comprobar:** `cd OrbyGUI && node --test test/*.mjs` (`npm test` está roto con Node 24),
    o la skill `comprobar`.
 6. **Probar en el teclado:** con la app de desarrollo (`OrbyGUI.bat` o `npm run tauri:dev`) y

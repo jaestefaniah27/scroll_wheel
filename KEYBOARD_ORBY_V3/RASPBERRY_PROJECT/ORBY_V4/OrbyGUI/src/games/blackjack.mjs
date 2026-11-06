@@ -1,5 +1,6 @@
-// Blackjack contra la banca: diez manos y se empieza con 100 fichas. Los puntos son las
-// fichas con las que se acaba.
+// Blackjack contra la banca, sin tope de manos. Las fichas se conservan de una partida a
+// otra (el PC guarda el saldo de cada jugador) y el récord es el máximo de fichas que se
+// llegó a tener, aunque luego se pierdan. Si te quedas sin fichas se te dan 100 más.
 //
 //   [1][2][3]   las cartas de la banca (la segunda, boca abajo hasta su turno)
 //   [4][5][6]   las tuyas
@@ -8,11 +9,13 @@
 //
 // Reglas: zapato de seis barajas, la banca se planta en 17 (también blando), el blackjack
 // paga 3:2, doblar solo con las dos primeras cartas y sin dividir ni seguro.
+//
+// No acaba solo: se sale con la tecla 10. Cada cambio de saldo se guarda al momento (por
+// `progreso`) para que salir, o que se caiga la conexión, no devuelva las fichas apostadas.
 
 import { rect, px, pastilla, texto, etiquetaValor, invertir } from './dibujo.mjs';
 
-const FICHAS_INICIALES = 100;
-const MANOS = 10;
+const FICHAS_INICIALES = 100;   // al empezar y cada vez que te quedas sin fichas
 const PASO_APUESTA = 10;       // múltiplos de 10: así el 3:2 siempre da fichas enteras
 const BARAJAS = 6;
 const BARAJAR_BAJO = 52;       // se rehace el zapato si quedan menos cartas que esto
@@ -161,19 +164,24 @@ const ROTULOS = {
 export default {
   id: 'blackjack',
   nombre: 'Blackjack',
-  descripcion: 'Diez manos contra la banca empezando con 100 fichas. Apuesta con la rueda o las teclas 7 y 9 y reparte con la 8; luego pide (7), plántate (8) o dobla (9). Acércate a 21 sin pasarte.',
+  descripcion: 'Blackjack contra la banca sin límite de manos. Tus fichas se guardan de una partida a otra y, si te quedas sin ellas, recibes 100 más. El récord es el máximo de fichas que has llegado a tener. Apuesta con la rueda o las teclas 7 y 9 y reparte con la 8; luego pide (7), plántate (8) o dobla (9). Acércate a 21 sin pasarte.',
   icono: '#BLACKJ',
   unidad: 'fichas',
   mejorSiMenor: false,
+  persistente: true,   // guarda el saldo (ver gestor.js)
+  sinFin: true,        // no termina solo: se sale con la tecla 10
 
-  crear({ aleatorio }) {
+  // `saldo`: las fichas guardadas del jugador; `progreso({ saldo, pico })` avisa de cada cambio.
+  crear({ aleatorio, saldo = null, progreso = null }) {
     let tiempo = 0;
     let zapato = nuevoZapato(aleatorio);
-    let fichas = FICHAS_INICIALES;
+    let fichas = Number.isFinite(saldo) && saldo >= PASO_APUESTA ? Math.floor(saldo) : FICHAS_INICIALES;
+    let pico = fichas;            // el máximo de fichas alcanzado en esta partida (el récord)
+    let recargado = false;        // se acaba de dar la recarga de 100
     let apuesta = PASO_APUESTA;   // la que se elige; se mantiene de una mano a otra
     let enJuego = 0;              // lo apostado en la mano en curso (doble si se dobló)
     let manoN = 0;                // manos jugadas (terminadas)
-    // 'apuesta' | 'reparto' | 'jugador' | 'banca' | 'resultado' | 'final'
+    // 'apuesta' | 'reparto' | 'jugador' | 'banca' | 'resultado'
     let fase = 'apuesta';
     let desde = 0;
     let jugador = [];
@@ -197,10 +205,16 @@ export default {
       apuesta = Math.max(PASO_APUESTA, Math.min(fichas - (fichas % PASO_APUESTA), apuesta + pasos * PASO_APUESTA));
     }
 
+    // Cada cambio de saldo se guarda al momento: lo apostado ya no es tuyo aunque se salga a
+    // media mano, y un récord no se pierde porque se cierre el juego sin avisar.
+    const guardar = () => progreso?.({ saldo: fichas, pico });
+
     function repartir() {
       if (zapato.length < BARAJAR_BAJO) zapato = nuevoZapato(aleatorio);
       fichas -= apuesta;
       enJuego = apuesta;
+      recargado = false;
+      guardar();
       jugador = [sacar()];
       banca = [sacar()];
       jugador.push(sacar());
@@ -226,6 +240,11 @@ export default {
       fichas += r.devuelve;
       resultado = { ...r, apostado: enJuego };
       enJuego = 0;
+      manoN++;
+      // El récord se mide antes de la recarga: las 100 fichas de regalo no cuentan como ganadas.
+      if (fichas > pico) pico = fichas;
+      if (fichas < PASO_APUESTA) { fichas += FICHAS_INICIALES; recargado = true; }
+      guardar();
       fase = 'resultado';
       desde = tiempo;
     }
@@ -238,12 +257,6 @@ export default {
     }
 
     function siguienteMano() {
-      manoN++;
-      if (manoN >= MANOS || fichas < PASO_APUESTA) {
-        fase = 'final';
-        desde = tiempo;
-        return;
-      }
       apuesta = Math.max(PASO_APUESTA, Math.min(apuesta, fichas - (fichas % PASO_APUESTA)));
       jugador = [];
       banca = [];
@@ -253,11 +266,11 @@ export default {
     }
 
     return {
-      get terminado() { return fase === 'final'; },
-      get puntos() { return fichas + enJuego; },
+      get terminado() { return false; },
+      get puntos() { return pico; },
+      get manos() { return manoN; },
       get estado() {
-        const m = Math.min(manoN + 1, MANOS);
-        return `Mano ${m}/${MANOS} · ${fichas} fichas`;
+        return `Mano ${manoN + 1} · ${fichas + enJuego} fichas · máximo ${pico}`;
       },
 
       tick(dt) {
@@ -304,6 +317,7 @@ export default {
           } else if (p === 9 && jugador.length === 2 && fichas >= enJuego) {
             fichas -= enJuego;
             enJuego *= 2;
+            guardar();
             jugador.push(sacar());
             visJ = jugador.length;
             if (valorMano(jugador) > 21) cerrar(); else turnoBanca();
@@ -331,7 +345,8 @@ export default {
         mano(l, [4, 5, 6], jugador, visJ, false);
 
         if (fase === 'apuesta') {
-          etiquetaValor(l[4], 'MANO', `${manoN + 1}/${MANOS}`);
+          if (recargado) etiquetaValor(l[4], 'REGALO', `+${FICHAS_INICIALES}`);
+          else etiquetaValor(l[4], 'MAXIMO', pico);
           texto(l[6], '-');
           etiquetaValor(l[7], 'APOSTAR', apuesta);
           texto(l[8], '+');
@@ -353,8 +368,6 @@ export default {
           etiquetaValor(l[9], 'FICHAS', neto > 0 ? `+${neto}` : neto);
           // El rótulo parpadea al ganar, como una máquina que paga.
           if (neto > 0 && Math.floor((tiempo - desde) / 300) % 2 === 1) invertir(l[7]);
-        } else if (fase === 'final') {
-          etiquetaValor(l[9], 'FICHAS', fichas);
         }
 
         if (pulsada && fase !== 'resultado') invertir(l[pulsada.pantalla - 1]);

@@ -58,7 +58,9 @@ for (const juego of JUEGOS) {
     const maxTics = juego.id === 'sintoniza' ? 2_000_000 : undefined;
     for (const semilla of [1, 2, 3]) {
       const { tics, partida, l } = simular(juego, semilla, { maxTics });
-      assert.ok(partida.terminado, `${juego.id} (semilla ${semilla}) no terminó en ${tics} tics`);
+      // Un juego sin final (Blackjack) se sale con la tecla 10: aquí solo se comprueba que aguanta.
+      if (juego.sinFin) assert.equal(partida.terminado, false, `${juego.id} no debería terminar solo`);
+      else assert.ok(partida.terminado, `${juego.id} (semilla ${semilla}) no terminó en ${tics} tics`);
       assert.equal(l.length, PANTALLAS);
       for (const p of l) assert.equal(p.length, FB);
       assert.ok(Number.isFinite(partida.puntos), 'los puntos tienen que ser un número');

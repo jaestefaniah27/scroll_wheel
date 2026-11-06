@@ -56,6 +56,7 @@ export function registrar(estado, puntos, { mejorSiMenor = false, ahora = Date.n
   }
   if (stats) extra.totales = juntarTotales(previo.totales, stats);
   else if (previo.totales) extra.totales = previo.totales;
+  if (previo.saldo != null) extra.saldo = previo.saldo;
   return {
     mejor,
     partidas: (previo.partidas || 0) + 1,
@@ -68,11 +69,21 @@ export function registrar(estado, puntos, { mejorSiMenor = false, ahora = Date.n
 }
 
 // El estado que se guarda no lleva `record`: es un dato de esa partida, no del juego.
-export function paraGuardar({ mejor, partidas, historial, mejorDetalle, totales }) {
+export function paraGuardar({ mejor, partidas, historial, mejorDetalle, totales, saldo }) {
   const base = { mejor, partidas, historial };
   if (mejorDetalle) base.mejorDetalle = mejorDetalle;
   if (totales) base.totales = totales;
+  if (saldo != null) base.saldo = saldo;
   return base;
+}
+
+// Para un juego que arrastra un saldo de una partida a otra (Blackjack): guarda el saldo y
+// sube el récord si `pico` lo supera, sin contar una partida nueva ni tocar el historial.
+// Se llama tras cada mano; la partida se anota al salir (con `registrar`).
+export function conSaldo(estado, saldo, pico, { mejorSiMenor = false } = {}) {
+  const previo = estado && typeof estado === 'object' ? estado : vacio();
+  const mejor = previo.mejor == null ? pico : mejorSiMenor ? Math.min(previo.mejor, pico) : Math.max(previo.mejor, pico);
+  return { ...previo, mejor, saldo };
 }
 
 export function resumen(estado) {
