@@ -1,5 +1,9 @@
 # ORBY_V4
 
+> **ALTO — el código se mudó a [jaestefaniah27/Orvy](https://github.com/jaestefaniah27/Orvy) el 6 de noviembre
+> de 2026.** No hagas commits de código en scroll_wheel: lee [AGENTS.md](../../../AGENTS.md) antes de nada.
+> Aquí solo quedan las releases, `compat.json`, los vídeos de consejos y `gh-pages`.
+
 Teclado macro con rueda. Dos mitades que hablan por USB CDC:
 
 - **Firmware** — Raspberry Pi Pico (RP2040), C++17, Pico SDK 2.2.0 + TinyUSB. Raíz del proyecto.

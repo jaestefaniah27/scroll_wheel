@@ -1,5 +1,9 @@
 # scroll_wheel (espejo de jaestefaniah27/Orvy)
 
+> **ALTO — el código se mudó a [jaestefaniah27/Orvy](https://github.com/jaestefaniah27/Orvy) el 6 de noviembre
+> de 2026.** No hagas commits de código en scroll_wheel: lee [AGENTS.md](AGENTS.md) antes de nada.
+> Aquí solo quedan las releases, `compat.json`, los vídeos de consejos y `gh-pages`.
+
 El código se trabaja en el monorepo Orvy; este repo guarda además las releases de la app y del firmware.
 ## Releases y etiquetas: SIEMPRE desde el servidor
 

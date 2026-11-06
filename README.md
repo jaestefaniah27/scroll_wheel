@@ -1,5 +1,9 @@
 # ORVY · scroll_wheel
 
+> **ALTO — el código se mudó a [jaestefaniah27/Orvy](https://github.com/jaestefaniah27/Orvy) el 6 de noviembre
+> de 2026.** No hagas commits de código en scroll_wheel: lee [AGENTS.md](AGENTS.md) antes de nada.
+> Aquí solo quedan las releases, `compat.json`, los vídeos de consejos y `gh-pages`.
+
 Teclado macro con rueda de scroll de alta resolución, una pantalla OLED por tecla y
 una app para configurarlo todo. Proyecto de Jorge Alejandro Estefanía Hidalgo y
 Javier Píriz González.
