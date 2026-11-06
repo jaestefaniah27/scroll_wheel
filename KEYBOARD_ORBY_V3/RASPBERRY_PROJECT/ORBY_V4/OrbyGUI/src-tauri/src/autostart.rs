@@ -200,14 +200,34 @@ fn borrar() {
     }
 }
 
-/// Repara entradas anteriores a que existiera `--hidden`: sin el argumento, iniciar sesión
-/// abriría la ventana en vez de dejar la app en la bandeja. Se llama desde el `setup`.
+/// Una copia compilada en el propio proyecto (`tauri dev` o `tauri build` sin instalar):
+/// vive bajo una carpeta `target`. No debe quedarse con el autoarranque del PC.
+fn es_compilacion_local(exe: &Path) -> bool {
+    exe.components().any(|c| c.as_os_str().eq_ignore_ascii_case("target"))
+}
+
+/// Repara la entrada del autoarranque al abrir la app. Se llama desde el `setup`.
+///
+/// - Sin `--hidden` (entradas anteriores a que existiera): iniciar sesión abriría la
+///   ventana en vez de dejar la app en la bandeja.
+/// - Apuntando a **otro** ejecutable: es una instalación vieja. Al pasar de «OrbyGUI» a
+///   «Orvy», el instalador puso la app nueva en otra carpeta, la entrada siguió en la
+///   vieja, y cada arranque de Windows abría la versión antigua, que se actualizaba en la
+///   nueva carpeta y volvía a salir antigua al día siguiente. Se lleva al ejecutable que
+///   corre, salvo que sea una compilación local.
 pub fn normalizar() {
     let Some(linea) = leer() else { return };
-    if !mismo_fichero(ruta_de(&linea), &ejecutable()) || lleva_escondido(&linea) {
+    let exe = ejecutable();
+    if mismo_fichero(ruta_de(&linea), &exe) {
+        if !lleva_escondido(&linea) {
+            escribir();
+        }
         return;
     }
-    escribir();
+    if !es_compilacion_local(&exe) {
+        eprintln!("[autoarranque] la entrada apuntaba a otra copia ({linea}); se pasa a esta");
+        escribir();
+    }
 }
 
 // --- Comandos ---------------------------------------------------------------------------
@@ -232,7 +252,19 @@ pub fn autostart_set(enabled: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{lleva_escondido, ruta_de};
+    use super::{es_compilacion_local, lleva_escondido, ruta_de};
+    use std::path::Path;
+
+    #[test]
+    fn una_copia_de_target_no_se_queda_el_autoarranque() {
+        assert!(es_compilacion_local(Path::new(
+            r"D:\ORVY\OrbyGUI\src-tauri\target\release\orby-app.exe"
+        )));
+        assert!(es_compilacion_local(Path::new(r"D:\x\Target\debug\orby-app.exe")));
+        assert!(!es_compilacion_local(Path::new(
+            r"C:\Users\a\AppData\Local\Orvy\orby-app.exe"
+        )));
+    }
 
     #[test]
     fn saca_la_ruta_con_y_sin_comillas() {
