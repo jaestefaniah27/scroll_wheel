@@ -166,6 +166,14 @@ git worktree remove --force "$TMP/ra-vX.Y.Z"; git branch -D release-assets/vX.Y.
 - **Ficheros con CRLF:** `sed` con un patrón de varias líneas no encuentra nada. Edita con la
   herramienta Edit o abre los ficheros en Python con `newline=''`.
 - **`sha256sum` en Git Bash** pone una `\` delante del hash cuando la ruta lleva barras invertidas.
+- **`could not read Username` / `Cannot prompt because user interactivity has been disabled`**
+  al hacer push o `git credential fill` desde Claude: el gestor de credenciales tiene dos
+  cuentas de GitHub guardadas y, sin saber cuál, intenta abrir una ventana, que aquí no existe
+  (y un `git push` normal se queda colgado esperándola). Se arregló fijando la cuenta en la
+  configuración local de este repo: `git config --local credential.https://github.com.username 3Javier3`.
+  Si vuelve a pasar, comprueba que sigue ahí (`git config --local --get-all credential.https://github.com.username`).
+  Si el login ha caducado de verdad, hay que repetirlo a mano en una terminal (`git push`).
+  Lanza siempre los push con `timeout 60` y `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never`.
 - **Un 403 en `git push`** suele ser una invitación de colaborador sin aceptar, o una sesión de
   GitHub guardada con otra cuenta.
 - **No subas los `tools/test/*.exe`** recompilados en otro PC: cambian de tamaño sin motivo.
