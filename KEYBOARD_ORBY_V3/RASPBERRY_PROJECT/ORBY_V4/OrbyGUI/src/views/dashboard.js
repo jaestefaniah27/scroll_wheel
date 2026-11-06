@@ -181,6 +181,12 @@ function onClick(e) {
   }
   const key = e.target.closest('[data-key]');
   if (key) {
+    // Con las teclas ampliadas, Ctrl+clic (Cmd en Mac) elige varias para copiarlas o
+    // pegarlas de una vez.
+    if ((e.ctrlKey || e.metaKey) && zoom === 'keys') {
+      profiles.toggleMultiKey(Number(key.dataset.key));
+      return;
+    }
     openZoom('keys', { key: Number(key.dataset.key) });
     return;
   }
@@ -309,6 +315,10 @@ function paintSelection() {
   if (!sel) return;
   if (sel.kind === 'key') {
     document.getElementById(`hw-key-${sel.index + 1}`)?.classList.add('is-editing');
+    // Las elegidas con Ctrl+clic, con el mismo anillo.
+    for (const k of profiles.panelMultiKeys()) {
+      document.getElementById(`hw-key-${k + 1}`)?.classList.add('is-editing');
+    }
   } else {
     const id = sel.slot <= ROTARY_SLOTS.ENC1_CLICK ? 'hw-enc-1'
       : sel.slot <= ROTARY_SLOTS.ENC2_CLICK ? 'hw-enc-2' : 'hw-scroll';

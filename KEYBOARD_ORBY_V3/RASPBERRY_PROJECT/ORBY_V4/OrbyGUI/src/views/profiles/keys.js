@@ -5,7 +5,7 @@
 // guarda como diferencia en el PC en vez de ir al perfil.
 
 import * as device from '../../device.js';
-import { state, markDirty, keymapSlot, labelSlot, rotarySlot, KEY_TO_SCREEN, syncFromDevice } from '../../store.js';
+import { state, markDirty, keymapSlot, labelSlot, rotarySlot, KEY_TO_SCREEN, keyRole, syncFromDevice } from '../../store.js';
 import { MACRO_MODIFIER, isTwoWayType } from '../../hid-keys.js';
 import { toast, requireDevice } from '../../ui.js';
 import * as cache from '../../oled-cache.js';
@@ -15,6 +15,7 @@ import { view, currentProfile, selectedKeyIndex, selectedRotarySlot, editingVari
          currentAction, rerender, rerenderKeyGrid } from './view-state.js';
 import { macroById, nextMacroId, ensureMacro, savePCMacros } from './macros-store.js';
 import * as undo from './undo.js';
+import { pasteTargets } from './clipboard.mjs';
 
 // Lo que hay ahora en un hueco, tal como lo quiere undo.record: la diferencia
 // de la variación si se edita una, o el valor del perfil.
@@ -61,10 +62,10 @@ export async function writeLabel(slot, text) {
   }
 }
 
-export async function applyKeymap(modifier, keycode) {
+// `index` es la tecla seleccionada salvo que se diga otra (pegar en varias).
+export async function applyKeymap(modifier, keycode, index = selectedKeyIndex()) {
   if (!requireDevice()) return;
   const prof = currentProfile();
-  const index = selectedKeyIndex();
   if (!prof || index === null) return;
 
   const slot = keymapSlot(index, view.layer);
@@ -137,67 +138,91 @@ export async function blankKeyScreen() {
 }
 
 // --- Copiar y pegar teclas ---------------------------------------------------
-// Copia el icono (si tiene uno propio), la etiqueta y la acción de la tecla
-// seleccionada, para poder pegarlos en cualquier otra tecla: de otra capa, de
-// otra página o de otro perfil. Vive solo en memoria (no sobrevive a cerrar la
-// app), como el resto de estado transitorio de este editor.
+// Copia el icono (si tiene uno propio), la etiqueta y la acción de las teclas
+// elegidas, para pegarlos en otras: de otra capa, de otra página o de otro
+// perfil. Con Ctrl+clic se eligen varias (view.multiKeys) y se copian de una vez;
+// a dónde va cada una al pegar lo decide pasteTargets (clipboard.mjs). Vive solo
+// en memoria (no sobrevive a cerrar la app), como el resto de estado transitorio
+// de este editor.
+//
+// keyClipboard = { items: [{ key, action, label, icon, macroActions }] } o null.
 export let keyClipboard = null;
+
+// Las teclas sobre las que actúan copiar y pegar: las de Ctrl+clic o la elegida.
+export function clipboardKeys() {
+  // SUPER y la de menú tienen un papel fijo: no se copian ni se pisan.
+  if (view.multiKeys.length) return view.multiKeys.filter((k) => !keyRole(k));
+  const i = selectedKeyIndex();
+  return i === null || keyRole(i) ? [] : [i];
+}
+
+export function copiedCount() {
+  return keyClipboard ? keyClipboard.items.length : 0;
+}
 
 export async function copyKey() {
   const prof = currentProfile();
-  const i = selectedKeyIndex();
-  if (!prof || i === null) return;
+  const keys = clipboardKeys();
+  if (!prof || !keys.length) return;
+  const variant = editingVariant();
 
-  const action = currentAction();
-  const lslot = labelSlot(i, view.layer);
-  const label = lslot >= 0 ? variants.effectiveLabel(prof, editingVariant(), i, view.layer) : '';
-  const iconBytes = lslot >= 0 ? cache.get(view.editingProfile, lslot) : null;
-
-  // Una secuencia no viaja por su id (lo reutilizaría, enlazando las dos
-  // teclas): se lleva una copia de sus pasos para duplicarla al pegar.
-  let macroActions = null;
-  if (action.modifier === MACRO_MODIFIER) {
-    const m = macroById(action.keycode);
-    if (m) macroActions = JSON.parse(JSON.stringify(m.actions || []));
+  const items = [];
+  for (const i of keys) {
+    const lslot = labelSlot(i, view.layer);
+    const own = lslot >= 0 && Boolean(prof.oledMask & (1 << lslot));
+    const bytes = own ? cache.get(view.editingProfile, lslot) : null;
+    // Un icono propio que aún no ha llegado del teclado no se puede llevar: pegarlo
+    // así dejaría la tecla de destino sin icono (o con el texto) sin avisar.
+    if (own && !bytes) {
+      toast('Los iconos de este perfil aún se están cargando. Prueba en un momento.', 'error');
+      return;
+    }
+    const action = variants.effectiveKey(prof, variant, i, view.layer);
+    // Una secuencia no viaja por su id (lo reutilizaría, enlazando las dos
+    // teclas): se lleva una copia de sus pasos para duplicarla al pegar.
+    let macroActions = null;
+    if (action.modifier === MACRO_MODIFIER) {
+      const m = macroById(action.keycode);
+      if (m) macroActions = JSON.parse(JSON.stringify(m.actions || []));
+    }
+    items.push({
+      key: i,
+      action: { modifier: action.modifier, keycode: action.keycode },
+      label: lslot >= 0 ? variants.effectiveLabel(prof, variant, i, view.layer) : '',
+      icon: bytes ? Uint8Array.from(bytes) : null,
+      macroActions,
+    });
   }
 
-  keyClipboard = {
-    action: { modifier: action.modifier, keycode: action.keycode },
-    label,
-    icon: iconBytes ? Uint8Array.from(iconBytes) : null,
-    macroActions,
-  };
-  toast('Tecla copiada');
+  keyClipboard = { items };
+  toast(items.length === 1 ? 'Tecla copiada' : `${items.length} teclas copiadas`);
   rerender();
 }
 
-export async function pasteKey() {
-  if (!keyClipboard || !requireDevice()) return;
+// Pega una tecla copiada en la tecla `i` del perfil y capa que se editan.
+async function pasteInto(item, i) {
   const prof = currentProfile();
-  const i = selectedKeyIndex();
-  if (!prof || i === null) return;
-
-  let { modifier, keycode } = keyClipboard.action;
-  if (modifier === MACRO_MODIFIER && keyClipboard.macroActions) {
+  let { modifier, keycode } = item.action;
+  if (modifier === MACRO_MODIFIER && item.macroActions) {
     const id = nextMacroId();
     const m = ensureMacro(id);
-    m.actions = JSON.parse(JSON.stringify(keyClipboard.macroActions));
+    m.actions = JSON.parse(JSON.stringify(item.macroActions));
     savePCMacros(id);
     keycode = id;
   }
 
-  await applyKeymap(modifier, keycode);
+  await applyKeymap(modifier, keycode, i);
 
   const lslot = labelSlot(i, view.layer);
-  if (lslot < 0) { toast('Tecla pegada'); return; }
+  if (lslot < 0) return true;
 
-  await writeLabel(lslot, keyClipboard.label || '');
+  await writeLabel(lslot, item.label || '');
 
   undo.record('icon', lslot, iconBefore(view.editingProfile, prof, lslot));
   try {
-    if (keyClipboard.icon) {
-      await device.uploadOled(view.editingProfile, lslot, keyClipboard.icon);
-      cache.set(view.editingProfile, lslot, Uint8Array.from(keyClipboard.icon));
+    if (item.icon) {
+      await device.uploadOled(view.editingProfile, lslot, item.icon);
+      cache.set(view.editingProfile, lslot, Uint8Array.from(item.icon));
       prof.oledMask |= (1 << lslot);
       markDirty();
     } else if (cache.get(view.editingProfile, lslot)) {
@@ -208,12 +233,37 @@ export async function pasteKey() {
       prof.oledMask &= ~(1 << lslot);
       markDirty();
     }
-    rerender();
+    return true;
   } catch {
-    toast('No se pudo pegar el icono', 'error');
+    return false;
   }
+}
 
-  toast('Tecla pegada');
+let pasting = false;
+
+export async function pasteKey() {
+  if (!keyClipboard || pasting || !requireDevice()) return;
+  const prof = currentProfile();
+  if (!prof) return;
+  const selected = selectedKeyIndex();
+  const targets = pasteTargets(keyClipboard.items, view.multiKeys, selected)
+    // SUPER y la de menú tienen un papel fijo: no se pisan al pegar en bloque.
+    .filter(({ key }) => !keyRole(key));
+  if (!targets.length) return;
+
+  pasting = true;
+  let fallos = 0;
+  try {
+    // Una detrás de otra: el puerto serie no admite escrituras cruzadas.
+    for (const { item, key } of targets) {
+      if (!(await pasteInto(item, key))) fallos++;
+    }
+  } finally {
+    pasting = false;
+    rerender();
+  }
+  if (fallos) toast(fallos === 1 ? 'No se pudo pegar un icono' : `No se pudieron pegar ${fallos} iconos`, 'error');
+  else toast(targets.length === 1 ? 'Tecla pegada' : `${targets.length} teclas pegadas`);
 }
 
 // --- Reordenar teclas arrastrando --------------------------------------------

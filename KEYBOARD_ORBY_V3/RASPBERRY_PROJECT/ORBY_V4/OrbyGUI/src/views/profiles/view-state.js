@@ -31,6 +31,7 @@ export const view = {
   layer: 'normal',
   variantId: null,  // null = perfil base; si no, la variación que se edita
   selected: null,   // { kind: 'key', index } | { kind: 'rotary', slot }
+  multiKeys: [],    // teclas elegidas con Ctrl+clic para copiar o pegar varias (vacía = solo `selected`)
   tab: 'shortcut',  // pestaña del inspector de tecla: shortcut | sequence | text | record | app | media | pages
   capturing: false, // false | true (atajo) | 'sequence' (grabando una macro) | 'position' (capturando dónde poner el ratón)
   busy: false,      // hay un alta/baja de perfil en marcha

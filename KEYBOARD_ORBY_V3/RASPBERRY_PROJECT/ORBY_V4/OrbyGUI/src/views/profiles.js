@@ -41,8 +41,9 @@ import { view, setRenderers, currentPageIdx, editingVariant, selectedKeyIndex, s
 import { loadPCMacros, savePCMacros, macroById, ensureMacro, nextMacroId, POWER_MODE_LABELS,
          isAppMacro, isTextMacro, isPowerMacro, isPluginMacro, pluginMacroOf, describeRotaryFull,
          isRecordOrResetMacro, describeKey, keyNeedsApp, rotaryNeedsApp } from './profiles/macros-store.js';
-import { applyKeymap, blankKeyScreen, keyClipboard, copyKey, pasteKey,
+import { applyKeymap, blankKeyScreen, copyKey, pasteKey, copiedCount,
          applyRotary } from './profiles/keys.js';
+import { toggleKey } from './profiles/clipboard.mjs';
 import { armDrag, startSortDrag } from './profiles/drag-sort.js';
 import * as undo from './profiles/undo.js';
 import { recordMacro, detachResetKey, onRecorderState, setRecordMode, setRecordSpeed,
@@ -96,6 +97,21 @@ export function init() {
     if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
     e.preventDefault();
     undo.undo();
+  });
+  // Ctrl+C / Ctrl+V copian y pegan las teclas elegidas, con las teclas ampliadas en
+  // el Inicio. No si se escribe en un campo o hay texto seleccionado: entonces es el
+  // copiar de siempre.
+  window.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k !== 'c' && k !== 'v') return;
+    if (!inPanel() || view.zone !== 'keys' || view.capturing || view.selected?.kind !== 'key') return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+    if (k === 'c' && String(window.getSelection?.() || '')) return;
+    e.preventDefault();
+    undo.beginGesture();
+    if (k === 'c') copyKey();
+    else pasteKey();
   });
   // El botón se pone al día solo, sin repintar el panel: un repintado a media
   // escritura de una etiqueta le quitaría el foco al campo.
@@ -151,6 +167,9 @@ export function init() {
     if (view.panel && view.editingProfile !== state.activeProfileIdx) {
       view.editingProfile = state.activeProfileIdx;
       view.variantId = null;
+      // En otro perfil, pegar lo copiado va a las mismas posiciones: una selección
+      // múltiple del anterior ya no pinta nada.
+      view.multiKeys = [];
     }
     // La página entra en la cuenta porque el teclado la cambia por su cuenta y
     // aquí se está editando justamente esa: la rejilla tiene que seguirla.
@@ -184,6 +203,7 @@ function selectTarget({ key = null, rotary = null }) {
   // Otra pieza, otra acción: se vuelve a su pantalla principal.
   view.panelNav = null;
   view.navDir = null;
+  view.multiKeys = [];
   if (key !== null) {
     view.selected = { kind: 'key', index: key };
     view.tab = tabForAction(currentAction());
@@ -269,6 +289,29 @@ export function closePanel() {
 
 export function panelSelection() {
   return view.selected;
+}
+
+// Ctrl+clic en una tecla de la réplica: la añade a la selección múltiple o la quita
+// (SUPER y la de menú no entran: tienen un papel fijo). Copiar y pegar actúan sobre
+// todas las elegidas.
+export function toggleMultiKey(key) {
+  if (!view.panel || keyRole(key)) return;
+  const cur = view.selected?.kind === 'key' && !keyRole(view.selected.index) ? view.selected.index : null;
+  const next = toggleKey(view.multiKeys, cur, key);
+  const added = next.includes(key);
+  view.multiKeys = next.length > 1 ? next : [];
+  const index = added ? key : (next[next.length - 1] ?? cur ?? key);
+  // Como selectTarget, pero sin vaciar la selección múltiple.
+  view.capturing = false;
+  view.panelNav = null;
+  view.navDir = null;
+  view.selected = { kind: 'key', index };
+  view.tab = tabForAction(currentAction());
+  render();
+}
+
+export function panelMultiKeys() {
+  return view.multiKeys;
 }
 
 export function panelLayer() {
@@ -380,6 +423,13 @@ function renderKeyRoot(i) {
   // acción, solo falta lo de cómo se ve.
   const role = keyRole(i);
   const canFreeMenu = role === 'menu' && compat.supports(state.deviceInfo, 'menuKey');
+  // Copiar y pegar varias: cuántas hay elegidas con Ctrl+clic y cuántas copiadas.
+  const multi = view.multiKeys.length;
+  const copied = copiedCount();
+  const pasteHint = copied === 1
+    ? (multi > 1 ? `Pegar en las ${multi} teclas elegidas (Ctrl+V)` : 'Pegar en esta tecla (Ctrl+V)')
+    : (multi === copied ? `Pegar las ${copied} en las teclas elegidas, en orden (Ctrl+V)`
+      : `Pegar las ${copied} en sus mismas posiciones (Ctrl+V)`);
 
   return `
     <div class="kp-hero">
@@ -392,12 +442,15 @@ function renderKeyRoot(i) {
     </div>
 
     ${role ? '' : `<div class="kp-tools">
-      <button class="kp-tool" data-act="copy-key">${icon('copy', 17)}<span>Copiar</span></button>
-      <button class="kp-tool" data-act="paste-key" ${keyClipboard ? '' : 'disabled'}
-              title="${keyClipboard ? 'Pegar en esta tecla' : 'Copia una tecla primero'}">${icon('paste', 17)}<span>Pegar</span></button>
+      <button class="kp-tool" data-act="copy-key"
+              title="Copia acción, etiqueta e icono (Ctrl+C). Ctrl+clic en otras teclas para copiar varias">${icon('copy', 17)}<span>Copiar${multi > 1 ? ` ${multi}` : ''}</span></button>
+      <button class="kp-tool" data-act="paste-key" ${copied ? '' : 'disabled'}
+              title="${copied ? pasteHint : 'Copia una tecla primero'}">${icon('paste', 17)}<span>Pegar${copied > 1 ? ` ${copied}` : ''}</span></button>
       <button class="kp-tool danger" data-act="clear-action"
               title="Quita la acción y deja la pantalla de la tecla en negro">${icon('trash', 17)}<span>Borrar</span></button>
-    </div>`}
+    </div>
+    ${multi > 1 ? `<p class="kp-multi">${multi} teclas elegidas · Ctrl+clic para añadir o quitar</p>`
+      : copied > 1 ? `<p class="kp-multi">${copied} teclas copiadas · Pegar las deja en sus mismas posiciones</p>` : ''}`}
 
     ${variant ? `
       <div class="override-note ${changed ? 'is-override' : ''}">
