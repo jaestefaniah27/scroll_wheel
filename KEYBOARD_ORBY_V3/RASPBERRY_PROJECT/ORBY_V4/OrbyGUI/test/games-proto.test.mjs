@@ -12,7 +12,8 @@ test('el primer fotograma lleva las diez pantallas', () => {
   const f = armarFotograma(null, l, 0);
   assert.equal(f.mascara, 0x3ff);
   assert.equal(f.pantallas, 10);
-  const cab = 'GAME_BIN:1023:0\n';
+  // Con un salto delante, que resincroniza al teclado si el anterior se cortó.
+  const cab = '\nGAME_BIN:1023:0\n';
   assert.equal(texto(f.bytes, cab.length), cab);
   assert.equal(f.bytes.length, cab.length + 10 * FB);
 });
@@ -24,7 +25,7 @@ test('solo viajan las pantallas que han cambiado, en orden', () => {
   ahora[7].fill(0x55);   // pantalla 8
   const f = armarFotograma(antes, ahora, 41);
   assert.equal(f.mascara, (1 << 2) | (1 << 7));
-  const cab = `GAME_BIN:${f.mascara}:41\n`;
+  const cab = `\nGAME_BIN:${f.mascara}:41\n`;
   assert.equal(texto(f.bytes, cab.length), cab);
   assert.equal(f.bytes.length, cab.length + 2 * FB);
   // La carga va en orden creciente de pantalla.

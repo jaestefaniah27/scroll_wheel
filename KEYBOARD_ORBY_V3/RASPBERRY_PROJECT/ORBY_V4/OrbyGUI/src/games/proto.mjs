@@ -45,7 +45,11 @@ export function armarFotograma(anterior, actual, n) {
   }
   if (!mascara) return null;
 
-  const cabecera = CABECERA.encode(`GAME_BIN:${mascara}:${n}\n`);
+  // El \n del principio cierra lo que haya quedado a medias en el teclado: si un
+  // fotograma se corta, el firmware lee su resto como una línea de texto, y sin este
+  // salto la cabecera siguiente quedaría pegada a esa basura y no se reconocería
+  // nunca más. El firmware ignora las líneas vacías.
+  const cabecera = CABECERA.encode(`\nGAME_BIN:${mascara}:${n}\n`);
   const bytes = new Uint8Array(cabecera.length + cambiadas * FB);
   bytes.set(cabecera, 0);
   let pos = cabecera.length;

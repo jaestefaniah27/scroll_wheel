@@ -4107,7 +4107,10 @@ static void games_enter() {
     game_bin_need = 0;
     game_seq_req = game_seq_done = 0;
     HidOut::release_all();
-    if (host_app_alive()) {
+    // Con el puerto abierto (DTR) hay alguien que puede contestar aunque no se haya
+    // presentado con HOST_APP: la WebGUI no lo manda nunca, porque no ejecuta macros,
+    // y aun así juega. Antes salía «ABRE ORVY» con la web abierta y el plazo corto.
+    if (host_app_alive() || tud_cdc_n_connected(0)) {
         OledUi::screen_icon_big(game_fb[4], OledUiData::SPR_GAMEPAD);
         game_espera_app = true;
     } else {

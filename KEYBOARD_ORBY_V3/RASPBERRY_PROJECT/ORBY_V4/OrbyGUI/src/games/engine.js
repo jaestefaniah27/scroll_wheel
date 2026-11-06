@@ -132,6 +132,10 @@ export function jugar(juego, { alFotograma = null, alEntrar = null, cerrar = tru
 
     const quitar = [
       device.on('telemetry', (linea) => {
+        // El teclado ha tirado un fotograma a medias: lo que traía no se ha pintado,
+        // y como solo se mandan las pantallas que cambian, no se repintaría nunca. El
+        // siguiente va con las diez.
+        if (linea.startsWith('ERR:GAME_BIN_TIMEOUT')) { primero = true; return; }
         const ev = leerEvento(linea);
         if (!ev) return;
         ev.t = ahora();

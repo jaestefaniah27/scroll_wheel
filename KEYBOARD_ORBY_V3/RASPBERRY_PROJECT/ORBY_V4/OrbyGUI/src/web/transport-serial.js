@@ -44,7 +44,13 @@ export function on(evento, cb) {
 
 function emitir(evento, dato) {
   const set = oyentes.get(evento);
-  if (set) for (const cb of set) cb(dato);
+  if (!set) return;
+  // Un oyente que falla (un juego, la réplica…) no puede tirar la lectura del puerto:
+  // la excepción subía hasta el bucle de lectura, que cerraba la conexión entera.
+  // En Tauri y Electron cada evento ya va aislado.
+  for (const cb of set) {
+    try { cb(dato); } catch (e) { console.error(`[web] oyente de ${evento}:`, e); }
+  }
 }
 
 export function estado() {
@@ -77,7 +83,12 @@ async function abrir(p) {
   if (abriendo) return false;
   abriendo = true;
   try {
-    await p.open({ baudRate: BAUD_RATE });
+    // bufferSize: por defecto Web Serial usa 255 B y trocea cada fotograma de un juego
+    // (hasta 3,6 KB) en bloques que tiene que ir rellenando el hilo de la página. Si se
+    // retrasa más de 20 ms entre dos, el firmware da el fotograma por perdido
+    // (ERR:GAME_BIN_TIMEOUT), lee el resto como texto y la partida se congela hasta que
+    // el teclado sale solo por GAME:TIMEOUT. Con sitio de sobra el fotograma entra de una.
+    await p.open({ baudRate: BAUD_RATE, bufferSize: 16384 });
     // TinyUSB no acepta lo que le mandamos si el host no ha levantado DTR: sin esto
     // el teclado nunca ve el ACK y la presentación no llega jamás.
     try { await p.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch { /* algún backend no las soporta */ }
