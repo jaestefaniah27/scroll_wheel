@@ -20,10 +20,12 @@ const PASO_APUESTA = 10;       // múltiplos de 10: así el 3:2 siempre da ficha
 const BARAJAS = 6;
 const BARAJAR_BAJO = 52;       // se rehace el zapato si quedan menos cartas que esto
 
-const REPARTO_MS = 280;        // entre carta y carta al repartir
-const BANCA_MS = 650;          // entre carta y carta de la banca, para que se lea
-const RESULTADO_MS = 2200;     // lo que se ve el resultado antes de la siguiente mano
-const RESULTADO_ARMA_MS = 600; // antes de esto, una tecla no salta el resultado
+const REPARTO_MS = 650;        // entre carta y carta al repartir
+const BANCA_MS = 1200;         // entre carta y carta de la banca (también lo que tarda en destapar la suya)
+const RESULTADO_MS = 5000;     // lo que se ve el resultado antes de la siguiente mano
+const RESULTADO_ARMA_MS = 1500; // antes de esto, una tecla no salta el resultado: da tiempo a ver por qué
+const ABRIR_MS = 220;          // una carta nueva se abre desde el centro
+const VOLTEAR_MS = 450;        // la carta tapada de la banca se da la vuelta al destaparse
 const PULSACION_MS = 140;
 const RUEDA_PASO = 40;         // unidades de giro de la rueda por cada paso de apuesta
 
@@ -122,16 +124,38 @@ function palo(fb, s, x, y, escala, valor) {
 const CARTA_ALTO = 36;
 const CARTA_Y = 2;
 
+// El dorso de una carta de ancho `w` en x: marco blanco y cuadros dentro.
+function dorso(fb, x, w) {
+  pastilla(fb, x, CARTA_Y, w, CARTA_ALTO, 3, 1);
+  if (w < 9) return;
+  pastilla(fb, x + 2, CARTA_Y + 2, w - 4, CARTA_ALTO - 4, 2, 0);
+  for (let y = CARTA_Y + 4; y < CARTA_Y + CARTA_ALTO - 4; y++) {
+    for (let i = x + 4; i < x + w - 4; i++) if ((i + y) % 4 === 0) px(fb, i, y, 1);
+  }
+}
+
 // Una carta en (x, CARTA_Y) de ancho `w`: cara blanca con el índice y el palo en negro, como
 // una carta de verdad. Boca abajo, el dorso a cuadros.
-function carta(fb, c, x, w, oculta) {
-  pastilla(fb, x, CARTA_Y, w, CARTA_ALTO, 3, 1);
-  if (oculta) {
-    pastilla(fb, x + 2, CARTA_Y + 2, w - 4, CARTA_ALTO - 4, 2, 0);
-    for (let y = CARTA_Y + 4; y < CARTA_Y + CARTA_ALTO - 4; y++) {
-      for (let i = x + 4; i < x + w - 4; i++) if ((i + y) % 4 === 0) px(fb, i, y, 1);
-    }
+//
+// `anim` es una animación en curso: { tipo: 'abrir' | 'voltear', p: 0..1 }. Abrir hace crecer
+// la carta desde el centro (lo mismo boca arriba que boca abajo). Voltear la estrecha hasta
+// una línea con el dorso, y la vuelve a ensanchar ya con la cara: el contenido de la cara
+// entra al final, cuando la carta casi está entera, para no tener que reescalar el dibujo.
+function carta(fb, c, x, w, oculta, anim = null) {
+  if (anim) {
+    const ancho = anim.tipo === 'voltear' ? Math.abs(1 - 2 * anim.p) : anim.p;
+    const ww = Math.max(2, Math.round(w * ancho));
+    const xx = x + Math.floor((w - ww) / 2);
+    const mostrarDorso = anim.tipo === 'voltear' ? anim.p < 0.5 : oculta;
+    if (mostrarDorso) dorso(fb, xx, ww);
+    else pastilla(fb, xx, CARTA_Y, ww, CARTA_ALTO, ww < 8 ? 1 : 3, 1);
+    // Con la carta casi entera el índice y el palo ya caben.
+    if (mostrarDorso || ancho <= 0.85) return;
+  } else if (oculta) {
+    dorso(fb, x, w);
     return;
+  } else {
+    pastilla(fb, x, CARTA_Y, w, CARTA_ALTO, 3, 1);
   }
   const nombre = NOMBRE(c.r);
   let lx = x + 3;
@@ -140,14 +164,14 @@ function carta(fb, c, x, w, oculta) {
 }
 
 // Las cartas de una mano en sus tres pantallas: dos por pantalla, y tres si no caben.
-function mano(lienzo, pantallas, cartas, visibles, ocultaSegunda) {
+function mano(lienzo, pantallas, cartas, visibles, ocultaSegunda, anima = () => null) {
   const n = Math.min(cartas.length, visibles);
   const porPantalla = n > 6 ? 3 : 2;
   const w = porPantalla === 2 ? 28 : 22;
   const xs = porPantalla === 2 ? [6, 38] : [1, 25, 49];
   for (let i = 0; i < n && i < porPantalla * 3; i++) {
     const fb = lienzo[pantallas[Math.floor(i / porPantalla)] - 1];
-    carta(fb, cartas[i], xs[i % porPantalla], w, ocultaSegunda && i === 1);
+    carta(fb, cartas[i], xs[i % porPantalla], w, ocultaSegunda && i === 1, anima(i));
   }
 }
 
@@ -189,6 +213,9 @@ export default {
     let visJ = 0;                 // cartas ya enseñadas de cada mano (el reparto va de una en una)
     let visB = 0;
     let ocultaB = true;
+    let tJ = [];                  // cuándo se enseñó cada carta (para abrirla con animación)
+    let tB = [];
+    let tVoltear = null;          // cuándo se destapó la carta oculta de la banca
     let siguienteCarta = 0;       // cuándo se enseña la siguiente carta pendiente
     let resultado = null;         // { resultado, devuelve, apostado }
     let pulsada = null;           // { pantalla, hasta }
@@ -199,6 +226,26 @@ export default {
       return zapato.pop();
     };
     const animando = () => visJ < jugador.length || visB < banca.length;
+
+    // Enseña de golpe las cartas pendientes del jugador (al pasarse o doblar, que no esperan).
+    function verTodoJugador() {
+      for (let i = visJ; i < jugador.length; i++) tJ[i] = tiempo;
+      visJ = jugador.length;
+    }
+
+    // Destapa la carta oculta de la banca, y se da la vuelta.
+    function destapar() {
+      if (!ocultaB) return;
+      ocultaB = false;
+      tVoltear = tiempo;
+    }
+
+    // La animación de una carta en este instante, o null si ya está entera.
+    function animar(desdeT, tipo) {
+      if (desdeT == null) return null;
+      const p = (tiempo - desdeT) / (tipo === 'voltear' ? VOLTEAR_MS : ABRIR_MS);
+      return p >= 1 ? null : { tipo, p: Math.max(0, p) };
+    }
 
     function cambiarApuesta(pasos) {
       if (fase !== 'apuesta') return;
@@ -221,6 +268,9 @@ export default {
       banca.push(sacar());
       visJ = 0;
       visB = 0;
+      tJ = [];
+      tB = [];
+      tVoltear = null;
       ocultaB = true;
       resultado = null;
       siguienteCarta = tiempo + REPARTO_MS;
@@ -230,12 +280,12 @@ export default {
 
     // Enseña la siguiente carta pendiente, alternando como se reparte de verdad.
     function enseñarUna() {
-      if (visJ < jugador.length && (visJ <= visB || visB >= banca.length)) visJ++;
-      else if (visB < banca.length) visB++;
+      if (visJ < jugador.length && (visJ <= visB || visB >= banca.length)) tJ[visJ++] = tiempo;
+      else if (visB < banca.length) tB[visB++] = tiempo;
     }
 
     function cerrar() {
-      ocultaB = false;
+      destapar();
       const r = liquidar(jugador, banca, enJuego);
       fichas += r.devuelve;
       resultado = { ...r, apostado: enJuego };
@@ -250,7 +300,7 @@ export default {
     }
 
     function turnoBanca() {
-      ocultaB = false;
+      destapar();
       fase = 'banca';
       desde = tiempo;
       siguienteCarta = tiempo + BANCA_MS;
@@ -261,6 +311,9 @@ export default {
       jugador = [];
       banca = [];
       visJ = visB = 0;
+      tJ = [];
+      tB = [];
+      tVoltear = null;
       fase = 'apuesta';
       desde = tiempo;
     }
@@ -310,8 +363,8 @@ export default {
             siguienteCarta = tiempo;
             // Pasarse acaba la mano; llegar a 21 planta solo, no hay nada mejor que pedir.
             const v = valorMano(jugador);
-            if (v > 21) { visJ = jugador.length; cerrar(); }
-            else if (v === 21) { visJ = jugador.length; turnoBanca(); }
+            if (v > 21) { verTodoJugador(); cerrar(); }
+            else if (v === 21) { verTodoJugador(); turnoBanca(); }
           } else if (p === 8) {
             turnoBanca();
           } else if (p === 9 && jugador.length === 2 && fichas >= enJuego) {
@@ -319,7 +372,7 @@ export default {
             enJuego *= 2;
             guardar();
             jugador.push(sacar());
-            visJ = jugador.length;
+            verTodoJugador();
             if (valorMano(jugador) > 21) cerrar(); else turnoBanca();
           } else return;
         } else if (fase === 'resultado' && tiempo - desde >= RESULTADO_ARMA_MS) {
@@ -341,8 +394,9 @@ export default {
       mando(ev) { cambiarApuesta(Math.sign(ev.delta)); },
 
       dibujar(l) {
-        mano(l, [1, 2, 3], banca, visB, ocultaB);
-        mano(l, [4, 5, 6], jugador, visJ, false);
+        mano(l, [1, 2, 3], banca, visB, ocultaB,
+          (i) => (i === 1 && tVoltear != null ? animar(tVoltear, 'voltear') : animar(tB[i], 'abrir')));
+        mano(l, [4, 5, 6], jugador, visJ, false, (i) => animar(tJ[i], 'abrir'));
 
         if (fase === 'apuesta') {
           if (recargado) etiquetaValor(l[4], 'REGALO', `+${FICHAS_INICIALES}`);

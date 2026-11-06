@@ -50,8 +50,8 @@ function montar(semilla, saldo = null) {
   const jugarMano = () => {
     const antes = partida.manos;
     pulsar(8);
-    avanzar(2000);
-    if (partida.manos === antes) { pulsar(8); avanzar(8000); } else avanzar(2400);
+    avanzar(3500);                 // el reparto es lento: cuatro cartas, una cada 650 ms
+    if (partida.manos === antes) { pulsar(8); avanzar(20000); } else avanzar(6000);
   };
   return { partida, guardados, avanzar, pulsar, jugarMano, l };
 }
@@ -64,8 +64,8 @@ test('Blackjack: apostar, repartir y plantarse mueve las fichas y se guarda al m
   partida.rueda({ delta: -40 });        // y la rueda la baja a 20
   pulsar(8);
   assert.deepEqual(guardados.at(-1), { saldo: 80, pico: 100 }, 'al repartir ya se descuenta lo apostado');
-  avanzar(2000);
-  if (partida.manos === 0) { pulsar(8); avanzar(8000); }   // plantarse (si no hubo blackjack)
+  avanzar(3500);
+  if (partida.manos === 0) { pulsar(8); avanzar(20000); }   // plantarse (si no hubo blackjack)
   assert.equal(partida.manos, 1);
   const { saldo, pico } = guardados.at(-1);
   assert.ok([80, 100, 120, 130].includes(saldo), `con 20 apostados se pierde 20, se empata o se gana 20/30: ${saldo}`);
@@ -114,4 +114,48 @@ test('Blackjack: tras perder todo se ve el regalo y la siguiente apuesta ya desc
     return;
   }
   assert.fail('no hubo ninguna partida perdida para comprobar');
+});
+
+const tinta = (fb) => fb.reduce((n, b) => n + b.toString(2).replace(/0/g, '').length, 0);
+
+test('Blackjack: las cartas salen despacio y la tapada de la banca se da la vuelta al destaparse', () => {
+  for (let semilla = 1; semilla <= 40; semilla++) {
+    const { partida, avanzar, pulsar, l } = montar(semilla, 1000);
+    pulsar(8);
+    // Cada carta tarda 650 ms: a los 700 ms solo se ha enseñado la primera.
+    avanzar(700);
+    assert.equal(tinta(l[1]), 0, 'la segunda pantalla de la banca sigue vacía');
+    avanzar(2900);
+    if (partida.manos !== 0) continue;            // blackjack al repartir: no hay turno que probar
+    avanzar(300);                                  // la animación de abrirse ya acabó
+    const tapada = tinta(l[0]);
+    pulsar(8);                                     // planto: se destapa la carta
+    avanzar(225);                                  // mitad de la vuelta: la carta es una línea
+    const mitad = tinta(l[0]);
+    avanzar(1000);                                 // vuelta acabada: la cara, con su índice y su palo
+    const cara = tinta(l[0]);
+    assert.ok(mitad < tapada, `a media vuelta la carta se estrecha (${mitad} < ${tapada})`);
+    assert.ok(cara > mitad, `y al acabar vuelve a ensancharse (${cara} > ${mitad})`);
+    return;
+  }
+  assert.fail('ninguna semilla repartió una mano sin blackjack');
+});
+
+test('Blackjack: el resultado se queda lo bastante para ver por qué se ganó o se perdió', () => {
+  const { partida, avanzar, pulsar, guardados } = montar(7, 1000);
+  pulsar(8);                                       // reparte
+  let t = 0;
+  while (partida.manos === 0 && t < 40000) {       // y se juega hasta que la mano se resuelve
+    avanzar(8); t += 8;
+    if (t === 3504) pulsar(8);                     // se planta (si no hubo blackjack)
+  }
+  assert.equal(partida.manos, 1, 'la mano se resolvió');
+  const n = guardados.length;
+  avanzar(1000);
+  pulsar(8);                                       // a 1 s del resultado una tecla no lo salta
+  avanzar(700);
+  pulsar(8);                                       // a 1,7 s sí: pasa a apostar...
+  assert.equal(guardados.length, n, 'saltar el resultado no reparte');
+  pulsar(8);                                       // ...y ahora esta tecla reparte la mano siguiente
+  assert.equal(guardados.length, n + 1);
 });
